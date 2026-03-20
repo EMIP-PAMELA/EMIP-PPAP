@@ -4,6 +4,32 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 03:21 CT - [FIX] Remove author_role from ppap_conversations - DTL mismatch corrected
+- Summary: Fixed conversation note creation error by removing author_role column references that don't exist in live database. Corrected DTL_SNAPSHOT.md to reflect actual schema.
+- Files changed:
+  - `src/features/conversations/mutations.ts` - Removed `author_role: input.author_role || null` from insert payload
+  - `src/types/database.types.ts` - Removed `author_role: string | null` from PPAPConversation interface
+  - `src/types/database.types.ts` - Removed `author_role?: string` from CreateConversationInput interface
+  - `src/features/conversations/components/ConversationList.tsx` - Removed author_role display
+  - `docs/DTL_SNAPSHOT.md` - Moved author_role from Confirmed Columns to Columns Removed
+- Database changes: None (aligned code to existing schema)
+- Decisions made:
+  - DTL_SNAPSHOT.md was incorrect - author_role doesn't exist in live database
+  - Followed DTL protocol: discovered mismatch, updated DTL, aligned code
+  - Conversations now display author name and site only (no role)
+- Risks / follow-ups:
+  - Author role information not captured or displayed
+  - If author_role is needed, must add column to live database first, then update DTL, then update code
+- Verification:
+  - Grep search confirms zero author_role references remain in codebase
+  - PPAPConversation interface now has 8 fields (removed author_role)
+  - CreateConversationInput interface now has 5 fields (removed author_role)
+  - ConversationList component displays author name and site only
+  - Insert payload simplified to 5 fields (ppap_id, message, message_type, author, author_site)
+- Commit: `fix: remove author_role from ppap_conversations - align to live schema`
+
+---
+
 ## 2026-03-20 03:01 CT - [FIX] Remove uploaded_at from ppap_documents - DTL mismatch corrected
 - Summary: Fixed document query error by removing uploaded_at column references that don't exist in live database. Corrected DTL_SNAPSHOT.md to reflect actual schema.
 - Files changed:

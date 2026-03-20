@@ -147,13 +147,13 @@ These fields were removed during stabilization (BUILD_LEDGER 2026-03-20 02:00 CT
 | `message` | TEXT | NOT NULL | Conversation message content |
 | `message_type` | VARCHAR(50) | NOT NULL | Message type (NOTE, STATUS_UPDATE, etc.) |
 | `author` | VARCHAR(255) | NOT NULL | Message author |
-| `author_role` | VARCHAR(50) | NULL | Author role |
 | `author_site` | VARCHAR(100) | NULL | Author site/plant |
 | `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Message timestamp |
 | `edited_at` | TIMESTAMPTZ | NULL | Edit timestamp |
 
 **Columns Removed:**
 - `deleted_at` - Soft delete (removed 2026-03-20)
+- `author_role` - Role field (removed 2026-03-20 - doesn't exist in live database)
 
 **Current Safe Query Notes:**
 - ✅ Query by `ppap_id`

@@ -33,9 +33,6 @@ export function ConversationList({ ppapId, conversations }: ConversationListProp
               <div className="flex items-start justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-gray-900">{conv.author}</span>
-                  {conv.author_role && (
-                    <span className="text-xs text-gray-500">({conv.author_role})</span>
-                  )}
                   {conv.author_site && (
                     <span className="text-xs text-gray-500">@ {conv.author_site}</span>
                   )}
