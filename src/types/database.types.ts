@@ -113,19 +113,13 @@ export interface PPAPConversation {
 export interface PPAPTask {
   id: string;
   ppap_id: string;
-  title: string;
-  description: string | null;
-  task_type: string | null;
-  phase: TaskPhase | null;
+  phase: string | null;
+  title: string | null;
+  status: string;
   assigned_to: string | null;
-  assigned_role: string | null;
-  status: TaskStatus;
-  priority: string;
   due_date: string | null;
   completed_at: string | null;
-  completed_by: string | null;
   created_at: string;
-  updated_at: string;
 }
 
 export interface PPAPEvent {
@@ -161,13 +155,9 @@ export interface UpdatePPAPInput {
 export interface CreateTaskInput {
   ppap_id: string;
   title: string;
-  description?: string;
-  task_type?: string;
-  phase: TaskPhase;
+  phase?: string;
   assigned_to?: string;
-  assigned_role?: string;
   due_date?: string;
-  priority?: string;
 }
 
 export interface CreateConversationInput {

@@ -1,5 +1,5 @@
 import { supabase } from '@/src/lib/supabaseClient';
-import type { CreateTaskInput, PPAPTask, TaskStatus } from '@/src/types/database.types';
+import type { CreateTaskInput, PPAPTask } from '@/src/types/database.types';
 import { logEvent } from '@/src/features/events/mutations';
 
 export async function createTask(input: CreateTaskInput, actor: string = 'Matt'): Promise<PPAPTask> {
@@ -8,14 +8,10 @@ export async function createTask(input: CreateTaskInput, actor: string = 'Matt')
     .insert({
       ppap_id: input.ppap_id,
       title: input.title,
-      description: input.description || null,
-      task_type: input.task_type || null,
-      phase: input.phase,
+      phase: input.phase || null,
       assigned_to: input.assigned_to || null,
-      assigned_role: input.assigned_role || null,
       due_date: input.due_date || null,
-      priority: input.priority || 'NORMAL',
-      status: 'PENDING',
+      status: 'pending',
     })
     .select()
     .single();
@@ -31,7 +27,8 @@ export async function createTask(input: CreateTaskInput, actor: string = 'Matt')
     event_data: {
       task_id: data.id,
       title: input.title,
-      phase: input.phase,
+      phase: input.phase || null,
+      assigned_to: input.assigned_to || null,
     },
   });
 
@@ -40,17 +37,15 @@ export async function createTask(input: CreateTaskInput, actor: string = 'Matt')
 
 export async function updateTaskStatus(
   taskId: string,
-  newStatus: TaskStatus,
+  newStatus: string,
   actor: string
 ): Promise<PPAPTask> {
   const updateData: Record<string, unknown> = {
     status: newStatus,
-    updated_at: new Date().toISOString(),
   };
 
-  if (newStatus === 'COMPLETED') {
+  if (newStatus === 'completed') {
     updateData.completed_at = new Date().toISOString();
-    updateData.completed_by = actor;
   }
 
   const { data, error } = await supabase
@@ -64,7 +59,7 @@ export async function updateTaskStatus(
     throw new Error(`Failed to update task status: ${error.message}`);
   }
 
-  if (newStatus === 'COMPLETED') {
+  if (newStatus === 'completed') {
     await logEvent({
       ppap_id: data.ppap_id,
       event_type: 'TASK_COMPLETED',

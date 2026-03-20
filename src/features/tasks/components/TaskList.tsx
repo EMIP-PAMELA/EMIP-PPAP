@@ -2,6 +2,9 @@
 
 import { PPAPTask } from '@/src/types/database.types';
 import { formatDate } from '@/src/lib/utils';
+import { updateTaskStatus } from '@/src/features/tasks/mutations';
+import { useState } from 'react';
+import { AddTaskForm } from './AddTaskForm';
 
 interface TaskListProps {
   ppapId: string;
@@ -9,8 +12,12 @@ interface TaskListProps {
 }
 
 export function TaskList({ ppapId, tasks }: TaskListProps) {
-  const pendingTasks = tasks.filter(t => t.status !== 'COMPLETED' && t.status !== 'CANCELLED');
-  const completedTasks = tasks.filter(t => t.status === 'COMPLETED');
+  const pendingTasks = tasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled');
+  const completedTasks = tasks.filter(t => t.status === 'completed');
+
+  const handleTaskAdded = () => {
+    window.location.reload();
+  };
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -46,11 +53,28 @@ export function TaskList({ ppapId, tasks }: TaskListProps) {
           )}
         </div>
       )}
+
+      <AddTaskForm ppapId={ppapId} onSuccess={handleTaskAdded} />
     </div>
   );
 }
 
 function TaskItem({ task }: { task: PPAPTask }) {
+  const [loading, setLoading] = useState(false);
+
+  const handleComplete = async () => {
+    setLoading(true);
+    try {
+      await updateTaskStatus(task.id, 'completed', 'Matt');
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to complete task:', error);
+      alert('Failed to complete task');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="border border-gray-200 rounded-lg p-4">
       <div className="flex items-start justify-between mb-2">
@@ -66,9 +90,6 @@ function TaskItem({ task }: { task: PPAPTask }) {
               </span>
             )}
           </div>
-          {task.description && (
-            <p className="text-sm text-gray-600 mb-2">{task.description}</p>
-          )}
           <div className="flex items-center gap-4 text-xs text-gray-500">
             {task.assigned_to && (
               <span>Assigned: {task.assigned_to}</span>
@@ -81,6 +102,15 @@ function TaskItem({ task }: { task: PPAPTask }) {
             )}
           </div>
         </div>
+        {task.status !== 'completed' && (
+          <button
+            onClick={handleComplete}
+            disabled={loading}
+            className="ml-4 px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Completing...' : 'Mark Complete'}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -88,11 +118,11 @@ function TaskItem({ task }: { task: PPAPTask }) {
 
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
-    PENDING: 'bg-gray-100 text-gray-700',
-    IN_PROGRESS: 'bg-blue-100 text-blue-700',
-    BLOCKED: 'bg-red-100 text-red-700',
-    COMPLETED: 'bg-green-100 text-green-700',
-    CANCELLED: 'bg-gray-100 text-gray-500',
+    pending: 'bg-gray-100 text-gray-700',
+    in_progress: 'bg-blue-100 text-blue-700',
+    blocked: 'bg-red-100 text-red-700',
+    completed: 'bg-green-100 text-green-700',
+    cancelled: 'bg-gray-100 text-gray-500',
   };
   
   return colors[status] || 'bg-gray-100 text-gray-700';
