@@ -68,7 +68,9 @@ export type EventType =
   | 'SUBMITTED'
   | 'APPROVED'
   | 'BLOCKED'
-  | 'UNBLOCKED';
+  | 'UNBLOCKED'
+  | 'PHASE_ADVANCED'
+  | 'PPAP_DELETED';
 
 export type MoldStatus =
   | 'NOT_STARTED'

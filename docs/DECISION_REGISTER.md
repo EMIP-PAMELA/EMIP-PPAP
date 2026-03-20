@@ -4,6 +4,33 @@ Important architectural and design decisions for EMIP-PPAP.
 
 ---
 
+## DEC-014: Phase-Based Workflow with Local State Management
+- Date: 2026-03-20
+- Status: Accepted
+- Context: System needed to evolve from simple status tracking to multi-phase PPAP workflow modeled after Rheem process. However, implementing full workflow persistence in database would require schema changes and significant refactoring. Need to validate UI/UX patterns before committing to database schema.
+- Decision: Implement phase-based workflow UI with local React state management. Store current phase in component state (not database). Log phase transitions to ppap_events for audit trail. Build INITIATION stage first, validate with users, then expand to other phases and consider database persistence.
+- Consequences:
+  - ✅ No database schema changes required
+  - ✅ Fast implementation and iteration
+  - ✅ Can validate workflow UX before schema commitment
+  - ✅ Event logging provides audit trail
+  - ✅ Sidebar navigation pattern established
+  - ✅ Validation framework in place
+  - ⚠️ Phase state resets on page reload (acceptable for prototype)
+  - ⚠️ No phase persistence across sessions
+  - ⚠️ Phase data stored only in events (not queryable)
+  - ⚠️ Future: Will need schema migration for production
+  - ⚠️ Future: May need to replay events to restore phase state
+- Implementation:
+  - PhaseIndicator: Visual progress bar (5 phases)
+  - InitiationForm: Sectioned form with sidebar navigation
+  - PPAPWorkflowWrapper: Client component managing phase state
+  - Event logging: PHASE_ADVANCED with full form data
+  - Validation: Client-side with inline errors
+  - Next steps: Validate with users → Implement remaining phases → Design schema migration
+
+---
+
 ## DEC-013: Client-Side Task Filtering and Priority Model
 - Date: 2026-03-20
 - Status: Accepted

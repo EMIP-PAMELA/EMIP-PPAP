@@ -9,6 +9,7 @@ import { TaskList } from '@/src/features/tasks/components/TaskList';
 import { DocumentList } from '@/src/features/documents/components/DocumentList';
 import { EventHistory } from '@/src/features/events/components/EventHistory';
 import { DeletePPAPButton } from '@/src/features/ppap/components/DeletePPAPButton';
+import { PPAPWorkflowWrapper } from '@/src/features/ppap/components/PPAPWorkflowWrapper';
 
 interface PPAPDashboardPageProps {
   params: Promise<{
@@ -71,6 +72,8 @@ export default async function PPAPDashboardPage({ params }: PPAPDashboardPagePro
           <PPAPHeader ppap={ppap} tasks={tasks || []} />
           <DeletePPAPButton ppapId={ppap.id} ppapNumber={ppap.ppap_number} />
         </div>
+
+        <PPAPWorkflowWrapper ppap={ppap} tasks={tasks || []} />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
