@@ -4,6 +4,35 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 02:43 CT - [GOV] Add DTL snapshot and build milemarker tracking
+- Summary: Extended governance system with Database Translation Layer (DTL) snapshot and build milemarker to track known structure and deltas instead of rediscovering system state
+- Files changed:
+  - `docs/DTL_SNAPSHOT.md` (created) - Authoritative database schema contract with all 5 tables documented
+  - `docs/MILEMARKER.md` (created) - Current verified working build state snapshot
+  - `BOOTSTRAP.md` (updated) - Added DTL_SNAPSHOT.md and MILEMARKER.md to mandatory preflight, added DTL and Milemarker rules
+  - `docs/BUILD_LEDGER.md` (updated) - This entry
+- Database changes: None (documentation only)
+- Decisions made:
+  - DTL_SNAPSHOT.md is single source of truth for database contract
+  - Code must never guess schema, must check DTL first
+  - Schema mismatches require stop/inspect/update/resume protocol
+  - MILEMARKER.md captures verified working state for delta tracking
+  - Milemarker must be updated after every major milestone
+- Risks / follow-ups:
+  - Must discipline to update DTL when schema changes
+  - Must discipline to update Milemarker after milestones
+  - Both files must stay synchronized with reality
+- Verification:
+  - DTL_SNAPSHOT.md documents current minimal schema (9 fields in ppap_records)
+  - DTL_SNAPSHOT.md lists all intentionally removed fields
+  - MILEMARKER.md documents all currently working flows
+  - MILEMARKER.md documents all disabled/removed features
+  - BOOTSTRAP.md preflight list includes both new files
+  - DTL and Milemarker rules clearly defined in BOOTSTRAP.md
+- Commit: `chore: add DTL snapshot and milemarker governance tracking`
+
+---
+
 ## 2026-03-20 02:28 CT - [FIX] Fix Next.js 15 async params in dynamic route
 - Summary: Fixed "Invalid PPAP ID" error caused by Next.js 15 breaking change where params are now async Promises that must be awaited
 - Files changed:

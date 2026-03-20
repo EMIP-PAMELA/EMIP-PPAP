@@ -15,6 +15,8 @@ Before making any change, the repo agent must read and comply with these files i
 7. docs/DATA_MODEL.md
 8. docs/WORKFLOW_RULES.md
 9. docs/ACCEPTANCE_CRITERIA.md
+10. **docs/DTL_SNAPSHOT.md** (before any database-related or schema-related work)
+11. **docs/MILEMARKER.md** (before any structure-related or major feature work)
 
 If any of these files are missing, report that clearly before proceeding.
 
@@ -34,6 +36,39 @@ Do not begin implementation until this summary is produced.
 - The live database schema is authoritative unless explicitly told otherwise.
 - Governance docs are authoritative for workflow and constraints.
 - Existing working behavior should be preserved unless the current task explicitly changes it.
+- **docs/DTL_SNAPSHOT.md is the authoritative database contract** - all code must align to it.
+- **docs/MILEMARKER.md is the authoritative build state snapshot** - use it to understand current working state and track deltas.
+
+## Database Translation Layer (DTL) Rules
+The repo agent must follow these rules for all database-related work:
+
+1. **Never guess schema** - Always check DTL_SNAPSHOT.md before assuming a column exists
+2. **Stop on mismatch** - If code assumes a field that DTL_SNAPSHOT.md doesn't document:
+   - Stop implementation immediately
+   - Inspect live database or verified schema source
+   - Update DTL_SNAPSHOT.md with actual schema
+   - Record the delta in BUILD_LEDGER.md
+   - Update DECISION_REGISTER.md if the contract changed meaningfully
+   - Resume implementation aligned to actual schema
+3. **DTL is authoritative** - When DATA_MODEL.md conflicts with DTL_SNAPSHOT.md, DTL wins
+4. **Track all schema changes** - Every schema change must update DTL_SNAPSHOT.md and BUILD_LEDGER.md atomically
+5. **Validate assumptions** - Before writing queries or mutations, verify columns exist in DTL_SNAPSHOT.md
+
+## Milemarker Rules
+The repo agent must follow these rules for build state tracking:
+
+1. **MILEMARKER.md is the build state snapshot** - It documents the current verified working state
+2. **Use it to understand context** - Read MILEMARKER.md to know what currently works vs what's disabled
+3. **Track deltas not discoveries** - Plan changes as deltas from the documented baseline, don't rediscover the system
+4. **Update after milestones** - After major stabilization or feature completion:
+   - Update MILEMARKER.md with new verified working state
+   - Update "Next Controlled Expansion Candidates" priorities
+   - Update timestamp
+   - Commit with clear milestone message
+5. **Report gaps accurately** - If MILEMARKER.md doesn't match reality:
+   - Verify the gap exists in live system
+   - Update MILEMARKER.md to reflect actual state
+   - Record in BUILD_LEDGER.md
 
 ## Scope Control
 The repo agent must:
