@@ -93,15 +93,11 @@ export interface PPAPRecord {
 export interface PPAPDocument {
   id: string;
   ppap_id: string;
-  document_name: string;
-  document_type: DocumentType | null;
-  file_size_bytes: number | null;
-  mime_type: string | null;
-  storage_path: string | null;
-  storage_bucket: string | null;
-  uploaded_by: string;
-  version: number;
-  notes: string | null;
+  file_name: string | null;
+  category: string | null;
+  file_url: string | null;
+  uploaded_by: string | null;
+  created_at: string;
 }
 
 export interface PPAPConversation {
@@ -184,14 +180,10 @@ export interface CreateConversationInput {
 
 export interface CreateDocumentInput {
   ppap_id: string;
-  document_name: string;
-  document_type: DocumentType;
-  file_size_bytes?: number;
-  mime_type?: string;
-  storage_path?: string;
-  storage_bucket?: string;
+  file_name: string;
+  category?: string;
+  file_url?: string;
   uploaded_by: string;
-  notes?: string;
 }
 
 export interface CreateEventInput {

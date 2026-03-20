@@ -25,22 +25,17 @@ export function DocumentList({ ppapId, documents }: DocumentListProps) {
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <h4 className="font-semibold text-gray-900">{doc.document_name}</h4>
-                    {doc.document_type && (
+                    <h4 className="font-semibold text-gray-900">{doc.file_name}</h4>
+                    {doc.category && (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                        {doc.document_type.replace(/_/g, ' ')}
+                        {doc.category.replace(/_/g, ' ')}
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-4 text-xs text-gray-500">
                     <span>Uploaded by {doc.uploaded_by}</span>
-                    {doc.file_size_bytes && (
-                      <span>{formatFileSize(doc.file_size_bytes)}</span>
-                    )}
+                    <span>{formatDateTime(doc.created_at)}</span>
                   </div>
-                  {doc.notes && (
-                    <p className="text-sm text-gray-600 mt-2">{doc.notes}</p>
-                  )}
                 </div>
               </div>
             </div>
@@ -49,10 +44,4 @@ export function DocumentList({ ppapId, documents }: DocumentListProps) {
       )}
     </div>
   );
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

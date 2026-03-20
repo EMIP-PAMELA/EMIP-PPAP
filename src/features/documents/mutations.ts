@@ -7,14 +7,10 @@ export async function createDocument(input: CreateDocumentInput): Promise<PPAPDo
     .from('ppap_documents')
     .insert({
       ppap_id: input.ppap_id,
-      document_name: input.document_name,
-      document_type: input.document_type,
-      file_size_bytes: input.file_size_bytes || null,
-      mime_type: input.mime_type || null,
-      storage_path: input.storage_path || null,
-      storage_bucket: input.storage_bucket || null,
+      file_name: input.file_name,
+      category: input.category || null,
+      file_url: input.file_url || null,
       uploaded_by: input.uploaded_by,
-      notes: input.notes || null,
     })
     .select()
     .single();
@@ -29,8 +25,8 @@ export async function createDocument(input: CreateDocumentInput): Promise<PPAPDo
     actor: input.uploaded_by,
     event_data: {
       document_id: data.id,
-      document_name: input.document_name,
-      document_type: input.document_type,
+      file_name: input.file_name,
+      category: input.category,
     },
   });
 

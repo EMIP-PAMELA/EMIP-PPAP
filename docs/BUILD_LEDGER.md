@@ -4,6 +4,34 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 04:06 CT - [FIX] Align documents module to verified DTL schema
+- Summary: Aligned all documents-related code to verified DTL_SNAPSHOT.md schema. Fixed incorrect field names and removed references to non-existent columns.
+- Files changed:
+  - `src/types/database.types.ts` - Updated PPAPDocument interface (7 fields) and CreateDocumentInput interface (5 fields)
+  - `src/features/documents/mutations.ts` - Fixed field names in insert payload and event logging
+  - `src/features/documents/components/DocumentList.tsx` - Updated UI to use correct field names, removed formatFileSize utility
+- Database changes: None (aligned code to existing schema)
+- Field mappings corrected:
+  - `document_name` → `file_name`
+  - `document_type` → `category`
+  - `storage_path` → `file_url`
+  - Added `created_at` (was missing, use for timestamp display)
+  - Removed: `file_size_bytes`, `mime_type`, `storage_bucket`, `version`, `notes` (don't exist in live DB)
+- Verification:
+  - PPAPDocument interface now matches DTL exactly (7 fields)
+  - CreateDocumentInput simplified (5 fields)
+  - Insert payload uses only verified columns
+  - DocumentList displays file_name, category, uploaded_by, created_at
+  - No references to removed fields remain (grep verified)
+- Impact:
+  - Documents query will now succeed without schema errors
+  - Document list will render correctly with actual data
+  - PPAP detail page documents section functional
+- Next: Phase 1 of re-expansion roadmap - reintroduce task fields
+- Commit: `fix: align documents module to verified DTL schema`
+
+---
+
 ## 2026-03-20 03:57 CT - [DTL REBASELINE] Full schema verification against live database - SYSTEM ALIGNED
 - Summary: Performed complete DTL rebaseline by verifying all 5 tables against live Supabase database. Rewrote DTL_SNAPSHOT.md to match actual schema. Discovered and documented extensive mismatches between assumed schema and reality.
 - Files changed:
