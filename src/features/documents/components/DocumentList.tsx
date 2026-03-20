@@ -2,6 +2,8 @@
 
 import { PPAPDocument } from '@/src/types/database.types';
 import { formatDateTime } from '@/src/lib/utils';
+import { UploadDocumentForm } from './UploadDocumentForm';
+import { useRouter } from 'next/navigation';
 
 interface DocumentListProps {
   ppapId: string;
@@ -9,6 +11,12 @@ interface DocumentListProps {
 }
 
 export function DocumentList({ ppapId, documents }: DocumentListProps) {
+  const router = useRouter();
+
+  const handleUploadSuccess = () => {
+    router.refresh();
+  };
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6">
       <h2 className="text-xl font-bold text-gray-900 mb-4">Documents</h2>
@@ -35,6 +43,16 @@ export function DocumentList({ ppapId, documents }: DocumentListProps) {
                   <div className="flex items-center gap-4 text-xs text-gray-500">
                     <span>Uploaded by {doc.uploaded_by}</span>
                     <span>{formatDateTime(doc.created_at)}</span>
+                    {doc.file_url && (
+                      <a
+                        href={doc.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 underline"
+                      >
+                        Download
+                      </a>
+                    )}
                   </div>
                 </div>
               </div>
@@ -42,6 +60,8 @@ export function DocumentList({ ppapId, documents }: DocumentListProps) {
           ))}
         </div>
       )}
+
+      <UploadDocumentForm ppapId={ppapId} onSuccess={handleUploadSuccess} />
     </div>
   );
 }

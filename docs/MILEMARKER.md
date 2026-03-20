@@ -1,7 +1,7 @@
 # Build Milemarker
 
-**Last Updated:** 2026-03-20 11:49 CT  
-**Current Milestone:** ✅ PHASE 2 COMPLETE - Tasks System Implemented
+**Last Updated:** 2026-03-20 13:02 CT  
+**Current Milestone:** ✅ Document Upload + PPAP Deletion Implemented
 
 ## Purpose
 
@@ -229,6 +229,7 @@ Use this to verify system is in expected state:
 
 | Date | Milestone | Key Changes |
 |------|-----------|-------------|
+| 2026-03-20 13:02 CT | Document Upload + PPAP Deletion | Implemented document upload with Supabase Storage (bucket: ppap-documents, path: ppap/{id}/{filename}). Added PPAP deletion with confirmation dialog and event logging before delete. Both features use DTL-verified fields only. No permissions system. |
 | 2026-03-20 11:49 CT | Status Update UI Fixed | Fixed StatusUpdateControl error handling. Now properly checks Supabase errors before calling router.refresh(). Status updates provide user feedback on failure. UI only refreshes on successful database update. |
 | 2026-03-20 04:31 CT | Phase 2 Complete - Tasks System | Implemented Phase 2 from BUILD_PLAN. Reintroduced task fields (assigned_to, due_date, phase, title, completed_at) from DTL. Created AddTaskForm component. Added Mark Complete workflow. Event logging on create/complete. Tasks now fully functional. |
 | 2026-03-20 04:06 CT | Documents Module Aligned | Aligned documents module to verified DTL schema. Fixed field names: document_name→file_name, document_type→category, storage_path→file_url. Removed non-existent fields (file_size_bytes, mime_type, etc.). Documents now functional with correct schema. |

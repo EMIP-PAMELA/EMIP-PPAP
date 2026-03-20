@@ -152,6 +152,47 @@ export async function assignPPAP(
   }, actor);
 }
 
+export async function deletePPAP(
+  id: string,
+  actor: string = 'Matt'
+): Promise<void> {
+  const { data: ppap, error: fetchError } = await supabase
+    .from('ppap_records')
+    .select('ppap_number, part_number')
+    .eq('id', id)
+    .single();
+
+  if (fetchError) {
+    throw new Error(`Failed to fetch PPAP for deletion: ${fetchError.message}`);
+  }
+
+  const { error: eventError } = await supabase
+    .from('ppap_events')
+    .insert({
+      ppap_id: id,
+      event_type: 'PPAP_DELETED',
+      event_data: {
+        ppap_number: ppap.ppap_number,
+        part_number: ppap.part_number,
+      },
+      actor: actor,
+      actor_role: 'Engineer',
+    });
+
+  if (eventError) {
+    console.error('Failed to log PPAP deletion event:', eventError);
+  }
+
+  const { error: deleteError } = await supabase
+    .from('ppap_records')
+    .delete()
+    .eq('id', id);
+
+  if (deleteError) {
+    throw new Error(`Failed to delete PPAP: ${deleteError.message}`);
+  }
+}
+
 function generatePPAPNumber(): string {
   const yearSuffix = new Date().getFullYear().toString().slice(-2);
   const timestamp = Date.now().toString().slice(-6);

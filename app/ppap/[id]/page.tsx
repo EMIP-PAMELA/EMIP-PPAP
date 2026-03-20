@@ -8,6 +8,7 @@ import { ConversationList } from '@/src/features/conversations/components/Conver
 import { TaskList } from '@/src/features/tasks/components/TaskList';
 import { DocumentList } from '@/src/features/documents/components/DocumentList';
 import { EventHistory } from '@/src/features/events/components/EventHistory';
+import { DeletePPAPButton } from '@/src/features/ppap/components/DeletePPAPButton';
 
 interface PPAPDashboardPageProps {
   params: Promise<{
@@ -66,7 +67,10 @@ export default async function PPAPDashboardPage({ params }: PPAPDashboardPagePro
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        <PPAPHeader ppap={ppap} />
+        <div className="flex items-start justify-between">
+          <PPAPHeader ppap={ppap} />
+          <DeletePPAPButton ppapId={ppap.id} ppapNumber={ppap.ppap_number} />
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">

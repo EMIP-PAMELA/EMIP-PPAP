@@ -4,6 +4,73 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 13:02 CT - [FEAT] Document Upload + PPAP Deletion
+- Summary: Implemented two controlled features: (1) Document upload with Supabase Storage integration, (2) PPAP deletion with event logging. Both features use DTL-verified fields only.
+- Files changed:
+  - `src/features/documents/components/UploadDocumentForm.tsx` - NEW - File upload UI with Supabase Storage integration
+  - `src/features/documents/components/DocumentList.tsx` - Added UploadDocumentForm, Download links, router.refresh()
+  - `src/features/ppap/mutations.ts` - Added deletePPAP() function with event logging
+  - `src/features/ppap/components/DeletePPAPButton.tsx` - NEW - Delete button with confirmation dialog
+  - `app/ppap/[id]/page.tsx` - Integrated DeletePPAPButton into detail page header
+- Database changes: None (used existing schema)
+- DTL alignment: All fields match ppap_documents and ppap_events verified schemas
+
+**PART 1 - Document Upload:**
+- Upload flow:
+  1. User selects file from file input
+  2. File uploaded to Supabase Storage bucket: `ppap-documents`
+  3. Upload path: `ppap/{ppap_id}/{filename}`
+  4. Public URL retrieved from Supabase
+  5. Document metadata inserted into ppap_documents table
+  6. Event logged: DOCUMENT_ADDED
+  7. UI refreshes automatically (router.refresh)
+- Features:
+  - File input with file size preview
+  - Upload progress indicator
+  - Error handling with user alerts
+  - Download links for uploaded documents
+  - Default category: "GENERAL"
+  - Auto-refresh on success
+- DTL fields used: ppap_id, file_name, category, file_url, uploaded_by, created_at
+
+**PART 2 - PPAP Deletion:**
+- Deletion flow:
+  1. User clicks "Delete PPAP" button (red, destructive style)
+  2. Confirmation dialog: "Are you sure? This cannot be undone."
+  3. Fetch PPAP data (ppap_number, part_number) for event
+  4. Log PPAP_DELETED event BEFORE deletion
+  5. Delete from ppap_records
+  6. Redirect to "/" (PPAP list)
+  7. UI refreshes
+- Features:
+  - Confirmation dialog prevents accidental deletions
+  - Event logged before deletion (audit trail preserved)
+  - Hard delete model (no soft delete)
+  - Error handling with user alerts
+  - Loading state on button
+- DTL fields used: id, ppap_number, part_number, event_type, event_data, actor, actor_role
+
+- Storage configuration:
+  - Bucket: `ppap-documents`
+  - Cache control: 3600s
+  - Upsert: false (prevent overwriting)
+  - Public URLs enabled
+- Security notes:
+  - No permissions system implemented (as instructed)
+  - All uploads by: "Matt"
+  - All deletions by: "Matt"
+  - actor_role: "Engineer"
+- Validation:
+  - Document upload → appears immediately in UI
+  - Document download links work
+  - PPAP deletion → removed from list
+  - Deletion event logged before record removed
+  - No schema errors
+  - No console errors
+- Commit: `feat: add document upload (Supabase Storage) and PPAP deletion`
+
+---
+
 ## 2026-03-20 11:49 CT - [FIX] Status update UI error handling
 - Summary: Fixed status update control to properly check Supabase errors before refreshing UI. Previously, router.refresh() was called even on failed updates, causing UI to refresh with stale data.
 - Files changed:
