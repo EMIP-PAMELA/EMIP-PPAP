@@ -74,6 +74,95 @@ export async function updateTaskStatus(
   return data as PPAPTask;
 }
 
+export async function updateTask(
+  taskId: string,
+  updates: {
+    title?: string;
+    phase?: string;
+    assigned_to?: string;
+    due_date?: string;
+    status?: string;
+  },
+  actor: string = 'Matt'
+): Promise<PPAPTask> {
+  const { data: currentTask, error: fetchError } = await supabase
+    .from('ppap_tasks')
+    .select('*')
+    .eq('id', taskId)
+    .single();
+
+  if (fetchError) {
+    throw new Error(`Failed to fetch task: ${fetchError.message}`);
+  }
+
+  const { data, error } = await supabase
+    .from('ppap_tasks')
+    .update({
+      title: updates.title,
+      phase: updates.phase || null,
+      assigned_to: updates.assigned_to || null,
+      due_date: updates.due_date || null,
+      status: updates.status,
+    })
+    .eq('id', taskId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update task: ${error.message}`);
+  }
+
+  await logEvent({
+    ppap_id: currentTask.ppap_id,
+    event_type: 'TASK_UPDATED',
+    actor,
+    event_data: {
+      task_id: taskId,
+      title: data.title,
+      changes: updates,
+    },
+  });
+
+  return data as PPAPTask;
+}
+
+export async function deleteTask(taskId: string, actor: string = 'Matt'): Promise<void> {
+  const { data: task, error: fetchError } = await supabase
+    .from('ppap_tasks')
+    .select('ppap_id, title')
+    .eq('id', taskId)
+    .single();
+
+  if (fetchError) {
+    throw new Error(`Failed to fetch task for deletion: ${fetchError.message}`);
+  }
+
+  const { error: eventError } = await supabase
+    .from('ppap_events')
+    .insert({
+      ppap_id: task.ppap_id,
+      event_type: 'TASK_DELETED',
+      event_data: {
+        task_id: taskId,
+        title: task.title,
+      },
+      actor,
+    });
+
+  if (eventError) {
+    console.error('Failed to log task deletion event:', eventError);
+  }
+
+  const { error: deleteError } = await supabase
+    .from('ppap_tasks')
+    .delete()
+    .eq('id', taskId);
+
+  if (deleteError) {
+    throw new Error(`Failed to delete task: ${deleteError.message}`);
+  }
+}
+
 export async function getTasksByPPAPId(ppapId: string): Promise<PPAPTask[]> {
   if (!ppapId) {
     throw new Error('ppapId is required to fetch tasks');

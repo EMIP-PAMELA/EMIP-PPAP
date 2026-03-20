@@ -2,9 +2,10 @@
 
 import { PPAPTask } from '@/src/types/database.types';
 import { formatDate } from '@/src/lib/utils';
-import { updateTaskStatus } from '@/src/features/tasks/mutations';
+import { updateTaskStatus, deleteTask } from '@/src/features/tasks/mutations';
 import { useState } from 'react';
 import { AddTaskForm } from './AddTaskForm';
+import { EditTaskForm } from './EditTaskForm';
 
 interface TaskListProps {
   ppapId: string;
@@ -35,7 +36,7 @@ export function TaskList({ ppapId, tasks }: TaskListProps) {
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Active Tasks</h3>
               <div className="space-y-2">
                 {pendingTasks.map((task) => (
-                  <TaskItem key={task.id} task={task} />
+                  <TaskItem key={task.id} task={task} onUpdate={handleTaskAdded} />
                 ))}
               </div>
             </div>
@@ -46,7 +47,7 @@ export function TaskList({ ppapId, tasks }: TaskListProps) {
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Completed Tasks</h3>
               <div className="space-y-2">
                 {completedTasks.map((task) => (
-                  <TaskItem key={task.id} task={task} />
+                  <TaskItem key={task.id} task={task} onUpdate={handleTaskAdded} />
                 ))}
               </div>
             </div>
@@ -59,14 +60,15 @@ export function TaskList({ ppapId, tasks }: TaskListProps) {
   );
 }
 
-function TaskItem({ task }: { task: PPAPTask }) {
+function TaskItem({ task, onUpdate }: { task: PPAPTask; onUpdate: () => void }) {
   const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const handleComplete = async () => {
     setLoading(true);
     try {
       await updateTaskStatus(task.id, 'completed', 'Matt');
-      window.location.reload();
+      onUpdate();
     } catch (error) {
       console.error('Failed to complete task:', error);
       alert('Failed to complete task');
@@ -74,6 +76,37 @@ function TaskItem({ task }: { task: PPAPTask }) {
       setLoading(false);
     }
   };
+
+  const handleDelete = async () => {
+    const confirmed = window.confirm('Delete this task?');
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      await deleteTask(task.id, 'Matt');
+      onUpdate();
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+      alert('Failed to delete task');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditSuccess = () => {
+    setEditing(false);
+    onUpdate();
+  };
+
+  if (editing) {
+    return (
+      <EditTaskForm
+        task={task}
+        onSuccess={handleEditSuccess}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
 
   return (
     <div className="border border-gray-200 rounded-lg p-4">
@@ -102,15 +135,33 @@ function TaskItem({ task }: { task: PPAPTask }) {
             )}
           </div>
         </div>
-        {task.status !== 'completed' && (
+        <div className="flex gap-2 ml-4">
+          {task.status !== 'completed' && (
+            <>
+              <button
+                onClick={() => setEditing(true)}
+                disabled={loading}
+                className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                Edit
+              </button>
+              <button
+                onClick={handleComplete}
+                disabled={loading}
+                className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Completing...' : 'Complete'}
+              </button>
+            </>
+          )}
           <button
-            onClick={handleComplete}
+            onClick={handleDelete}
             disabled={loading}
-            className="ml-4 px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+            className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            {loading ? 'Completing...' : 'Mark Complete'}
+            {loading ? 'Deleting...' : 'Delete'}
           </button>
-        )}
+        </div>
       </div>
     </div>
   );

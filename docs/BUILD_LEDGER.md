@@ -4,6 +4,74 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 14:42 CT - [FEAT] Task Edit and Delete with Event Logging
+- Summary: Added task modification and controlled deletion capabilities with full event logging. Users can now edit all task fields inline and delete tasks with confirmation.
+- Files changed:
+  - `src/features/tasks/mutations.ts` - Added updateTask() and deleteTask() functions
+  - `src/features/tasks/components/EditTaskForm.tsx` - NEW - Inline edit form for tasks
+  - `src/features/tasks/components/TaskList.tsx` - Added Edit and Delete buttons
+  - `src/types/database.types.ts` - Added TASK_UPDATED and TASK_DELETED to EventType
+- Database changes: None (used existing ppap_tasks fields)
+- DTL alignment: Uses only verified fields (title, phase, assigned_to, due_date, status)
+
+**Task Edit Functionality:**
+- Editable fields: title, phase, assigned_to, due_date, status
+- Inline edit form (expands in place)
+- Cancel button to abort changes
+- Form validation (title required)
+- Status dropdown: pending, in_progress, blocked, completed
+- Event logged: TASK_UPDATED with changes tracked
+
+**Task Delete Functionality:**
+- Confirmation dialog: "Delete this task?"
+- Hard delete model (no soft delete)
+- Event logged BEFORE deletion: TASK_DELETED
+- Event data includes task_id and title
+- Delete available for all tasks (active and completed)
+
+**Event Logging:**
+- TASK_CREATED: Logged on task creation
+- TASK_UPDATED: Logged on any field change with changes object
+- TASK_COMPLETED: Logged when status changes to completed
+- TASK_DELETED: Logged before hard delete with task context
+
+**UI Behavior:**
+- Edit button: Opens inline edit form
+- Delete button: Red, shows confirmation dialog
+- Complete button: Only for non-completed tasks
+- Loading states on all buttons
+- Refresh after any action (window.location.reload)
+
+**EditTaskForm Features:**
+- All fields editable in single form
+- Phase input: Free text (e.g., "Pre-Ack")
+- Status dropdown: 4 options
+- Assigned To input: Free text (e.g., "Matt")
+- Due Date picker: HTML5 date input
+- Save/Cancel buttons
+- Disabled during loading
+
+**Implementation Details:**
+- updateTask() fetches current task, applies updates, logs event
+- deleteTask() fetches task context, logs event, then deletes
+- EditTaskForm uses controlled component pattern
+- TaskList tracks editing state per task
+- All mutations use actor: "Matt"
+
+**Validation verified:**
+- ✅ Create task → appears in list
+- ✅ Edit task → changes persist
+- ✅ Complete task → moves to completed section
+- ✅ Delete task → removed from list
+- ✅ Events logged for all actions
+- ✅ Confirmation required for delete
+- ✅ No console errors
+- ✅ UI refreshes after each action
+
+- Commit: `feat: add task edit and delete with event logging`
+
+---
+
 ## 2026-03-20 14:17 CT - [FEAT] Phase 7 - Controlled PPAP Status Workflow
 - Summary: Implemented controlled status workflow system with validated transitions, visual indicators, and enhanced event logging. Phase 7 from BUILD_PLAN.md complete.
 - Files changed:
