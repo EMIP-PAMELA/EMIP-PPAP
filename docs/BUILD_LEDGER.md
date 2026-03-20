@@ -4,6 +4,79 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 14:17 CT - [FEAT] Phase 7 - Controlled PPAP Status Workflow
+- Summary: Implemented controlled status workflow system with validated transitions, visual indicators, and enhanced event logging. Phase 7 from BUILD_PLAN.md complete.
+- Files changed:
+  - `src/features/ppap/constants/statusFlow.ts` - NEW - Canonical status flow and transition map
+  - `src/features/ppap/utils/statusStyles.ts` - NEW - Status color helper function
+  - `src/features/ppap/components/StatusUpdateControl.tsx` - Enforced valid transitions, locked APPROVED state
+  - `src/features/ppap/components/PPAPHeader.tsx` - Removed duplicate getStatusColor
+- Database changes: None (used existing ppap_records.status field)
+- DTL alignment: Uses only verified fields (status, event_type, event_data)
+
+**Status Flow Definition:**
+- Canonical statuses: NEW, PRE_ACK_IN_PROGRESS, SUBMITTED, APPROVED, REJECTED
+- Transition rules:
+  - NEW → PRE_ACK_IN_PROGRESS
+  - PRE_ACK_IN_PROGRESS → SUBMITTED
+  - SUBMITTED → APPROVED or REJECTED
+  - REJECTED → PRE_ACK_IN_PROGRESS (rework loop)
+  - APPROVED → (locked, no transitions)
+
+**Transition Enforcement:**
+- UI only shows valid next statuses in dropdown
+- Invalid transitions blocked with alert
+- APPROVED state locked (shows "Finalized" label)
+- States with no transitions show read-only badge
+
+**Event Logging Enhancement:**
+- Event type: STATUS_CHANGED
+- Event data structure changed:
+  - Before: `{ field: 'status', old_value, new_value }`
+  - After: `{ from: oldStatus, to: newStatus }`
+- Cleaner, more semantic event tracking
+
+**Visual Status Indicators:**
+- NEW: Gray background
+- PRE_ACK_IN_PROGRESS: Blue background
+- SUBMITTED: Yellow background
+- APPROVED: Green background
+- REJECTED: Red background
+- Applied to StatusUpdateControl dropdown and locked states
+
+**UI Behavior:**
+- Dropdown shows current status as first option
+- Valid transitions prefixed with "→" arrow
+- APPROVED shows "(Finalized)" label
+- Status colors applied to all status displays
+- Disabled dropdown if no transitions available
+
+**Features implemented:**
+- ✅ Canonical status flow in code constants
+- ✅ Valid transitions strictly enforced
+- ✅ UI only allows valid transitions
+- ✅ Event logging with from/to tracking
+- ✅ Visual status color indicators
+- ✅ APPROVED state locked
+- ✅ Invalid transitions blocked
+- ✅ No schema changes
+
+**Acceptance criteria verified:**
+- ✅ Can change status from detail page
+- ✅ Only valid transitions allowed
+- ✅ Status change logs event with from/to
+- ✅ updated_at timestamp updated
+- ✅ Event shows before/after status
+- ✅ Validation prevents invalid transitions
+- ✅ APPROVED state cannot be changed
+- ✅ UI updates immediately (router.refresh)
+
+- Phase status: Phase 7 (Status Workflow) ✅ COMPLETE
+- Next: Phase 8 (Filtering & Search)
+- Commit: `feat: implement controlled PPAP status workflow with validated transitions`
+
+---
+
 ## 2026-03-20 13:57 CT - [FIX] React error #418 - DocumentList nullable field rendering
 - Summary: Fixed React runtime error #418 by adding safe fallbacks for nullable fields in DocumentList component. DTL schema defines file_name, category, uploaded_by as nullable, but component was rendering them directly in JSX.
 - Files changed:

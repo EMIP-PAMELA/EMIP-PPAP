@@ -4,29 +4,28 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/src/lib/supabaseClient';
 import type { PPAPStatus } from '@/src/types/database.types';
+import { STATUS_TRANSITIONS, STATUS_LABELS } from '@/src/features/ppap/constants/statusFlow';
+import { getStatusColor } from '@/src/features/ppap/utils/statusStyles';
 
 interface StatusUpdateControlProps {
   ppapId: string;
   currentStatus: PPAPStatus;
 }
 
-const STATUS_OPTIONS: PPAPStatus[] = [
-  'NEW',
-  'PRE_ACK_IN_PROGRESS',
-  'READY_TO_ACKNOWLEDGE',
-  'ACKNOWLEDGED',
-  'POST_ACK_IN_PROGRESS',
-  'BLOCKED',
-  'ON_HOLD',
-  'CLOSED',
-];
-
 export function StatusUpdateControl({ ppapId, currentStatus }: StatusUpdateControlProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
+  const allowedStatuses = STATUS_TRANSITIONS[currentStatus] || [];
+  const isLocked = currentStatus === 'APPROVED';
+
   const handleStatusChange = async (newStatus: PPAPStatus) => {
     if (newStatus === currentStatus || loading) return;
+
+    if (!allowedStatuses.includes(newStatus)) {
+      alert('Invalid status transition');
+      return;
+    }
 
     setLoading(true);
 
@@ -51,9 +50,8 @@ export function StatusUpdateControl({ ppapId, currentStatus }: StatusUpdateContr
           ppap_id: ppapId,
           event_type: 'STATUS_CHANGED',
           event_data: {
-            field: 'status',
-            old_value: currentStatus,
-            new_value: newStatus,
+            from: currentStatus,
+            to: newStatus,
           },
           actor: 'Matt',
         });
@@ -71,16 +69,35 @@ export function StatusUpdateControl({ ppapId, currentStatus }: StatusUpdateContr
     }
   };
 
+  if (isLocked) {
+    return (
+      <div className={`px-3 py-1 text-sm font-semibold rounded ${getStatusColor(currentStatus)}`}>
+        {STATUS_LABELS[currentStatus] || currentStatus} (Finalized)
+      </div>
+    );
+  }
+
+  if (allowedStatuses.length === 0) {
+    return (
+      <div className={`px-3 py-1 text-sm font-semibold rounded ${getStatusColor(currentStatus)}`}>
+        {STATUS_LABELS[currentStatus] || currentStatus}
+      </div>
+    );
+  }
+
   return (
     <select
       value={currentStatus}
       onChange={(e) => handleStatusChange(e.target.value as PPAPStatus)}
       disabled={loading}
-      className="px-3 py-1 text-sm font-semibold border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+      className={`px-3 py-1 text-sm font-semibold border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed ${getStatusColor(currentStatus)}`}
     >
-      {STATUS_OPTIONS.map((status) => (
+      <option value={currentStatus}>
+        {STATUS_LABELS[currentStatus] || currentStatus}
+      </option>
+      {allowedStatuses.map((status) => (
         <option key={status} value={status}>
-          {status.replace(/_/g, ' ')}
+          → {STATUS_LABELS[status] || status}
         </option>
       ))}
     </select>

@@ -56,24 +56,3 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
     </div>
   );
 }
-
-function getStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    NEW: 'bg-gray-100 text-gray-800',
-    INTAKE_COMPLETE: 'bg-blue-100 text-blue-800',
-    PRE_ACK_ASSIGNED: 'bg-yellow-100 text-yellow-800',
-    PRE_ACK_IN_PROGRESS: 'bg-yellow-100 text-yellow-800',
-    READY_TO_ACKNOWLEDGE: 'bg-green-100 text-green-800',
-    ACKNOWLEDGED: 'bg-green-100 text-green-800',
-    POST_ACK_ASSIGNED: 'bg-orange-100 text-orange-800',
-    POST_ACK_IN_PROGRESS: 'bg-orange-100 text-orange-800',
-    AWAITING_SUBMISSION: 'bg-indigo-100 text-indigo-800',
-    SUBMITTED: 'bg-indigo-100 text-indigo-800',
-    APPROVED: 'bg-green-100 text-green-800',
-    ON_HOLD: 'bg-yellow-100 text-yellow-800',
-    BLOCKED: 'bg-red-100 text-red-800',
-    CLOSED: 'bg-gray-100 text-gray-800',
-  };
-  
-  return colors[status] || 'bg-gray-100 text-gray-800';
-}

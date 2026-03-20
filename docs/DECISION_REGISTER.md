@@ -4,6 +4,30 @@ Important architectural and design decisions for EMIP-PPAP.
 
 ---
 
+## DEC-012: Controlled Status Transition Model
+- Date: 2026-03-20
+- Status: Accepted
+- Context: Status workflow needed strict enforcement to prevent invalid state transitions and ensure PPAP process integrity. Previous implementation allowed any status change without validation.
+- Decision: Implement controlled status workflow with canonical flow (NEW → PRE_ACK_IN_PROGRESS → SUBMITTED → APPROVED/REJECTED) defined in code constants. UI enforces valid transitions only. APPROVED state is locked (finalized). Event logging enhanced to track from/to states.
+- Consequences:
+  - ✅ Status transitions strictly validated
+  - ✅ UI prevents invalid status changes
+  - ✅ APPROVED state cannot be changed (finalized)
+  - ✅ Clear audit trail with from/to tracking
+  - ✅ Visual status indicators (color coding)
+  - ✅ Rejected PPAPs can return to PRE_ACK_IN_PROGRESS for rework
+  - ✅ No schema changes required (uses existing status field)
+  - ⚠️ Status workflow changes require code updates
+  - ⚠️ Must maintain STATUS_TRANSITIONS map in statusFlow.ts
+  - ⚠️ Dropdown only shows valid transitions (reduced flexibility)
+- Implementation:
+  - `src/features/ppap/constants/statusFlow.ts` - Canonical status definitions
+  - `src/features/ppap/utils/statusStyles.ts` - Visual color indicators
+  - `StatusUpdateControl` - Enforces transitions, locks APPROVED
+  - Event logging: `{ from: oldStatus, to: newStatus }`
+
+---
+
 ## DEC-008: Minimal stable schema enforcement
 - Date: 2026-03-20
 - Status: Accepted
