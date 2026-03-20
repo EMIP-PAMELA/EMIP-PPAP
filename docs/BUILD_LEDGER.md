@@ -4,6 +4,53 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 04:20 CT - [GOV] Upgrade BUILD_PLAN to phase-driven DTL-aligned execution plan
+- Summary: Completely rewrote BUILD_PLAN.md with comprehensive phase-based structure aligned to verified DTL_SNAPSHOT.md schemas. Transformed from general guidance into detailed execution roadmap.
+- Files changed:
+  - `docs/BUILD_PLAN.md` - Complete rewrite (355 lines → 750+ lines)
+  - `docs/BUILD_LEDGER.md` - This entry
+- Structure added:
+  - **System Scope:** In/out of scope clearly defined
+  - **DTL Dependency Rule:** No feature without verified DTL fields
+  - **Execution Rules:** Mandatory preflight, phase discipline, definition of done
+  - **Current System State:** Phases 0, 1, 3, 4, 5 completed, Phase 2 active
+  - **8 Detailed Phases:** Each with objective, features, DTL deps, components, acceptance criteria
+- Phase breakdown:
+  - Phase 0: Foundation (✅ completed)
+  - Phase 1: Core PPAP Tracking (✅ completed)
+  - Phase 2: Tasks System (🔄 ACTIVE - next to implement)
+  - Phase 3: Documents Module (✅ completed)
+  - Phase 4: Conversations Module (✅ completed)
+  - Phase 5: Event System (✅ working, enhancement pending)
+  - Phase 6: Dashboard & UX (⏳ pending)
+  - Phase 7: Status Workflow (⏳ pending)
+  - Phase 8: Filtering & Search (⏳ pending)
+- Key additions:
+  - **DTL dependencies per phase** - Lists exact fields from DTL_SNAPSHOT.md
+  - **UI components per phase** - Identifies all affected components
+  - **Implementation steps** - Detailed subtasks for each phase
+  - **Acceptance criteria** - Clear completion checklist
+  - **Controlled re-expansion roadmap** - Phase 1-4 reintroduction plan
+  - **Execution rules for agents** - Must read BUILD_PLAN, identify phase, verify DTL, stay in bounds
+- Current state documented:
+  - Active phase: Phase 2 (Tasks System)
+  - DTL fields available: assigned_to, due_date, phase, title (exist in DB, not in code)
+  - Next action: Reintroduce task fields to TypeScript and UI
+- Impact:
+  - BUILD_PLAN now serves as authoritative build roadmap
+  - Every phase explicitly tied to DTL schema
+  - Clear sequential execution path
+  - Prevents scope creep and schema assumptions
+  - Agents have clear instructions and boundaries
+- Verification:
+  - All phases align with DTL_SNAPSHOT.md verified schemas
+  - Current system state matches MILEMARKER.md
+  - Monday go-live criteria clearly stated
+- Next: Execute Phase 2 (Tasks System)
+- Commit: `docs: upgrade BUILD_PLAN to phase-driven DTL-aligned execution plan`
+
+---
+
 ## 2026-03-20 04:06 CT - [FIX] Align documents module to verified DTL schema
 - Summary: Aligned all documents-related code to verified DTL_SNAPSHOT.md schema. Fixed incorrect field names and removed references to non-existent columns.
 - Files changed:
