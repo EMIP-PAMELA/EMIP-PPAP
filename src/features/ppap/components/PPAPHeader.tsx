@@ -47,9 +47,6 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
         <div>
           <h3 className="text-sm font-medium text-gray-500 mb-1">Customer</h3>
           <p className="text-lg font-semibold text-gray-900">{ppap.customer_name}</p>
-          {ppap.customer_code && (
-            <p className="text-sm text-gray-600">{ppap.customer_code}</p>
-          )}
         </div>
 
         <div>

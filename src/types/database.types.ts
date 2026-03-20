@@ -85,7 +85,6 @@ export interface PPAPRecord {
   part_name: string | null;
   revision: string | null;
   customer_name: string;
-  customer_code: string | null;
   plant: string;
   assigned_to: string | null;
   assigned_role: string | null;
@@ -172,7 +171,6 @@ export interface CreatePPAPInput {
   part_name?: string;
   revision?: string;
   customer_name: string;
-  customer_code?: string;
   plant: string;
   request_date: string;
   due_date?: string;

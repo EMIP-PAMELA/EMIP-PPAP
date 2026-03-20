@@ -8,7 +8,7 @@ import type {
 import { logEvent } from '@/src/features/events/mutations';
 
 export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
-  const ppapNumber = await generatePPAPNumber();
+  const ppapNumber = generatePPAPNumber();
 
   const { data, error } = await supabase
     .from('ppap_records')
@@ -18,7 +18,6 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
       part_name: input.part_name || null,
       revision: input.revision || null,
       customer_name: input.customer_name,
-      customer_code: input.customer_code || null,
       plant: input.plant,
       request_date: input.request_date,
       due_date: input.due_date || null,
@@ -167,14 +166,8 @@ export async function softDeletePPAP(id: string, actor: string): Promise<void> {
   }
 }
 
-async function generatePPAPNumber(): Promise<string> {
-  const { data, error } = await supabase.rpc('generate_ppap_number');
-
-  if (error) {
-    const yearSuffix = new Date().getFullYear().toString().slice(-2);
-    const randomNum = Math.floor(Math.random() * 9000) + 1000;
-    return `PPAP-${randomNum}-${yearSuffix}`;
-  }
-
-  return data as string;
+function generatePPAPNumber(): string {
+  const yearSuffix = new Date().getFullYear().toString().slice(-2);
+  const timestamp = Date.now().toString().slice(-6);
+  return `PPAP-${timestamp}-${yearSuffix}`;
 }
