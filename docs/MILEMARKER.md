@@ -1,7 +1,7 @@
 # Build Milemarker
 
-**Last Updated:** 2026-03-20 02:43 CT  
-**Current Milestone:** Minimal Stable Schema Enforced
+**Last Updated:** 2026-03-20 02:52 CT  
+**Current Milestone:** Minimal Stable Schema Enforced - Detail Page Stabilized
 
 ## Purpose
 
@@ -35,7 +35,8 @@ This file captures the **current verified working state** of the EMIP-PPAP appli
 - **Layout:** 2-column grid (left: conversations/tasks/docs, right: events)
 - **Components:** PPAPHeader, ConversationList, TaskList, DocumentList, EventHistory
 - **Error handling:** Shows error banner if PPAP not found or query fails
-- **Status:** ✅ Working with ID validation guards
+- **Display fields:** ppap_number, part_number, customer_name, plant, status, request_date, created_at
+- **Status:** ✅ Stable - aligned to DTL_SNAPSHOT.md confirmed fields only
 
 ### ✅ Dashboard Home Flow
 - **Entry point:** `/` (root)
@@ -228,4 +229,5 @@ Use this to verify system is in expected state:
 
 | Date | Milestone | Key Changes |
 |------|-----------|-------------|
+| 2026-03-20 02:52 CT | Detail Page Stabilized | Removed debug logging, verified all components use only DTL confirmed fields. PPAPHeader displays 7 confirmed fields. No invalid schema references found. |
 | 2026-03-20 02:43 CT | Minimal Stable Schema Enforced | Initial milemarker snapshot after schema stabilization. Documented working create/list/detail flows, disabled features, and controlled expansion roadmap. |

@@ -4,6 +4,26 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 02:52 CT - [FIX] Stabilize PPAP detail page with verified schema fields
+- Summary: Cleaned up PPAP detail page to use only confirmed fields from DTL_SNAPSHOT.md, removed debug logging, verified all components align to minimal schema
+- Files changed:
+  - `app/ppap/[id]/page.tsx` - Removed debug console.log
+- Database changes: None
+- Decisions made: None (cleanup only)
+- Risks / follow-ups:
+  - PPAPHeader component already aligned to minimal schema (displays 7 confirmed fields)
+  - StatusUpdateControl only updates status and updated_at (both confirmed)
+  - ConversationList, TaskList, DocumentList, EventHistory components work with minimal schema
+  - Pre-existing TypeScript error about PPAPHeader module not found (unrelated to this change)
+- Verification:
+  - Grep search confirms no references to removed fields (part_name, assigned_to, due_date, mold_required, priority)
+  - PPAPHeader displays: ppap_number, part_number, customer_name, plant, status, request_date, created_at
+  - All displayed fields exist in DTL_SNAPSHOT.md confirmed columns
+  - Page structure preserved (2-column grid with conversations/tasks/docs and events)
+- Commit: `fix: stabilize PPAP detail page with verified schema fields`
+
+---
+
 ## 2026-03-20 02:43 CT - [GOV] Add DTL snapshot and build milemarker tracking
 - Summary: Extended governance system with Database Translation Layer (DTL) snapshot and build milemarker to track known structure and deltas instead of rediscovering system state
 - Files changed:

@@ -18,8 +18,6 @@ interface PPAPDashboardPageProps {
 export default async function PPAPDashboardPage({ params }: PPAPDashboardPageProps) {
   const { id } = await params;
   
-  console.log("PPAP ID received:", id);
-  
   if (!id) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
