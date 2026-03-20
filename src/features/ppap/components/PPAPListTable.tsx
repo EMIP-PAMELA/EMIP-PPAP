@@ -2,7 +2,7 @@
 
 import { PPAPRecord } from '@/src/types/database.types';
 import Link from 'next/link';
-import { formatDate, isOverdue } from '@/src/lib/utils';
+import { formatDate } from '@/src/lib/utils';
 
 interface PPAPListTableProps {
   ppaps: PPAPRecord[];
@@ -31,20 +31,12 @@ export function PPAPListTable({ ppaps }: PPAPListTableProps) {
                 Status
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Assigned To
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Due Date
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Indicators
+                Request Date
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {ppaps.map((ppap) => {
-              const overdue = ppap.due_date ? isOverdue(ppap.due_date, ppap.status) : false;
-              
               return (
                 <tr key={ppap.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -70,30 +62,7 @@ export function PPAPListTable({ ppaps }: PPAPListTableProps) {
                     </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                    {ppap.assigned_to || '-'}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm">
-                    {ppap.due_date ? (
-                      <span className={overdue ? 'text-red-600 font-semibold' : 'text-gray-900'}>
-                        {formatDate(ppap.due_date)}
-                      </span>
-                    ) : (
-                      '-'
-                    )}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="flex gap-2">
-                      {overdue && (
-                        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-                          OVERDUE
-                        </span>
-                      )}
-                      {ppap.mold_required && (
-                        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
-                          MOLD
-                        </span>
-                      )}
-                    </div>
+                    {formatDate(ppap.request_date)}
                   </td>
                 </tr>
               );

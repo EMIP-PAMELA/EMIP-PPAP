@@ -8,7 +8,6 @@ import { ConversationList } from '@/src/features/conversations/components/Conver
 import { TaskList } from '@/src/features/tasks/components/TaskList';
 import { DocumentList } from '@/src/features/documents/components/DocumentList';
 import { EventHistory } from '@/src/features/events/components/EventHistory';
-import { MoldSection } from '@/src/features/ppap/components/MoldSection';
 
 interface PPAPDashboardPageProps {
   params: {
@@ -64,7 +63,6 @@ export default async function PPAPDashboardPage({ params }: PPAPDashboardPagePro
           </div>
 
           <div className="space-y-6">
-            {ppap.mold_required && <MoldSection ppap={ppap} />}
             <EventHistory events={events || []} />
           </div>
         </div>
