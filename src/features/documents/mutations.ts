@@ -42,7 +42,6 @@ export async function getDocumentsByPPAPId(ppapId: string): Promise<PPAPDocument
     .from('ppap_documents')
     .select('*')
     .eq('ppap_id', ppapId)
-    .is('deleted_at', null)
     .order('uploaded_at', { ascending: false });
 
   if (error) {
@@ -50,36 +49,4 @@ export async function getDocumentsByPPAPId(ppapId: string): Promise<PPAPDocument
   }
 
   return data as PPAPDocument[];
-}
-
-export async function softDeleteDocument(documentId: string, actor: string): Promise<void> {
-  const document = await supabase
-    .from('ppap_documents')
-    .select('ppap_id')
-    .eq('id', documentId)
-    .single();
-
-  if (document.error) {
-    throw new Error(`Failed to fetch document: ${document.error.message}`);
-  }
-
-  const { error } = await supabase
-    .from('ppap_documents')
-    .update({
-      deleted_at: new Date().toISOString(),
-    })
-    .eq('id', documentId);
-
-  if (error) {
-    throw new Error(`Failed to delete document: ${error.message}`);
-  }
-
-  await logEvent({
-    ppap_id: document.data.ppap_id,
-    event_type: 'DOCUMENT_REMOVED',
-    actor,
-    event_data: {
-      document_id: documentId,
-    },
-  });
 }

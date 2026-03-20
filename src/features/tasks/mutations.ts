@@ -84,7 +84,6 @@ export async function getTasksByPPAPId(ppapId: string): Promise<PPAPTask[]> {
     .from('ppap_tasks')
     .select('*')
     .eq('ppap_id', ppapId)
-    .is('deleted_at', null)
     .order('created_at', { ascending: true });
 
   if (error) {
@@ -94,16 +93,3 @@ export async function getTasksByPPAPId(ppapId: string): Promise<PPAPTask[]> {
   return data as PPAPTask[];
 }
 
-export async function softDeleteTask(taskId: string, actor: string): Promise<void> {
-  const { error } = await supabase
-    .from('ppap_tasks')
-    .update({
-      deleted_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', taskId);
-
-  if (error) {
-    throw new Error(`Failed to delete task: ${error.message}`);
-  }
-}

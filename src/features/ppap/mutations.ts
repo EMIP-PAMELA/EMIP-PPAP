@@ -144,19 +144,6 @@ export async function assignPPAP(
   }, actor);
 }
 
-export async function softDeletePPAP(id: string, actor: string): Promise<void> {
-  const { error } = await supabase
-    .from('ppap_records')
-    .update({
-      deleted_at: new Date().toISOString(),
-    })
-    .eq('id', id);
-
-  if (error) {
-    throw new Error(`Failed to delete PPAP: ${error.message}`);
-  }
-}
-
 function generatePPAPNumber(): string {
   const yearSuffix = new Date().getFullYear().toString().slice(-2);
   const timestamp = Date.now().toString().slice(-6);

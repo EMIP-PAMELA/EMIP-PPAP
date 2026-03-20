@@ -103,7 +103,6 @@ export interface PPAPDocument {
   uploaded_at: string;
   version: number;
   notes: string | null;
-  deleted_at: string | null;
 }
 
 export interface PPAPConversation {
@@ -116,7 +115,6 @@ export interface PPAPConversation {
   author_site: string | null;
   created_at: string;
   edited_at: string | null;
-  deleted_at: string | null;
 }
 
 export interface PPAPTask {
@@ -135,7 +133,6 @@ export interface PPAPTask {
   completed_by: string | null;
   created_at: string;
   updated_at: string;
-  deleted_at: string | null;
 }
 
 export interface PPAPEvent {

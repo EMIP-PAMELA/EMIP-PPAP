@@ -13,7 +13,6 @@ export async function getAllPPAPs(filters?: PPAPListFilters) {
   let query = supabase
     .from('ppap_records')
     .select('*')
-    .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
   if (filters?.status) {
@@ -50,7 +49,6 @@ export async function getPPAPById(id: string) {
     .from('ppap_records')
     .select('*')
     .eq('id', id)
-    .is('deleted_at', null)
     .single();
 
   if (error) {
@@ -65,7 +63,6 @@ export async function getPPAPByNumber(ppapNumber: string) {
     .from('ppap_records')
     .select('*')
     .eq('ppap_number', ppapNumber)
-    .is('deleted_at', null)
     .single();
 
   if (error) {
@@ -81,7 +78,6 @@ export async function getOverduePPAPs() {
   const { data, error } = await supabase
     .from('ppap_records')
     .select('*')
-    .is('deleted_at', null)
     .lt('due_date', today)
     .not('status', 'in', '(APPROVED,CLOSED)')
     .order('due_date', { ascending: true });
@@ -98,7 +94,6 @@ export async function getPPAPsByPlant(plant: string) {
     .from('ppap_records')
     .select('*')
     .eq('plant', plant)
-    .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -111,8 +106,7 @@ export async function getPPAPsByPlant(plant: string) {
 export async function getPPAPDashboardStats() {
   const { data, error } = await supabase
     .from('ppap_records')
-    .select('status, mold_required')
-    .is('deleted_at', null);
+    .select('status');
 
   if (error) {
     throw new Error(`Failed to fetch dashboard stats: ${error.message}`);
@@ -121,7 +115,6 @@ export async function getPPAPDashboardStats() {
   const stats = {
     total: data.length,
     byStatus: {} as Record<PPAPStatus, number>,
-    moldRequired: 0,
     overdue: 0,
   };
 
@@ -130,10 +123,6 @@ export async function getPPAPDashboardStats() {
   data.forEach((record) => {
     const status = record.status as PPAPStatus;
     stats.byStatus[status] = (stats.byStatus[status] || 0) + 1;
-    
-    if (record.mold_required) {
-      stats.moldRequired++;
-    }
   });
 
   const overdueData = await getOverduePPAPs();

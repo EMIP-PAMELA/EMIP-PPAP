@@ -39,7 +39,6 @@ export async function getConversationsByPPAPId(ppapId: string): Promise<PPAPConv
     .from('ppap_conversations')
     .select('*')
     .eq('ppap_id', ppapId)
-    .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
   if (error) {
