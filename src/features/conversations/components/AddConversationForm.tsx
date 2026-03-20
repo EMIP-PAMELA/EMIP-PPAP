@@ -25,6 +25,7 @@ export function AddConversationForm({ ppapId, onSuccess }: AddConversationFormPr
         message: message.trim(),
         message_type: 'NOTE',
         author: 'Matt',
+        site: 'Van Buren',
       });
 
       setMessage('');

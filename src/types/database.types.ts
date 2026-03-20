@@ -107,11 +107,11 @@ export interface PPAPDocument {
 export interface PPAPConversation {
   id: string;
   ppap_id: string;
-  message: string;
+  body: string;
   message_type: MessageType;
   author: string;
+  site: string | null;
   created_at: string;
-  edited_at: string | null;
 }
 
 export interface PPAPTask {
@@ -179,6 +179,7 @@ export interface CreateConversationInput {
   message: string;
   message_type?: MessageType;
   author: string;
+  site?: string;
 }
 
 export interface CreateDocumentInput {

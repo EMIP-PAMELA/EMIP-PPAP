@@ -138,22 +138,24 @@ These fields were removed during stabilization (BUILD_LEDGER 2026-03-20 02:00 CT
 
 **Purpose:** Internal conversation log tied to each PPAP
 
-**Confirmed Columns:**
+**Confirmed Columns (VERIFIED FROM LIVE DATABASE 2026-03-20 03:40 CT):**
 
 | Column | Type | Constraints | Purpose |
 |--------|------|-------------|---------|
-| `id` | UUID | PRIMARY KEY | Conversation unique identifier |
-| `ppap_id` | UUID | NOT NULL, FK → ppap_records.id | Parent PPAP record |
-| `message` | TEXT | NOT NULL | Conversation message content |
-| `message_type` | VARCHAR(50) | NOT NULL | Message type (NOTE, STATUS_UPDATE, etc.) |
-| `author` | VARCHAR(255) | NOT NULL | Message author |
-| `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Message timestamp |
-| `edited_at` | TIMESTAMPTZ | NULL | Edit timestamp |
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Conversation unique identifier |
+| `ppap_id` | UUID | NULL | Parent PPAP record |
+| `body` | TEXT | NULL | Conversation message content |
+| `message_type` | TEXT | NULL | Message type (NOTE, STATUS_UPDATE, etc.) |
+| `author` | TEXT | NULL | Message author |
+| `site` | TEXT | NULL | Author site/plant |
+| `created_at` | TIMESTAMP | DEFAULT now() | Message timestamp |
 
-**Columns Removed:**
-- `deleted_at` - Soft delete (removed 2026-03-20)
-- `author_role` - Role field (removed 2026-03-20 - doesn't exist in live database)
-- `author_site` - Site/plant field (removed 2026-03-20 - doesn't exist in live database)
+**Columns That Never Existed in Live Database:**
+- `message` - WRONG - actual column is `body`
+- `author_site` - WRONG - actual column is `site`
+- `author_role` - Never existed
+- `deleted_at` - Never existed
+- `edited_at` - Never existed
 
 **Current Safe Query Notes:**
 - ✅ Query by `ppap_id`

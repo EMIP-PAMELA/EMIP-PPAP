@@ -4,6 +4,38 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 03:40 CT - [CRITICAL FIX] Align ppap_conversations to actual live database schema
+- Summary: Fixed Add Note by using actual database column names verified from live Supabase. DTL_SNAPSHOT.md was completely wrong - used `message` instead of `body`, `author_site` instead of `site`, and listed columns that never existed.
+- Files changed:
+  - `src/features/conversations/mutations.ts` - Changed `message:` to `body:`, added `site:` field
+  - `src/features/conversations/components/AddConversationForm.tsx` - Added `site: 'Van Buren'` to payload
+  - `src/types/database.types.ts` - Changed PPAPConversation.message to .body, removed edited_at, added site
+  - `src/types/database.types.ts` - Added site?: string to CreateConversationInput
+  - `src/features/conversations/components/ConversationList.tsx` - Changed conv.message to conv.body, added site display
+  - `docs/DTL_SNAPSHOT.md` - Completely rewrote ppap_conversations schema with actual verified columns from live database
+- Database changes: None (aligned code to existing schema)
+- Decisions made:
+  - DTL_SNAPSHOT.md was fundamentally incorrect - created from schema.sql not live database
+  - Verified actual schema via SQL query: `SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name = 'ppap_conversations'`
+  - Actual columns: id, ppap_id, body, message_type, author, site, created_at (7 columns)
+  - Wrong columns in DTL: message (should be body), author_site (should be site), edited_at (doesn't exist)
+- Verification via live database query:
+  - Confirmed actual column names and types
+  - All columns are nullable except id (has default)
+  - No foreign key constraint on ppap_id (nullable)
+- Risks / follow-ups:
+  - **CRITICAL:** DTL_SNAPSHOT.md is unreliable for ALL tables
+  - Must verify every table schema against live database before trusting DTL
+  - Recommend full DTL audit: ppap_records, ppap_tasks, ppap_documents, ppap_events
+  - ppap_id being nullable is concerning - should probably be NOT NULL with FK
+- Verification:
+  - PPAPConversation interface now matches live schema exactly
+  - Insert payload uses correct column names: body, site (not message, author_site)
+  - Add Note should now work end-to-end
+- Commit: `fix: align ppap_conversations to actual live database schema - use body and site columns`
+
+---
+
 ## 2026-03-20 03:35 CT - [FIX] Remove author_site from ppap_conversations - Add Note now works
 - Summary: Fixed Add Note button error by removing author_site column references that don't exist in live database. Debug logging confirmed button state management was correct - issue was invalid column in mutation payload.
 - Files changed:

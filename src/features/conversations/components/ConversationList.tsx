@@ -33,6 +33,9 @@ export function ConversationList({ ppapId, conversations }: ConversationListProp
               <div className="flex items-start justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-gray-900">{conv.author}</span>
+                  {conv.site && (
+                    <span className="text-xs text-gray-500">@ {conv.site}</span>
+                  )}
                 </div>
                 <span className="text-xs text-gray-500">{formatDateTime(conv.created_at)}</span>
               </div>
@@ -40,7 +43,7 @@ export function ConversationList({ ppapId, conversations }: ConversationListProp
                 <span className={`text-xs px-2 py-0.5 rounded-full ${getMessageTypeColor(conv.message_type)}`}>
                   {conv.message_type}
                 </span>
-                <p className="text-gray-700 flex-1">{conv.message}</p>
+                <p className="text-gray-700 flex-1">{conv.body}</p>
               </div>
             </div>
           ))}

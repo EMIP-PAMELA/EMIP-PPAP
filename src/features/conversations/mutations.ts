@@ -9,9 +9,10 @@ export async function createConversation(
     .from('ppap_conversations')
     .insert({
       ppap_id: input.ppap_id,
-      message: input.message,
+      body: input.message,
       message_type: input.message_type || 'NOTE',
       author: input.author,
+      site: input.site || null,
     })
     .select()
     .single();
