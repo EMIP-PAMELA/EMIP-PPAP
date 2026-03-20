@@ -1,7 +1,7 @@
 # Build Milemarker
 
-**Last Updated:** 2026-03-20 14:42 CT  
-**Current Milestone:** ✅ Task Edit & Delete Implemented
+**Last Updated:** 2026-03-20 14:50 CT  
+**Current Milestone:** ✅ PHASE 8 COMPLETE - Task Filtering & Priority System
 
 ## Purpose
 
@@ -229,6 +229,7 @@ Use this to verify system is in expected state:
 
 | Date | Milestone | Key Changes |
 |------|-----------|-------------|
+| 2026-03-20 14:50 CT | Phase 8 - Task Filtering & Priority | Implemented comprehensive task filtering (status, due date, assignee) with priority-based sorting. Overdue tasks appear first with red indicators. Due-today tasks highlighted yellow. Quick filter toggles for overdue/active. Task summary metrics in PPAP header (total/active/completed/overdue). Client-side filtering with memoization. No schema changes. |
 | 2026-03-20 14:42 CT | Task Edit & Delete | Added task modification (inline edit form) and controlled deletion with confirmation. All task fields editable (title, phase, assigned_to, due_date, status). Event logging for TASK_UPDATED and TASK_DELETED. Hard delete model with event logged before deletion. No schema changes. |
 | 2026-03-20 14:17 CT | Phase 7 Complete - Status Workflow | Implemented controlled status workflow with validated transitions (NEW→PRE_ACK→SUBMITTED→APPROVED/REJECTED). UI enforces valid transitions only. APPROVED state locked. Event logging enhanced with from/to tracking. Visual status indicators with color coding. No schema changes. |
 | 2026-03-20 13:02 CT | Document Upload + PPAP Deletion | Implemented document upload with Supabase Storage (bucket: ppap-documents, path: ppap/{id}/{filename}). Added PPAP deletion with confirmation dialog and event logging before delete. Both features use DTL-verified fields only. No permissions system. |

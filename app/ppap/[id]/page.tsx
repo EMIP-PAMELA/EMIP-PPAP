@@ -68,7 +68,7 @@ export default async function PPAPDashboardPage({ params }: PPAPDashboardPagePro
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-start justify-between">
-          <PPAPHeader ppap={ppap} />
+          <PPAPHeader ppap={ppap} tasks={tasks || []} />
           <DeletePPAPButton ppapId={ppap.id} ppapNumber={ppap.ppap_number} />
         </div>
 

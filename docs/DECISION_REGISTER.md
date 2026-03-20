@@ -4,6 +4,32 @@ Important architectural and design decisions for EMIP-PPAP.
 
 ---
 
+## DEC-013: Client-Side Task Filtering and Priority Model
+- Date: 2026-03-20
+- Status: Accepted
+- Context: Tasks needed intelligent prioritization and filtering to transform system from passive tracking to active work management. Users needed to quickly identify overdue and high-priority work without navigating through all tasks.
+- Decision: Implement client-side task filtering with priority-based sorting. Overdue tasks automatically float to top. Visual indicators (red borders, badges) for overdue/due-today. All filtering logic derived from existing DTL fields (due_date, status, completed_at). No server-side changes.
+- Consequences:
+  - ✅ Overdue tasks immediately visible (red indicators)
+  - ✅ Priority sorting automatic (no manual intervention)
+  - ✅ Multiple filter dimensions (status, due date, assignee)
+  - ✅ Quick toggles for common workflows
+  - ✅ Task metrics visible at PPAP level
+  - ✅ Client-side only (no database queries)
+  - ✅ Performant with memoization
+  - ✅ No schema changes required
+  - ⚠️ Filtering happens after data fetch (not server-side)
+  - ⚠️ Priority logic hardcoded in client
+  - ⚠️ Large task lists (100+) may need pagination later
+- Implementation:
+  - `taskUtils.ts` - Priority detection and sorting logic
+  - Priority order: Overdue → Due Today → In-Progress → Pending → Completed
+  - Visual indicators: Red (overdue), Yellow (due today), Gray (normal)
+  - Filters: Status, Due Date, Assignee + Quick toggles
+  - Task summary in PPAPHeader: Total/Active/Completed/Overdue
+
+---
+
 ## DEC-012: Controlled Status Transition Model
 - Date: 2026-03-20
 - Status: Accepted

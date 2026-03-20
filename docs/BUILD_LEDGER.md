@@ -4,6 +4,95 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 14:50 CT - [FEAT] Phase 8 - Task Filtering, Priority Sorting, and Visibility System
+- Summary: Implemented comprehensive task filtering, priority-based sorting, and visual priority awareness system. Transforms system from passive tracking → active work management.
+- Files changed:
+  - `src/features/tasks/utils/taskUtils.ts` - NEW - Priority detection and sorting logic
+  - `src/features/tasks/components/TaskList.tsx` - Added filtering controls, priority sorting, visual indicators
+  - `src/features/ppap/components/PPAPHeader.tsx` - Added task summary metrics
+  - `app/ppap/[id]/page.tsx` - Pass tasks to PPAPHeader
+- Database changes: None (uses existing ppap_tasks fields)
+- DTL alignment: Uses only verified fields (status, due_date, assigned_to, phase, completed_at, created_at)
+
+**Task Priority Detection:**
+- `isOverdue()`: Detects tasks past due_date (excludes completed)
+- `isDueToday()`: Detects tasks due today
+- `getTaskPriorityScore()`: Assigns priority score (1=highest, 6=lowest)
+- `sortTasksByPriority()`: Sorts by priority score
+- `getTaskCounts()`: Calculates task metrics (total, active, completed, overdue)
+
+**Priority Sorting Order:**
+1. Overdue tasks (score: 1) - HIGHEST
+2. Due today (score: 2)
+3. In-progress (score: 3)
+4. Pending (score: 4)
+5. Completed (score: 5)
+6. Other (score: 6) - LOWEST
+
+**Filtering System:**
+- Status Filter: All | Active | Completed
+- Due Date Filter: All | Due Today | Overdue
+- Assignee Filter: All | [Dynamic list from tasks]
+- Quick Toggles: "Show Overdue Only" | "Show Active Only"
+- Clear Filters button (appears when filters active)
+
+**Visual Priority Indicators:**
+- Overdue tasks:
+  - Red border (`border-red-400`)
+  - Red background (`bg-red-50`)
+  - Badge: "🔴 Overdue" (red, white text)
+  - Due date text in red
+- Due Today tasks:
+  - Yellow border (`border-yellow-400`)
+  - Yellow background (`bg-yellow-50`)
+  - Badge: "🟡 Due Today" (yellow, white text)
+- Normal tasks: Gray border
+
+**Task Summary in PPAPHeader:**
+- Displays: Total | Active | Completed | Overdue count
+- Format: "Tasks: 12 | Active: 5 | Completed: 7 | 🔴 Overdue: 2"
+- Only shows if tasks exist
+- Overdue count highlighted in red if > 0
+
+**Quick Filter Toggles:**
+- "🔴 Show Overdue Only" - Shows only overdue tasks
+- "Show Active Only" - Shows only non-completed tasks
+- Toggle button highlights when active
+- Overrides standard filters when active
+
+**Empty States:**
+- No tasks: "No tasks yet. Add the first task to start tracking work."
+- No matches: "No tasks match current filters" + Clear filters link
+
+**Performance:**
+- Client-side filtering (no re-fetching)
+- useMemo for filtered tasks (memoized)
+- useMemo for unique assignees (memoized)
+- All sorting happens before render
+
+**Implementation Details:**
+- taskUtils.ts: Pure functions, no side effects
+- Filtering logic: Progressive (status → due date → assignee)
+- Quick filters override standard filters
+- Priority sorting always applied to filtered results
+- All logic derived from existing DTL fields
+
+**Validation verified:**
+- ✅ Tasks sorted by priority (overdue first)
+- ✅ Filters fully functional
+- ✅ Overdue and due-today visually distinct
+- ✅ PPAP header shows task summary
+- ✅ Quick toggles work correctly
+- ✅ Empty state for no matches
+- ✅ No schema changes
+- ✅ No console errors
+- ✅ UI remains clean and responsive
+
+- Phase status: Phase 8 (Filtering & Task Visibility) ✅ COMPLETE
+- Commit: `feat: implement task filtering, priority sorting, and visibility system`
+
+---
+
 ## 2026-03-20 14:42 CT - [FEAT] Task Edit and Delete with Event Logging
 - Summary: Added task modification and controlled deletion capabilities with full event logging. Users can now edit all task fields inline and delete tasks with confirmation.
 - Files changed:
