@@ -83,13 +83,6 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
           </p>
         </div>
       </div>
-
-      {ppap.notes && (
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <h3 className="text-sm font-medium text-gray-500 mb-2">Notes</h3>
-          <p className="text-gray-700 whitespace-pre-wrap">{ppap.notes}</p>
-        </div>
-      )}
     </div>
   );
 }

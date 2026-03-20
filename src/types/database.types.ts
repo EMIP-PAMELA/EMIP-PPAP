@@ -101,7 +101,6 @@ export interface PPAPRecord {
   mold_status: MoldStatus | null;
   mold_lead_time_days: number | null;
   submission_level: string | null;
-  notes: string | null;
   risk_flags: string[] | null;
   created_at: string;
   updated_at: string;
@@ -179,7 +178,6 @@ export interface CreatePPAPInput {
   mold_supplier?: string;
   mold_lead_time_days?: number;
   process_type?: string;
-  notes?: string;
 }
 
 export interface UpdatePPAPInput {
@@ -192,7 +190,6 @@ export interface UpdatePPAPInput {
   mold_status?: MoldStatus;
   mold_supplier?: string;
   mold_lead_time_days?: number;
-  notes?: string;
   risk_flags?: string[];
 }
 

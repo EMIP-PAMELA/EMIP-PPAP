@@ -26,7 +26,6 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
       mold_supplier: input.mold_supplier || null,
       mold_lead_time_days: input.mold_lead_time_days || null,
       process_type: input.process_type || null,
-      notes: input.notes || null,
       status: 'NEW',
     })
     .select()
