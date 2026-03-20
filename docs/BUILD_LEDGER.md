@@ -4,6 +4,28 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 03:27 CT - [VERIFICATION] Add Note button already correct - no changes needed
+- Summary: Verified Add Note button functionality after author_role removal. No UI changes required - form already correctly implemented without author_role references.
+- Files changed: None (verification only)
+- Database changes: None
+- Decisions made: None
+- Findings:
+  - AddConversationForm has no author_role references
+  - Button disabled logic: `disabled={loading || !message.trim()}` (correct)
+  - Form state: Only `message` and `loading` (correct)
+  - Submit payload: ppap_id, message, message_type, author, author_site (correct - no author_role)
+  - Grep search confirms zero author_role references in entire codebase
+- Verification:
+  - Button enables when message text is entered ✅
+  - Button disabled when message is empty ✅
+  - No author_role in form validation ✅
+  - No author_role in submit payload ✅
+  - Previous commit (0a15559) already removed all author_role references from mutations and types
+- Conclusion: Add Note functionality is fully operational. No code changes required.
+- Commit: None (no changes made)
+
+---
+
 ## 2026-03-20 03:21 CT - [FIX] Remove author_role from ppap_conversations - DTL mismatch corrected
 - Summary: Fixed conversation note creation error by removing author_role column references that don't exist in live database. Corrected DTL_SNAPSHOT.md to reflect actual schema.
 - Files changed:
