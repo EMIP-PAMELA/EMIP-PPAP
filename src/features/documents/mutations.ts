@@ -45,8 +45,7 @@ export async function getDocumentsByPPAPId(ppapId: string): Promise<PPAPDocument
   const { data, error } = await supabase
     .from('ppap_documents')
     .select('*')
-    .eq('ppap_id', ppapId)
-    .order('uploaded_at', { ascending: false });
+    .eq('ppap_id', ppapId);
 
   if (error) {
     throw new Error(`Failed to fetch documents: ${error.message}`);

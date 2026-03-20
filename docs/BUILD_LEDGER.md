@@ -4,6 +4,31 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 03:01 CT - [FIX] Remove uploaded_at from ppap_documents - DTL mismatch corrected
+- Summary: Fixed document query error by removing uploaded_at column references that don't exist in live database. Corrected DTL_SNAPSHOT.md to reflect actual schema.
+- Files changed:
+  - `src/features/documents/mutations.ts` - Removed `.order('uploaded_at', { ascending: false })` from getDocumentsByPPAPId
+  - `src/types/database.types.ts` - Removed `uploaded_at: string` from PPAPDocument interface
+  - `src/features/documents/components/DocumentList.tsx` - Removed `formatDateTime(doc.uploaded_at)` display
+  - `docs/DTL_SNAPSHOT.md` - Moved uploaded_at from Confirmed Columns to Columns Removed, updated safe query notes
+- Database changes: None (aligned code to existing schema)
+- Decisions made:
+  - DTL_SNAPSHOT.md was incorrect - uploaded_at doesn't exist in live database
+  - Followed DTL protocol: discovered mismatch, inspected code/queries, updated DTL, aligned code
+  - Removed timestamp ordering from document queries (no valid timestamp column available)
+- Risks / follow-ups:
+  - Documents now returned in arbitrary order (no timestamp sorting)
+  - If uploaded_at is needed, must add column to live database first, then update DTL, then update code
+  - Consider adding created_at column to ppap_documents in future for chronological ordering
+- Verification:
+  - Grep search confirms zero uploaded_at references remain in codebase
+  - PPAPDocument interface now has 11 fields (removed uploaded_at)
+  - DocumentList component displays uploader name and file size only (no timestamp)
+  - Query simplified to basic select with ppap_id filter
+- Commit: `fix: remove uploaded_at from ppap_documents - align to live schema`
+
+---
+
 ## 2026-03-20 02:57 CT - [INVESTIGATION] Module resolution for PPAPHeader - No changes needed
 - Summary: Investigated TypeScript error "Cannot find module '@/src/features/ppap/components/PPAPHeader'" - found all paths are correctly configured and consistent
 - Files changed: None (investigation only)

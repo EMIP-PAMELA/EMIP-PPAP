@@ -213,16 +213,16 @@ These fields were removed during stabilization (BUILD_LEDGER 2026-03-20 02:00 CT
 | `storage_path` | TEXT | NULL | Storage location |
 | `storage_bucket` | VARCHAR(100) | NULL | Storage bucket name |
 | `uploaded_by` | VARCHAR(255) | NOT NULL | Uploader |
-| `uploaded_at` | TIMESTAMPTZ | DEFAULT NOW() | Upload timestamp |
 | `version` | INTEGER | DEFAULT 1 | Document version |
 | `notes` | TEXT | NULL | Document notes |
 
 **Columns Removed:**
 - `deleted_at` - Soft delete (removed 2026-03-20)
+- `uploaded_at` - Timestamp field (removed 2026-03-20 - doesn't exist in live database)
 
 **Current Safe Query Notes:**
 - ✅ Query by `ppap_id`
-- ✅ Order by `uploaded_at DESC` for most recent first
+- ⚠️ No timestamp ordering available (no created_at or uploaded_at column)
 - ⚠️ No soft delete filtering needed
 
 ---

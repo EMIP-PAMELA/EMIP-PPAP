@@ -1,7 +1,7 @@
 # Build Milemarker
 
-**Last Updated:** 2026-03-20 02:52 CT  
-**Current Milestone:** Minimal Stable Schema Enforced - Detail Page Stabilized
+**Last Updated:** 2026-03-20 03:01 CT  
+**Current Milestone:** Minimal Stable Schema Enforced - Documents Schema Corrected
 
 ## Purpose
 
@@ -229,5 +229,6 @@ Use this to verify system is in expected state:
 
 | Date | Milestone | Key Changes |
 |------|-----------|-------------|
+| 2026-03-20 03:01 CT | Documents Schema Corrected | Fixed DTL mismatch - removed uploaded_at from ppap_documents (doesn't exist in live DB). Updated DTL_SNAPSHOT.md, removed all code references. Documents now display without timestamp. |
 | 2026-03-20 02:52 CT | Detail Page Stabilized | Removed debug logging, verified all components use only DTL confirmed fields. PPAPHeader displays 7 confirmed fields. No invalid schema references found. |
 | 2026-03-20 02:43 CT | Minimal Stable Schema Enforced | Initial milemarker snapshot after schema stabilization. Documented working create/list/detail flows, disabled features, and controlled expansion roadmap. |

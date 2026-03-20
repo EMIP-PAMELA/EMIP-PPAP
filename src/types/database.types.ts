@@ -100,7 +100,6 @@ export interface PPAPDocument {
   storage_path: string | null;
   storage_bucket: string | null;
   uploaded_by: string;
-  uploaded_at: string;
   version: number;
   notes: string | null;
 }

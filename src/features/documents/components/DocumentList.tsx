@@ -34,7 +34,6 @@ export function DocumentList({ ppapId, documents }: DocumentListProps) {
                   </div>
                   <div className="flex items-center gap-4 text-xs text-gray-500">
                     <span>Uploaded by {doc.uploaded_by}</span>
-                    <span>{formatDateTime(doc.uploaded_at)}</span>
                     {doc.file_size_bytes && (
                       <span>{formatFileSize(doc.file_size_bytes)}</span>
                     )}
