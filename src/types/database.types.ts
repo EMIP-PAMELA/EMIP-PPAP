@@ -105,9 +105,7 @@ export interface PPAPRecord {
   notes: string | null;
   risk_flags: string[] | null;
   created_at: string;
-  created_by: string | null;
   updated_at: string;
-  updated_by: string | null;
   deleted_at: string | null;
 }
 
@@ -155,7 +153,6 @@ export interface PPAPTask {
   completed_at: string | null;
   completed_by: string | null;
   created_at: string;
-  created_by: string | null;
   updated_at: string;
   deleted_at: string | null;
 }
@@ -185,7 +182,6 @@ export interface CreatePPAPInput {
   mold_lead_time_days?: number;
   process_type?: string;
   notes?: string;
-  created_by: string;
 }
 
 export interface UpdatePPAPInput {
@@ -200,7 +196,6 @@ export interface UpdatePPAPInput {
   mold_lead_time_days?: number;
   notes?: string;
   risk_flags?: string[];
-  updated_by: string;
 }
 
 export interface CreateTaskInput {
@@ -213,7 +208,6 @@ export interface CreateTaskInput {
   assigned_role?: string;
   due_date?: string;
   priority?: string;
-  created_by: string;
 }
 
 export interface CreateConversationInput {

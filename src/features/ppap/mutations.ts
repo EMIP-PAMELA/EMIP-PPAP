@@ -29,8 +29,6 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
       process_type: input.process_type || null,
       notes: input.notes || null,
       status: 'NEW',
-      created_by: input.created_by,
-      updated_by: input.created_by,
     })
     .select()
     .single();
@@ -42,7 +40,7 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
   await logEvent({
     ppap_id: data.id,
     event_type: 'PPAP_CREATED',
-    actor: input.created_by,
+    actor: 'Matt',
     event_data: {
       ppap_number: ppapNumber,
       part_number: input.part_number,
@@ -55,7 +53,8 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
 
 export async function updatePPAP(
   id: string,
-  input: UpdatePPAPInput
+  input: UpdatePPAPInput,
+  actor: string = 'Matt'
 ): Promise<PPAPRecord> {
   const currentPPAP = await supabase
     .from('ppap_records')
@@ -85,7 +84,7 @@ export async function updatePPAP(
     await logEvent({
       ppap_id: id,
       event_type: 'STATUS_CHANGED',
-      actor: input.updated_by,
+      actor: actor,
       event_data: {
         previous_status: currentPPAP.data.status,
         new_status: input.status,
@@ -97,7 +96,7 @@ export async function updatePPAP(
     await logEvent({
       ppap_id: id,
       event_type: 'ASSIGNED',
-      actor: input.updated_by,
+      actor: actor,
       event_data: {
         previous_assignee: currentPPAP.data.assigned_to,
         new_assignee: input.assigned_to,
@@ -109,7 +108,7 @@ export async function updatePPAP(
     await logEvent({
       ppap_id: id,
       event_type: 'MOLD_STATUS_CHANGED',
-      actor: input.updated_by,
+      actor: actor,
       event_data: {
         previous_status: currentPPAP.data.mold_status,
         new_status: input.mold_status,
@@ -128,8 +127,7 @@ export async function updatePPAPStatus(
 ): Promise<PPAPRecord> {
   const result = await updatePPAP(id, {
     status: newStatus,
-    updated_by: actor,
-  });
+  }, actor);
 
   if (note) {
     const { createConversation } = await import('@/src/features/conversations/mutations');
@@ -153,8 +151,7 @@ export async function assignPPAP(
   return updatePPAP(id, {
     assigned_to: assignedTo,
     assigned_role: assignedRole,
-    updated_by: actor,
-  });
+  }, actor);
 }
 
 export async function softDeletePPAP(id: string, actor: string): Promise<void> {
@@ -162,7 +159,6 @@ export async function softDeletePPAP(id: string, actor: string): Promise<void> {
     .from('ppap_records')
     .update({
       deleted_at: new Date().toISOString(),
-      updated_by: actor,
     })
     .eq('id', id);
 

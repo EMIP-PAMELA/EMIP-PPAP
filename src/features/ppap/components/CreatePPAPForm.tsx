@@ -11,7 +11,6 @@ export function CreatePPAPForm() {
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<CreatePPAPInput>>({
     mold_required: false,
-    created_by: 'system',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -112,9 +111,9 @@ export function CreatePPAPForm() {
             onChange={(e) => handleChange('plant', e.target.value)}
           >
             <option value="">Select Plant</option>
-            <option value="Plant A">Plant A</option>
-            <option value="Plant B">Plant B</option>
-            <option value="Plant C">Plant C</option>
+            <option value="Van Buren">Van Buren</option>
+            <option value="Ball Ground">Ball Ground</option>
+            <option value="Warner Robins">Warner Robins</option>
           </select>
         </div>
 

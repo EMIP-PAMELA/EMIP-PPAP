@@ -2,7 +2,7 @@ import { supabase } from '@/src/lib/supabaseClient';
 import type { CreateTaskInput, PPAPTask, TaskStatus } from '@/src/types/database.types';
 import { logEvent } from '@/src/features/events/mutations';
 
-export async function createTask(input: CreateTaskInput): Promise<PPAPTask> {
+export async function createTask(input: CreateTaskInput, actor: string = 'Matt'): Promise<PPAPTask> {
   const { data, error } = await supabase
     .from('ppap_tasks')
     .insert({
@@ -16,7 +16,6 @@ export async function createTask(input: CreateTaskInput): Promise<PPAPTask> {
       due_date: input.due_date || null,
       priority: input.priority || 'NORMAL',
       status: 'PENDING',
-      created_by: input.created_by,
     })
     .select()
     .single();
@@ -28,7 +27,7 @@ export async function createTask(input: CreateTaskInput): Promise<PPAPTask> {
   await logEvent({
     ppap_id: input.ppap_id,
     event_type: 'TASK_CREATED',
-    actor: input.created_by,
+    actor: actor,
     event_data: {
       task_id: data.id,
       title: input.title,
