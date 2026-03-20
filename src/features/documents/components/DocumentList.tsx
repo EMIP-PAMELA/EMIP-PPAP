@@ -33,7 +33,7 @@ export function DocumentList({ ppapId, documents }: DocumentListProps) {
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <h4 className="font-semibold text-gray-900">{doc.file_name}</h4>
+                    <h4 className="font-semibold text-gray-900">{doc.file_name || 'Unnamed File'}</h4>
                     {doc.category && (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
                         {doc.category.replace(/_/g, ' ')}
@@ -41,8 +41,8 @@ export function DocumentList({ ppapId, documents }: DocumentListProps) {
                     )}
                   </div>
                   <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <span>Uploaded by {doc.uploaded_by}</span>
-                    <span>{formatDateTime(doc.created_at)}</span>
+                    <span>Uploaded by {doc.uploaded_by || 'Unknown'}</span>
+                    <span>{doc.created_at ? formatDateTime(doc.created_at) : 'Unknown date'}</span>
                     {doc.file_url && (
                       <a
                         href={doc.file_url}

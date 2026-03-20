@@ -4,6 +4,38 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 13:57 CT - [FIX] React error #418 - DocumentList nullable field rendering
+- Summary: Fixed React runtime error #418 by adding safe fallbacks for nullable fields in DocumentList component. DTL schema defines file_name, category, uploaded_by as nullable, but component was rendering them directly in JSX.
+- Files changed:
+  - `src/features/documents/components/DocumentList.tsx` - Added safe fallbacks for nullable fields
+- Root cause: React error #418 occurs when rendering null/undefined values directly in JSX. DocumentList was rendering nullable DTL fields without fallbacks:
+  - `{doc.file_name}` → could render null
+  - `Uploaded by {doc.uploaded_by}` → could render "Uploaded by null"
+  - `{formatDateTime(doc.created_at)}` → formatter could receive null
+- DTL verification (ppap_documents):
+  - file_name: TEXT NULL (nullable)
+  - category: TEXT NULL (nullable)
+  - uploaded_by: TEXT NULL (nullable)
+  - created_at: TIMESTAMP (has DEFAULT but can be null in queries)
+- Fix implemented:
+  - Line 36: `{doc.file_name}` → `{doc.file_name || 'Unnamed File'}`
+  - Line 44: `{doc.uploaded_by}` → `{doc.uploaded_by || 'Unknown'}`
+  - Line 45: `{formatDateTime(doc.created_at)}` → `{doc.created_at ? formatDateTime(doc.created_at) : 'Unknown date'}`
+  - category already safe (conditional rendering with `doc.category &&`)
+  - file_url already safe (conditional rendering with `doc.file_url &&`)
+- Impact:
+  - No more React error #418 after document upload
+  - Documents with missing metadata render gracefully
+  - User sees helpful fallback text instead of empty strings or errors
+- Validation:
+  - Upload document → no console errors
+  - Document renders correctly with all fields
+  - Missing fields show fallback values
+  - No React runtime errors
+- Commit: `fix: add safe fallbacks for nullable fields in DocumentList (React error #418)`
+
+---
+
 ## 2026-03-20 13:02 CT - [FEAT] Document Upload + PPAP Deletion
 - Summary: Implemented two controlled features: (1) Document upload with Supabase Storage integration, (2) PPAP deletion with event logging. Both features use DTL-verified fields only.
 - Files changed:
