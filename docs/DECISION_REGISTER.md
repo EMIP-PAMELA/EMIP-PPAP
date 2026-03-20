@@ -4,6 +4,68 @@ Important architectural and design decisions for EMIP-PPAP.
 
 ---
 
+## DEC-008: Minimal stable schema enforcement
+- Date: 2026-03-20
+- Status: Accepted
+- Context: Live database schema did not match code expectations, causing multiple runtime errors (missing columns, invalid UUIDs). System was unstable due to references to non-existent fields.
+- Decision: Reduce PPAPRecord to minimal guaranteed safe field set (9 fields only: id, ppap_number, part_number, customer_name, plant, status, request_date, created_at, updated_at). Remove all optional fields until system is proven stable.
+- Consequences:
+  - ✅ System stability guaranteed - no schema mismatch errors
+  - ✅ Code strictly aligned to live database
+  - ✅ Create/read/update operations will succeed
+  - ✅ Clear baseline for controlled expansion
+  - ⚠️ Reduced functionality temporarily (no mold tracking, assignment, dates)
+  - ⚠️ Must reintroduce fields one at a time with validation
+  - ⚠️ Some UI components (MoldSection, AssignmentControl) exist but unused
+
+---
+
+## DEC-009: Remove soft delete pattern
+- Date: 2026-03-20
+- Status: Accepted
+- Context: Code referenced deleted_at column across all tables (ppap_records, ppap_tasks, ppap_documents, ppap_conversations) but column did not exist in live database, causing query failures.
+- Decision: Remove soft delete pattern entirely. Remove all deleted_at references, remove all .is('deleted_at', null) filters, remove softDelete functions.
+- Consequences:
+  - ✅ Queries work without deleted_at column
+  - ✅ Simpler data model
+  - ✅ No hidden/filtered records
+  - ⚠️ No soft delete capability (hard deletes only if needed)
+  - ⚠️ Cannot restore deleted records
+  - ⚠️ May need to reintroduce if audit requirements demand it
+
+---
+
+## DEC-010: Strict live database schema alignment
+- Date: 2026-03-20
+- Status: Accepted
+- Context: Multiple schema mismatches between code and live database caused runtime failures. supabase/schema.sql did not reflect actual deployed schema.
+- Decision: Treat live Supabase database as single source of truth. Code must align to actual schema, not schema.sql. Add validation guards to prevent undefined IDs from reaching database queries.
+- Consequences:
+  - ✅ Runtime errors eliminated
+  - ✅ Code guaranteed to work with actual database
+  - ✅ Clear validation at function boundaries
+  - ✅ Prevents invalid UUID errors
+  - ⚠️ schema.sql file may be outdated/incorrect
+  - ⚠️ Must verify schema before adding fields
+  - ⚠️ Requires discipline to check live DB before coding
+
+---
+
+## DEC-011: ID validation guards at all query boundaries
+- Date: 2026-03-20
+- Status: Accepted
+- Context: Undefined IDs were being passed to database queries, causing "invalid input syntax for type uuid: 'undefined'" errors.
+- Decision: Add validation guards at start of all functions that accept ID parameters. Throw early with clear error message if ID is undefined or missing.
+- Consequences:
+  - ✅ Prevents undefined UUID errors
+  - ✅ Clear error messages for debugging
+  - ✅ Fails fast at function boundary
+  - ✅ Protects database from invalid queries
+  - ⚠️ Adds boilerplate to every query function
+  - ⚠️ Must remember to add guards to new functions
+
+---
+
 ## DEC-001: Use Next.js + Supabase + Vercel
 - Date: 2026-03-19
 - Status: Accepted

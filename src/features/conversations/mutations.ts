@@ -35,6 +35,10 @@ export async function createConversation(
 }
 
 export async function getConversationsByPPAPId(ppapId: string): Promise<PPAPConversation[]> {
+  if (!ppapId) {
+    throw new Error('ppapId is required to fetch conversations');
+  }
+
   const { data, error } = await supabase
     .from('ppap_conversations')
     .select('*')

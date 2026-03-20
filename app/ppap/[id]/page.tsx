@@ -18,6 +18,19 @@ interface PPAPDashboardPageProps {
 export default async function PPAPDashboardPage({ params }: PPAPDashboardPageProps) {
   const { id } = params;
   
+  if (!id) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            <p className="font-semibold">Invalid PPAP ID</p>
+            <p className="text-sm">No PPAP ID provided in the URL</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
   let ppap;
   let conversations;
   let tasks;

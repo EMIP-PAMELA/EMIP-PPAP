@@ -80,6 +80,10 @@ export async function updateTaskStatus(
 }
 
 export async function getTasksByPPAPId(ppapId: string): Promise<PPAPTask[]> {
+  if (!ppapId) {
+    throw new Error('ppapId is required to fetch tasks');
+  }
+
   const { data, error } = await supabase
     .from('ppap_tasks')
     .select('*')

@@ -27,6 +27,10 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
     throw new Error(`Failed to create PPAP: ${error.message}`);
   }
 
+  if (!data?.id) {
+    throw new Error('Failed to create PPAP: No ID returned from database');
+  }
+
   await logEvent({
     ppap_id: data.id,
     event_type: 'PPAP_CREATED',
@@ -46,6 +50,10 @@ export async function updatePPAP(
   input: UpdatePPAPInput,
   actor: string = 'Matt'
 ): Promise<PPAPRecord> {
+  if (!id) {
+    throw new Error('PPAP ID is required for update');
+  }
+
   const currentPPAP = await supabase
     .from('ppap_records')
     .select('*')

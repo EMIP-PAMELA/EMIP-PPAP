@@ -4,6 +4,43 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 02:00 CT - [FIX] Complete schema stabilization and alignment
+- Summary: Performed comprehensive schema alignment to match live Supabase database, removing all references to non-existent fields and implementing validation guards to prevent undefined UUID errors
+- Files changed:
+  - `src/types/database.types.ts` - Reduced PPAPRecord to 9 minimal safe fields, removed deleted_at from all interfaces
+  - `src/features/ppap/queries.ts` - Removed deleted_at filters, added ID validation guards, removed mold_required from stats
+  - `src/features/ppap/mutations.ts` - Removed softDeletePPAP, added ID validation, added data.id guard before event logging
+  - `src/features/tasks/mutations.ts` - Removed deleted_at filter, removed softDeleteTask, added ppapId validation
+  - `src/features/documents/mutations.ts` - Removed deleted_at filter, removed softDeleteDocument, added ppapId validation
+  - `src/features/conversations/mutations.ts` - Removed deleted_at filter, added ppapId validation
+  - `src/features/events/mutations.ts` - Added ppap_id and ppapId validation guards
+  - `src/features/ppap/components/PPAPHeader.tsx` - Removed references to due_date, mold_required, part_name, assigned_to, assigned_role, submission_level
+  - `src/features/ppap/components/PPAPListTable.tsx` - Removed assigned_to, due_date, mold_required columns
+  - `src/features/ppap/components/MoldSection.tsx` - Replaced with safe placeholder returning null
+  - `src/features/ppap/components/CreatePPAPForm.tsx` - Reduced to 4 required fields only
+  - `app/ppap/[id]/page.tsx` - Removed MoldSection usage, added ID validation guard
+  - `app/page.tsx` - Replaced JSON.stringify debug output with clean table UI
+- Database changes: None (aligned code to existing minimal schema)
+- Decisions made:
+  - Use minimal stable schema (9 fields) for PPAPRecord
+  - Remove soft delete pattern entirely (no deleted_at)
+  - Validate all IDs before database queries
+  - Guard event logging to require valid ppap_id
+  - Remove all optional fields until system is stable
+- Risks / follow-ups:
+  - Optional fields (mold, assignment, dates) can be reintroduced one at a time after stability confirmed
+  - AssignmentControl and MoldSection components exist but not used
+  - Need to verify Vercel build passes with all changes
+- Verification:
+  - No deleted_at references remain in codebase
+  - All query functions validate IDs before use
+  - Dashboard displays table instead of JSON
+  - TypeScript types match minimal schema
+  - No references to removed fields in active UI
+- Commit: `fix: align schema with live database and add ID validation guards`
+
+---
+
 ## 2026-03-19 14:30 CT - [FEAT] Complete MVP vertical slice implementation
 - Summary: Built complete end-to-end PPAP operations module with list, create, and dashboard pages, plus all supporting data access layer and UI components
 - Files changed:

@@ -76,7 +76,7 @@ Before adding a new npm package:
 
 ### Never
 
-- ❌ Hard delete PPAP records (use soft delete via deleted_at)
+- ❌ Delete PPAP records without explicit approval (no soft delete pattern currently implemented)
 - ❌ Modify canonical status enums without updating DATA_MODEL and WORKFLOW_RULES
 - ❌ Skip event logging for mutations
 - ❌ Commit code that doesn't compile
@@ -265,7 +265,7 @@ Before marking a feature as done:
 - [ ] Mutations write to ppap_events
 - [ ] Foreign keys enforced
 - [ ] No orphaned records
-- [ ] Soft deletes work correctly
+- [ ] IDs validated before queries
 - [ ] Timestamps in UTC
 
 ### UI/UX
@@ -308,14 +308,18 @@ Before marking a feature as done:
 
 When using Cascade or other AI coding assistants:
 
-1. **Always check docs first**: Before making changes, read relevant docs (DATA_MODEL, WORKFLOW_RULES, etc.)
-2. **Make scoped changes**: Only change what's needed for the current task
-3. **Update BUILD_LEDGER**: After each meaningful milestone, add an entry
-4. **Suggest commits**: After completing a feature, suggest a commit message
-5. **Surface uncertainty**: If requirements are unclear, ask instead of guessing
-6. **Preserve patterns**: Follow existing code patterns in the repo
-7. **No speculative code**: Don't add "nice to have" features not in BUILD_PLAN
-8. **Validate before submitting**: Ensure code compiles and basic functionality works
+1. **Read BOOTSTRAP.md first**: Before every task, read BOOTSTRAP.md and all referenced governance files in order
+2. **Always check docs first**: Before making changes, read relevant docs (DATA_MODEL, WORKFLOW_RULES, etc.)
+3. **Make scoped changes**: Only change what's needed for the current task
+4. **Update BUILD_LEDGER**: After each meaningful milestone, add an entry
+5. **Update DECISION_REGISTER**: If architectural decision made, document it
+6. **Suggest commits**: After completing a feature, suggest exact git commands
+7. **Surface uncertainty**: If requirements are unclear, ask instead of guessing
+8. **Preserve patterns**: Follow existing code patterns in the repo
+9. **No speculative code**: Don't add "nice to have" features not in BUILD_PLAN
+10. **Validate before submitting**: Ensure code compiles and basic functionality works
+11. **Validate IDs**: Always guard against undefined IDs before database queries
+12. **Align to live schema**: Code must match actual database, not schema.sql
 
 ---
 

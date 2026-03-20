@@ -45,6 +45,10 @@ export async function getAllPPAPs(filters?: PPAPListFilters) {
 }
 
 export async function getPPAPById(id: string) {
+  if (!id) {
+    throw new Error('PPAP ID is required');
+  }
+
   const { data, error } = await supabase
     .from('ppap_records')
     .select('*')

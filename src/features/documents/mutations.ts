@@ -38,6 +38,10 @@ export async function createDocument(input: CreateDocumentInput): Promise<PPAPDo
 }
 
 export async function getDocumentsByPPAPId(ppapId: string): Promise<PPAPDocument[]> {
+  if (!ppapId) {
+    throw new Error('ppapId is required to fetch documents');
+  }
+
   const { data, error } = await supabase
     .from('ppap_documents')
     .select('*')

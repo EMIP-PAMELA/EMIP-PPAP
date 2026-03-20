@@ -2,6 +2,10 @@ import { supabase } from '@/src/lib/supabaseClient';
 import type { CreateEventInput, PPAPEvent } from '@/src/types/database.types';
 
 export async function logEvent(input: CreateEventInput): Promise<PPAPEvent> {
+  if (!input.ppap_id) {
+    throw new Error('ppap_id is required for event logging');
+  }
+
   const { data, error } = await supabase
     .from('ppap_events')
     .insert({
@@ -22,6 +26,10 @@ export async function logEvent(input: CreateEventInput): Promise<PPAPEvent> {
 }
 
 export async function getEventsByPPAPId(ppapId: string, limit = 50): Promise<PPAPEvent[]> {
+  if (!ppapId) {
+    throw new Error('ppapId is required to fetch events');
+  }
+
   const { data, error } = await supabase
     .from('ppap_events')
     .select('*')

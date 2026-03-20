@@ -5,10 +5,17 @@ Database schema for EMIP-PPAP system.
 ## Schema Principles
 
 1. All timestamps in UTC
-2. Soft deletes where applicable (deleted_at column)
-3. Foreign keys enforced at database level
-4. Audit trail via ppap_events table
-5. Use canonical enums for statuses and types
+2. Foreign keys enforced at database level
+3. Audit trail via ppap_events table
+4. Use canonical enums for statuses and types
+5. Code must strictly align to live database schema
+6. Validate all IDs before database queries
+
+## Current State (2026-03-20)
+
+**Minimal Stable Schema Enforced**: The system currently uses a minimal guaranteed safe field set for `ppap_records` (9 fields only). Optional fields have been removed until system stability is confirmed. Fields can be reintroduced one at a time following the Controlled Expansion Rule in BOOTSTRAP.md.
+
+**Soft Delete Pattern Removed**: The `deleted_at` column and soft delete pattern have been removed from all tables. This decision is documented in DECISION_REGISTER.md (DEC-009).
 
 ---
 
@@ -18,36 +25,36 @@ Database schema for EMIP-PPAP system.
 
 Core PPAP record table.
 
+**Current Minimal Schema (as of 2026-03-20)**:
+
 ```sql
 CREATE TABLE ppap_records (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  
-  -- Identifiers
   ppap_number VARCHAR(50) UNIQUE NOT NULL,
   part_number VARCHAR(100) NOT NULL,
-  part_name VARCHAR(255),
-  revision VARCHAR(50),
-  
-  -- Customer & ownership
   customer_name VARCHAR(255) NOT NULL,
-  customer_code VARCHAR(50),
   plant VARCHAR(100) NOT NULL,
-  assigned_to VARCHAR(255),
-  assigned_role VARCHAR(50),
-  
-  -- Status & workflow
   status VARCHAR(50) NOT NULL DEFAULT 'NEW',
-  priority VARCHAR(20) DEFAULT 'NORMAL',
-  
-  -- Dates
   request_date TIMESTAMPTZ NOT NULL,
-  due_date TIMESTAMPTZ,
-  acknowledged_date TIMESTAMPTZ,
-  submitted_date TIMESTAMPTZ,
-  approved_date TIMESTAMPTZ,
-  
-  -- Mold/overmold tracking
-  process_type VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Fields Removed for Stability** (can be reintroduced following Controlled Expansion Rule):
+- `part_name`, `revision` - Part metadata
+- `customer_code` - Customer reference
+- `assigned_to`, `assigned_role` - Assignment tracking
+- `priority` - Priority level
+- `due_date`, `acknowledged_date`, `submitted_date`, `approved_date` - Workflow dates
+- `process_type`, `mold_required`, `mold_supplier`, `mold_status`, `mold_lead_time_days` - Mold tracking
+- `submission_level` - PPAP level
+- `notes` - General notes
+- `risk_flags` - Risk indicators
+- `deleted_at` - Soft delete (pattern removed entirely)
+- `created_by`, `updated_by` - User tracking
+
+**Original Full Schema** (for reference, not currently implemented):
   mold_required BOOLEAN DEFAULT false,
   mold_supplier VARCHAR(255),
   mold_status VARCHAR(50),
