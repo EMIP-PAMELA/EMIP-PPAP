@@ -10,13 +10,15 @@ import { DocumentList } from '@/src/features/documents/components/DocumentList';
 import { EventHistory } from '@/src/features/events/components/EventHistory';
 
 interface PPAPDashboardPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 export default async function PPAPDashboardPage({ params }: PPAPDashboardPageProps) {
-  const { id } = params;
+  const { id } = await params;
+  
+  console.log("PPAP ID received:", id);
   
   if (!id) {
     return (

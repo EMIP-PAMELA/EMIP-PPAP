@@ -4,6 +4,24 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 02:28 CT - [FIX] Fix Next.js 15 async params in dynamic route
+- Summary: Fixed "Invalid PPAP ID" error caused by Next.js 15 breaking change where params are now async Promises that must be awaited
+- Files changed:
+  - `app/ppap/[id]/page.tsx` - Changed params type to Promise<{ id: string }> and added await
+- Database changes: None
+- Decisions made: None (framework requirement)
+- Risks / follow-ups:
+  - Debug console.log added temporarily to verify id is received correctly
+  - Should be removed after user confirms fix works
+  - Other dynamic routes may need same fix if they exist
+- Verification:
+  - TypeScript compiles with new Promise-based params type
+  - Link generation in dashboard confirmed correct: href={`/ppap/${ppap.id}`}
+  - Existing validation guards preserved
+- Commit: `fix: await async params in Next.js 15 dynamic route`
+
+---
+
 ## 2026-03-20 02:00 CT - [FIX] Complete schema stabilization and alignment
 - Summary: Performed comprehensive schema alignment to match live Supabase database, removing all references to non-existent fields and implementing validation guards to prevent undefined UUID errors
 - Files changed:
