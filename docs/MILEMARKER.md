@@ -1,7 +1,7 @@
 # Build Milemarker
 
-**Last Updated:** 2026-03-20 03:40 CT  
-**Current Milestone:** Critical Schema Alignment - ppap_conversations Verified
+**Last Updated:** 2026-03-20 03:57 CT  
+**Current Milestone:** ✅ DTL VERIFIED - SYSTEM ALIGNED TO LIVE DATABASE
 
 ## Purpose
 
@@ -229,6 +229,7 @@ Use this to verify system is in expected state:
 
 | Date | Milestone | Key Changes |
 |------|-----------|-------------|
+| 2026-03-20 03:57 CT | DTL Verified - System Aligned | **FULL DTL REBASELINE:** Verified all 5 tables against live Supabase. Rewrote DTL_SNAPSHOT.md with actual schemas. Discovered extensive mismatches (conversations: body/site, documents: file_name/category/file_url, tasks: assigned_to/due_date exist). DTL now authoritative. Documented controlled re-expansion roadmap. |
 | 2026-03-20 03:40 CT | Critical Schema Alignment | **CRITICAL:** DTL_SNAPSHOT.md was completely wrong for ppap_conversations. Verified actual schema from live DB. Column is `body` not `message`, `site` not `author_site`. Fixed all code to match reality. DTL unreliable for all tables. |
 | 2026-03-20 03:35 CT | Add Note Functional | Fixed DTL mismatch - removed author_site from ppap_conversations (doesn't exist in live DB). Debug logging confirmed button state correct. Add Note now creates conversations successfully. |
 | 2026-03-20 03:21 CT | Conversations Schema Corrected | Fixed DTL mismatch - removed author_role from ppap_conversations (doesn't exist in live DB). Updated DTL_SNAPSHOT.md, removed all code references. Conversations now display author only. |

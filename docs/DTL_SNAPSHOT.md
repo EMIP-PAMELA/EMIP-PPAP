@@ -1,30 +1,30 @@
 # Database Translation Layer (DTL) Snapshot
 
-**Last Updated:** 2026-03-20 02:43 CT
+**Last Updated:** 2026-03-20 03:57 CT  
+**Status:** ✅ VERIFIED AGAINST LIVE DATABASE - AUTHORITATIVE CONTRACT
 
 ## Purpose
 
-This file is the **single source of truth** for the current known database schema contract. It documents the actual live database structure that code must align to.
+This file is the **single source of truth** for the database schema contract. It documents the **actual live Supabase database structure** that all code must align to.
+
+## ✅ VERIFIED AGAINST LIVE DATABASE – 2026-03-20 03:57 CT
+
+All table schemas in this document have been verified against the live Supabase database using `information_schema.columns` queries. This document now represents the **authoritative contract** between the database and application code.
+
+**DO NOT ASSUME ANY COLUMN EXISTS UNLESS LISTED IN THIS FILE.**
 
 ## Critical Rules
 
 1. **Do NOT guess schema** - If code assumes a column exists, verify it in this file first
 2. **Stop on mismatch** - If a task reveals code/database mismatch:
-   - Stop implementation
-   - Inspect live database or verified schema source
-   - Update this file
+   - Stop implementation immediately
+   - Verify actual schema in live database
+   - Update this file first
    - Record delta in BUILD_LEDGER.md
-   - Update DECISION_REGISTER.md if contract changed meaningfully
-3. **This is authoritative** - When DATA_MODEL.md conflicts with this file, this file wins
+   - Then update code to match reality
+3. **This is authoritative** - When DATA_MODEL.md conflicts with this file, **this file wins**
 4. **Track all changes** - Every schema change must update this file and BUILD_LEDGER.md
-
----
-
-## Current Schema State
-
-### Minimal Stable Schema Enforced (as of 2026-03-20)
-
-The system currently uses a **minimal guaranteed safe field set**. Optional fields have been intentionally removed until system stability is confirmed.
+5. **Database is source of truth** - This file documents reality, not aspirations
 
 ---
 
@@ -32,69 +32,42 @@ The system currently uses a **minimal guaranteed safe field set**. Optional fiel
 
 **Purpose:** Core PPAP record tracking across all sites
 
-**Confirmed Columns (9 fields - LIVE DATABASE):**
+**Verified Schema (9 columns):**
 
 | Column | Type | Constraints | Purpose |
 |--------|------|-------------|---------|
-| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique record identifier |
-| `ppap_number` | VARCHAR(50) | UNIQUE NOT NULL | Business identifier (e.g., PPAP-123456-26) |
-| `part_number` | VARCHAR(100) | NOT NULL | Part identification number |
-| `customer_name` | VARCHAR(255) | NOT NULL | Customer name |
-| `plant` | VARCHAR(100) | NOT NULL | Manufacturing plant/site |
-| `status` | VARCHAR(50) | NOT NULL, DEFAULT 'NEW' | Workflow status (see WORKFLOW_RULES.md) |
+| `id` | UUID | NOT NULL, DEFAULT gen_random_uuid() | Unique record identifier |
+| `ppap_number` | VARCHAR | NOT NULL | Business identifier (e.g., PPAP-123456-26) |
+| `part_number` | VARCHAR | NOT NULL | Part identification number |
+| `customer_name` | VARCHAR | NOT NULL | Customer name |
+| `plant` | VARCHAR | NOT NULL | Manufacturing plant/site |
 | `request_date` | TIMESTAMPTZ | NOT NULL | Date PPAP was requested |
-| `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Record creation timestamp |
-| `updated_at` | TIMESTAMPTZ | DEFAULT NOW() | Record update timestamp |
+| `status` | VARCHAR | NOT NULL, DEFAULT 'NEW' | Workflow status (NEW, IN_PROGRESS, SUBMITTED, APPROVED, REJECTED) |
+| `created_at` | TIMESTAMPTZ | NULL, DEFAULT now() | Record creation timestamp |
+| `updated_at` | TIMESTAMPTZ | NULL, DEFAULT now() | Record update timestamp |
 
-**Columns Intentionally Removed from Code (as of 2026-03-20):**
+**Safe Query Operations:**
+- ✅ `SELECT * FROM ppap_records` returns 9 columns
+- ✅ Filter by: `status`, `plant`, `customer_name` (use ILIKE for case-insensitive)
+- ✅ Order by: `created_at`, `updated_at`, `request_date`
+- ✅ No soft delete filtering needed (deleted_at does not exist)
 
-These fields were removed during stabilization (BUILD_LEDGER 2026-03-20 02:00 CT). They can be reintroduced following the Controlled Expansion Rule in BOOTSTRAP.md.
-
-- `part_name` - Part description (VARCHAR(255))
-- `revision` - Part revision (VARCHAR(50))
-- `customer_code` - Customer reference code (VARCHAR(50))
-- `assigned_to` - Assigned engineer (VARCHAR(255))
-- `assigned_role` - Assigned role (VARCHAR(50))
-- `priority` - Priority level (VARCHAR(20))
-- `due_date` - Workflow due date (TIMESTAMPTZ)
-- `acknowledged_date` - Acknowledgment date (TIMESTAMPTZ)
-- `submitted_date` - Submission date (TIMESTAMPTZ)
-- `approved_date` - Approval date (TIMESTAMPTZ)
-- `process_type` - Manufacturing process (VARCHAR(50))
-- `mold_required` - Mold tracking flag (BOOLEAN)
-- `mold_supplier` - Mold supplier (VARCHAR(255))
-- `mold_status` - Mold status (VARCHAR(50))
-- `mold_lead_time_days` - Mold lead time (INTEGER)
-- `submission_level` - PPAP level (VARCHAR(10))
-- `notes` - General notes (TEXT)
-- `risk_flags` - Risk indicators (TEXT[])
-- `deleted_at` - Soft delete timestamp (TIMESTAMPTZ) - **Pattern removed entirely**
-- `created_by` - Record creator (VARCHAR(255))
-- `updated_by` - Record updater (VARCHAR(255))
-
-**Current Safe Query Notes:**
-- ✅ SELECT * works (returns 9 columns)
-- ✅ No need to filter by `deleted_at` (column doesn't exist)
-- ✅ Filter by: status, plant, customer_name (ilike)
-- ✅ Order by: created_at, updated_at, request_date
-- ⚠️ Do NOT reference removed fields in WHERE, ORDER BY, or SELECT
-
-**Current Safe Mutation Payload:**
+**Safe Mutation Payload:**
 ```typescript
-// INSERT (minimal required)
+// INSERT
 {
-  ppap_number: string;    // Auto-generated via timestamp
-  part_number: string;    // User input
-  customer_name: string;  // User input
-  plant: string;          // User input
-  request_date: string;   // User input (ISO date string)
-  status: 'NEW';          // Default
+  ppap_number: string;    // REQUIRED
+  part_number: string;    // REQUIRED
+  customer_name: string;  // REQUIRED
+  plant: string;          // REQUIRED
+  request_date: string;   // REQUIRED (ISO date)
+  status?: 'NEW';         // OPTIONAL (defaults to 'NEW')
 }
 
-// UPDATE (any subset)
+// UPDATE
 {
-  status?: PPAPStatus;
-  // Other fields can be updated but most don't exist yet
+  status?: string;
+  updated_at?: string;  // Auto-updated by trigger
 }
 ```
 
@@ -104,31 +77,31 @@ These fields were removed during stabilization (BUILD_LEDGER 2026-03-20 02:00 CT
 
 **Purpose:** Immutable audit trail for all PPAP mutations
 
-**Confirmed Columns:**
+**Verified Schema (7 columns):**
 
 | Column | Type | Constraints | Purpose |
 |--------|------|-------------|---------|
-| `id` | UUID | PRIMARY KEY | Event unique identifier |
-| `ppap_id` | UUID | NOT NULL, FK → ppap_records.id | Parent PPAP record |
-| `event_type` | VARCHAR(50) | NOT NULL | Event type (STATUS_CHANGED, etc.) |
+| `id` | UUID | NOT NULL, DEFAULT gen_random_uuid() | Event unique identifier |
+| `ppap_id` | UUID | NOT NULL | Parent PPAP record |
+| `event_type` | VARCHAR | NOT NULL | Event type (STATUS_CHANGED, DOCUMENT_ADDED, etc.) |
 | `event_data` | JSONB | NULL | Event payload (previous/new values) |
-| `actor` | VARCHAR(255) | NOT NULL | User who performed action |
-| `actor_role` | VARCHAR(50) | NULL | User role at time of action |
-| `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Event timestamp |
+| `actor` | VARCHAR | NOT NULL | User who performed action |
+| `actor_role` | VARCHAR | NULL | User role at time of action |
+| `created_at` | TIMESTAMPTZ | DEFAULT now() | Event timestamp |
 
-**Current Safe Query Notes:**
-- ✅ Always query by `ppap_id` (indexed)
+**Safe Query Operations:**
+- ✅ Always query by `ppap_id`
 - ✅ Order by `created_at DESC` for chronological history
-- ⚠️ `ppap_id` must never be null/undefined (validation guards in place)
+- ⚠️ `ppap_id` must never be null (NOT NULL constraint)
 
-**Current Safe Mutation Payload:**
+**Safe Mutation Payload:**
 ```typescript
 {
-  ppap_id: string;              // REQUIRED - validated before insert
-  event_type: EventType;        // REQUIRED
-  event_data?: Record<string, unknown>; // Optional payload
-  actor: string;                // REQUIRED
-  actor_role?: string;          // Optional
+  ppap_id: string;              // REQUIRED - NOT NULL
+  event_type: string;           // REQUIRED - NOT NULL
+  event_data?: Record<string, unknown>; // OPTIONAL - can be null
+  actor: string;                // REQUIRED - NOT NULL
+  actor_role?: string;          // OPTIONAL - can be null
 }
 ```
 
@@ -138,29 +111,33 @@ These fields were removed during stabilization (BUILD_LEDGER 2026-03-20 02:00 CT
 
 **Purpose:** Internal conversation log tied to each PPAP
 
-**Confirmed Columns (VERIFIED FROM LIVE DATABASE 2026-03-20 03:40 CT):**
+**Verified Schema (7 columns):**
 
 | Column | Type | Constraints | Purpose |
 |--------|------|-------------|---------|
-| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Conversation unique identifier |
+| `id` | UUID | NOT NULL, DEFAULT gen_random_uuid() | Conversation unique identifier |
 | `ppap_id` | UUID | NULL | Parent PPAP record |
 | `body` | TEXT | NULL | Conversation message content |
-| `message_type` | TEXT | NULL | Message type (NOTE, STATUS_UPDATE, etc.) |
+| `message_type` | TEXT | NULL | Message type (NOTE, QUESTION, BLOCKER, etc.) |
 | `author` | TEXT | NULL | Message author |
 | `site` | TEXT | NULL | Author site/plant |
 | `created_at` | TIMESTAMP | DEFAULT now() | Message timestamp |
 
-**Columns That Never Existed in Live Database:**
-- `message` - WRONG - actual column is `body`
-- `author_site` - WRONG - actual column is `site`
-- `author_role` - Never existed
-- `deleted_at` - Never existed
-- `edited_at` - Never existed
-
-**Current Safe Query Notes:**
+**Safe Query Operations:**
 - ✅ Query by `ppap_id`
 - ✅ Order by `created_at DESC` for reverse chronological
-- ⚠️ No soft delete filtering needed (column removed)
+- ✅ All columns except `id` are nullable
+
+**Safe Mutation Payload:**
+```typescript
+{
+  ppap_id: string;        // OPTIONAL (nullable in DB)
+  body: string;           // OPTIONAL (nullable in DB)
+  message_type?: string;  // OPTIONAL (nullable in DB)
+  author: string;         // OPTIONAL (nullable in DB)
+  site?: string;          // OPTIONAL (nullable in DB)
+}
+```
 
 ---
 
@@ -168,33 +145,38 @@ These fields were removed during stabilization (BUILD_LEDGER 2026-03-20 02:00 CT
 
 **Purpose:** Task tracking tied to each PPAP
 
-**Confirmed Columns:**
+**Verified Schema (9 columns):**
 
 | Column | Type | Constraints | Purpose |
 |--------|------|-------------|---------|
-| `id` | UUID | PRIMARY KEY | Task unique identifier |
-| `ppap_id` | UUID | NOT NULL, FK → ppap_records.id | Parent PPAP record |
-| `title` | VARCHAR(255) | NOT NULL | Task title |
-| `description` | TEXT | NULL | Task description |
-| `task_type` | VARCHAR(50) | NULL | Task type/category |
-| `phase` | VARCHAR(50) | NULL | Workflow phase |
-| `assigned_to` | VARCHAR(255) | NULL | Assigned person |
-| `assigned_role` | VARCHAR(50) | NULL | Assigned role |
-| `status` | VARCHAR(50) | NOT NULL | Task status (PENDING, IN_PROGRESS, COMPLETED) |
-| `priority` | VARCHAR(20) | NOT NULL | Task priority |
-| `due_date` | TIMESTAMPTZ | NULL | Task due date |
-| `completed_at` | TIMESTAMPTZ | NULL | Completion timestamp |
-| `completed_by` | VARCHAR(255) | NULL | Completer |
-| `created_at` | TIMESTAMPTZ | DEFAULT NOW() | Creation timestamp |
-| `updated_at` | TIMESTAMPTZ | DEFAULT NOW() | Update timestamp |
+| `id` | UUID | NOT NULL, DEFAULT gen_random_uuid() | Task unique identifier |
+| `ppap_id` | UUID | NULL | Parent PPAP record |
+| `phase` | TEXT | NULL | Workflow phase |
+| `title` | TEXT | NULL | Task title |
+| `status` | TEXT | DEFAULT 'pending' | Task status (pending, in_progress, completed) |
+| `assigned_to` | TEXT | NULL | Assigned person |
+| `due_date` | DATE | NULL | Task due date |
+| `completed_at` | TIMESTAMP | NULL | Completion timestamp |
+| `created_at` | TIMESTAMP | DEFAULT now() | Creation timestamp |
 
-**Columns Removed:**
-- `deleted_at` - Soft delete (removed 2026-03-20)
-
-**Current Safe Query Notes:**
+**Safe Query Operations:**
 - ✅ Query by `ppap_id`
-- ✅ Order by `created_at ASC` for chronological task list
-- ⚠️ No soft delete filtering needed
+- ✅ Filter by `status`, `assigned_to`, `phase`
+- ✅ Order by `created_at`, `due_date`
+- ✅ All columns except `id` are nullable
+
+**Safe Mutation Payload:**
+```typescript
+{
+  ppap_id?: string;        // OPTIONAL (nullable)
+  phase?: string;          // OPTIONAL (nullable)
+  title?: string;          // OPTIONAL (nullable)
+  status?: string;         // OPTIONAL (defaults to 'pending')
+  assigned_to?: string;    // OPTIONAL (nullable)
+  due_date?: string;       // OPTIONAL (nullable, DATE type)
+  completed_at?: string;   // OPTIONAL (nullable)
+}
+```
 
 ---
 
@@ -202,30 +184,102 @@ These fields were removed during stabilization (BUILD_LEDGER 2026-03-20 02:00 CT
 
 **Purpose:** Document metadata tracking for PPAP attachments
 
-**Confirmed Columns:**
+**Verified Schema (7 columns):**
 
 | Column | Type | Constraints | Purpose |
 |--------|------|-------------|---------|
-| `id` | UUID | PRIMARY KEY | Document unique identifier |
-| `ppap_id` | UUID | NOT NULL, FK → ppap_records.id | Parent PPAP record |
-| `document_name` | VARCHAR(255) | NOT NULL | Document filename |
-| `document_type` | VARCHAR(50) | NULL | Document category |
-| `file_size_bytes` | INTEGER | NULL | File size |
-| `mime_type` | VARCHAR(100) | NULL | MIME type |
-| `storage_path` | TEXT | NULL | Storage location |
-| `storage_bucket` | VARCHAR(100) | NULL | Storage bucket name |
-| `uploaded_by` | VARCHAR(255) | NOT NULL | Uploader |
-| `version` | INTEGER | DEFAULT 1 | Document version |
-| `notes` | TEXT | NULL | Document notes |
+| `id` | UUID | NOT NULL, DEFAULT gen_random_uuid() | Document unique identifier |
+| `ppap_id` | UUID | NULL | Parent PPAP record |
+| `category` | TEXT | NULL | Document category/type |
+| `file_name` | TEXT | NULL | Document filename |
+| `file_url` | TEXT | NULL | Storage URL/path |
+| `uploaded_by` | TEXT | NULL | Uploader name |
+| `created_at` | TIMESTAMP | DEFAULT now() | Upload timestamp |
 
-**Columns Removed:**
-- `deleted_at` - Soft delete (removed 2026-03-20)
-- `uploaded_at` - Timestamp field (removed 2026-03-20 - doesn't exist in live database)
-
-**Current Safe Query Notes:**
+**Safe Query Operations:**
 - ✅ Query by `ppap_id`
-- ⚠️ No timestamp ordering available (no created_at or uploaded_at column)
-- ⚠️ No soft delete filtering needed
+- ✅ Order by `created_at` for chronological sorting
+- ✅ All columns except `id` are nullable
+
+**Safe Mutation Payload:**
+```typescript
+{
+  ppap_id?: string;        // OPTIONAL (nullable)
+  category?: string;       // OPTIONAL (nullable)
+  file_name?: string;      // OPTIONAL (nullable)
+  file_url?: string;       // OPTIONAL (nullable)
+  uploaded_by?: string;    // OPTIONAL (nullable)
+}
+```
+
+---
+
+## Previously Incorrect Assumptions (Corrected)
+
+**This section documents schema mismatches discovered during the 2026-03-20 DTL rebaseline.**
+
+### ppap_conversations - Column Name Mismatches
+- ❌ **Assumed:** `message` column → ✅ **Actual:** `body` column
+- ❌ **Assumed:** `author_site` column → ✅ **Actual:** `site` column
+- ❌ **Assumed:** `author_role` column → ✅ **Actual:** Does not exist
+- ❌ **Assumed:** `edited_at` column → ✅ **Actual:** Does not exist
+- ❌ **Assumed:** `deleted_at` column → ✅ **Actual:** Does not exist
+
+### ppap_documents - Column Name Mismatches
+- ❌ **Assumed:** `document_name` column → ✅ **Actual:** `file_name` column
+- ❌ **Assumed:** `document_type` column → ✅ **Actual:** `category` column
+- ❌ **Assumed:** `storage_path` column → ✅ **Actual:** `file_url` column
+- ❌ **Assumed:** `uploaded_at` column → ✅ **Actual:** Does not exist (use `created_at`)
+- ❌ **Assumed:** `file_size_bytes`, `mime_type`, `storage_bucket`, `version`, `notes` → ✅ **Actual:** Do not exist
+
+### ppap_tasks - Fields That Actually Exist
+- ✅ **`assigned_to`** - EXISTS in live database (was incorrectly removed from code)
+- ✅ **`due_date`** - EXISTS in live database (was incorrectly removed from code)
+- ✅ **`phase`** - EXISTS in live database (was incorrectly removed from code)
+- ✅ **`title`** - EXISTS in live database (was incorrectly removed from code)
+- ✅ **`completed_at`** - EXISTS in live database
+- ❌ **Assumed:** `description`, `task_type`, `assigned_role`, `priority`, `completed_by`, `updated_at` → ✅ **Actual:** Do not exist
+
+### Root Cause
+The original DTL_SNAPSHOT.md was created from an outdated `schema.sql` file that did not match the live Supabase database. This led to:
+- Incorrect column names being used in code
+- Code referencing fields that never existed
+- Code NOT using fields that DO exist
+
+**All schemas have now been verified against live database queries.**
+
+---
+
+## Controlled Re-Expansion Roadmap
+
+**Phase 1: Reintroduce Existing Task Fields**
+- `assigned_to` - Already exists in DB, need to add back to code
+- `due_date` - Already exists in DB, need to add back to code
+- `phase` - Already exists in DB, need to add back to code
+- `title` - Already exists in DB, need to add back to code
+- Update TypeScript interfaces
+- Update task creation/display components
+- Verify task list shows assignments and due dates
+
+**Phase 2: Fix Document Field Names**
+- Rename `document_name` → `file_name` in code
+- Rename `document_type` → `category` in code
+- Rename `storage_path` → `file_url` in code
+- Remove references to non-existent fields (file_size_bytes, mime_type, etc.)
+- Update document mutations and queries
+- Update document list display
+
+**Phase 3: Use created_at for Sorting**
+- Documents: Use `created_at` for chronological sorting
+- Tasks: Use `created_at` for default ordering
+- Conversations: Already using `created_at`
+
+**Phase 4: Enhance Event Logging**
+- Utilize `event_data` JSONB field for richer audit trails
+- Store before/after values in status changes
+- Track detailed context in events
+
+**Note:** No code changes in this commit - this is documentation/planning only.
 
 ---
 
@@ -247,16 +301,41 @@ When code needs a field that doesn't exist:
 
 ## Verification Commands
 
-To verify live schema matches this document:
+To verify live schema matches this document, run these queries in Supabase SQL Editor:
 
 ```sql
--- Check ppap_records columns
+-- ppap_records
 SELECT column_name, data_type, is_nullable, column_default
 FROM information_schema.columns
 WHERE table_name = 'ppap_records'
 ORDER BY ordinal_position;
 
--- Repeat for other tables
+-- ppap_events
+SELECT column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_name = 'ppap_events'
+ORDER BY ordinal_position;
+
+-- ppap_conversations
+SELECT column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_name = 'ppap_conversations'
+ORDER BY ordinal_position;
+
+-- ppap_tasks
+SELECT column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_name = 'ppap_tasks'
+ORDER BY ordinal_position;
+
+-- ppap_documents
+SELECT column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_name = 'ppap_documents'
+ORDER BY ordinal_position;
 ```
 
-Compare output to this file. If mismatch found, update this file first.
+**Compare output to this file. If mismatch found:**
+1. Update this file first (DTL is source of truth)
+2. Record discrepancy in BUILD_LEDGER.md
+3. Then update code to match reality

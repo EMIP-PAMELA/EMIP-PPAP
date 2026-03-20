@@ -4,6 +4,73 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 03:57 CT - [DTL REBASELINE] Full schema verification against live database - SYSTEM ALIGNED
+- Summary: Performed complete DTL rebaseline by verifying all 5 tables against live Supabase database. Rewrote DTL_SNAPSHOT.md to match actual schema. Discovered and documented extensive mismatches between assumed schema and reality.
+- Files changed:
+  - `docs/DTL_SNAPSHOT.md` - Complete rewrite with verified schemas for all 5 tables
+  - `docs/BUILD_LEDGER.md` - This entry
+  - `docs/MILEMARKER.md` - Updated to "DTL Verified - System Aligned"
+- Database changes: None (documentation only - aligned to existing reality)
+- Root cause: Original DTL created from outdated schema.sql, not live database
+- Critical findings:
+  
+  **ppap_conversations mismatches:**
+  - Column is `body` not `message`
+  - Column is `site` not `author_site`
+  - No `author_role`, `edited_at`, or `deleted_at` columns exist
+  
+  **ppap_documents mismatches:**
+  - Column is `file_name` not `document_name`
+  - Column is `category` not `document_type`
+  - Column is `file_url` not `storage_path`
+  - `created_at` exists (not `uploaded_at`)
+  - No `file_size_bytes`, `mime_type`, `storage_bucket`, `version`, or `notes` columns
+  
+  **ppap_tasks - fields that DO exist (incorrectly removed from code):**
+  - `assigned_to` EXISTS
+  - `due_date` EXISTS
+  - `phase` EXISTS
+  - `title` EXISTS
+  - `completed_at` EXISTS
+  - Missing: `description`, `task_type`, `assigned_role`, `priority`, `completed_by`, `updated_at`
+  
+  **ppap_records:**
+  - Verified 9 columns match expectations
+  - No issues found
+  
+  **ppap_events:**
+  - Verified 7 columns match expectations
+  - No issues found
+
+- Controlled re-expansion roadmap documented:
+  - Phase 1: Reintroduce task fields (assigned_to, due_date, phase, title)
+  - Phase 2: Fix document field names (file_name, category, file_url)
+  - Phase 3: Use created_at for sorting
+  - Phase 4: Enhance event logging with event_data
+
+- System state after rebaseline:
+  - DTL_SNAPSHOT.md is now AUTHORITATIVE
+  - All schemas verified via information_schema queries
+  - Database = DTL = source of truth
+  - Code must align to DTL (not vice versa)
+
+- Verification method:
+  ```sql
+  SELECT column_name, data_type, is_nullable, column_default
+  FROM information_schema.columns
+  WHERE table_name = 'TABLE_NAME'
+  ORDER BY ordinal_position;
+  ```
+
+- Next steps (NOT in this commit):
+  - Phase 1: Reintroduce task fields to code
+  - Phase 2: Fix document field names in code
+  - All code changes require separate commits with testing
+
+- Commit: `chore: full DTL rebaseline against live database`
+
+---
+
 ## 2026-03-20 03:40 CT - [CRITICAL FIX] Align ppap_conversations to actual live database schema
 - Summary: Fixed Add Note by using actual database column names verified from live Supabase. DTL_SNAPSHOT.md was completely wrong - used `message` instead of `body`, `author_site` instead of `site`, and listed columns that never existed.
 - Files changed:
