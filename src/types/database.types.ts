@@ -82,29 +82,12 @@ export interface PPAPRecord {
   id: string;
   ppap_number: string;
   part_number: string;
-  part_name: string | null;
-  revision: string | null;
   customer_name: string;
   plant: string;
-  assigned_to: string | null;
-  assigned_role: string | null;
   status: PPAPStatus;
-  priority: string;
   request_date: string;
-  due_date: string | null;
-  acknowledged_date: string | null;
-  submitted_date: string | null;
-  approved_date: string | null;
-  process_type: string | null;
-  mold_required: boolean;
-  mold_supplier: string | null;
-  mold_status: MoldStatus | null;
-  mold_lead_time_days: number | null;
-  submission_level: string | null;
-  risk_flags: string[] | null;
   created_at: string;
   updated_at: string;
-  deleted_at: string | null;
 }
 
 export interface PPAPDocument {
@@ -167,17 +150,9 @@ export interface PPAPEvent {
 
 export interface CreatePPAPInput {
   part_number: string;
-  part_name?: string;
-  revision?: string;
   customer_name: string;
   plant: string;
   request_date: string;
-  due_date?: string;
-  submission_level?: string;
-  mold_required?: boolean;
-  mold_supplier?: string;
-  mold_lead_time_days?: number;
-  process_type?: string;
 }
 
 export interface UpdatePPAPInput {

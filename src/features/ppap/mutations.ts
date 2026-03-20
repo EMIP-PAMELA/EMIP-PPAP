@@ -15,17 +15,9 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
     .insert({
       ppap_number: ppapNumber,
       part_number: input.part_number,
-      part_name: input.part_name || null,
-      revision: input.revision || null,
       customer_name: input.customer_name,
       plant: input.plant,
       request_date: input.request_date,
-      due_date: input.due_date || null,
-      submission_level: input.submission_level || null,
-      mold_required: input.mold_required || false,
-      mold_supplier: input.mold_supplier || null,
-      mold_lead_time_days: input.mold_lead_time_days || null,
-      process_type: input.process_type || null,
       status: 'NEW',
     })
     .select()
