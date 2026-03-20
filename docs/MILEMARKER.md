@@ -1,6 +1,6 @@
 # Build Milemarker
 
-**Last Updated:** 2026-03-20 04:31 CT  
+**Last Updated:** 2026-03-20 11:49 CT  
 **Current Milestone:** ✅ PHASE 2 COMPLETE - Tasks System Implemented
 
 ## Purpose
@@ -229,6 +229,7 @@ Use this to verify system is in expected state:
 
 | Date | Milestone | Key Changes |
 |------|-----------|-------------|
+| 2026-03-20 11:49 CT | Status Update UI Fixed | Fixed StatusUpdateControl error handling. Now properly checks Supabase errors before calling router.refresh(). Status updates provide user feedback on failure. UI only refreshes on successful database update. |
 | 2026-03-20 04:31 CT | Phase 2 Complete - Tasks System | Implemented Phase 2 from BUILD_PLAN. Reintroduced task fields (assigned_to, due_date, phase, title, completed_at) from DTL. Created AddTaskForm component. Added Mark Complete workflow. Event logging on create/complete. Tasks now fully functional. |
 | 2026-03-20 04:06 CT | Documents Module Aligned | Aligned documents module to verified DTL schema. Fixed field names: document_name→file_name, document_type→category, storage_path→file_url. Removed non-existent fields (file_size_bytes, mime_type, etc.). Documents now functional with correct schema. |
 | 2026-03-20 03:57 CT | DTL Verified - System Aligned | **FULL DTL REBASELINE:** Verified all 5 tables against live Supabase. Rewrote DTL_SNAPSHOT.md with actual schemas. Discovered extensive mismatches (conversations: body/site, documents: file_name/category/file_url, tasks: assigned_to/due_date exist). DTL now authoritative. Documented controlled re-expansion roadmap. |

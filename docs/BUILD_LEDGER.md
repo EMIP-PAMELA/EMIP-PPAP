@@ -4,6 +4,30 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 11:49 CT - [FIX] Status update UI error handling
+- Summary: Fixed status update control to properly check Supabase errors before refreshing UI. Previously, router.refresh() was called even on failed updates, causing UI to refresh with stale data.
+- Files changed:
+  - `src/features/ppap/components/StatusUpdateControl.tsx` - Added error response handling
+- Root cause: Supabase update/insert calls weren't destructuring or checking `error` response
+- Fix implemented:
+  - Destructure `{ error: updateError }` from ppap_records update
+  - Check updateError and return early with alert if update fails
+  - Destructure `{ error: eventError }` from ppap_events insert
+  - Log eventError but continue (event logging is non-critical)
+  - Only call `router.refresh()` if update succeeds
+- Impact:
+  - Status updates now provide user feedback on failure
+  - UI only refreshes when database update succeeds
+  - Console logs show clear error messages for debugging
+  - No more silent failures masking issues
+- Validation:
+  - Change status → UI updates immediately
+  - Failed update → alert shown, UI stays on old status
+  - Successful update → UI refreshes to show new status
+- Commit: `fix: add error handling to status update UI refresh`
+
+---
+
 ## 2026-03-20 04:31 CT - [FEAT] Phase 2 - Tasks System implemented
 - Summary: Executed Phase 2 from BUILD_PLAN.md - reintroduced task tracking fields and built complete task management UI aligned to DTL_SNAPSHOT.md verified schema.
 - Files changed:

@@ -31,7 +31,7 @@ export function StatusUpdateControl({ ppapId, currentStatus }: StatusUpdateContr
     setLoading(true);
 
     try {
-      await supabase
+      const { error: updateError } = await supabase
         .from('ppap_records')
         .update({ 
           status: newStatus,
@@ -39,7 +39,13 @@ export function StatusUpdateControl({ ppapId, currentStatus }: StatusUpdateContr
         })
         .eq('id', ppapId);
 
-      await supabase
+      if (updateError) {
+        console.error('Failed to update PPAP status:', updateError);
+        alert(`Failed to update status: ${updateError.message}`);
+        return;
+      }
+
+      const { error: eventError } = await supabase
         .from('ppap_events')
         .insert({
           ppap_id: ppapId,
@@ -52,9 +58,14 @@ export function StatusUpdateControl({ ppapId, currentStatus }: StatusUpdateContr
           actor: 'Matt',
         });
 
+      if (eventError) {
+        console.error('Failed to log status change event:', eventError);
+      }
+
       router.refresh();
     } catch (err) {
       console.error('Failed to update status:', err);
+      alert('Failed to update status. Please try again.');
     } finally {
       setLoading(false);
     }
