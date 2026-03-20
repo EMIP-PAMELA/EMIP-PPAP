@@ -12,8 +12,6 @@ export function AddConversationForm({ ppapId, onSuccess }: AddConversationFormPr
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
-  console.log('AddConversationForm - message:', message, 'trimmed:', message.trim(), 'disabled:', loading || !message.trim());
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -27,7 +25,6 @@ export function AddConversationForm({ ppapId, onSuccess }: AddConversationFormPr
         message: message.trim(),
         message_type: 'NOTE',
         author: 'Matt',
-        author_site: 'Van Buren',
       });
 
       setMessage('');

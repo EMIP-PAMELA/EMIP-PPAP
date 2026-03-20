@@ -110,7 +110,6 @@ export interface PPAPConversation {
   message: string;
   message_type: MessageType;
   author: string;
-  author_site: string | null;
   created_at: string;
   edited_at: string | null;
 }
@@ -180,7 +179,6 @@ export interface CreateConversationInput {
   message: string;
   message_type?: MessageType;
   author: string;
-  author_site?: string;
 }
 
 export interface CreateDocumentInput {

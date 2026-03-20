@@ -4,6 +4,39 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 03:35 CT - [FIX] Remove author_site from ppap_conversations - Add Note now works
+- Summary: Fixed Add Note button error by removing author_site column references that don't exist in live database. Debug logging confirmed button state management was correct - issue was invalid column in mutation payload.
+- Files changed:
+  - `src/features/conversations/components/AddConversationForm.tsx` - Removed `author_site: 'Van Buren'` from payload, removed debug console.log
+  - `src/features/conversations/mutations.ts` - Removed `author_site: input.author_site || null` from insert payload
+  - `src/types/database.types.ts` - Removed `author_site: string | null` from PPAPConversation interface
+  - `src/types/database.types.ts` - Removed `author_site?: string` from CreateConversationInput interface
+  - `src/features/conversations/components/ConversationList.tsx` - Removed author_site display
+  - `docs/DTL_SNAPSHOT.md` - Moved author_site from Confirmed Columns to Columns Removed
+- Database changes: None (aligned code to existing schema)
+- Decisions made:
+  - DTL_SNAPSHOT.md was incorrect - author_site doesn't exist in live database
+  - Followed DTL protocol: discovered mismatch via runtime error, updated DTL, aligned code
+  - Button state management was already correct - issue was backend mutation failure
+- Verification via debug logging:
+  - Textarea onChange updates message state correctly ✅
+  - Button enables/disables based on message.trim() correctly ✅
+  - Error was: "Could not find the 'author_site' column" (400 Bad Request)
+  - After fix: Add Note creates conversation successfully ✅
+- Risks / follow-ups:
+  - Third DTL mismatch discovered (after uploaded_at, author_role, now author_site)
+  - DTL_SNAPSHOT.md appears to have been created from schema.sql, not live database
+  - Recommend full DTL verification against live database
+- Verification:
+  - Grep search confirms zero author_site references remain in codebase
+  - PPAPConversation interface now has 7 fields (removed author_site)
+  - CreateConversationInput interface now has 4 fields (removed author_site)
+  - Insert payload simplified to 4 fields (ppap_id, message, message_type, author)
+  - Add Note functionality fully operational end-to-end
+- Commit: `fix: remove author_site from ppap_conversations - Add Note now works`
+
+---
+
 ## 2026-03-20 03:27 CT - [VERIFICATION] Add Note button already correct - no changes needed
 - Summary: Verified Add Note button functionality after author_role removal. No UI changes required - form already correctly implemented without author_role references.
 - Files changed: None (verification only)

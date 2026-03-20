@@ -12,7 +12,6 @@ export async function createConversation(
       message: input.message,
       message_type: input.message_type || 'NOTE',
       author: input.author,
-      author_site: input.author_site || null,
     })
     .select()
     .single();

@@ -1,7 +1,7 @@
 # Build Milemarker
 
-**Last Updated:** 2026-03-20 03:21 CT  
-**Current Milestone:** Minimal Stable Schema Enforced - Conversations Schema Corrected
+**Last Updated:** 2026-03-20 03:35 CT  
+**Current Milestone:** Minimal Stable Schema Enforced - Add Note Functional
 
 ## Purpose
 
@@ -229,7 +229,8 @@ Use this to verify system is in expected state:
 
 | Date | Milestone | Key Changes |
 |------|-----------|-------------|
-| 2026-03-20 03:21 CT | Conversations Schema Corrected | Fixed DTL mismatch - removed author_role from ppap_conversations (doesn't exist in live DB). Updated DTL_SNAPSHOT.md, removed all code references. Conversations now display author and site only. |
+| 2026-03-20 03:35 CT | Add Note Functional | Fixed DTL mismatch - removed author_site from ppap_conversations (doesn't exist in live DB). Debug logging confirmed button state correct. Add Note now creates conversations successfully. |
+| 2026-03-20 03:21 CT | Conversations Schema Corrected | Fixed DTL mismatch - removed author_role from ppap_conversations (doesn't exist in live DB). Updated DTL_SNAPSHOT.md, removed all code references. Conversations now display author only. |
 | 2026-03-20 03:01 CT | Documents Schema Corrected | Fixed DTL mismatch - removed uploaded_at from ppap_documents (doesn't exist in live DB). Updated DTL_SNAPSHOT.md, removed all code references. Documents now display without timestamp. |
 | 2026-03-20 02:52 CT | Detail Page Stabilized | Removed debug logging, verified all components use only DTL confirmed fields. PPAPHeader displays 7 confirmed fields. No invalid schema references found. |
 | 2026-03-20 02:43 CT | Minimal Stable Schema Enforced | Initial milemarker snapshot after schema stabilization. Documented working create/list/detail flows, disabled features, and controlled expansion roadmap. |
