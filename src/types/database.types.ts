@@ -72,6 +72,7 @@ export type EventType =
   | 'PHASE_ADVANCED'
   | 'DOCUMENTATION_SUBMITTED'
   | 'SAMPLE_SUBMITTED'
+  | 'REVIEW_COMPLETED'
   | 'PPAP_DELETED';
 
 export type MoldStatus =

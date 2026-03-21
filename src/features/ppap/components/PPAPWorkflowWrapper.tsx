@@ -6,6 +6,7 @@ import { PhaseIndicator } from './PhaseIndicator';
 import { InitiationForm } from './InitiationForm';
 import { DocumentationForm } from './DocumentationForm';
 import { SampleForm } from './SampleForm';
+import { ReviewForm } from './ReviewForm';
 import { WorkflowPhase, isValidWorkflowPhase } from '../constants/workflowPhases';
 
 interface PPAPWorkflowWrapperProps {
@@ -53,10 +54,12 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
       )}
 
       {currentPhase === 'REVIEW' && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">REVIEW Phase</h2>
-          <p className="text-gray-600">Review phase not yet implemented.</p>
-        </div>
+        <ReviewForm
+          ppapId={ppap.id}
+          partNumber={ppap.part_number || ''}
+          currentPhase={currentPhase}
+          setPhase={setCurrentPhase}
+        />
       )}
 
       {currentPhase === 'COMPLETE' && (

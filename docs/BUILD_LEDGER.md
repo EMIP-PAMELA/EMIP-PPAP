@@ -4,6 +4,186 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 18:00 CT - [FEAT] Phase 13 - Review Phase UI & Decision Workflow
+- Summary: Implemented REVIEW phase UI with decision workflow and intelligent routing. Review decisions route workflow to appropriate phases (APPROVE→COMPLETE, REJECT→DOCUMENTATION, CORRECTIONS_NEEDED→SAMPLE). All data stored in ppap_events (no schema changes).
+- Files changed:
+  - `src/features/ppap/components/ReviewForm.tsx` - NEW - Review phase form with decision routing
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Integrated ReviewForm
+  - `src/types/database.types.ts` - Added REVIEW_COMPLETED event type
+  - `docs/BUILD_LEDGER.md` - This entry
+  - `docs/MILEMARKER.md` - Updated milestone
+- Database changes: **NONE** - Uses event_data for all storage
+- DTL alignment: Full compliance - no schema modifications
+
+**Implementation Details:**
+
+1. **ReviewForm Component**
+   - Submission Summary section:
+     - Visual confirmation blocks for completed phases
+     - Initiation phase complete (green checkmark)
+     - Documentation phase complete (green checkmark)
+     - Sample phase complete (green checkmark)
+   - Review Decision section:
+     - Radio button selection (required)
+     - APPROVE: Advances to COMPLETE phase
+     - REJECT: Returns to DOCUMENTATION phase
+     - CORRECTIONS_NEEDED: Returns to SAMPLE phase
+     - Color-coded options (green/red/yellow)
+     - Descriptive text for each decision
+   - Reviewer Comments:
+     - Textarea for detailed review notes (required)
+     - Placeholder text for guidance
+   - Confirmation section:
+     - Decision summary display
+     - Next phase preview
+     - Required acknowledgement checkbox
+   - All form state managed in local React state
+   - Controlled components with safe rendering
+
+2. **Decision-Based Routing Logic**
+   - `getNextPhase()` function maps decisions to phases:
+     ```typescript
+     APPROVE → COMPLETE
+     REJECT → DOCUMENTATION
+     CORRECTIONS_NEEDED → SAMPLE
+     ```
+   - Phase transition only after successful event logging
+   - Success message reflects specific decision and routing
+   - UI updates after database confirmation
+
+3. **Validation Logic**
+   - Required fields:
+     - decision must be selected
+     - reviewer_comments must be provided
+     - acknowledgement must be checked
+   - Inline error messages for each field
+   - Form-level error banner
+   - Submit button disabled during loading
+
+4. **Event-Based Data Storage**
+   - Event type: `REVIEW_COMPLETED`
+   - Event data structure:
+     ```typescript
+     {
+       decision: 'APPROVE' | 'REJECT' | 'CORRECTIONS_NEEDED',
+       reviewer_comments: string,
+       all_form_data: ReviewData
+     }
+     ```
+   - Actor: "Matt"
+   - Actor role: "Engineer"
+   - No database schema changes
+   - All data queryable via ppap_events table
+
+5. **Phase Advancement**
+   - Uses existing `updateWorkflowPhase()` mutation
+   - Advances based on decision:
+     - APPROVE: REVIEW → COMPLETE
+     - REJECT: REVIEW → DOCUMENTATION
+     - CORRECTIONS_NEEDED: REVIEW → SAMPLE
+   - Only advances after successful event logging
+   - Logs PHASE_ADVANCED event with review_data and decision
+   - Updates ppap_records.workflow_phase in database
+   - UI updates after DB success
+   - 1.5 second delay with decision-specific success message
+
+6. **Safe Rendering (React #418 Protection)**
+   - All text inputs: `value={field || ''}`
+   - All checkboxes: `checked={!!field}`
+   - All error messages: `{error || ''}`
+   - Success message: `{successMessage || ''}`
+   - Part number prop: `partNumber={ppap.part_number || ''}`
+   - No null/undefined rendering
+
+7. **Error Handling**
+   - Clear error messages on validation failure
+   - Specific error messages on DB failure
+   - User can retry after error
+   - No orphaned state
+   - Loading state prevents double submission
+
+**User Flow:**
+
+1. Complete SAMPLE phase
+2. Phase advances to REVIEW
+3. User sees ReviewForm with submission summary
+4. Visual confirmation of all completed phases displayed
+5. Select review decision:
+   - APPROVE (green) - if PPAP meets all requirements
+   - REJECT (red) - if PPAP does not meet requirements
+   - CORRECTIONS_NEEDED (yellow) - if minor corrections needed
+6. Enter detailed reviewer comments
+7. Review summary displays:
+   - Selected decision
+   - Next phase destination
+8. Check acknowledgement checkbox
+9. Click "Submit Review Decision →"
+10. Form validates
+11. REVIEW_COMPLETED event logged with decision
+12. Phase routes based on decision:
+    - APPROVE → COMPLETE phase (workflow finished)
+    - REJECT → DOCUMENTATION phase (restart documentation)
+    - CORRECTIONS_NEEDED → SAMPLE phase (fix sample issues)
+13. PHASE_ADVANCED event logged
+14. Success message displays with routing information
+15. UI updates to destination phase
+16. Refresh page → Phase persists at destination ✅
+
+**Decision Routing Matrix:**
+
+| Review Decision | Next Phase | Use Case |
+|----------------|------------|----------|
+| APPROVE | COMPLETE | PPAP meets all requirements |
+| REJECT | DOCUMENTATION | Major issues, restart documentation |
+| CORRECTIONS_NEEDED | SAMPLE | Minor sample corrections needed |
+
+**DTL Compliance:**
+
+- ✅ No schema changes
+- ✅ No new columns added
+- ✅ Uses ppap_events.event_data JSONB for all data
+- ✅ Event type added to EventType union only
+- ✅ Follows existing event logging pattern
+- ✅ Uses existing updateWorkflowPhase mutation
+- ✅ All data queryable via events table
+
+**UI/UX Features:**
+
+- Visual phase completion summary (green checkmarks)
+- Color-coded decision options (green/red/yellow)
+- Decision-specific success messages
+- Next phase preview in confirmation section
+- Required field indicators (red asterisk)
+- Inline validation errors
+- Form-level error banner
+- Descriptive text for each decision option
+- Success message with routing information
+- Loading state during submission
+- Disabled submit button when loading
+
+**Validation:**
+- ✅ Form renders in REVIEW phase
+- ✅ Submission summary displays completed phases
+- ✅ Three decision options render correctly
+- ✅ Decision selection works (radio buttons)
+- ✅ Reviewer comments textarea renders
+- ✅ Confirmation section displays decision summary
+- ✅ Validation prevents submission without required fields
+- ✅ Inline errors display correctly
+- ✅ REVIEW_COMPLETED event logged
+- ✅ PHASE_ADVANCED event logged
+- ✅ APPROVE routes to COMPLETE
+- ✅ REJECT routes to DOCUMENTATION
+- ✅ CORRECTIONS_NEEDED routes to SAMPLE
+- ✅ Phase persists after refresh
+- ✅ No React errors
+- ✅ No console errors
+- ✅ Safe rendering throughout
+
+- Commit: `feat: implement review phase ui with decision workflow and routing`
+
+---
+
 ## 2026-03-21 17:46 CT - [FEAT] Phase 12 - Sample Phase UI Implementation
 - Summary: Implemented SAMPLE phase UI with conditional sections, validation, and event-based data storage. Phase advances to REVIEW after successful submission. All data stored in ppap_events (no schema changes).
 - Files changed:
