@@ -4,6 +4,81 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 19:16 CT - [FIX] Phase Transition UI and React Error #418
+- Summary: Fixed phase transition logic and eliminated React runtime error #418. Phase now advances correctly without page reload, and all form values render safely.
+- Files changed:
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Centralized phase state, removed reload logic
+  - `src/features/ppap/components/InitiationForm.tsx` - Updated to use phase setter, added safe rendering
+- Database changes: None
+- Code changes: UI/state management only
+- DTL alignment: No schema modifications
+
+**Root Cause:**
+- `PPAPWorkflowWrapper` called `window.location.reload()` on phase advance
+- Page reload reset phase state back to 'INITIATION'
+- Phase never visually advanced beyond initial state
+- Nullable form values rendered without fallbacks (React error #418)
+
+**Fix Applied:**
+
+1. **Centralized Phase State**
+   - Phase state (`currentPhase`, `setCurrentPhase`) already existed in PPAPWorkflowWrapper
+   - Passed `setPhase` directly to InitiationForm instead of reload callback
+   - Removed `handlePhaseAdvance` function that triggered reload
+
+2. **Updated InitiationForm Props**
+   - Added `currentPhase: WorkflowPhase` prop
+   - Added `setPhase: (phase: WorkflowPhase) => void` prop
+   - Removed `onPhaseAdvance: () => void` callback
+   - Updated component signature and logic
+
+3. **Fixed Phase Advancement Logic**
+   - Changed from: `setTimeout(() => { onPhaseAdvance(); }, 1500);`
+   - Changed to: `setTimeout(() => { setPhase('DOCUMENTATION'); }, 1500);`
+   - Phase state now updates directly without reload
+   - Event logging uses `currentPhase` for accurate from_phase value
+
+4. **Added Safe Rendering (React #418 Protection)**
+   - All text input values: `value={formData.field || ''}`
+   - All select values: `value={formData.field || ''}`
+   - All textarea values: `value={formData.field || ''}`
+   - All error messages: `{errors.field || ''}`
+   - Success message: `{successMessage || ''}`
+   - Part number from props: `partNumber={ppap.part_number || ''}`
+   - Applied to all 13 form fields and error displays
+
+**Behavior After Fix:**
+- ✅ User fills initiation form
+- ✅ Clicks "Send to Next Phase"
+- ✅ Validation passes
+- ✅ Event logged to ppap_events
+- ✅ Success message displays for 1.5s
+- ✅ Phase state updates to 'DOCUMENTATION'
+- ✅ Phase indicator updates (INITIATION green checkmark, DOCUMENTATION blue active)
+- ✅ DOCUMENTATION placeholder content displays
+- ✅ No page reload
+- ✅ No React error #418
+- ✅ No console errors
+
+**Technical Details:**
+- Local state management only
+- React useState for phase tracking
+- Prop passing for state updates
+- Safe rendering with nullish coalescing (`||`)
+- Async event logging before phase change
+- 1.5s delay for user feedback
+
+**Validation:**
+- Phase advances visually without reload ✅
+- Phase indicator updates correctly ✅
+- No React runtime errors ✅
+- Event logged to database ✅
+- No schema changes ✅
+
+- Commit: `fix: phase transition ui and react error #418 resolution`
+
+---
+
 ## 2026-03-20 15:42 CT - [ARCHITECTURE] Introduce PPAP Intake and Integration Strategy
 - Summary: Extended BUILD_PLAN.md with comprehensive PPAP intake architecture and integration readiness strategy. Documentation-only update to establish architectural principles for future system evolution.
 - Files changed:

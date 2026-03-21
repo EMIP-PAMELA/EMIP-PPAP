@@ -15,10 +15,6 @@ interface PPAPWorkflowWrapperProps {
 export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
   const [currentPhase, setCurrentPhase] = useState<WorkflowPhase>('INITIATION');
 
-  const handlePhaseAdvance = () => {
-    window.location.reload();
-  };
-
   return (
     <div className="space-y-6">
       <PhaseIndicator currentPhase={currentPhase} />
@@ -26,8 +22,9 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
       {currentPhase === 'INITIATION' && (
         <InitiationForm
           ppapId={ppap.id}
-          partNumber={ppap.part_number}
-          onPhaseAdvance={handlePhaseAdvance}
+          partNumber={ppap.part_number || ''}
+          currentPhase={currentPhase}
+          setPhase={setCurrentPhase}
         />
       )}
 

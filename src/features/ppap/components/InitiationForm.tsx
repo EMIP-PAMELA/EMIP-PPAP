@@ -3,10 +3,13 @@
 import { useState } from 'react';
 import { logEvent } from '@/src/features/events/mutations';
 
+type WorkflowPhase = 'INITIATION' | 'DOCUMENTATION' | 'SAMPLE' | 'REVIEW' | 'COMPLETE';
+
 interface InitiationFormProps {
   ppapId: string;
   partNumber: string;
-  onPhaseAdvance: () => void;
+  currentPhase: WorkflowPhase;
+  setPhase: (phase: WorkflowPhase) => void;
 }
 
 type Section = 'project_info' | 'contacts' | 'part_info' | 'drawing' | 'shipment' | 'warrant';
@@ -32,7 +35,7 @@ interface InitiationData {
   packaging_met: boolean;
 }
 
-export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: InitiationFormProps) {
+export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: InitiationFormProps) {
   const [activeSection, setActiveSection] = useState<Section>('project_info');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -120,7 +123,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
         ppap_id: ppapId,
         event_type: 'PHASE_ADVANCED',
         event_data: {
-          from_phase: 'INITIATION',
+          from_phase: currentPhase,
           to_phase: 'DOCUMENTATION',
           initiation_data: formData,
         },
@@ -130,7 +133,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
       setSuccessMessage('✓ Initiation phase completed! Advancing to Documentation phase...');
       
       setTimeout(() => {
-        onPhaseAdvance();
+        setPhase('DOCUMENTATION');
       }, 1500);
     } catch (error) {
       console.error('Failed to advance phase:', error);
@@ -157,7 +160,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
         <h2 className="text-xl font-bold text-gray-900">INITIATION Phase</h2>
         {successMessage && (
           <div className="text-sm font-medium text-green-700 bg-green-50 px-4 py-2 rounded">
-            {successMessage}
+            {successMessage || ''}
           </div>
         )}
       </div>
@@ -184,7 +187,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
         <div className="flex-1">
           {errors._form && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-              {errors._form}
+              {errors._form || ''}
             </div>
           )}
 
@@ -197,7 +200,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   PPAP Type <span className="text-red-600">*</span>
                 </label>
                 <select
-                  value={formData.ppap_type}
+                  value={formData.ppap_type || ''}
                   onChange={(e) => updateField('ppap_type', e.target.value)}
                   className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
                     errors.ppap_type ? 'border-red-400' : 'border-gray-300'
@@ -209,7 +212,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   <option value="Maintenance">Maintenance</option>
                 </select>
                 {errors.ppap_type && (
-                  <p className="mt-1 text-sm text-red-600">{errors.ppap_type}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.ppap_type || ''}</p>
                 )}
               </div>
 
@@ -219,7 +222,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
                 <input
                   type="text"
-                  value={formData.project_name}
+                  value={formData.project_name || ''}
                   onChange={(e) => updateField('project_name', e.target.value)}
                   className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
                     errors.project_name ? 'border-red-400' : 'border-gray-300'
@@ -227,7 +230,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   placeholder="Enter project name"
                 />
                 {errors.project_name && (
-                  <p className="mt-1 text-sm text-red-600">{errors.project_name}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.project_name || ''}</p>
                 )}
               </div>
 
@@ -237,7 +240,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
                 <input
                   type="text"
-                  value={formData.project_number}
+                  value={formData.project_number || ''}
                   onChange={(e) => updateField('project_number', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter project number (optional)"
@@ -256,7 +259,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
                 <input
                   type="text"
-                  value={formData.quality_rep}
+                  value={formData.quality_rep || ''}
                   onChange={(e) => updateField('quality_rep', e.target.value)}
                   className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
                     errors.quality_rep ? 'border-red-400' : 'border-gray-300'
@@ -264,7 +267,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   placeholder="Enter quality representative name"
                 />
                 {errors.quality_rep && (
-                  <p className="mt-1 text-sm text-red-600">{errors.quality_rep}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.quality_rep || ''}</p>
                 )}
               </div>
 
@@ -274,7 +277,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
                 <input
                   type="email"
-                  value={formData.quality_email}
+                  value={formData.quality_email || ''}
                   onChange={(e) => updateField('quality_email', e.target.value)}
                   className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
                     errors.quality_email ? 'border-red-400' : 'border-gray-300'
@@ -282,7 +285,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   placeholder="quality@example.com"
                 />
                 {errors.quality_email && (
-                  <p className="mt-1 text-sm text-red-600">{errors.quality_email}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.quality_email || ''}</p>
                 )}
               </div>
 
@@ -292,7 +295,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
                 <input
                   type="text"
-                  value={formData.rd_rep}
+                  value={formData.rd_rep || ''}
                   onChange={(e) => updateField('rd_rep', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter R&D representative (optional)"
@@ -305,7 +308,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
                 <input
                   type="text"
-                  value={formData.sourcing_rep}
+                  value={formData.sourcing_rep || ''}
                   onChange={(e) => updateField('sourcing_rep', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter sourcing representative (optional)"
@@ -324,7 +327,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
                 <input
                   type="text"
-                  value={formData.part_number}
+                  value={formData.part_number || ''}
                   disabled
                   className="w-full px-3 py-2 border border-gray-300 rounded bg-gray-50 text-gray-600"
                 />
@@ -336,7 +339,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   Part Description <span className="text-red-600">*</span>
                 </label>
                 <textarea
-                  value={formData.part_description}
+                  value={formData.part_description || ''}
                   onChange={(e) => updateField('part_description', e.target.value)}
                   rows={3}
                   className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
@@ -345,7 +348,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   placeholder="Enter detailed part description"
                 />
                 {errors.part_description && (
-                  <p className="mt-1 text-sm text-red-600">{errors.part_description}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.part_description || ''}</p>
                 )}
               </div>
 
@@ -363,7 +366,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
               </div>
               {errors.parts_producible && (
-                <p className="mt-1 text-sm text-red-600">{errors.parts_producible}</p>
+                <p className="mt-1 text-sm text-red-600">{errors.parts_producible || ''}</p>
               )}
 
               <div className="flex items-center gap-4 p-3 bg-gray-50 rounded">
@@ -380,7 +383,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
               </div>
               {errors.capability_met && (
-                <p className="mt-1 text-sm text-red-600">{errors.capability_met}</p>
+                <p className="mt-1 text-sm text-red-600">{errors.capability_met || ''}</p>
               )}
             </div>
           )}
@@ -395,7 +398,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
                 <input
                   type="text"
-                  value={formData.drawing_number}
+                  value={formData.drawing_number || ''}
                   onChange={(e) => updateField('drawing_number', e.target.value)}
                   className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
                     errors.drawing_number ? 'border-red-400' : 'border-gray-300'
@@ -403,7 +406,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   placeholder="Enter drawing number"
                 />
                 {errors.drawing_number && (
-                  <p className="mt-1 text-sm text-red-600">{errors.drawing_number}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.drawing_number || ''}</p>
                 )}
               </div>
 
@@ -413,7 +416,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
                 <input
                   type="text"
-                  value={formData.revision}
+                  value={formData.revision || ''}
                   onChange={(e) => updateField('revision', e.target.value)}
                   className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
                     errors.revision ? 'border-red-400' : 'border-gray-300'
@@ -421,7 +424,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   placeholder="e.g., Rev A, Rev 1"
                 />
                 {errors.revision && (
-                  <p className="mt-1 text-sm text-red-600">{errors.revision}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.revision || ''}</p>
                 )}
               </div>
             </div>
@@ -437,7 +440,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
                 <input
                   type="text"
-                  value={formData.sample_quantity}
+                  value={formData.sample_quantity || ''}
                   onChange={(e) => updateField('sample_quantity', e.target.value)}
                   className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
                     errors.sample_quantity ? 'border-red-400' : 'border-gray-300'
@@ -445,7 +448,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   placeholder="e.g., 100 pieces"
                 />
                 {errors.sample_quantity && (
-                  <p className="mt-1 text-sm text-red-600">{errors.sample_quantity}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.sample_quantity || ''}</p>
                 )}
               </div>
 
@@ -455,7 +458,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                 </label>
                 <input
                   type="text"
-                  value={formData.ship_to_location}
+                  value={formData.ship_to_location || ''}
                   onChange={(e) => updateField('ship_to_location', e.target.value)}
                   className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
                     errors.ship_to_location ? 'border-red-400' : 'border-gray-300'
@@ -463,7 +466,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   placeholder="Enter destination location"
                 />
                 {errors.ship_to_location && (
-                  <p className="mt-1 text-sm text-red-600">{errors.ship_to_location}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.ship_to_location || ''}</p>
                 )}
               </div>
             </div>
@@ -489,7 +492,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   </label>
                 </div>
                 {errors.drawing_understood && (
-                  <p className="mt-1 text-sm text-red-600">{errors.drawing_understood}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.drawing_understood || ''}</p>
                 )}
 
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded">
@@ -504,7 +507,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   </label>
                 </div>
                 {errors.part_defined && (
-                  <p className="mt-1 text-sm text-red-600">{errors.part_defined}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.part_defined || ''}</p>
                 )}
 
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded">
@@ -519,7 +522,7 @@ export function InitiationForm({ ppapId, partNumber, onPhaseAdvance }: Initiatio
                   </label>
                 </div>
                 {errors.packaging_met && (
-                  <p className="mt-1 text-sm text-red-600">{errors.packaging_met}</p>
+                  <p className="mt-1 text-sm text-red-600">{errors.packaging_met || ''}</p>
                 )}
               </div>
             </div>
