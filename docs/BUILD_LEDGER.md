@@ -4,6 +4,100 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 18:47 CT - [FEAT] Auto-Sync Status with Workflow Phase
+- Summary: Status now automatically synchronized with workflow_phase. Removed manual status control to ensure data integrity. Status derives from workflow phase with review decision overrides.
+- Files changed:
+  - `src/features/ppap/mutations/updateWorkflowPhase.ts` - Added status mapping and auto-sync logic
+  - `src/features/ppap/components/ReviewForm.tsx` - Added status override for APPROVE/REJECT decisions
+  - `src/features/ppap/components/StatusUpdateControl.tsx` - Converted to read-only display
+  - `docs/BUILD_LEDGER.md` - This entry
+- Database changes: **NONE** - Behavior change only, no schema modifications
+- Impact: Eliminates manual status input errors, ensures workflow and status consistency
+
+**Implementation Details:**
+
+1. **Status-to-Phase Mapping**
+   - `INITIATION` → `NEW`
+   - `DOCUMENTATION` → `PRE_ACK_IN_PROGRESS`
+   - `SAMPLE` → `PRE_ACK_IN_PROGRESS`
+   - `REVIEW` → `SUBMITTED`
+   - `COMPLETE` → `APPROVED` (default, overridden by review decision)
+
+2. **updateWorkflowPhase Mutation Enhanced**
+   - Added `getStatusForPhase()` function for mapping
+   - Added `overrideStatus` parameter for review decisions
+   - Fetches current status before update to track changes
+   - Updates both `workflow_phase` AND `status` in single transaction
+   - Logs `STATUS_CHANGED` event when status changes
+   - Event data includes:
+     - `from`: old status
+     - `to`: new status
+     - `source`: 'workflow_sync'
+     - `phase`: new workflow phase
+
+3. **Review Decision Status Override**
+   - `APPROVE` → `status = 'APPROVED'`
+   - `REJECT` → `status = 'CLOSED'` (maps to REJECTED concept)
+   - `CORRECTIONS_NEEDED` → Uses default mapping (PRE_ACK_IN_PROGRESS)
+   - Override passed to `updateWorkflowPhase()` via `overrideStatus` parameter
+
+4. **StatusUpdateControl Converted to Read-Only**
+   - Removed dropdown selection
+   - Removed manual status change handler
+   - Now displays status badge with auto-sync indicator
+   - Shows "(Auto-synced with workflow)" tooltip
+   - Eliminates possibility of manual status drift
+
+5. **Event Logging**
+   - `STATUS_CHANGED` events logged automatically
+   - Source tagged as `'workflow_sync'` to distinguish from manual changes
+   - Includes phase context for audit trail
+   - Logged after successful database update
+
+**User Flow Examples:**
+
+**Scenario 1: Normal Approval Flow**
+1. Create PPAP → status = `NEW`, phase = `INITIATION`
+2. Complete INITIATION → status = `PRE_ACK_IN_PROGRESS`, phase = `DOCUMENTATION`
+3. Complete DOCUMENTATION → status = `PRE_ACK_IN_PROGRESS`, phase = `SAMPLE`
+4. Complete SAMPLE → status = `SUBMITTED`, phase = `REVIEW`
+5. Approve in REVIEW → status = `APPROVED`, phase = `COMPLETE`
+
+**Scenario 2: Rejection Flow**
+1. PPAP in REVIEW phase → status = `SUBMITTED`
+2. Select REJECT decision → status = `CLOSED`, phase = `DOCUMENTATION`
+3. User can restart documentation
+
+**Scenario 3: Corrections Needed**
+1. PPAP in REVIEW phase → status = `SUBMITTED`
+2. Select CORRECTIONS_NEEDED → status = `PRE_ACK_IN_PROGRESS`, phase = `SAMPLE`
+3. User can fix sample issues
+
+**Benefits:**
+- ✅ Eliminates manual status input errors
+- ✅ Ensures workflow and status always consistent
+- ✅ Reduces cognitive load (users don't manage status separately)
+- ✅ Improves data integrity
+- ✅ Provides clear audit trail via STATUS_CHANGED events
+- ✅ Status accurately reflects workflow state
+- ✅ Review decisions properly reflected in final status
+
+**Validation:**
+- ✅ Status mapping implemented correctly
+- ✅ updateWorkflowPhase updates both phase and status
+- ✅ STATUS_CHANGED events logged with workflow_sync source
+- ✅ Review decisions override status correctly
+- ✅ StatusUpdateControl is read-only
+- ✅ No manual status editing possible
+- ✅ Status badge displays correctly
+- ✅ Auto-sync indicator visible
+- ✅ No schema changes
+- ✅ All existing functionality preserved
+
+- Commit: `feat: auto-sync status with workflow phase`
+
+---
+
 ## 2026-03-21 18:38 CT - [FIX] Resolved DocumentationForm Module Resolution Error
 - Summary: Fixed Vercel build failure caused by Git case sensitivity issue on Windows. Module not found error for DocumentationForm resolved by forcing correct file casing for Linux compatibility.
 - Files affected:

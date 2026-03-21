@@ -94,7 +94,15 @@ export function ReviewForm({ ppapId, partNumber, currentPhase, setPhase }: Revie
       // Determine next phase based on decision
       const nextPhase = getNextPhase(formData.decision as ReviewDecision);
 
-      // Persist phase change to database
+      // Determine status override for APPROVE/REJECT decisions
+      let statusOverride: 'APPROVED' | 'CLOSED' | undefined;
+      if (formData.decision === 'APPROVE') {
+        statusOverride = 'APPROVED';
+      } else if (formData.decision === 'REJECT') {
+        statusOverride = 'CLOSED'; // REJECTED maps to CLOSED in PPAPStatus
+      }
+
+      // Persist phase change to database with status override
       await updateWorkflowPhase({
         ppapId,
         fromPhase: currentPhase,
@@ -104,6 +112,7 @@ export function ReviewForm({ ppapId, partNumber, currentPhase, setPhase }: Revie
           review_data: formData,
           decision: formData.decision,
         },
+        overrideStatus: statusOverride,
       });
 
       const phaseMessages: Record<ReviewDecision, string> = {

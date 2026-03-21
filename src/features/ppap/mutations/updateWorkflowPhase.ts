@@ -1,6 +1,7 @@
 import { supabase } from '@/src/lib/supabaseClient';
 import { logEvent } from '@/src/features/events/mutations';
 import { WorkflowPhase } from '../constants/workflowPhases';
+import { PPAPStatus } from '@/src/types/database.types';
 
 export interface UpdateWorkflowPhaseParams {
   ppapId: string;
@@ -8,6 +9,28 @@ export interface UpdateWorkflowPhaseParams {
   toPhase: WorkflowPhase;
   actor?: string;
   additionalData?: Record<string, unknown>;
+  overrideStatus?: PPAPStatus; // Allow manual override (e.g., APPROVED/REJECTED from review)
+}
+
+/**
+ * Map workflow phase to corresponding status
+ * 
+ * INITIATION → NEW
+ * DOCUMENTATION → PRE_ACK_IN_PROGRESS
+ * SAMPLE → PRE_ACK_IN_PROGRESS
+ * REVIEW → SUBMITTED
+ * COMPLETE → APPROVED (default, can be overridden by review decision)
+ */
+function getStatusForPhase(phase: WorkflowPhase): PPAPStatus {
+  const mapping: Record<WorkflowPhase, PPAPStatus> = {
+    INITIATION: 'NEW',
+    DOCUMENTATION: 'PRE_ACK_IN_PROGRESS',
+    SAMPLE: 'PRE_ACK_IN_PROGRESS',
+    REVIEW: 'SUBMITTED',
+    COMPLETE: 'APPROVED',
+  };
+  
+  return mapping[phase];
 }
 
 /**
@@ -15,8 +38,10 @@ export interface UpdateWorkflowPhaseParams {
  * 
  * This function:
  * 1. Updates ppap_records.workflow_phase in database
- * 2. Sets updated_at timestamp
- * 3. Logs PHASE_ADVANCED event to audit trail
+ * 2. Auto-syncs ppap_records.status based on phase mapping
+ * 3. Sets updated_at timestamp
+ * 4. Logs PHASE_ADVANCED event to audit trail
+ * 5. Logs STATUS_CHANGED event if status changed
  * 
  * @throws Error if database update fails
  * @returns Updated PPAP record on success
@@ -27,17 +52,34 @@ export async function updateWorkflowPhase({
   toPhase,
   actor = 'System',
   additionalData,
+  overrideStatus,
 }: UpdateWorkflowPhaseParams) {
   // Validate ID
   if (!ppapId) {
     throw new Error('PPAP ID is required');
   }
 
-  // Update workflow_phase in database
+  // Get current record to track old status
+  const { data: currentRecord, error: fetchError } = await supabase
+    .from('ppap_records')
+    .select('status')
+    .eq('id', ppapId)
+    .single();
+
+  if (fetchError) {
+    console.error('Failed to fetch current record:', fetchError);
+    throw new Error(`Failed to fetch current record: ${fetchError.message}`);
+  }
+
+  const oldStatus = currentRecord?.status || 'NEW';
+  const newStatus = overrideStatus || getStatusForPhase(toPhase);
+
+  // Update workflow_phase AND status in database
   const { data, error } = await supabase
     .from('ppap_records')
     .update({
       workflow_phase: toPhase,
+      status: newStatus,
       updated_at: new Date().toISOString(),
     })
     .eq('id', ppapId)
@@ -69,6 +111,26 @@ export async function updateWorkflowPhase({
     console.error('Failed to log PHASE_ADVANCED event:', eventError);
     // Don't fail the entire operation if event logging fails
     // Phase update already succeeded
+  }
+
+  // Log STATUS_CHANGED event if status changed
+  if (oldStatus !== newStatus) {
+    try {
+      await logEvent({
+        ppap_id: ppapId,
+        event_type: 'STATUS_CHANGED',
+        event_data: {
+          from: oldStatus,
+          to: newStatus,
+          source: 'workflow_sync',
+          phase: toPhase,
+        },
+        actor,
+      });
+    } catch (eventError) {
+      console.error('Failed to log STATUS_CHANGED event:', eventError);
+      // Don't fail the entire operation if event logging fails
+    }
   }
 
   return data;
