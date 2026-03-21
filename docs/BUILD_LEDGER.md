@@ -4,6 +4,21 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 18:38 CT - [FIX] Resolved DocumentationForm Module Resolution Error
+- Summary: Fixed Vercel build failure caused by Git case sensitivity issue on Windows. Module not found error for DocumentationForm resolved by forcing correct file casing for Linux compatibility.
+- Files affected:
+  - `src/features/ppap/components/DocumentationForm.tsx` - Case sensitivity fix
+  - `src/features/ppap/components/InitiationForm.tsx` - Case sensitivity fix
+  - `src/features/ppap/components/SampleForm.tsx` - Case sensitivity fix
+  - `src/features/ppap/components/ReviewForm.tsx` - Case sensitivity fix
+  - `docs/BUILD_LEDGER.md` - This entry
+- Root cause: Windows filesystem (case-insensitive) allowed Git to track files with incorrect casing. Vercel deployment on Linux (case-sensitive) failed to resolve module imports.
+- Solution: Renamed all phase component files through temp intermediate to force Git to track correct PascalCase naming convention.
+- Impact: Vercel build now succeeds. All phase components (Initiation, Documentation, Sample, Review) correctly resolved.
+- Commit: `fix: resolve DocumentationForm module resolution error for Vercel build`
+
+---
+
 ## 2026-03-21 18:00 CT - [FEAT] Phase 13 - Review Phase UI & Decision Workflow
 - Summary: Implemented REVIEW phase UI with decision workflow and intelligent routing. Review decisions route workflow to appropriate phases (APPROVE→COMPLETE, REJECT→DOCUMENTATION, CORRECTIONS_NEEDED→SAMPLE). All data stored in ppap_events (no schema changes).
 - Files changed:
