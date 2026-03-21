@@ -88,8 +88,9 @@ export interface PPAPRecord {
   part_number: string;
   customer_name: string;
   plant: string;
-  status: PPAPStatus;
   request_date: string;
+  status: PPAPStatus;
+  workflow_phase: string;
   created_at: string;
   updated_at: string;
 }

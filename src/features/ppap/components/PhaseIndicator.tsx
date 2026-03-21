@@ -1,18 +1,15 @@
 'use client';
 
-type WorkflowPhase = 'INITIATION' | 'DOCUMENTATION' | 'SAMPLE' | 'REVIEW' | 'COMPLETE';
+import { WorkflowPhase, WORKFLOW_PHASES, WORKFLOW_PHASE_LABELS } from '../constants/workflowPhases';
 
 interface PhaseIndicatorProps {
   currentPhase: WorkflowPhase;
 }
 
-const PHASES: { key: WorkflowPhase; label: string }[] = [
-  { key: 'INITIATION', label: 'Initiation' },
-  { key: 'DOCUMENTATION', label: 'Documentation' },
-  { key: 'SAMPLE', label: 'Sample' },
-  { key: 'REVIEW', label: 'Review' },
-  { key: 'COMPLETE', label: 'Complete' },
-];
+const PHASES: { key: WorkflowPhase; label: string }[] = WORKFLOW_PHASES.map(phase => ({
+  key: phase,
+  label: WORKFLOW_PHASE_LABELS[phase],
+}));
 
 export function PhaseIndicator({ currentPhase }: PhaseIndicatorProps) {
   const currentIndex = PHASES.findIndex(p => p.key === currentPhase);

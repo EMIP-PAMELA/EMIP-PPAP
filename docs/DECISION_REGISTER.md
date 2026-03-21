@@ -4,6 +4,40 @@ Important architectural and design decisions for EMIP-PPAP.
 
 ---
 
+## DEC-015: Persist Workflow Phase in Database
+- Date: 2026-03-20
+- Status: Accepted
+- Context: Phase 9 implemented phase-based workflow UI with local React state. Phase state reset on page reload, making it unsuitable for production use. Real workflow execution requires phase persistence across sessions and page refreshes. Users needed to see current phase when returning to a PPAP record.
+- Decision: Add `workflow_phase` column to `ppap_records` table. Persist phase transitions to database. Load initial phase from database on page load. Log phase advances to `ppap_events` for audit trail. Phase state becomes part of PPAP record (not ephemeral UI state).
+- Consequences:
+  - ✅ Phase persists across page reloads
+  - ✅ Phase visible to all users viewing same PPAP
+  - ✅ Phase queryable for reporting and filtering
+  - ✅ Phase changes logged in event history
+  - ✅ Clean upgrade from Phase 9 local state
+  - ✅ Database constraint enforces valid phase values
+  - ✅ Single source of truth (database, not UI)
+  - ⚠️ Requires schema migration (first schema change since DTL rebaseline)
+  - ⚠️ Must follow strict schema change protocol
+  - ⚠️ Phase transitions must handle DB failures gracefully
+  - ⚠️ UI state must sync with database state
+- Implementation:
+  - Schema: `workflow_phase VARCHAR(50) NOT NULL DEFAULT 'INITIATION'`
+  - Constraint: CHECK (workflow_phase IN ('INITIATION', 'DOCUMENTATION', 'SAMPLE', 'REVIEW', 'COMPLETE'))
+  - Constants: `src/features/ppap/constants/workflowPhases.ts`
+  - Mutation: `updateWorkflowPhase()` - updates DB + logs event
+  - Loading: `PPAPWorkflowWrapper` initializes from `ppap.workflow_phase`
+  - Validation: UI prevents phase advance if DB update fails
+  - Event logging: PHASE_ADVANCED with from/to phases + form data
+  - Error handling: Clear error messages on DB failure
+- Migration Path:
+  - All existing PPAPs default to 'INITIATION' (safe default)
+  - Phase 9 UI components updated to use DB-backed state
+  - No data loss - event history preserves previous phase advances
+  - Index on workflow_phase for performance
+
+---
+
 ## DEC-014: Phase-Based Workflow with Local State Management
 - Date: 2026-03-20
 - Status: Accepted

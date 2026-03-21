@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { PPAPRecord, PPAPTask } from '@/src/types/database.types';
 import { PhaseIndicator } from './PhaseIndicator';
 import { InitiationForm } from './InitiationForm';
-
-type WorkflowPhase = 'INITIATION' | 'DOCUMENTATION' | 'SAMPLE' | 'REVIEW' | 'COMPLETE';
+import { WorkflowPhase, isValidWorkflowPhase } from '../constants/workflowPhases';
 
 interface PPAPWorkflowWrapperProps {
   ppap: PPAPRecord;
@@ -13,7 +12,12 @@ interface PPAPWorkflowWrapperProps {
 }
 
 export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
-  const [currentPhase, setCurrentPhase] = useState<WorkflowPhase>('INITIATION');
+  // Initialize phase from database, fallback to INITIATION if invalid
+  const initialPhase = isValidWorkflowPhase(ppap.workflow_phase) 
+    ? ppap.workflow_phase 
+    : 'INITIATION';
+  
+  const [currentPhase, setCurrentPhase] = useState<WorkflowPhase>(initialPhase);
 
   return (
     <div className="space-y-6">

@@ -1,6 +1,6 @@
 # Database Translation Layer (DTL) Snapshot
 
-**Last Updated:** 2026-03-20 03:57 CT  
+**Last Updated:** 2026-03-20 19:27 CT  
 **Status:** ✅ VERIFIED AGAINST LIVE DATABASE - AUTHORITATIVE CONTRACT
 
 ## Purpose
@@ -32,7 +32,7 @@ All table schemas in this document have been verified against the live Supabase 
 
 **Purpose:** Core PPAP record tracking across all sites
 
-**Verified Schema (9 columns):**
+**Verified Schema (10 columns):**
 
 | Column | Type | Constraints | Purpose |
 |--------|------|-------------|---------|
@@ -43,12 +43,13 @@ All table schemas in this document have been verified against the live Supabase 
 | `plant` | VARCHAR | NOT NULL | Manufacturing plant/site |
 | `request_date` | TIMESTAMPTZ | NOT NULL | Date PPAP was requested |
 | `status` | VARCHAR | NOT NULL, DEFAULT 'NEW' | Workflow status (NEW, IN_PROGRESS, SUBMITTED, APPROVED, REJECTED) |
+| `workflow_phase` | VARCHAR(50) | NOT NULL, DEFAULT 'INITIATION' | Current workflow phase (INITIATION, DOCUMENTATION, SAMPLE, REVIEW, COMPLETE) |
 | `created_at` | TIMESTAMPTZ | NULL, DEFAULT now() | Record creation timestamp |
 | `updated_at` | TIMESTAMPTZ | NULL, DEFAULT now() | Record update timestamp |
 
 **Safe Query Operations:**
-- ✅ `SELECT * FROM ppap_records` returns 9 columns
-- ✅ Filter by: `status`, `plant`, `customer_name` (use ILIKE for case-insensitive)
+- ✅ `SELECT * FROM ppap_records` returns 10 columns
+- ✅ Filter by: `status`, `workflow_phase`, `plant`, `customer_name` (use ILIKE for case-insensitive)
 - ✅ Order by: `created_at`, `updated_at`, `request_date`
 - ✅ No soft delete filtering needed (deleted_at does not exist)
 
@@ -62,11 +63,13 @@ All table schemas in this document have been verified against the live Supabase 
   plant: string;          // REQUIRED
   request_date: string;   // REQUIRED (ISO date)
   status?: 'NEW';         // OPTIONAL (defaults to 'NEW')
+  workflow_phase?: 'INITIATION'; // OPTIONAL (defaults to 'INITIATION')
 }
 
 // UPDATE
 {
   status?: string;
+  workflow_phase?: string; // Valid values: INITIATION, DOCUMENTATION, SAMPLE, REVIEW, COMPLETE
   updated_at?: string;  // Auto-updated by trigger
 }
 ```

@@ -1,9 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { logEvent } from '@/src/features/events/mutations';
-
-type WorkflowPhase = 'INITIATION' | 'DOCUMENTATION' | 'SAMPLE' | 'REVIEW' | 'COMPLETE';
+import { updateWorkflowPhase } from '../mutations/updateWorkflowPhase';
+import { WorkflowPhase } from '../constants/workflowPhases';
 
 interface InitiationFormProps {
   ppapId: string;
@@ -119,25 +118,30 @@ export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: I
     setLoading(true);
 
     try {
-      await logEvent({
-        ppap_id: ppapId,
-        event_type: 'PHASE_ADVANCED',
-        event_data: {
-          from_phase: currentPhase,
-          to_phase: 'DOCUMENTATION',
+      // Persist phase change to database
+      await updateWorkflowPhase({
+        ppapId,
+        fromPhase: currentPhase,
+        toPhase: 'DOCUMENTATION',
+        actor: 'Matt',
+        additionalData: {
           initiation_data: formData,
         },
-        actor: 'Matt',
       });
 
       setSuccessMessage('✓ Initiation phase completed! Advancing to Documentation phase...');
       
+      // Update UI state after successful database update
       setTimeout(() => {
         setPhase('DOCUMENTATION');
       }, 1500);
     } catch (error) {
       console.error('Failed to advance phase:', error);
-      setErrors({ _form: 'Failed to advance phase. Please try again.' });
+      setErrors({ 
+        _form: error instanceof Error 
+          ? `Failed to advance phase: ${error.message}` 
+          : 'Failed to advance phase. Please try again.',
+      });
     } finally {
       setLoading(false);
     }
