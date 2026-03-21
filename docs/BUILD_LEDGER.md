@@ -4,6 +4,76 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-20 15:42 CT - [ARCHITECTURE] Introduce PPAP Intake and Integration Strategy
+- Summary: Extended BUILD_PLAN.md with comprehensive PPAP intake architecture and integration readiness strategy. Documentation-only update to establish architectural principles for future system evolution.
+- Files changed:
+  - `docs/BUILD_PLAN.md` - Added 4 new sections with architectural guidance
+- Database changes: None
+- Code changes: None
+- DTL alignment: No schema modifications
+
+**New Sections Added:**
+
+1. **PPAP Intake Architecture** (inserted after System Scope)
+   - Defines normalized intake layer for all PPAP sources
+   - Establishes 3 intake sources: Manual Entry, Customer Portal, External System Integration
+   - Core principle: All data normalized to internal model before persistence
+   - Internal schema (DTL_SNAPSHOT.md) is single source of truth
+   - External systems map INTO internal model (never dictate structure)
+   - Normalization layer: Validates → Maps → Enriches → Logs → Persists
+   - Integration philosophy: Integration is input mechanism, not control mechanism
+
+2. **System Scope Updates**
+   - Added to In Scope:
+     - PPAP Intake (manual entry, structured initiation)
+     - Data normalization layer for all PPAP inputs
+     - Phase-based workflow execution
+   - Added to Out of Scope:
+     - Direct API integrations with external systems (future phase)
+     - Real-time synchronization with customer systems
+     - External system schema dependency
+
+3. **Integration Readiness Strategy** (inserted after Execution Rules)
+   - Defines future integration with Rheem ETQ Reliance, Trane Windchill, other OEM systems
+   - 3 integration modes: Manual Entry, Structured Import, API-Based Intake
+   - Core rules:
+     - Validation first (all-or-nothing)
+     - Normalization required
+     - External IDs preserved but not authoritative
+     - Internal workflow always governs
+   - Architectural principle reinforced: External systems initiate, internal system governs
+
+4. **PPAP Intake Evolution Roadmap** (inserted before Controlled Re-Expansion Roadmap)
+   - Phase A: Manual PPAP Initiation (current - completed)
+   - Phase B: Structured Initiation UI (Phase 9 - in progress)
+   - Phase C: Customer Portal Initiation (near future)
+   - Phase D: Import-Based Intake (future)
+   - Phase E: API-Based Intake from External Systems (advanced)
+
+**Architectural Impact:**
+- Prevents future schema drift from external system changes
+- Enables controlled integration path without breaking existing functionality
+- Aligns system with enterprise workflow architecture
+- Establishes clear governance model: internal system controls lifecycle
+- Protects system autonomy while enabling flexibility
+
+**Design Principles Established:**
+- Normalization layer is mandatory for all inputs
+- External schemas never dictate internal structure
+- Internal UUIDs remain authoritative (external IDs for reference only)
+- Validation cannot be bypassed by external systems
+- Event logging integrity maintained across all intake sources
+
+**Documentation Status:**
+- No code changes required
+- No schema changes required
+- BUILD_PLAN.md updated with authoritative architectural guidance
+- Future phases can reference this architecture
+
+- Commit: `docs: introduce ppap intake and integration architecture strategy`
+
+---
+
 ## 2026-03-20 15:25 CT - [FEAT] Phase 9 - Phase-Based PPAP Workflow UI (INITIATION Stage)
 - Summary: Implemented phase-based PPAP workflow system modeled after Rheem process. Structural upgrade from simple status → multi-phase workflow with local state management.
 - Files changed:

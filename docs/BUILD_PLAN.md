@@ -28,6 +28,11 @@ Build a production-usable PPAP operations module that centralizes intake, status
 - Event audit trail (immutable history)
 - Multi-site coordination
 
+**PPAP Intake:**
+- PPAP Intake (manual entry, structured initiation)
+- Data normalization layer for all PPAP inputs
+- Phase-based workflow execution
+
 **Data Integrity:**
 - Validated inputs
 - Required field enforcement
@@ -53,6 +58,82 @@ Build a production-usable PPAP operations module that centralizes intake, status
 - ❌ Real-time collaboration features
 - ❌ Mobile-specific UI
 - ❌ Mold tracking (removed from v1 scope)
+- ❌ Direct API integrations with external systems (future phase)
+- ❌ Real-time synchronization with customer systems
+- ❌ External system schema dependency
+
+---
+
+## PPAP Intake Architecture
+
+**Status:** AUTHORITATIVE
+
+### Overview
+
+The system shall implement a normalized PPAP intake layer that governs how all PPAP records enter the system.
+
+### Intake Sources
+
+All PPAPs must originate from one of the following sources:
+
+1. **Manual Entry** (current state)
+   - Internal users create PPAP records directly in the system
+   - Structured initiation forms guide data entry
+   - Immediate validation and normalization
+
+2. **Customer Portal** (future state)
+   - External users initiate PPAP requests
+   - Self-service intake with guided workflows
+   - Auto-population where possible
+
+3. **External System Integration** (future state)
+   - Rheem ETQ Reliance
+   - Trane Windchill
+   - Other OEM PPAP systems
+   - API-based or file-based ingestion
+
+### Core Principle
+
+**All incoming PPAP data must be normalized into the system's internal data model before being persisted.**
+
+- **Internal schema (DTL_SNAPSHOT.md) is the single source of truth**
+- **External systems must map INTO the internal model**
+- **External schemas must NEVER dictate internal structure**
+
+### Design Intent
+
+This architecture ensures:
+
+- **Consistent data structure** across all PPAPs regardless of source
+- **Elimination of schema drift** from external system changes
+- **Clean upgrade path to integration** without breaking existing functionality
+- **Ability to support multiple customer systems** with different data models
+- **System autonomy** - external systems initiate, internal system governs
+
+### Normalization Layer
+
+All intake sources flow through a normalization layer that:
+
+1. **Validates** required fields and data types
+2. **Maps** external field names to internal schema
+3. **Enriches** data with system-generated metadata
+4. **Logs** intake events for audit trail
+5. **Persists** only normalized data to database
+
+### Integration Philosophy
+
+**Integration is an input mechanism, not a control mechanism.**
+
+External systems may:
+- ✅ Initiate PPAP requests
+- ✅ Provide initial data
+- ✅ Request status updates
+
+External systems may NOT:
+- ❌ Dictate internal workflow
+- ❌ Override internal validation
+- ❌ Bypass normalization layer
+- ❌ Directly modify internal schema
 
 ---
 
@@ -152,6 +233,74 @@ A phase is complete when:
 - ✅ MILEMARKER.md updated
 - ✅ Code committed with clear message
 - ✅ Manual validation completed
+
+---
+
+## Integration Readiness Strategy
+
+**Status:** FUTURE PHASES
+
+### Overview
+
+The system is designed to support future integration with external PPAP systems such as:
+
+- **Rheem ETQ Reliance**
+- **Trane Windchill**
+- **Other OEM PPAP systems**
+
+### Integration Modes (Planned)
+
+1. **Manual Entry** (current baseline)
+   - Internal users create PPAPs directly in the system
+   - Full control over data entry and validation
+   - Immediate normalization and persistence
+
+2. **Structured Import** (CSV / JSON upload)
+   - Bulk PPAP creation from formatted files
+   - Pre-validation before import
+   - Batch normalization and event logging
+
+3. **API-Based Intake** (future)
+   - Real-time PPAP creation via REST/GraphQL API
+   - External system authentication and authorization
+   - Webhook notifications for status updates
+
+### Core Rules
+
+All imported data must adhere to the following principles:
+
+1. **Validation First**
+   - All imported data must be validated against internal schema
+   - Invalid data rejected with clear error messages
+   - No partial imports (all-or-nothing transactions)
+
+2. **Normalization Required**
+   - External field names mapped to internal schema
+   - Data types converted to internal formats
+   - Enrichment with system-generated metadata
+
+3. **External Identifiers Preserved but Not Authoritative**
+   - External PPAP IDs, Project Numbers stored for reference
+   - Internal UUIDs remain primary keys
+   - External IDs used for correlation only
+
+4. **Internal Workflow Always Governs**
+   - External systems cannot bypass validation
+   - Internal status workflow remains authoritative
+   - External systems receive status updates, not control workflow
+
+### Architectural Principle
+
+**Integration is an input mechanism, not a control mechanism.**
+
+**External systems initiate requests —  
+The internal system executes, validates, and governs the PPAP lifecycle.**
+
+This ensures:
+- **System autonomy** - external changes do not break internal workflow
+- **Data consistency** - all PPAPs follow same validation rules
+- **Audit trail integrity** - all changes logged through internal event system
+- **Flexibility** - can integrate with multiple external systems without conflicts
 
 ---
 
@@ -607,6 +756,73 @@ Add comprehensive filtering and search to list page.
 - ✅ Filters persist in URL
 - ✅ Clear filters resets view
 - ✅ Search is performant (<500ms)
+
+---
+
+## PPAP Intake Evolution Roadmap
+
+This roadmap defines the evolution of how PPAPs enter the system, from manual entry to full integration.
+
+### Phase A: Manual PPAP Initiation (Current)
+
+**Status:** ✅ COMPLETED
+
+- Internal users create and manage PPAPs
+- Simple form-based data entry (4 required fields)
+- Immediate validation and persistence
+- Event logging on creation
+
+### Phase B: Structured Initiation UI (In Progress)
+
+**Status:** 🔄 PHASE 9 - IN PROGRESS
+
+- Sectioned initiation form aligned with Rheem workflow
+- Phase-based workflow execution
+- 6 structured sections:
+  - Project Info
+  - Contacts
+  - Part Info
+  - Drawing Data
+  - Shipment
+  - Warrant
+- Phase gating and validation
+- Comprehensive data capture before PPAP activation
+
+### Phase C: Customer Portal Initiation (Near Future)
+
+**Status:** ⏳ PLANNED
+
+- External users create PPAPs directly
+- Self-service PPAP request interface
+- Customer-facing portal with guided workflow
+- Auto-population from customer profile
+- Internal approval workflow before activation
+- Email notifications to internal coordinators
+
+### Phase D: Import-Based Intake (Future)
+
+**Status:** ⏳ PLANNED
+
+- File-based PPAP ingestion (CSV / JSON / Excel)
+- Bulk PPAP creation from structured data
+- Pre-validation and error reporting
+- Auto-population of initiation data
+- Import preview and confirmation
+- Batch event logging
+
+### Phase E: API-Based Intake from External Systems (Advanced)
+
+**Status:** ⏳ PLANNED
+
+- Real-time PPAP creation via REST/GraphQL API
+- Integration with external PPAP systems:
+  - Rheem ETQ Reliance
+  - Trane Windchill
+  - Other OEM systems
+- Event-driven PPAP creation
+- Webhook notifications for status updates
+- External identifier mapping
+- Full normalization layer implementation
 
 ---
 
