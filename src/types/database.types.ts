@@ -70,6 +70,8 @@ export type EventType =
   | 'BLOCKED'
   | 'UNBLOCKED'
   | 'PHASE_ADVANCED'
+  | 'DOCUMENTATION_SUBMITTED'
+  | 'SAMPLE_SUBMITTED'
   | 'PPAP_DELETED';
 
 export type MoldStatus =

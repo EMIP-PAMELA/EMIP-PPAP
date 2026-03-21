@@ -4,6 +4,323 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 17:46 CT - [FEAT] Phase 12 - Sample Phase UI Implementation
+- Summary: Implemented SAMPLE phase UI with conditional sections, validation, and event-based data storage. Phase advances to REVIEW after successful submission. All data stored in ppap_events (no schema changes).
+- Files changed:
+  - `src/features/ppap/components/SampleForm.tsx` - NEW - Sample phase form
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Integrated SampleForm
+  - `src/types/database.types.ts` - Added SAMPLE_SUBMITTED event type
+  - `docs/BUILD_LEDGER.md` - This entry
+  - `docs/MILEMARKER.md` - Updated milestone
+- Database changes: **NONE** - Uses event_data for all storage
+- DTL alignment: Full compliance - no schema modifications
+
+**Implementation Details:**
+
+1. **SampleForm Component**
+   - Four-section sidebar navigation: Requirement, Shipment, Cost, Confirmation
+   - Sample Requirement section:
+     - samples_required (boolean checkbox)
+     - Conditional UI messaging based on selection
+   - Shipment Information section (conditional on samples_required):
+     - sample_quantity (number input, required if samples_required)
+     - ship_to (text input for location)
+     - attention (text input for contact)
+     - carrier (text input)
+     - tracking_number (text input)
+     - estimated_arrival (date input, required if samples_required)
+     - Warning displayed if samples not required
+   - Cost Information section:
+     - has_cost (boolean checkbox)
+     - cost_amount (number input, conditional on has_cost)
+   - Confirmation section:
+     - Summary of all sample data
+     - Required acknowledgement checkbox
+   - All form state managed in local React state
+   - Controlled components with safe rendering
+
+2. **Conditional Logic**
+   - Shipment fields required only if samples_required = true
+   - Cost amount field visible only if has_cost = true
+   - UI provides contextual warnings and hints
+   - Validation dynamically adjusts based on selections
+
+3. **Validation Logic**
+   - Required fields:
+     - acknowledgement must be checked
+     - If samples_required = true:
+       - sample_quantity must be provided
+       - estimated_arrival must be provided
+   - Inline error messages for each field
+   - Form-level error banner
+   - Submit button disabled during loading
+
+4. **Event-Based Data Storage**
+   - Event type: `SAMPLE_SUBMITTED`
+   - Event data structure:
+     ```typescript
+     {
+       samples_required: boolean,
+       sample_quantity: number | null,
+       ship_to: string | null,
+       attention: string | null,
+       carrier: string | null,
+       tracking_number: string | null,
+       estimated_arrival: string | null,
+       has_cost: boolean,
+       cost_amount: number | null,
+       all_form_data: SampleData
+     }
+     ```
+   - Actor: "Matt"
+   - Actor role: "Engineer"
+   - No database schema changes
+   - All data queryable via ppap_events table
+
+5. **Phase Advancement**
+   - Uses existing `updateWorkflowPhase()` mutation
+   - Advances from SAMPLE → REVIEW
+   - Only advances after successful event logging
+   - Logs PHASE_ADVANCED event with sample_data
+   - Updates ppap_records.workflow_phase in database
+   - UI updates after DB success
+   - 1.5 second delay with success message
+
+6. **Safe Rendering (React #418 Protection)**
+   - All text inputs: `value={field || ''}`
+   - All checkboxes: `checked={!!field}`
+   - All error messages: `{error || ''}`
+   - Success message: `{successMessage || ''}`
+   - Part number prop: `partNumber={ppap.part_number || ''}`
+   - No null/undefined rendering
+
+7. **Error Handling**
+   - Clear error messages on validation failure
+   - Specific error messages on DB failure
+   - User can retry after error
+   - No orphaned state
+   - Loading state prevents double submission
+
+**User Flow:**
+
+1. Complete DOCUMENTATION phase
+2. Phase advances to SAMPLE
+3. User sees SampleForm with sidebar navigation
+4. Sample Requirement section:
+   - Check "samples_required" if physical samples needed
+   - See conditional messaging
+5. If samples required, navigate to Shipment section:
+   - Enter sample_quantity (required)
+   - Enter estimated_arrival (required)
+   - Optionally enter ship_to, attention, carrier, tracking_number
+6. Navigate to Cost section:
+   - Check "has_cost" if applicable
+   - If checked, enter cost_amount
+7. Navigate to Confirmation section:
+   - Review summary
+   - Check acknowledgement checkbox
+8. Click "Submit Sample Info & Advance to Review →"
+9. Form validates
+10. SAMPLE_SUBMITTED event logged
+11. Phase advances to REVIEW in database
+12. PHASE_ADVANCED event logged
+13. Success message displays
+14. UI updates to REVIEW phase
+15. Refresh page → Phase remains REVIEW ✅
+
+**DTL Compliance:**
+
+- ✅ No schema changes
+- ✅ No new columns added
+- ✅ Uses ppap_events.event_data JSONB for all data
+- ✅ Event type added to EventType union only
+- ✅ Follows existing event logging pattern
+- ✅ Uses existing updateWorkflowPhase mutation
+- ✅ All data queryable via events table
+
+**UI/UX Features:**
+
+- Sidebar navigation for easy section access
+- Visual section highlighting (blue when active)
+- Conditional field display based on selections
+- Contextual warnings and hints
+- Required field indicators (red asterisk)
+- Inline validation errors
+- Form-level error banner
+- Submission summary before confirmation
+- Success message with transition delay
+- Loading state during submission
+- Disabled submit button when loading
+
+**Validation:**
+- ✅ Form renders in SAMPLE phase
+- ✅ All four sections accessible via sidebar
+- ✅ Conditional logic works (samples_required gates shipment fields)
+- ✅ Conditional validation works
+- ✅ Cost amount only visible when has_cost checked
+- ✅ Summary displays all entered data
+- ✅ Validation prevents submission without required fields
+- ✅ Inline errors display correctly
+- ✅ SAMPLE_SUBMITTED event logged
+- ✅ PHASE_ADVANCED event logged
+- ✅ Phase advances to REVIEW
+- ✅ Phase persists after refresh
+- ✅ No React errors
+- ✅ No console errors
+- ✅ Safe rendering throughout
+
+- Commit: `feat: implement sample phase ui with conditional sections and event storage`
+
+---
+
+## 2026-03-21 17:34 CT - [FEAT] Phase 11 - Documentation Phase UI Implementation
+- Summary: Implemented DOCUMENTATION phase UI with comprehensive form, validation, and event-based data storage. Phase advances to SAMPLE after successful submission. All data stored in ppap_events (no schema changes).
+- Files changed:
+  - `src/features/ppap/components/DocumentationForm.tsx` - NEW - Documentation phase form
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Integrated DocumentationForm
+  - `src/types/database.types.ts` - Added DOCUMENTATION_SUBMITTED event type
+  - `docs/BUILD_LEDGER.md` - This entry
+  - `docs/MILEMARKER.md` - Updated milestone
+- Database changes: **NONE** - Uses event_data for all storage
+- DTL alignment: Full compliance - no schema modifications
+
+**Implementation Details:**
+
+1. **DocumentationForm Component**
+   - Three-section sidebar navigation: Readiness, Checklist, Confirmation
+   - Submission Readiness section:
+     - suggested_date (date input, required)
+     - can_meet_date (boolean checkbox)
+     - docs_ready (boolean checkbox)
+     - comments (textarea for notes)
+   - Required Documents Checklist (10 documents):
+     - Design Record, Dimensional Results, DFMEA, PFMEA
+     - Control Plan, MSA, Material Test Results
+     - Initial Process Studies, Packaging, Tooling
+     - Shows count: "X of 10 documents checked"
+   - Confirmation section:
+     - Summary of submission data
+     - Required acknowledgement checkbox
+   - All form state managed in local React state
+   - Controlled components with safe rendering
+
+2. **Validation Logic**
+   - Required fields:
+     - suggested_date must be provided
+     - acknowledgement must be checked
+   - Inline error messages for each field
+   - Form-level error banner
+   - Submit button disabled during loading
+
+3. **Event-Based Data Storage**
+   - Event type: `DOCUMENTATION_SUBMITTED`
+   - Event data structure:
+     ```typescript
+     {
+       submission_date: string,
+       can_meet_date: boolean,
+       docs_ready: boolean,
+       checked_documents: string[],  // Array of checked document names
+       comments: string,
+       all_form_data: DocumentationData  // Complete form state
+     }
+     ```
+   - Actor: "Matt"
+   - Actor role: "Engineer"
+   - No database schema changes
+   - All data queryable via ppap_events table
+
+4. **Phase Advancement**
+   - Uses existing `updateWorkflowPhase()` mutation
+   - Advances from DOCUMENTATION → SAMPLE
+   - Only advances after successful event logging
+   - Logs PHASE_ADVANCED event with documentation_data
+   - Updates ppap_records.workflow_phase in database
+   - UI updates after DB success
+   - 1.5 second delay with success message
+
+5. **Safe Rendering (React #418 Protection)**
+   - All text inputs: `value={field || ''}`
+   - All checkboxes: `checked={!!field}`
+   - All error messages: `{error || ''}`
+   - Success message: `{successMessage || ''}`
+   - Part number prop: `partNumber={ppap.part_number || ''}`
+   - No null/undefined rendering
+
+6. **Error Handling**
+   - Clear error messages on validation failure
+   - Specific error messages on DB failure
+   - User can retry after error
+   - No orphaned state
+   - Loading state prevents double submission
+
+**User Flow:**
+
+1. Complete INITIATION phase
+2. Phase advances to DOCUMENTATION
+3. User sees DocumentationForm with sidebar navigation
+4. Fill in submission readiness:
+   - Select suggested submission date
+   - Check can_meet_date if applicable
+   - Check docs_ready if applicable
+   - Add comments/notes
+5. Navigate to checklist section
+6. Check all applicable documents (10 available)
+7. Navigate to confirmation section
+8. Review submission summary
+9. Check acknowledgement checkbox
+10. Click "Submit Documentation & Advance to Sample →"
+11. Form validates
+12. DOCUMENTATION_SUBMITTED event logged
+13. Phase advances to SAMPLE in database
+14. PHASE_ADVANCED event logged
+15. Success message displays
+16. UI updates to SAMPLE phase
+17. Refresh page → Phase remains SAMPLE ✅
+
+**DTL Compliance:**
+
+- ✅ No schema changes
+- ✅ No new columns added
+- ✅ Uses ppap_events.event_data JSONB for all data
+- ✅ Event type added to EventType union only
+- ✅ Follows existing event logging pattern
+- ✅ Uses existing updateWorkflowPhase mutation
+- ✅ All data queryable via events table
+
+**UI/UX Features:**
+
+- Sidebar navigation for easy section access
+- Visual section highlighting (blue when active)
+- Document counter (X of 10 checked)
+- Submission summary before final confirmation
+- Required field indicators (red asterisk)
+- Inline validation errors
+- Form-level error banner
+- Success message with transition delay
+- Loading state during submission
+- Disabled submit button when loading
+
+**Validation:**
+- ✅ Form renders in DOCUMENTATION phase
+- ✅ All three sections accessible via sidebar
+- ✅ Date picker for suggested_date
+- ✅ 10 document checkboxes render
+- ✅ Counter shows checked documents
+- ✅ Validation prevents submission without required fields
+- ✅ Inline errors display correctly
+- ✅ DOCUMENTATION_SUBMITTED event logged
+- ✅ PHASE_ADVANCED event logged
+- ✅ Phase advances to SAMPLE
+- ✅ Phase persists after refresh
+- ✅ No React errors
+- ✅ No console errors
+- ✅ Safe rendering throughout
+
+- Commit: `feat: implement documentation phase ui with event-based storage`
+
+---
+
 ## 2026-03-20 19:27 CT - [FEAT] Phase 10 - Persistent PPAP Workflow Phase State
 - Summary: Implemented persistent workflow phase storage in database. Phase now survives page reloads. Upgraded from Phase 9 local state to production-ready persistent state with database backing.
 - Files changed:

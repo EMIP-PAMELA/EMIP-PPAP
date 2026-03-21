@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { PPAPRecord, PPAPTask } from '@/src/types/database.types';
 import { PhaseIndicator } from './PhaseIndicator';
 import { InitiationForm } from './InitiationForm';
+import { DocumentationForm } from './DocumentationForm';
+import { SampleForm } from './SampleForm';
 import { WorkflowPhase, isValidWorkflowPhase } from '../constants/workflowPhases';
 
 interface PPAPWorkflowWrapperProps {
@@ -33,17 +35,21 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
       )}
 
       {currentPhase === 'DOCUMENTATION' && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">DOCUMENTATION Phase</h2>
-          <p className="text-gray-600">Documentation phase not yet implemented.</p>
-        </div>
+        <DocumentationForm
+          ppapId={ppap.id}
+          partNumber={ppap.part_number || ''}
+          currentPhase={currentPhase}
+          setPhase={setCurrentPhase}
+        />
       )}
 
       {currentPhase === 'SAMPLE' && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">SAMPLE Phase</h2>
-          <p className="text-gray-600">Sample phase not yet implemented.</p>
-        </div>
+        <SampleForm
+          ppapId={ppap.id}
+          partNumber={ppap.part_number || ''}
+          currentPhase={currentPhase}
+          setPhase={setCurrentPhase}
+        />
       )}
 
       {currentPhase === 'REVIEW' && (
