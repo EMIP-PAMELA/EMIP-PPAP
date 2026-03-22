@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { updateWorkflowPhase } from '../mutations/updateWorkflowPhase';
 import { WorkflowPhase } from '../constants/workflowPhases';
 
@@ -35,6 +36,7 @@ interface InitiationData {
 }
 
 export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: InitiationFormProps) {
+  const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>('project_info');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -131,6 +133,9 @@ export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: I
 
       setSuccessMessage('✓ Initiation phase completed! Advancing to Documentation phase...');
       
+      // Refresh UI to reflect status/phase change
+      router.refresh();
+      
       // Update UI state after successful database update
       setTimeout(() => {
         setPhase('DOCUMENTATION');
@@ -159,27 +164,27 @@ export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: I
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-gray-900">INITIATION Phase</h2>
+    <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-300 rounded-xl shadow-sm p-8">
+      <div className="flex items-center justify-between mb-8">
+        <h2 className="text-2xl font-bold text-gray-900">Initiation Phase</h2>
         {successMessage && (
-          <div className="text-sm font-medium text-green-700 bg-green-50 px-4 py-2 rounded">
+          <div className="text-sm font-semibold text-green-800 bg-green-100 border border-green-300 px-6 py-3 rounded-lg shadow-sm">
             {successMessage || ''}
           </div>
         )}
       </div>
 
-      <div className="flex gap-6">
-        <div className="w-48 flex-shrink-0">
-          <nav className="space-y-1">
+      <div className="flex gap-8">
+        <div className="w-56 flex-shrink-0">
+          <nav className="space-y-2">
             {sections.map(section => (
               <button
                 key={section.key}
                 onClick={() => setActiveSection(section.key)}
-                className={`w-full text-left px-3 py-2 text-sm font-medium rounded transition-colors ${
+                className={`w-full text-left px-4 py-3 text-sm font-semibold rounded-lg transition-all ${
                   activeSection === section.key
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-gray-700 hover:bg-gray-100'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-gray-700 hover:bg-gray-200 bg-white border border-gray-200'
                 }`}
               >
                 {section.label}
@@ -188,16 +193,16 @@ export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: I
           </nav>
         </div>
 
-        <div className="flex-1">
+        <div className="flex-1 bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
           {errors._form && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+            <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800 font-medium">
               {errors._form || ''}
             </div>
           )}
 
           {activeSection === 'project_info' && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">PPAP Project Info</h3>
+            <div className="space-y-6">
+              <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b border-gray-200">PPAP Project Information</h3>
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -207,14 +212,20 @@ export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: I
                   value={formData.ppap_type || ''}
                   onChange={(e) => updateField('ppap_type', e.target.value)}
                   className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
-                    errors.ppap_type ? 'border-red-400' : 'border-gray-300'
+                    errors.ppap_type ? 'border-red-400' : 'border-gray-400'
                   }`}
                 >
-                  <option value="">Select Type</option>
-                  <option value="NPI">NPI</option>
-                  <option value="SER">SER</option>
-                  <option value="Maintenance">Maintenance</option>
+                  <option value="">Select PPAP Type</option>
+                  <option value="NPI">New Product Introduction (NPI)</option>
+                  <option value="SER">Engineering Change Request (ECR / SER)</option>
+                  <option value="Maintenance">Production / Maintenance</option>
                 </select>
+                <p className="mt-1 text-xs text-gray-600">
+                  {formData.ppap_type === 'NPI' && 'Used when launching a brand-new product or part'}
+                  {formData.ppap_type === 'SER' && 'Used when modifying an existing product or design'}
+                  {formData.ppap_type === 'Maintenance' && 'Used for ongoing production updates or minor revisions'}
+                  {!formData.ppap_type && 'Select the appropriate PPAP type for this submission'}
+                </p>
                 {errors.ppap_type && (
                   <p className="mt-1 text-sm text-red-600">{errors.ppap_type || ''}</p>
                 )}

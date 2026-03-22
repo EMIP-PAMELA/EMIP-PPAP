@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { logEvent } from '@/src/features/events/mutations';
 import { updateWorkflowPhase } from '../mutations/updateWorkflowPhase';
 import { WorkflowPhase } from '../constants/workflowPhases';
@@ -35,6 +36,7 @@ const SECTIONS = [
 ] as const;
 
 export function SampleForm({ ppapId, partNumber, currentPhase, setPhase }: SampleFormProps) {
+  const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>('requirement');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -121,6 +123,9 @@ export function SampleForm({ ppapId, partNumber, currentPhase, setPhase }: Sampl
 
       setSuccessMessage('✓ Sample phase completed! Advancing to Review phase...');
       
+      // Refresh UI to reflect status/phase change
+      router.refresh();
+      
       // Update UI state after successful database update
       setTimeout(() => {
         setPhase('REVIEW');
@@ -149,9 +154,9 @@ export function SampleForm({ ppapId, partNumber, currentPhase, setPhase }: Sampl
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg">
-      <div className="border-b border-gray-200 px-6 py-4">
-        <h2 className="text-lg font-semibold text-gray-900">Sample Phase</h2>
+    <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-300 rounded-xl shadow-sm">
+      <div className="border-b border-gray-200 px-8 py-6">
+        <h2 className="text-2xl font-bold text-gray-900">Sample Phase</h2>
         <p className="text-sm text-gray-600 mt-1">
           Part Number: <span className="font-medium">{partNumber || ''}</span>
         </p>
@@ -180,7 +185,7 @@ export function SampleForm({ ppapId, partNumber, currentPhase, setPhase }: Sampl
         {/* Form Content */}
         <div className="flex-1 p-6">
           {errors._form && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+            <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800 font-medium">
               {errors._form || ''}
             </div>
           )}
@@ -349,7 +354,7 @@ export function SampleForm({ ppapId, partNumber, currentPhase, setPhase }: Sampl
                   </div>
 
                   {formData.has_cost && (
-                    <div className="ml-6 space-y-4">
+                    <div className="p-8 space-y-8">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Cost Amount ($)
@@ -443,7 +448,7 @@ export function SampleForm({ ppapId, partNumber, currentPhase, setPhase }: Sampl
           <div className="mt-8 pt-6 border-t border-gray-200 flex justify-between items-center">
             <div>
               {successMessage && (
-                <div className="text-sm font-medium text-green-700 bg-green-50 px-4 py-2 rounded">
+                <div className="text-sm font-semibold text-green-800 bg-green-100 border border-green-300 px-6 py-3 rounded-lg shadow-sm">
                   {successMessage || ''}
                 </div>
               )}

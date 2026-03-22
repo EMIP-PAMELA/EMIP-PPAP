@@ -20,21 +20,14 @@ interface StatusUpdateControlProps {
  * - Review decisions are made (APPROVE → APPROVED, REJECT → CLOSED)
  */
 export function StatusUpdateControl({ ppapId, currentStatus }: StatusUpdateControlProps) {
-  const isFinalized = currentStatus === 'APPROVED' || currentStatus === 'CLOSED';
-
   return (
     <div className="flex items-center gap-2">
-      <div className={`px-3 py-1 text-sm font-semibold rounded ${getStatusColor(currentStatus)}`}>
+      <div className={`px-4 py-2 text-sm font-bold rounded-lg shadow-sm ${getStatusColor(currentStatus)}`}>
         {STATUS_LABELS[currentStatus] || currentStatus}
       </div>
-      {isFinalized && (
-        <span className="text-xs text-gray-500 italic">(Auto-synced)</span>
-      )}
-      {!isFinalized && (
-        <span className="text-xs text-gray-500 italic" title="Status automatically follows workflow phase">
-          (Auto-synced with workflow)
-        </span>
-      )}
+      <span className="text-xs text-gray-500" title="Status automatically syncs with workflow phase">
+        Auto
+      </span>
     </div>
   );
 }

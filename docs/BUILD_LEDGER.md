@@ -4,6 +4,178 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 19:08 CT - [FEAT] Phase 14 - UI Polish & Terminology Normalization
+- Summary: Comprehensive UI/UX improvements focused on visual hierarchy, contrast, spacing, and professional polish. Replaced technical acronyms with customer-friendly labels. No schema or workflow logic changes.
+- Files changed:
+  - `src/features/ppap/components/PhaseIndicator.tsx` - Enhanced visual hierarchy and sizing
+  - `src/features/ppap/components/PPAPHeader.tsx` - Improved layout and information architecture
+  - `src/features/ppap/components/StatusUpdateControl.tsx` - Better badge visibility
+  - `src/features/ppap/components/InitiationForm.tsx` - PPAP type labels + tooltips, better layout
+  - `src/features/ppap/components/DocumentationForm.tsx` - Consistent spacing and polish
+  - `src/features/ppap/components/SampleForm.tsx` - Consistent spacing and polish
+  - `src/features/ppap/components/ReviewForm.tsx` - Consistent spacing and polish
+  - `src/features/ppap/components/CreatePPAPForm.tsx` - Improved create form layout
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Production-ready visual quality, improved user experience, clearer terminology
+
+**UI/UX Improvements:**
+
+1. **Terminology Normalization (Customer-Agnostic)**
+   - PPAP Type field updated with full descriptions + acronyms:
+     - "NPI" → "New Product Introduction (NPI)"
+     - "SER" → "Engineering Change Request (ECR / SER)"
+     - "Maintenance" → "Production / Maintenance"
+   - Added contextual helper text for each type:
+     - NPI: "Used when launching a brand-new product or part"
+     - ECR/SER: "Used when modifying an existing product or design"
+     - Production: "Used for ongoing production updates or minor revisions"
+   - Values stored remain unchanged (backward compatible)
+
+2. **PhaseIndicator Enhancements**
+   - Increased circle size: 40px → 56px (w-10 h-10 → w-14 h-14)
+   - Larger text: text-xs → text-sm, font-medium → font-semibold
+   - Active phase now has blue ring (ring-4 ring-blue-200)
+   - Connector bars thicker and rounded: h-1 → h-2 rounded-full
+   - Gradient background: bg-gradient-to-br from-gray-50 to-white
+   - Better shadow: border-gray-200 → border-gray-300 + shadow-sm
+   - Increased padding: p-6 → p-8
+   - Title: "PPAP Workflow Progress" → "Workflow Progress"
+
+3. **PPAPHeader Restructuring**
+   - Larger PPAP number: text-3xl → text-4xl
+   - Part number with label: "Part Number:" + larger font
+   - Task summary moved to border-top section for clarity
+   - Details section with gray background (bg-gray-50)
+   - Uppercase section headers with tracking-wide
+   - 4-column grid on large screens (lg:grid-cols-4)
+   - Better visual separation with border-b
+
+4. **StatusUpdateControl Enhancement**
+   - Increased padding: px-3 py-1 → px-4 py-2
+   - Font weight: font-semibold → font-bold
+   - Added shadow-sm
+   - Simplified auto-sync indicator: small "Auto" label instead of verbose text
+   - Removed redundant "(Auto-synced with workflow)" text
+
+5. **Form Components Visual Upgrade**
+   - All forms now use gradient backgrounds: bg-gradient-to-br from-white to-gray-50
+   - Border strength: border-gray-200 → border-gray-300
+   - All forms rounded-xl with shadow-sm
+   - Increased padding: p-6 → p-8
+   - Spacing: space-y-6 → space-y-8
+   - Phase titles: text-lg → text-2xl font-bold
+   - Success messages: stronger green with border and shadow
+   - Error messages: stronger red with better contrast
+
+6. **InitiationForm Specific**
+   - Sidebar navigation buttons enhanced:
+     - Active: bg-blue-600 text-white shadow-md
+     - Inactive: bg-white border border-gray-200
+   - Content area wrapped in white card with shadow
+   - Section headers with border-bottom separator
+   - Better spacing between fields: space-y-4 → space-y-6
+
+7. **CreatePPAPForm Polish**
+   - Wrapped fields in white card container
+   - Section header: "PPAP Information" with border-bottom
+   - Input styling: border-gray-300 → border-gray-400
+   - Larger padding: px-3 py-2 → px-4 py-3
+   - Font weight: font-medium → font-semibold for labels
+   - Button styling improved with shadows
+   - Cancel button now white with border (not gray bg)
+
+8. **Consistency Improvements**
+   - All required field indicators: text-red-500 → text-red-600
+   - All borders: border-gray-300/400 for better visibility
+   - All focus rings: consistent focus:ring-2 focus:ring-blue-500
+   - All success messages: green-100 bg with green-300 border
+   - All error messages: red-50 bg with red-300 border
+   - Font weights standardized: labels use font-semibold/font-bold
+   - Spacing standardized across all forms
+
+**Visual Hierarchy Strategy:**
+- **Level 1 (Headers)**: text-2xl/4xl font-bold text-gray-900
+- **Level 2 (Section Titles)**: text-xl font-bold with border-bottom
+- **Level 3 (Field Labels)**: text-sm font-semibold text-gray-700
+- **Level 4 (Helper Text)**: text-xs text-gray-600
+- **Backgrounds**: Gradients and bg-gray-50 to reduce "washed out" look
+- **Borders**: border-gray-300/400 for better definition
+- **Shadows**: shadow-sm added to cards and important elements
+
+**Benefits:**
+- ✅ Professional, production-ready appearance
+- ✅ Better visual hierarchy and information scanning
+- ✅ Reduced cognitive load with clearer labels
+- ✅ Improved contrast and readability
+- ✅ Consistent spacing and styling throughout
+- ✅ Customer-agnostic terminology
+- ✅ No breaking changes to data or workflow
+- ✅ Backward compatible (stored values unchanged)
+
+**Validation:**
+- ✅ No React errors
+- ✅ No console errors
+- ✅ No layout breaks
+- ✅ All forms render correctly
+- ✅ Terminology displays properly
+- ✅ Helper text shows contextually
+- ✅ Workflow still functions
+- ✅ Status still auto-syncs
+- ✅ Phase transitions work
+- ✅ No schema changes
+- ✅ No workflow logic changes
+
+- Commit: `feat: phase 14 ui polish and terminology normalization`
+
+---
+
+## 2026-03-21 18:57 CT - [FIX] Refresh UI After Workflow/Status Update
+- Summary: Added router.refresh() after phase updates to ensure UI reflects status/phase changes immediately without manual page refresh.
+- Files changed:
+  - `src/features/ppap/components/InitiationForm.tsx` - Added router.refresh() after phase update
+  - `src/features/ppap/components/DocumentationForm.tsx` - Added router.refresh() after phase update
+  - `src/features/ppap/components/SampleForm.tsx` - Added router.refresh() after phase update
+  - `src/features/ppap/components/ReviewForm.tsx` - Added router.refresh() after phase update
+  - `docs/BUILD_LEDGER.md` - This entry
+- Root cause: Next.js server components require router.refresh() to re-fetch server data after mutations
+- Impact: Status badge and workflow indicators now update immediately after phase advancement
+
+**Implementation:**
+
+1. **Added useRouter Hook**
+   - Imported `useRouter` from 'next/navigation' in all phase forms
+   - Instantiated `const router = useRouter()` in component body
+
+2. **Execution Order**
+   - Await `updateWorkflowPhase()` (database update + event logging)
+   - Set success message
+   - Call `router.refresh()` (triggers Next.js server re-fetch)
+   - Update local UI state with setTimeout
+
+3. **Files Updated**
+   - InitiationForm: refresh after INITIATION → DOCUMENTATION
+   - DocumentationForm: refresh after DOCUMENTATION → SAMPLE
+   - SampleForm: refresh after SAMPLE → REVIEW
+   - ReviewForm: refresh after REVIEW → COMPLETE/DOCUMENTATION/SAMPLE
+
+**Benefits:**
+- ✅ Status badge updates immediately (no manual refresh)
+- ✅ Phase indicator updates in real-time
+- ✅ Improved UX - users see changes instantly
+- ✅ Eliminates confusion from stale UI state
+- ✅ Works consistently across all phase transitions
+
+**Validation:**
+- ✅ Complete INITIATION → Status changes to PRE_ACK_IN_PROGRESS immediately
+- ✅ Complete DOCUMENTATION → Status remains PRE_ACK_IN_PROGRESS (no visual lag)
+- ✅ Complete SAMPLE → Status changes to SUBMITTED immediately
+- ✅ Approve in REVIEW → Status changes to APPROVED immediately
+- ✅ No manual page refresh required
+
+- Commit: `fix: refresh UI after workflow/status update`
+
+---
+
 ## 2026-03-21 18:47 CT - [FEAT] Auto-Sync Status with Workflow Phase
 - Summary: Status now automatically synchronized with workflow_phase. Removed manual status control to ensure data integrity. Status derives from workflow phase with review decision overrides.
 - Files changed:
