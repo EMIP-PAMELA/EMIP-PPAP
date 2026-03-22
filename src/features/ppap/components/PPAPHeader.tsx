@@ -9,6 +9,7 @@ import { getTaskCounts } from '@/src/features/tasks/utils/taskUtils';
 import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils/getNextAction';
 import { supabase } from '@/src/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
+import { logEvent } from '@/src/features/events/mutations';
 
 interface PPAPHeaderProps {
   ppap: PPAPRecord;
@@ -27,6 +28,7 @@ export function PPAPHeader({ ppap, tasks = [] }: PPAPHeaderProps) {
     try {
       const currentUser = 'System User'; // In production, get from auth context
       
+      // Update ownership
       await supabase
         .from('ppap_records')
         .update({ 
@@ -34,6 +36,17 @@ export function PPAPHeader({ ppap, tasks = [] }: PPAPHeaderProps) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', ppap.id);
+      
+      // Log ownership event
+      await logEvent({
+        ppap_id: ppap.id,
+        event_type: 'ASSIGNED',
+        event_data: {
+          assigned_to: currentUser,
+        },
+        actor: currentUser,
+        actor_role: 'Engineer',
+      });
       
       setAssignedTo(currentUser);
       router.refresh();

@@ -11,6 +11,7 @@ interface ReviewFormProps {
   partNumber: string;
   currentPhase: WorkflowPhase;
   setPhase: (phase: WorkflowPhase) => void;
+  isReadOnly?: boolean;
 }
 
 type ReviewDecision = 'APPROVE' | 'REJECT' | 'CORRECTIONS_NEEDED';
@@ -21,7 +22,7 @@ interface ReviewData {
   acknowledgement: boolean;
 }
 
-export function ReviewForm({ ppapId, partNumber, currentPhase, setPhase }: ReviewFormProps) {
+export function ReviewForm({ ppapId, partNumber, currentPhase, setPhase, isReadOnly = false }: ReviewFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -163,6 +164,19 @@ export function ReviewForm({ ppapId, partNumber, currentPhase, setPhase }: Revie
           Part Number: <span className="font-medium">{partNumber || ''}</span>
         </p>
       </div>
+
+      {/* Read-Only Banner */}
+      {isReadOnly && (
+        <div className="px-6 py-4 bg-yellow-50 border-b-2 border-yellow-300">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🔒</span>
+            <div>
+              <p className="text-sm font-bold text-yellow-900 uppercase tracking-wide">Preview Mode</p>
+              <p className="text-sm text-yellow-800">Complete previous phases to unlock this section</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="p-8 space-y-8">
         {errors._form && (

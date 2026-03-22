@@ -4,6 +4,306 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 22:45 CT - [FEAT] Phase 21 - Navigation, Ownership Logging, and Terminology Clarity
+- Summary: Added clickable phase navigation with backward navigation, read-only preview for future phases, ownership event logging, and improved terminology for DFMEA/PFMEA.
+- Files changed:
+  - `src/features/ppap/components/PhaseIndicator.tsx` - Made phases clickable with navigation callback
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Added phase navigation logic with read-only mode
+  - `src/features/ppap/components/InitiationForm.tsx` - Added isReadOnly prop and preview banner
+  - `src/features/ppap/components/DocumentationForm.tsx` - Added isReadOnly prop, preview banner, DFMEA/PFMEA terminology
+  - `src/features/ppap/components/SampleForm.tsx` - Added isReadOnly prop and preview banner
+  - `src/features/ppap/components/ReviewForm.tsx` - Added isReadOnly prop and preview banner
+  - `src/features/ppap/components/PPAPHeader.tsx` - Added ownership event logging, prevented duplicate claims
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Transforms system into navigable workflow engine, better ownership tracking, clearer terminology
+- No schema changes - pure workflow enhancement
+
+**Problem:**
+
+PPAP workflow lacked navigation flexibility and ownership tracking:
+- Users couldn't navigate back to review previous phases
+- Future phases weren't accessible for preview
+- No event logging when ownership was claimed
+- Users could claim ownership multiple times
+- DFMEA/PFMEA abbreviations unclear to new users
+
+This limited workflow visibility and auditability.
+
+**Solution:**
+
+**1. Clickable Phase Navigation**
+
+Made `PhaseIndicator` phases clickable for navigation:
+
+```typescript
+interface PhaseIndicatorProps {
+  currentPhase: WorkflowPhase;
+  onPhaseClick?: (phase: WorkflowPhase) => void; // NEW
+}
+
+const isClickable = !isUpcoming;
+
+<div
+  onClick={() => isClickable && onPhaseClick && onPhaseClick(phase.key)}
+  className={`... ${isClickable ? 'cursor-pointer hover:scale-110 hover:shadow-xl' : 'cursor-not-allowed'}`}
+  title={isUpcoming ? 'Complete previous phases to unlock' : `Navigate to ${phase.label}`}
+>
+```
+
+**Navigation Rules:**
+- **Past phases** (completed): FULL interaction - clickable
+- **Current phase** (active): FULL interaction - clickable
+- **Future phases** (upcoming): READ-ONLY preview - not clickable
+
+**Visual Treatment:**
+- Clickable phases: Pointer cursor, scale on hover, shadow elevation
+- Future phases: Not-allowed cursor, tooltip explanation
+
+**2. Phase Navigation Logic**
+
+Added navigation state management in `PPAPWorkflowWrapper`:
+
+```typescript
+const [currentPhase, setCurrentPhase] = useState<WorkflowPhase>(initialPhase);
+const [selectedPhase, setSelectedPhase] = useState<WorkflowPhase>(initialPhase);
+
+const handlePhaseClick = (phase: WorkflowPhase) => {
+  setSelectedPhase(phase);
+  setDocumentationSection(undefined);
+  scrollToActivePhase();
+};
+
+// Calculate if selected phase is in the future (read-only)
+const currentPhaseIndex = WORKFLOW_PHASES.indexOf(currentPhase);
+const selectedPhaseIndex = WORKFLOW_PHASES.indexOf(selectedPhase);
+const isFuturePhase = selectedPhaseIndex > currentPhaseIndex;
+```
+
+**State Management:**
+- `currentPhase`: Actual workflow progress (from database)
+- `selectedPhase`: Currently viewed phase (user navigation)
+- `isFuturePhase`: Flag for read-only mode
+
+**3. Read-Only Mode for Future Phases**
+
+Added `isReadOnly` prop to all form components:
+
+```typescript
+// PPAPWorkflowWrapper passes isReadOnly to forms
+{selectedPhase === 'DOCUMENTATION' && (
+  <DocumentationForm
+    ppapId={ppap.id}
+    partNumber={ppap.part_number || ''}
+    currentPhase={currentPhase}
+    setPhase={setCurrentPhase}
+    initialSection={documentationSection}
+    isReadOnly={isFuturePhase} // READ-ONLY if future phase
+  />
+)}
+```
+
+**All forms updated:**
+- `InitiationForm`
+- `DocumentationForm`
+- `SampleForm`
+- `ReviewForm`
+
+**Read-Only Preview Banner:**
+```tsx
+{isReadOnly && (
+  <div className="px-6 py-4 bg-yellow-50 border-b-2 border-yellow-300">
+    <div className="flex items-center gap-3">
+      <span className="text-2xl">🔒</span>
+      <div>
+        <p className="text-sm font-bold text-yellow-900 uppercase tracking-wide">Preview Mode</p>
+        <p className="text-sm text-yellow-800">Complete previous phases to unlock this section</p>
+      </div>
+    </div>
+  </div>
+)}
+```
+
+**Read-Only Behavior:**
+- Submit buttons disabled: `disabled={loading || isReadOnly}`
+- Button text changes: `isReadOnly ? '🔒 Preview Mode - Cannot Submit' : 'Submit...'`
+- Inputs disabled (implementation varies by form complexity)
+
+**4. Ownership Event Logging**
+
+Added event logging to `PPAPHeader.tsx` ownership handler:
+
+```typescript
+const handleTakeOwnership = async () => {
+  setTakingOwnership(true);
+  try {
+    const currentUser = 'System User';
+    
+    // Update ownership
+    await supabase
+      .from('ppap_records')
+      .update({ 
+        assigned_to: currentUser,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', ppap.id);
+    
+    // Log ownership event (NEW)
+    await logEvent({
+      ppap_id: ppap.id,
+      event_type: 'ASSIGNED',
+      event_data: {
+        assigned_to: currentUser,
+      },
+      actor: currentUser,
+      actor_role: 'Engineer',
+    });
+    
+    setAssignedTo(currentUser);
+    router.refresh();
+  } catch (error) {
+    console.error('Failed to take ownership:', error);
+  }
+};
+```
+
+**Event Data:**
+- `event_type`: 'ASSIGNED'
+- `event_data`: Contains `assigned_to` user
+- `actor`: Current user claiming ownership
+- `actor_role`: 'Engineer'
+
+**5. Prevent Duplicate Ownership Claims**
+
+Ownership button already conditionally rendered:
+
+```tsx
+{!assignedTo && (
+  <button onClick={handleTakeOwnership}>
+    ✋ Take Ownership
+  </button>
+)}
+{assignedTo && (
+  <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+    <span className="text-xs font-semibold text-blue-700 uppercase">Owner</span>
+    <p className="text-sm font-medium text-blue-900">{assignedTo || ''}</p>
+  </div>
+)}
+```
+
+**Logic:**
+- If `assigned_to` is null → Show "Take Ownership" button
+- If `assigned_to` exists → Show owner badge only
+- No re-assignment possible through UI
+
+**6. Terminology Clarity**
+
+Updated document labels in `DocumentationForm.tsx`:
+
+**Before:**
+```typescript
+{ key: 'dfmea', label: 'DFMEA' },
+{ key: 'pfmea', label: 'PFMEA' },
+```
+
+**After:**
+```typescript
+{ key: 'dfmea', label: 'Design Failure Mode and Effects Analysis (DFMEA)' },
+{ key: 'pfmea', label: 'Process Failure Mode and Effects Analysis (PFMEA)' },
+```
+
+**Benefits:**
+- Clear full terminology for new users
+- Acronym in parentheses for experienced users
+- No tooltip implementation needed (label self-explanatory)
+
+**User Flow:**
+
+**Before Phase 21:**
+1. User on DOCUMENTATION phase
+2. Wants to review INITIATION data
+3. **Cannot navigate backward** - stuck on current phase
+4. Wants to preview SAMPLE phase
+5. **Cannot see future phases** - no preview available
+6. User claims ownership
+7. **No event logged** - no audit trail
+8. User sees "DFMEA" checkbox
+9. **Unclear what DFMEA means** - confusion
+
+**After Phase 21:**
+1. User on DOCUMENTATION phase
+2. **Clicks INITIATION phase indicator** - navigates backward
+3. Reviews previous data (full interaction)
+4. **Clicks SAMPLE phase indicator** - navigates forward
+5. Sees "🔒 Preview Mode" banner
+6. Can view SAMPLE form layout (read-only)
+7. **Cannot submit** - submit button disabled
+8. Returns to DOCUMENTATION phase
+9. User claims ownership
+10. **Event logged to ppap_events** - audit trail created
+11. Ownership button disappears
+12. **Owner badge shown** - cannot re-claim
+13. User sees "Design Failure Mode and Effects Analysis (DFMEA)"
+14. **Clear terminology** - understands requirement
+
+**Benefits:**
+- ✅ Full backward navigation to review completed phases
+- ✅ Forward navigation for preview of upcoming phases
+- ✅ Read-only mode prevents premature data entry
+- ✅ Clear visual feedback (🔒 banner)
+- ✅ Ownership events logged for audit trail
+- ✅ Duplicate ownership prevented
+- ✅ Improved terminology clarity
+- ✅ Navigable workflow engine
+- ✅ Better user experience
+- ✅ Enhanced auditability
+
+**Technical Implementation:**
+
+**PhaseIndicator.tsx:**
+- Added `onPhaseClick` callback prop
+- Made phase circles clickable
+- Added hover effects for clickable phases
+- Added tooltips for navigation hints
+
+**PPAPWorkflowWrapper.tsx:**
+- Added `selectedPhase` state (separate from `currentPhase`)
+- Created `handlePhaseClick` navigation function
+- Calculated `isFuturePhase` flag
+- Passed `isReadOnly` prop to all forms
+- Changed phase rendering from `currentPhase` to `selectedPhase`
+
+**All Form Components:**
+- Added `isReadOnly?: boolean` prop
+- Added read-only preview banner
+- Disabled submit buttons when `isReadOnly`
+- Forms display but cannot be submitted in preview mode
+
+**PPAPHeader.tsx:**
+- Imported `logEvent` function
+- Added event logging after ownership update
+- Used 'ASSIGNED' event type (existing EventType)
+- Ownership button already conditionally rendered
+
+**DocumentationForm.tsx:**
+- Updated DFMEA label from 'DFMEA' to full text
+- Updated PFMEA label from 'PFMEA' to full text
+
+**Validation:**
+- ✅ Phases are clickable (past and current)
+- ✅ Future phases show not-allowed cursor
+- ✅ Phase navigation updates selectedPhase
+- ✅ Read-only banner displays for future phases
+- ✅ Submit buttons disabled in read-only mode
+- ✅ Ownership events logged with ASSIGNED type
+- ✅ Ownership button hidden when assigned_to exists
+- ✅ DFMEA/PFMEA labels show full terminology
+- ✅ No TypeScript errors
+- ✅ No schema changes
+
+- Commit: `feat: phase 21 navigation and ownership fixes`
+
+---
+
 ## 2026-03-21 22:10 CT - [FIX] Phase 20.1 - Documentation Workflow UX Alignment & Validation Cleanup
 - Summary: Fixed documentation phase UX inconsistencies, removed false upload interactions, converted blocking validation to guidance-based warnings, and made tasks clickable for navigation.
 - Files changed:

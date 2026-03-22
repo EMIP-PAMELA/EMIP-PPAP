@@ -11,6 +11,7 @@ interface InitiationFormProps {
   ppapType?: string | null;
   currentPhase: WorkflowPhase;
   setPhase: (phase: WorkflowPhase) => void;
+  isReadOnly?: boolean;
 }
 
 type Section = 'project_info' | 'contacts' | 'part_info' | 'drawing' | 'shipment' | 'warrant';
@@ -35,7 +36,7 @@ interface InitiationData {
   packaging_met: boolean;
 }
 
-export function InitiationForm({ ppapId, partNumber, ppapType, currentPhase, setPhase }: InitiationFormProps) {
+export function InitiationForm({ ppapId, partNumber, ppapType, currentPhase, setPhase, isReadOnly = false }: InitiationFormProps) {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>('project_info');
   const [loading, setLoading] = useState(false);
@@ -484,13 +485,29 @@ export function InitiationForm({ ppapId, partNumber, ppapType, currentPhase, set
                 All confirmations are required to advance to the next phase.
               </p>
               
+              {/* Read-Only Banner */}
+              {isReadOnly && (
+                <div className="px-6 py-4 bg-yellow-50 border-b-2 border-yellow-300">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🔒</span>
+                    <div>
+                      <p className="text-sm font-bold text-yellow-900 uppercase tracking-wide">Preview Mode</p>
+                      <p className="text-sm text-yellow-800">Complete previous phases to unlock this section</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-3">
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded">
                   <input
                     type="checkbox"
                     checked={formData.drawing_understood}
                     onChange={(e) => updateField('drawing_understood', e.target.checked)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                    disabled={isReadOnly}
+                    className={`w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 ${
+                      isReadOnly ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   />
                   <label className="text-sm font-medium text-gray-700">
                     Drawing is understood <span className="text-red-600">*</span>

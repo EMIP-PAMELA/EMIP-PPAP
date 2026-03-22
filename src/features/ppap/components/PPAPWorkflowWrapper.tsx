@@ -7,7 +7,7 @@ import { InitiationForm } from './InitiationForm';
 import { DocumentationForm } from './DocumentationForm';
 import { SampleForm } from './SampleForm';
 import { ReviewForm } from './ReviewForm';
-import { WorkflowPhase, isValidWorkflowPhase, WORKFLOW_PHASE_LABELS } from '../constants/workflowPhases';
+import { WorkflowPhase, isValidWorkflowPhase, WORKFLOW_PHASE_LABELS, WORKFLOW_PHASES } from '../constants/workflowPhases';
 import { getNextAction } from '../utils/getNextAction';
 import { getPhaseTasks } from '../utils/getPhaseTasks';
 
@@ -23,6 +23,7 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
     : 'INITIATION';
   
   const [currentPhase, setCurrentPhase] = useState<WorkflowPhase>(initialPhase);
+  const [selectedPhase, setSelectedPhase] = useState<WorkflowPhase>(initialPhase);
   const [documentationSection, setDocumentationSection] = useState<'checklist' | 'upload' | 'readiness' | 'confirmation' | undefined>(undefined);
   const activePhaseRef = useRef<HTMLDivElement>(null);
 
@@ -40,12 +41,18 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
   // Get phase tasks with data-driven completion
   // Note: Phase data is managed within child form components
   // Tasks will show completion based on data passed here
-  const phaseTasksData = getPhaseTasks(currentPhase, {});
+  const phaseTasksData = getPhaseTasks(selectedPhase, {});
   
   const scrollToActivePhase = () => {
     if (activePhaseRef.current) {
       activePhaseRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+  };
+
+  const handlePhaseClick = (phase: WorkflowPhase) => {
+    setSelectedPhase(phase);
+    setDocumentationSection(undefined);
+    scrollToActivePhase();
   };
 
   const handleTaskClick = (taskId: string) => {
@@ -58,11 +65,16 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
     };
 
     const targetSection = taskSectionMap[taskId];
-    if (targetSection && currentPhase === 'DOCUMENTATION') {
+    if (targetSection && selectedPhase === 'DOCUMENTATION') {
       setDocumentationSection(targetSection);
       scrollToActivePhase();
     }
   };
+
+  // Calculate if selected phase is in the future (read-only)
+  const currentPhaseIndex = WORKFLOW_PHASES.indexOf(currentPhase);
+  const selectedPhaseIndex = WORKFLOW_PHASES.indexOf(selectedPhase);
+  const isFuturePhase = selectedPhaseIndex > currentPhaseIndex;
 
   return (
     <div className="space-y-6">
@@ -85,7 +97,7 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
         </div>
       </div>
 
-      <PhaseIndicator currentPhase={currentPhase} />
+      <PhaseIndicator currentPhase={currentPhase} onPhaseClick={handlePhaseClick} />
 
       {/* Phase Tasks Panel */}
       <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
@@ -120,7 +132,7 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
           <div className="space-y-3">
             {phaseTasksData.tasks.map((task, index) => {
               const isFirstIncomplete = !task.completed && phaseTasksData.tasks.slice(0, index).every(t => t.completed);
-              const isClickable = currentPhase === 'DOCUMENTATION' && ['prepare_documents', 'markup_drawing', 'dimensional_results', 'upload_documents'].includes(task.id);
+              const isClickable = selectedPhase === 'DOCUMENTATION' && ['prepare_documents', 'markup_drawing', 'dimensional_results', 'upload_documents'].includes(task.id);
               return (
                 <div
                   key={task.id}
@@ -167,7 +179,7 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
         )}
       </div>
       
-      {currentPhase === 'INITIATION' && (
+      {selectedPhase === 'INITIATION' && (
         <div ref={activePhaseRef}>
           <InitiationForm
             ppapId={ppap.id}
@@ -175,11 +187,12 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
             ppapType={ppap.ppap_type}
             currentPhase={currentPhase}
             setPhase={setCurrentPhase}
+            isReadOnly={isFuturePhase}
           />
         </div>
       )}
 
-      {currentPhase === 'DOCUMENTATION' && (
+      {selectedPhase === 'DOCUMENTATION' && (
         <div ref={activePhaseRef}>
           <DocumentationForm
             ppapId={ppap.id}
@@ -187,33 +200,36 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
             currentPhase={currentPhase}
             setPhase={setCurrentPhase}
             initialSection={documentationSection}
+            isReadOnly={isFuturePhase}
           />
         </div>
       )}
 
-      {currentPhase === 'SAMPLE' && (
+      {selectedPhase === 'SAMPLE' && (
         <div ref={activePhaseRef}>
           <SampleForm
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
             currentPhase={currentPhase}
             setPhase={setCurrentPhase}
+            isReadOnly={isFuturePhase}
           />
         </div>
       )}
 
-      {currentPhase === 'REVIEW' && (
+      {selectedPhase === 'REVIEW' && (
         <div ref={activePhaseRef}>
           <ReviewForm
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
             currentPhase={currentPhase}
             setPhase={setCurrentPhase}
+            isReadOnly={isFuturePhase}
           />
         </div>
       )}
 
-      {currentPhase === 'COMPLETE' && (
+      {selectedPhase === 'COMPLETE' && (
         <div ref={activePhaseRef} className="bg-white border border-gray-200 rounded-lg p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">COMPLETE Phase</h2>
           <p className="text-green-700 font-medium">✓ PPAP workflow complete!</p>

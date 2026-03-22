@@ -12,6 +12,7 @@ interface DocumentationFormProps {
   currentPhase: WorkflowPhase;
   setPhase: (phase: WorkflowPhase) => void;
   initialSection?: Section;
+  isReadOnly?: boolean;
 }
 
 type Section = 'checklist' | 'upload' | 'readiness' | 'confirmation';
@@ -37,8 +38,8 @@ interface DocumentationData {
 const REQUIRED_DOCUMENTS = [
   { key: 'design_record', label: 'Design Record' },
   { key: 'dimensional_results', label: 'Dimensional Results' },
-  { key: 'dfmea', label: 'DFMEA' },
-  { key: 'pfmea', label: 'PFMEA' },
+  { key: 'dfmea', label: 'Design Failure Mode and Effects Analysis (DFMEA)' },
+  { key: 'pfmea', label: 'Process Failure Mode and Effects Analysis (PFMEA)' },
   { key: 'control_plan', label: 'Control Plan' },
   { key: 'msa', label: 'MSA (Measurement System Analysis)' },
   { key: 'material_test_results', label: 'Material Test Results' },
@@ -54,7 +55,7 @@ const SECTIONS = [
   { id: 'confirmation', label: 'Confirmation' },
 ] as const;
 
-export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, initialSection }: DocumentationFormProps) {
+export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, initialSection, isReadOnly = false }: DocumentationFormProps) {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>(initialSection || 'checklist');
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
@@ -201,6 +202,19 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
           Part Number: <span className="font-medium">{partNumber || ''}</span>
         </p>
       </div>
+
+      {/* Read-Only Banner */}
+      {isReadOnly && (
+        <div className="px-6 py-4 bg-yellow-50 border-b-2 border-yellow-300">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🔒</span>
+            <div>
+              <p className="text-sm font-bold text-yellow-900 uppercase tracking-wide">Preview Mode</p>
+              <p className="text-sm text-yellow-800">Complete previous phases to unlock this section</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex">
         {/* Sidebar Navigation */}
@@ -475,10 +489,10 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
             </div>
             <button
               onClick={handleSubmit}
-              disabled={loading}
+              disabled={loading || isReadOnly}
               className="px-6 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
             >
-              {loading ? 'Submitting...' : 'Submit Documentation & Advance to Sample →'}
+              {loading ? 'Submitting...' : isReadOnly ? '🔒 Preview Mode - Cannot Submit' : 'Submit Documentation & Advance to Sample →'}
             </button>
           </div>
         </div>
