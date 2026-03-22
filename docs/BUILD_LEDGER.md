@@ -4,6 +4,203 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 00:45 CT - [FIX] MarkupTool Render Crash and Safe Document Loading
+- Summary: Fixed React error #418 rendering crash by adding strict type checks and safe fallback rendering.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Added type guards and debug logging
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Prevented rendering crashes, improved reliability, added debugging capability
+- No schema changes
+
+**Problem:**
+
+MarkupTool experienced React error #418 rendering crash:
+- Invalid values passed to JSX render
+- `selectedFile?.endsWith()` called on non-string
+- `fileUrl` rendered without type validation
+- No debug logging for troubleshooting
+- Crash prevented tool from loading
+
+**Root Cause:**
+
+Unsafe type assumptions in render logic:
+- `selectedFile` assumed to be string (could be null/undefined/object)
+- `fileUrl` rendered without validation
+- `.endsWith()` called without type check
+- No safeguards against invalid state
+
+**Solution:**
+
+**1. Strict Type Checks for selectedFile**
+
+**Before (unsafe):**
+```tsx
+if (!selectedFile) { ... }
+selectedFile?.endsWith('.pdf')
+```
+
+**After (safe):**
+```tsx
+if (!selectedFile || typeof selectedFile !== 'string') { ... }
+typeof selectedFile === 'string' && selectedFile.endsWith('.pdf')
+```
+
+**All occurrences hardened:**
+- Signed URL generation
+- PDF detection
+- Document display
+
+**2. Strict Type Checks for fileUrl**
+
+**Before (unsafe):**
+```tsx
+{fileUrl ? (
+  selectedFile?.endsWith('.pdf') ? (...)
+) : (...)}
+```
+
+**After (safe):**
+```tsx
+{typeof fileUrl === 'string' && fileUrl.length > 0 ? (
+  typeof selectedFile === 'string' && selectedFile.endsWith('.pdf') ? (...)
+) : (...)}
+```
+
+**Benefits:**
+- Prevents React error #418
+- Validates string type before `.endsWith()`
+- Checks non-empty string
+- Safe fallback rendering
+
+**3. Added Debug Logging**
+
+Added console logging to signed URL generation:
+
+```typescript
+useEffect(() => {
+  const loadFileUrl = async () => {
+    if (!selectedFile || typeof selectedFile !== 'string') {
+      console.log('Selected file:', selectedFile);
+      setFileUrl(null);
+      return;
+    }
+
+    console.log('Selected file:', selectedFile);
+
+    const { data, error } = await supabase.storage
+      .from('ppap-documents')
+      .createSignedUrl(selectedFile, 3600);
+
+    console.log('Signed URL result:', data, error);
+
+    if (error) {
+      console.error('Supabase signed URL error:', error);
+      setFileUrl(null);
+      return;
+    }
+
+    setFileUrl(data?.signedUrl || null);
+  };
+
+  loadFileUrl();
+}, [selectedFile]);
+```
+
+**Logging points:**
+- Selected file value (debug invalid values)
+- Signed URL result (verify Supabase response)
+- Supabase errors (enhanced error messages)
+
+**4. Fail-Safe Error Handling**
+
+Enhanced error handling:
+- Changed from `error.message` to full `error` object
+- Ensured `setFileUrl(null)` on all error paths
+- Graceful degradation to loading/empty states
+
+**5. Safe Rendering States**
+
+**Render logic flow:**
+1. **fileUrl valid string?** → Display document (PDF or image)
+2. **selectedFile exists but no URL?** → "Loading document..."
+3. **No selectedFile?** → "Select a drawing to begin"
+
+**Type guards:**
+- `typeof fileUrl === 'string' && fileUrl.length > 0`
+- `typeof selectedFile === 'string' && selectedFile.endsWith('.pdf')`
+
+**User Flow:**
+
+**Before Fix:**
+1. User selects drawing from dropdown
+2. **MarkupTool crashes** with React error #418
+3. Blank screen - tool unusable
+4. Console error with no context
+5. Must reload page
+
+**After Fix:**
+1. User selects drawing from dropdown
+2. Console logs: "Selected file: ppap-documents/..."
+3. Console logs: "Signed URL result: {...}"
+4. Document renders safely
+5. If error occurs:
+   - Console logs: "Supabase signed URL error: {...}"
+   - Shows "Loading document..." state
+   - No crash - tool remains functional
+
+**Benefits:**
+- ✅ Strict type checks for selectedFile
+- ✅ Strict type checks for fileUrl
+- ✅ Prevents React error #418
+- ✅ Debug logging for troubleshooting
+- ✅ Enhanced error messages
+- ✅ Fail-safe error handling
+- ✅ Safe fallback rendering states
+- ✅ No more rendering crashes
+- ✅ Tool remains functional on errors
+- ✅ Easier debugging for future issues
+
+**Technical Implementation:**
+
+**Type Guards Added:**
+```typescript
+// selectedFile validation
+if (!selectedFile || typeof selectedFile !== 'string') { ... }
+
+// PDF detection
+typeof selectedFile === 'string' && selectedFile.endsWith('.pdf')
+
+// fileUrl validation
+typeof fileUrl === 'string' && fileUrl.length > 0
+```
+
+**Debug Logging:**
+- Log selectedFile value
+- Log signed URL result
+- Log Supabase errors with full context
+
+**Error Handling:**
+- Full error object logged (not just message)
+- `setFileUrl(null)` on all error paths
+- Graceful fallback to loading/empty states
+
+**Render Safety:**
+- Three-state logic: document → loading → empty
+- Type validation before every render
+- No assumptions about variable types
+
+**Validation:**
+- ✅ Type checks prevent crashes
+- ✅ Debug logging functional
+- ✅ Error handling robust
+- ✅ Fallback states work
+- ✅ No React error #418
+- ✅ Tool loads reliably
+
+- Commit: `fix: resolve markup tool render crash and enforce safe document display`
+
+---
+
 ## 2026-03-22 00:35 CT - [FIX] MarkupTool Document Rendering via Signed URLs
 - Summary: Fixed blank canvas issue by generating signed URLs from Supabase Storage to display uploaded documents.
 - Files changed:

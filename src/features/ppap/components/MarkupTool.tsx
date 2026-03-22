@@ -84,17 +84,22 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   // Generate signed URL when file is selected
   useEffect(() => {
     const loadFileUrl = async () => {
-      if (!selectedFile) {
+      if (!selectedFile || typeof selectedFile !== 'string') {
+        console.log('Selected file:', selectedFile);
         setFileUrl(null);
         return;
       }
+
+      console.log('Selected file:', selectedFile);
 
       const { data, error } = await supabase.storage
         .from('ppap-documents')
         .createSignedUrl(selectedFile, 3600); // 1 hour
 
+      console.log('Signed URL result:', data, error);
+
       if (error) {
-        console.error('Failed to load file URL:', error.message);
+        console.error('Supabase signed URL error:', error);
         setFileUrl(null);
         return;
       }
@@ -305,18 +310,38 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
               className="relative bg-gray-100 border-2 border-gray-300 rounded-lg overflow-hidden cursor-crosshair"
               style={{ width: '100%', paddingBottom: '75%' }}
             >
-              {/* Placeholder for drawing */}
-              {!selectedFile && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center text-gray-400">
-                    <svg className="mx-auto h-24 w-24 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <p className="text-sm font-medium">Select a drawing to begin</p>
-                    <p className="text-xs mt-1">Upload drawings in the Documentation phase, then select one above</p>
+              {/* Document Display */}
+              <div className="absolute inset-0">
+                {typeof fileUrl === 'string' && fileUrl.length > 0 ? (
+                  typeof selectedFile === 'string' && selectedFile.endsWith('.pdf') ? (
+                    <iframe
+                      src={fileUrl}
+                      className="w-full h-full"
+                      title="Drawing Document"
+                    />
+                  ) : (
+                    <img
+                      src={fileUrl}
+                      alt="Drawing"
+                      className="w-full h-full object-contain"
+                    />
+                  )
+                ) : selectedFile ? (
+                  <div className="flex items-center justify-center h-full text-gray-500">
+                    Loading document...
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center text-gray-400">
+                      <svg className="mx-auto h-24 w-24 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p className="text-sm font-medium">Select a drawing to begin</p>
+                      <p className="text-xs mt-1">Upload drawings in the Documentation phase, then select one above</p>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Annotations Overlay */}
               <div className="absolute inset-0 pointer-events-none">
