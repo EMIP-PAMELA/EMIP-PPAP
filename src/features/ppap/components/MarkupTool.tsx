@@ -29,18 +29,64 @@ const TYPE_COLORS: Record<AnnotationType, string> = {
   material: 'bg-green-500 border-green-600',
 };
 
+interface UploadedFile {
+  file_name: string;
+  file_path: string;
+}
+
 export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [selectedType, setSelectedType] = useState<AnnotationType>('dimension');
   const [selectedShape, setSelectedShape] = useState<AnnotationShape>('circle');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDescription, setEditDescription] = useState('');
-  const [uploadedDrawing, setUploadedDrawing] = useState<string | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load existing annotations from events
+  // Load uploaded files
   useEffect(() => {
+    const fetchFiles = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('ppap_events')
+          .select('event_data')
+          .eq('ppap_id', ppapId)
+          .eq('event_type', 'DOCUMENT_ADDED')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        // Filter to only file uploads (not markup events)
+        const files: UploadedFile[] = (data || [])
+          .filter(event => event.event_data.file_name && !event.event_data.markup)
+          .map(event => ({
+            file_name: event.event_data.file_name,
+            file_path: event.event_data.file_path,
+          }));
+
+        setUploadedFiles(files);
+        
+        // Auto-select first file if available
+        if (files.length > 0 && !selectedFile) {
+          setSelectedFile(files[0].file_path);
+        }
+      } catch (error) {
+        console.error('Failed to fetch files:', error);
+      }
+    };
+
+    fetchFiles();
+  }, [ppapId, selectedFile]);
+
+  // Load existing annotations for selected file
+  useEffect(() => {
+    if (!selectedFile) {
+      setAnnotations([]);
+      return;
+    }
+
     const fetchAnnotations = async () => {
       try {
         const { data, error } = await supabase
@@ -52,10 +98,15 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
         if (error) throw error;
 
-        // Find markup data (has annotations property)
-        const markupEvent = data?.find(event => event.event_data.annotations);
+        // Find markup for this specific file
+        const markupEvent = data?.find(
+          event => event.event_data.markup && event.event_data.file_path === selectedFile
+        );
+        
         if (markupEvent && markupEvent.event_data.annotations) {
           setAnnotations(markupEvent.event_data.annotations);
+        } else {
+          setAnnotations([]);
         }
       } catch (error) {
         console.error('Failed to fetch annotations:', error);
@@ -63,33 +114,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     };
 
     fetchAnnotations();
-  }, [ppapId]);
-
-  // Load uploaded drawing (placeholder for now - first image from uploads)
-  useEffect(() => {
-    const fetchDrawing = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('ppap_events')
-          .select('event_data')
-          .eq('ppap_id', ppapId)
-          .eq('event_type', 'DOCUMENT_ADDED')
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-          // For now, just show placeholder - would need to fetch actual file
-          setUploadedDrawing('placeholder');
-        }
-      } catch (error) {
-        console.error('Failed to fetch drawing:', error);
-      }
-    };
-
-    fetchDrawing();
-  }, [ppapId]);
+  }, [ppapId, selectedFile]);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
@@ -112,14 +137,21 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   };
 
   const handleSaveAnnotations = async () => {
+    if (!selectedFile) {
+      alert('Please select a drawing first');
+      return;
+    }
+
     setLoading(true);
     try {
       await logEvent({
         ppap_id: ppapId,
         event_type: 'DOCUMENT_ADDED',
         event_data: {
+          type: 'markup',
+          file_path: selectedFile,
           annotations,
-          markup: true, // Flag to identify markup events
+          markup: true,
         },
         actor: 'System User',
         actor_role: 'Engineer',
@@ -168,6 +200,11 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Drawing Markup Tool</h2>
             <p className="text-sm text-gray-600">Part: {partNumber || ''}</p>
+            {selectedFile && (
+              <p className="text-sm font-medium text-blue-600 mt-1">
+                Marking up: {uploadedFiles.find(f => f.file_path === selectedFile)?.file_name || 'Unknown file'}
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -181,38 +218,59 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
           {/* Main Canvas Area */}
           <div className="flex-1 p-6 overflow-auto">
             {/* Toolbar */}
-            <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg flex items-center gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mr-2">Type:</label>
-                <select
-                  value={selectedType}
-                  onChange={(e) => setSelectedType(e.target.value as AnnotationType)}
-                  className="px-3 py-1 border border-gray-300 rounded"
-                >
-                  <option value="dimension">Dimension (Blue)</option>
-                  <option value="note">Note (Yellow)</option>
-                  <option value="material">Material (Green)</option>
-                </select>
+            <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <label className="text-sm font-medium text-gray-700 mr-2">Select Drawing:</label>
+                  <select
+                    value={selectedFile || ''}
+                    onChange={(e) => setSelectedFile(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded w-full max-w-md"
+                  >
+                    {uploadedFiles.length === 0 && (
+                      <option value="">No drawings uploaded yet</option>
+                    )}
+                    {uploadedFiles.map(file => (
+                      <option key={file.file_path} value={file.file_path}>
+                        {file.file_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 mr-2">Shape:</label>
-                <select
-                  value={selectedShape}
-                  onChange={(e) => setSelectedShape(e.target.value as AnnotationShape)}
-                  className="px-3 py-1 border border-gray-300 rounded"
+              <div className="flex items-center gap-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mr-2">Type:</label>
+                  <select
+                    value={selectedType}
+                    onChange={(e) => setSelectedType(e.target.value as AnnotationType)}
+                    className="px-3 py-1 border border-gray-300 rounded"
+                  >
+                    <option value="dimension">Dimension (Blue)</option>
+                    <option value="note">Note (Yellow)</option>
+                    <option value="material">Material (Green)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mr-2">Shape:</label>
+                  <select
+                    value={selectedShape}
+                    onChange={(e) => setSelectedShape(e.target.value as AnnotationShape)}
+                    className="px-3 py-1 border border-gray-300 rounded"
+                  >
+                    <option value="circle">Circle</option>
+                    <option value="box">Box</option>
+                  </select>
+                </div>
+                <div className="flex-1"></div>
+                <button
+                  onClick={handleSaveAnnotations}
+                  disabled={loading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
                 >
-                  <option value="circle">Circle</option>
-                  <option value="box">Box</option>
-                </select>
+                  {loading ? 'Saving...' : '💾 Save Annotations'}
+                </button>
               </div>
-              <div className="flex-1"></div>
-              <button
-                onClick={handleSaveAnnotations}
-                disabled={loading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
-              >
-                {loading ? 'Saving...' : '💾 Save Annotations'}
-              </button>
             </div>
 
             {/* Drawing Canvas */}
@@ -223,14 +281,14 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
               style={{ width: '100%', paddingBottom: '75%' }}
             >
               {/* Placeholder for drawing */}
-              {!uploadedDrawing && (
+              {!selectedFile && (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center text-gray-400">
                     <svg className="mx-auto h-24 w-24 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                    <p className="text-sm font-medium">Click to add annotations</p>
-                    <p className="text-xs mt-1">Upload a drawing in Documentation to mark it up</p>
+                    <p className="text-sm font-medium">Select a drawing to begin</p>
+                    <p className="text-xs mt-1">Upload drawings in the Documentation phase, then select one above</p>
                   </div>
                 </div>
               )}

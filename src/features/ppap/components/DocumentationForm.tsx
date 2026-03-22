@@ -381,17 +381,27 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
                   </span>
                 </p>
 
-                {/* Markup Tool Button */}
-                <div className="mb-4">
-                  <button
-                    onClick={() => setShowMarkupTool(true)}
-                    disabled={isReadOnly}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-                  >
-                    🖊️ Open Markup Tool
-                  </button>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Mark up engineering drawings with annotations and dimensional callouts
+                {/* Markup Tool Mode Switch */}
+                <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                  <h4 className="text-sm font-semibold text-purple-900 mb-3">Drawing Markup</h4>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowMarkupTool(true)}
+                      disabled={isReadOnly}
+                      className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                    >
+                      🖊️ Open Markup Tool
+                    </button>
+                    <button
+                      disabled={isReadOnly}
+                      className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                      onClick={() => document.getElementById('file-upload')?.click()}
+                    >
+                      📤 Upload Markup File
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-2">
+                    Create markup annotations in-tool or upload pre-marked drawings
                   </p>
                 </div>
                 

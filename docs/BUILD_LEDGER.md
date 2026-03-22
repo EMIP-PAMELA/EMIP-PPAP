@@ -4,6 +4,332 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 23:55 CT - [FEAT] Phase 23.1 - Markup-Document Binding
+- Summary: Enhanced markup tool with document selection, file-specific annotation binding, and improved workflow integrity.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Added document selector, file-specific markup loading/saving
+  - `src/features/ppap/components/DocumentationForm.tsx` - Added mode switch (Open Tool / Upload File)
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Markup annotations now bound to specific documents, improved workflow clarity
+- No schema changes - enhanced event_data structure
+
+**Problem:**
+
+Markup tool lacked document association:
+- Annotations not bound to specific files
+- No way to select which drawing to mark up
+- Single markup set for entire PPAP
+- Confusing workflow - couldn't upload pre-marked drawings
+- No visibility into which document was being marked up
+
+This prevented effective multi-document markup and workflow clarity.
+
+**Solution:**
+
+**1. Document Selector Dropdown**
+
+Added file selection in MarkupTool:
+
+```tsx
+// Fetch uploaded files
+useEffect(() => {
+  const { data } = await supabase
+    .from('ppap_events')
+    .select('event_data')
+    .eq('ppap_id', ppapId)
+    .eq('event_type', 'DOCUMENT_ADDED')
+    .order('created_at', { ascending: false });
+
+  // Filter to only file uploads (not markup events)
+  const files = (data || [])
+    .filter(event => event.event_data.file_name && !event.event_data.markup)
+    .map(event => ({
+      file_name: event.event_data.file_name,
+      file_path: event.event_data.file_path,
+    }));
+
+  setUploadedFiles(files);
+  
+  // Auto-select first file
+  if (files.length > 0 && !selectedFile) {
+    setSelectedFile(files[0].file_path);
+  }
+}, [ppapId]);
+```
+
+**Dropdown UI:**
+```tsx
+<select
+  value={selectedFile || ''}
+  onChange={(e) => setSelectedFile(e.target.value)}
+  className="px-3 py-2 border border-gray-300 rounded w-full max-w-md"
+>
+  {uploadedFiles.length === 0 && (
+    <option value="">No drawings uploaded yet</option>
+  )}
+  {uploadedFiles.map(file => (
+    <option key={file.file_path} value={file.file_path}>
+      {file.file_name}
+    </option>
+  ))}
+</select>
+```
+
+**Benefits:**
+- Lists all uploaded documents
+- Auto-selects first file on load
+- Filters out markup events (only shows actual files)
+- Clear selection interface
+
+**2. File-Specific Markup Storage**
+
+Enhanced event_data structure:
+
+```typescript
+await logEvent({
+  ppap_id: ppapId,
+  event_type: 'DOCUMENT_ADDED',
+  event_data: {
+    type: 'markup',           // NEW: Identifies markup events
+    file_path: selectedFile,  // NEW: Links to source document
+    annotations,
+    markup: true,
+  },
+  actor: 'System User',
+  actor_role: 'Engineer',
+});
+```
+
+**Event data structure:**
+```typescript
+{
+  type: 'markup',
+  file_path: 'ppap-123/1234567890-drawing.pdf',
+  annotations: [
+    {
+      id: 'annotation-1',
+      x: 45.2,
+      y: 62.8,
+      label_number: 1,
+      type: 'dimension',
+      shape: 'circle',
+      description: 'Critical dimension ±0.001'
+    }
+  ],
+  markup: true
+}
+```
+
+**Benefits:**
+- Each document has its own markup set
+- File path links markup to source
+- Type field for event classification
+- Preserves backward compatibility (markup flag)
+
+**3. File-Specific Markup Loading**
+
+Filter annotations by file_path:
+
+```typescript
+useEffect(() => {
+  if (!selectedFile) {
+    setAnnotations([]);
+    return;
+  }
+
+  const fetchAnnotations = async () => {
+    const { data } = await supabase
+      .from('ppap_events')
+      .select('event_data')
+      .eq('ppap_id', ppapId)
+      .eq('event_type', 'DOCUMENT_ADDED')
+      .order('created_at', { ascending: false });
+
+    // Find markup for THIS SPECIFIC FILE
+    const markupEvent = data?.find(
+      event => event.event_data.markup && event.event_data.file_path === selectedFile
+    );
+    
+    if (markupEvent && markupEvent.event_data.annotations) {
+      setAnnotations(markupEvent.event_data.annotations);
+    } else {
+      setAnnotations([]);
+    }
+  };
+
+  fetchAnnotations();
+}, [ppapId, selectedFile]);
+```
+
+**Loading logic:**
+1. Query all DOCUMENT_ADDED events
+2. Filter to markup events (`markup: true`)
+3. Match by `file_path === selectedFile`
+4. Load annotations for matched file
+5. Clear annotations if no match
+
+**Benefits:**
+- Correct markup loads for each file
+- Multiple documents can have separate markups
+- Switching files loads correct annotations
+- New files start with empty markup
+
+**4. Document Name Display**
+
+Show selected file in header:
+
+```tsx
+<h2 className="text-2xl font-bold text-gray-900">Drawing Markup Tool</h2>
+<p className="text-sm text-gray-600">Part: {partNumber || ''}</p>
+{selectedFile && (
+  <p className="text-sm font-medium text-blue-600 mt-1">
+    Marking up: {uploadedFiles.find(f => f.file_path === selectedFile)?.file_name || 'Unknown file'}
+  </p>
+)}
+```
+
+**Display:**
+```
+Drawing Markup Tool
+Part: ABC-123
+Marking up: engineering_drawing_rev_A.pdf
+```
+
+**Benefits:**
+- Clear context for user
+- Prominent display (blue text)
+- Confirms correct file selected
+- Prevents markup confusion
+
+**5. Mode Switch in Documentation Form**
+
+Added dual-mode workflow:
+
+```tsx
+<div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+  <h4 className="text-sm font-semibold text-purple-900 mb-3">Drawing Markup</h4>
+  <div className="flex gap-3">
+    <button
+      onClick={() => setShowMarkupTool(true)}
+      className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg"
+    >
+      🖊️ Open Markup Tool
+    </button>
+    <button
+      className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg"
+      onClick={() => document.getElementById('file-upload')?.click()}
+    >
+      📤 Upload Markup File
+    </button>
+  </div>
+  <p className="text-xs text-gray-600 mt-2">
+    Create markup annotations in-tool or upload pre-marked drawings
+  </p>
+</div>
+```
+
+**Two modes:**
+1. **Open Markup Tool:** Interactive annotation creation
+2. **Upload Markup File:** Upload pre-marked PDF/image
+
+**Benefits:**
+- Flexible workflow options
+- Supports external markup tools
+- Clear mode distinction
+- Purple styling for visibility
+
+**User Flow:**
+
+**Before Phase 23.1:**
+1. User opens markup tool
+2. **No file selection** - unclear which drawing
+3. Creates annotations
+4. Saves markup
+5. **All annotations apply to entire PPAP** - not file-specific
+6. Uploads second drawing
+7. Opens markup tool
+8. **Previous annotations still show** - confusion
+9. No way to upload pre-marked drawings
+
+**After Phase 23.1:**
+1. User uploads multiple drawings:
+   - engineering_drawing_A.pdf
+   - electrical_schematic_B.pdf
+2. Clicks "🖊️ Open Markup Tool"
+3. **Sees dropdown**: "Select Drawing"
+4. Dropdown shows both uploaded files
+5. Selects "engineering_drawing_A.pdf"
+6. Header displays: **"Marking up: engineering_drawing_A.pdf"**
+7. Creates dimension annotations
+8. Saves markup - **bound to drawing A**
+9. Switches dropdown to "electrical_schematic_B.pdf"
+10. **Annotations clear** - fresh canvas
+11. Creates note annotations
+12. Saves markup - **bound to drawing B**
+13. Switches back to drawing A
+14. **Original annotations reload** - file-specific
+15. Alternatively, clicks "📤 Upload Markup File"
+16. Uploads pre-marked PDF from external tool
+
+**Benefits:**
+- ✅ Document selector dropdown
+- ✅ File-specific markup binding
+- ✅ Correct markup loading per file
+- ✅ Document name displayed in UI
+- ✅ Mode switch (Tool / Upload)
+- ✅ Multiple documents supported
+- ✅ Clear workflow separation
+- ✅ Auto-select first file
+- ✅ Empty state for new files
+- ✅ Enhanced event data structure
+- ✅ Backward compatible
+- ✅ Improved workflow integrity
+
+**Technical Implementation:**
+
+**MarkupTool.tsx:**
+- Added `UploadedFile` interface
+- Added `uploadedFiles` state
+- Added `selectedFile` state
+- Removed `uploadedDrawing` placeholder
+- Fetch uploaded files (filter out markup events)
+- Auto-select first file on load
+- Load annotations filtered by file_path
+- Save with file_path in event_data
+- Document selector dropdown in toolbar
+- Display selected file name in header
+- Guard save with file selection check
+
+**DocumentationForm.tsx:**
+- Added mode switch panel (purple background)
+- Two buttons: Open Tool / Upload File
+- Dual-mode workflow support
+- Clear instructions
+
+**Event Data Schema:**
+```typescript
+{
+  type: 'markup',
+  file_path: string,
+  annotations: Annotation[],
+  markup: true
+}
+```
+
+**Validation:**
+- ✅ Document selector implemented
+- ✅ File-specific markup storage
+- ✅ File-specific markup loading
+- ✅ Document name displayed
+- ✅ Mode switch added
+- ✅ No schema changes
+- ✅ Enhanced event_data only
+- ✅ Backward compatible
+
+- Commit: `feat: phase 23.1 markup-document binding`
+
+---
+
 ## 2026-03-21 23:45 CT - [FEAT] Phase 24 - Admin Dashboard
 - Summary: Built comprehensive admin dashboard with PPAP oversight, assignment control, filtering, admin notes, and event visibility.
 - Files changed:
