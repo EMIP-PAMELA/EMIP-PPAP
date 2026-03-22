@@ -64,11 +64,15 @@ export async function updateWorkflowPhase({
     .from('ppap_records')
     .select('status')
     .eq('id', ppapId)
-    .single();
+    .maybeSingle();
 
   if (fetchError) {
     console.error('Failed to fetch current record:', fetchError);
     throw new Error(`Failed to fetch current record: ${fetchError.message}`);
+  }
+
+  if (!currentRecord) {
+    throw new Error(`PPAP not found with ID: ${ppapId}`);
   }
 
   const oldStatus = currentRecord?.status || 'NEW';
@@ -84,7 +88,7 @@ export async function updateWorkflowPhase({
     })
     .eq('id', ppapId)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error('Failed to update workflow phase:', error);
@@ -92,7 +96,7 @@ export async function updateWorkflowPhase({
   }
 
   if (!data) {
-    throw new Error('No PPAP record returned after update');
+    throw new Error(`PPAP not found with ID: ${ppapId}`);
   }
 
   // Log PHASE_ADVANCED event

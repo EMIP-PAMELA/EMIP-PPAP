@@ -21,13 +21,17 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
       status: 'NEW',
     })
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     throw new Error(`Failed to create PPAP: ${error.message}`);
   }
 
-  if (!data?.id) {
+  if (!data) {
+    throw new Error('Failed to create PPAP: No record returned from database');
+  }
+
+  if (!data.id) {
     throw new Error('Failed to create PPAP: No ID returned from database');
   }
 
@@ -58,10 +62,14 @@ export async function updatePPAP(
     .from('ppap_records')
     .select('*')
     .eq('id', id)
-    .single();
+    .maybeSingle();
 
   if (currentPPAP.error) {
     throw new Error(`Failed to fetch current PPAP: ${currentPPAP.error.message}`);
+  }
+
+  if (!currentPPAP.data) {
+    throw new Error(`PPAP not found with ID: ${id}`);
   }
 
   const { data, error } = await supabase
@@ -72,10 +80,14 @@ export async function updatePPAP(
     })
     .eq('id', id)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     throw new Error(`Failed to update PPAP: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error(`PPAP not found with ID: ${id}`);
   }
 
   if (input.status && input.status !== currentPPAP.data.status) {
@@ -160,10 +172,14 @@ export async function deletePPAP(
     .from('ppap_records')
     .select('ppap_number, part_number')
     .eq('id', id)
-    .single();
+    .maybeSingle();
 
   if (fetchError) {
     throw new Error(`Failed to fetch PPAP for deletion: ${fetchError.message}`);
+  }
+
+  if (!ppap) {
+    throw new Error(`PPAP not found with ID: ${id}`);
   }
 
   const { error: eventError } = await supabase

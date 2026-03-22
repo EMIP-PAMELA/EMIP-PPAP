@@ -4,6 +4,101 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 19:47 CT - [FIX] Handle Missing PPAP Records Safely Using maybeSingle
+- Summary: Replaced all Supabase `.single()` calls with `.maybeSingle()` to prevent runtime crashes when PPAP records are not found. Added explicit null handling and error messages.
+- Files changed:
+  - `src/features/ppap/queries.ts` - Fixed getPPAPById and getPPAPByNumber
+  - `src/features/ppap/mutations.ts` - Fixed createPPAP, updatePPAP, deletePPAP
+  - `src/features/ppap/mutations/updateWorkflowPhase.ts` - Fixed updateWorkflowPhase
+  - `docs/BUILD_LEDGER.md` - This entry
+- Root cause: `.single()` throws runtime error "Cannot coerce the result to a single JSON object" when 0 rows returned
+- Impact: Graceful error handling, no runtime crashes, clear error messages
+
+**Problem:**
+
+Supabase `.single()` modifier throws a runtime error when the query returns 0 rows:
+```
+Error: Cannot coerce the result to a single JSON object
+```
+
+This caused crashes when:
+- Accessing PPAP detail page with invalid/deleted ID
+- Trying to update non-existent PPAP records
+- Any query expecting exactly 1 row but getting 0
+
+**Solution:**
+
+Replace `.single()` with `.maybeSingle()` throughout codebase:
+- `.single()` - expects exactly 1 row, throws if 0 or 2+
+- `.maybeSingle()` - returns null if 0 rows, throws only if 2+ rows
+
+**Files Fixed:**
+
+1. **src/features/ppap/queries.ts**
+   - `getPPAPById()`: Added ID validation, null check, specific error message
+   - `getPPAPByNumber()`: Added number validation, null check, specific error message
+
+2. **src/features/ppap/mutations.ts**
+   - `createPPAP()`: Replaced .single() in insert operation
+   - `updatePPAP()`: Added null check for current PPAP fetch
+   - `updatePPAP()`: Added null check for update result
+   - `deletePPAP()`: Added null check before deletion
+
+3. **src/features/ppap/mutations/updateWorkflowPhase.ts**
+   - `updateWorkflowPhase()`: Added null check for current record fetch
+   - `updateWorkflowPhase()`: Changed error message for missing record
+
+**Error Handling Pattern:**
+
+Before:
+```typescript
+const { data, error } = await supabase
+  .from('ppap_records')
+  .select('*')
+  .eq('id', id)
+  .single(); // ❌ Throws if 0 rows
+
+if (error) {
+  throw new Error(`Failed to fetch PPAP: ${error.message}`);
+}
+```
+
+After:
+```typescript
+const { data, error } = await supabase
+  .from('ppap_records')
+  .select('*')
+  .eq('id', id)
+  .maybeSingle(); // ✅ Returns null if 0 rows
+
+if (error) {
+  throw new Error(`Failed to fetch PPAP: ${error.message}`);
+}
+
+if (!data) {
+  throw new Error(`PPAP not found with ID: ${id}`); // Clear error
+}
+```
+
+**Benefits:**
+- ✅ No more runtime crashes on missing records
+- ✅ Clear, specific error messages
+- ✅ Consistent error handling pattern
+- ✅ Validates IDs before queries
+- ✅ Graceful degradation
+- ✅ Better user experience (can show 404 page instead of crash)
+
+**Affected Operations:**
+- Viewing PPAP detail page
+- Updating PPAP records
+- Advancing workflow phases
+- Deleting PPAP records
+- Fetching by PPAP number
+
+- Commit: `fix: handle missing PPAP records safely using maybeSingle`
+
+---
+
 ## 2026-03-21 19:40 CT - [FIX] Resolved ppaps Undefined TypeScript Error in Dashboard Metrics
 - Summary: Fixed TypeScript error where `ppaps` variable was used before guaranteed assignment, causing potential undefined access in metric calculations.
 - Files changed:

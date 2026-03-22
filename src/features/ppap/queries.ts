@@ -53,24 +53,36 @@ export async function getPPAPById(id: string) {
     .from('ppap_records')
     .select('*')
     .eq('id', id)
-    .single();
+    .maybeSingle();
 
   if (error) {
     throw new Error(`Failed to fetch PPAP: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error(`PPAP not found with ID: ${id}`);
   }
 
   return data as PPAPRecord;
 }
 
 export async function getPPAPByNumber(ppapNumber: string) {
+  if (!ppapNumber) {
+    throw new Error('PPAP number is required');
+  }
+
   const { data, error } = await supabase
     .from('ppap_records')
     .select('*')
     .eq('ppap_number', ppapNumber)
-    .single();
+    .maybeSingle();
 
   if (error) {
     throw new Error(`Failed to fetch PPAP: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error(`PPAP not found with number: ${ppapNumber}`);
   }
 
   return data as PPAPRecord;
