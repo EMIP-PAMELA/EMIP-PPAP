@@ -13,7 +13,7 @@ interface DocumentationFormProps {
   setPhase: (phase: WorkflowPhase) => void;
 }
 
-type Section = 'readiness' | 'checklist' | 'confirmation';
+type Section = 'checklist' | 'upload' | 'readiness' | 'confirmation';
 
 interface DocumentationData {
   suggested_date: string;
@@ -47,14 +47,16 @@ const REQUIRED_DOCUMENTS = [
 ] as const;
 
 const SECTIONS = [
-  { id: 'readiness', label: 'Submission Readiness' },
   { id: 'checklist', label: 'Required Documents' },
+  { id: 'upload', label: 'Upload Documents' },
+  { id: 'readiness', label: 'Submission Readiness' },
   { id: 'confirmation', label: 'Confirmation' },
 ] as const;
 
 export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase }: DocumentationFormProps) {
   const router = useRouter();
-  const [activeSection, setActiveSection] = useState<Section>('readiness');
+  const [activeSection, setActiveSection] = useState<Section>('checklist');
+  const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState('');
@@ -77,6 +79,22 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase }
     acknowledgement: false,
   });
 
+  const getMissingDocuments = (): string[] => {
+    return REQUIRED_DOCUMENTS
+      .filter(doc => !formData[doc.key as keyof DocumentationData])
+      .map(doc => doc.label);
+  };
+
+  const getCheckedButNotUploaded = (): string[] => {
+    return REQUIRED_DOCUMENTS
+      .filter(doc => {
+        const isChecked = !!formData[doc.key as keyof DocumentationData];
+        const isUploaded = uploadedDocs[doc.key];
+        return isChecked && !isUploaded;
+      })
+      .map(doc => doc.label);
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
@@ -86,6 +104,18 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase }
 
     if (!formData.acknowledgement) {
       newErrors.acknowledgement = 'You must acknowledge the submission';
+    }
+
+    // Check for missing critical documents
+    const missingDocs = getMissingDocuments();
+    if (missingDocs.length > 0) {
+      newErrors.documents = 'Required documents not checked';
+    }
+
+    // Prevent false completion - checked but not uploaded
+    const checkedButNotUploaded = getCheckedButNotUploaded();
+    if (checkedButNotUploaded.length > 0) {
+      newErrors.upload = 'Documents checked but not uploaded';
     }
 
     setErrors(newErrors);
@@ -211,7 +241,143 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase }
             </div>
           )}
 
-          {/* Submission Readiness Section */}
+          {errors.documents && (
+            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-300 rounded-lg text-sm text-yellow-800 font-medium">
+              <p className="font-bold">⚠️ Missing Documents</p>
+              <p className="mt-1">{errors.documents || ''}</p>
+              <div className="mt-2">
+                <p className="font-semibold text-xs">You are missing:</p>
+                <ul className="mt-1 ml-4 list-disc text-xs">
+                  {getMissingDocuments().map(doc => (
+                    <li key={doc}>{doc || ''}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {errors.upload && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800 font-medium">
+              <p className="font-bold">🚫 Cannot Submit - Documents Not Uploaded</p>
+              <p className="mt-1">You have checked documents but have not uploaded them yet.</p>
+              <div className="mt-2">
+                <p className="font-semibold text-xs">Documents checked but not uploaded:</p>
+                <ul className="mt-1 ml-4 list-disc text-xs">
+                  {getCheckedButNotUploaded().map(doc => (
+                    <li key={doc}>{doc || ''}</li>
+                  ))}
+                </ul>
+              </div>
+              <p className="mt-2 text-xs">Please upload these documents or uncheck them before submitting.</p>
+            </div>
+          )}
+
+          {/* Required Documents Checklist Section - NOW FIRST */}
+          {activeSection === 'checklist' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 mb-2">Required Documents Checklist</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Check all documents that are included in this submission.
+                  <span className="block mt-1 font-medium">
+                    {countCheckedDocuments()} of {REQUIRED_DOCUMENTS.length} documents checked
+                  </span>
+                </p>
+                
+                <div className="space-y-3">
+                  {REQUIRED_DOCUMENTS.map(doc => {
+                    const isUploaded = uploadedDocs[doc.key];
+                    const isChecked = !!formData[doc.key as keyof DocumentationData];
+                    return (
+                      <div key={doc.key} className="flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-200">
+                        <div className="flex items-start flex-1">
+                          <input
+                            type="checkbox"
+                            id={doc.key}
+                            checked={isChecked}
+                            onChange={(e) => updateField(doc.key as keyof DocumentationData, e.target.checked)}
+                            className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <label htmlFor={doc.key} className="ml-3 text-sm text-gray-700">
+                            {doc.label}
+                          </label>
+                        </div>
+                        <div className="ml-4">
+                          {isUploaded ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                              ✓ Uploaded
+                            </span>
+                          ) : isChecked ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                              ⚠ Missing
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                              Not Required
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Upload Documents Section - NOW SECOND */}
+          {activeSection === 'upload' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 mb-2">Upload Required Documents</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Upload documents required for this PPAP submission.
+                </p>
+
+                {/* Drag & Drop Area */}
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div className="space-y-2">
+                    <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                      <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <div className="text-sm text-gray-600">
+                      <label htmlFor="file-upload" className="relative cursor-pointer rounded-md font-medium text-blue-600 hover:text-blue-500">
+                        <span>Click to upload</span>
+                        <input id="file-upload" name="file-upload" type="file" className="sr-only" multiple />
+                      </label>
+                      <span className="pl-1">or drag and drop</span>
+                    </div>
+                    <p className="text-xs text-gray-500">PDF, DOC, DOCX, XLS, XLSX up to 10MB each</p>
+                  </div>
+                </div>
+
+                {/* Upload System Warning */}
+                <div className="mt-4 p-4 bg-yellow-50 border border-yellow-400 rounded-lg text-sm text-yellow-800">
+                  <p className="font-bold">⚠️ Documents are not yet permanently saved. Upload functionality is in progress.</p>
+                  <p className="mt-2 text-xs">The upload interface is a UI framework. Files will not be stored until backend integration is complete. Use the checklist to track which documents you have prepared separately.</p>
+                </div>
+
+                {/* Quick Upload Buttons */}
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                  {REQUIRED_DOCUMENTS.slice(0, 4).map(doc => (
+                    <button
+                      key={doc.key}
+                      type="button"
+                      className="px-4 py-2 border border-gray-300 rounded text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                      onClick={() => {
+                        // Placeholder for upload - mark as uploaded in UI
+                        setUploadedDocs(prev => ({ ...prev, [doc.key]: true }));
+                      }}
+                    >
+                      Upload {doc.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Submission Readiness Section - NOW THIRD */}
           {activeSection === 'readiness' && (
             <div className="space-y-6">
               <div>
@@ -276,39 +442,8 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase }
             </div>
           )}
 
-          {/* Required Documents Checklist Section */}
-          {activeSection === 'checklist' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-2">Required Documents Checklist</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Check all documents that are included in this submission.
-                  <span className="block mt-1 font-medium">
-                    {countCheckedDocuments()} of {REQUIRED_DOCUMENTS.length} documents checked
-                  </span>
-                </p>
-                
-                <div className="space-y-3">
-                  {REQUIRED_DOCUMENTS.map(doc => (
-                    <div key={doc.key} className="flex items-start">
-                      <input
-                        type="checkbox"
-                        id={doc.key}
-                        checked={!!formData[doc.key as keyof DocumentationData]}
-                        onChange={(e) => updateField(doc.key as keyof DocumentationData, e.target.checked)}
-                        className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      />
-                      <label htmlFor={doc.key} className="ml-2 text-sm text-gray-700">
-                        {doc.label}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* Confirmation Section */}
+          {/* Confirmation Section - NOW LAST */}
           {activeSection === 'confirmation' && (
             <div className="space-y-6">
               <div>

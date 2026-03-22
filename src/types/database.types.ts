@@ -100,6 +100,8 @@ export interface PPAPRecord {
   ppap_type?: PPAPType | null;
   status: PPAPStatus;
   workflow_phase: string;
+  assigned_to?: string | null;
+  assigned_role?: string | null;
   created_at: string;
   updated_at: string;
 }

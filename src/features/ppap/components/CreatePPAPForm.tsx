@@ -124,6 +124,36 @@ export function CreatePPAPForm() {
         </div>
       </div>
 
+      {/* Optional: Initial Customer Documents */}
+      <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-8">
+        <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b border-gray-200">Initial Customer Documents (Optional)</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          Upload any initial documents received from the customer (e.g., drawings, PPAP request forms, specifications).
+          This front-loads all incoming data for easier tracking.
+        </p>
+        
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50 hover:bg-gray-100 transition-colors">
+          <div className="space-y-2">
+            <svg className="mx-auto h-10 w-10 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+              <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <div className="text-sm text-gray-600">
+              <label htmlFor="intake-file-upload" className="relative cursor-pointer rounded-md font-medium text-blue-600 hover:text-blue-500">
+                <span>Click to upload</span>
+                <input id="intake-file-upload" name="intake-file-upload" type="file" className="sr-only" multiple />
+              </label>
+              <span className="pl-1">or drag and drop</span>
+            </div>
+            <p className="text-xs text-gray-500">Customer drawings, PPAP requests, specifications (PDF, DOC, DOCX)</p>
+          </div>
+        </div>
+
+        <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+          <p className="font-semibold">📝 Note:</p>
+          <p className="mt-1">File upload backend integration pending. UI framework in place for intake document loading.</p>
+        </div>
+      </div>
+
       <div className="flex gap-4 pt-4">
         <button
           type="submit"

@@ -1,11 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import { PPAPRecord, PPAPTask } from '@/src/types/database.types';
 import { formatDate } from '@/src/lib/utils';
 import Link from 'next/link';
 import { StatusUpdateControl } from './StatusUpdateControl';
 import { getTaskCounts } from '@/src/features/tasks/utils/taskUtils';
 import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils/getNextAction';
+import { supabase } from '@/src/lib/supabaseClient';
+import { useRouter } from 'next/navigation';
 
 interface PPAPHeaderProps {
   ppap: PPAPRecord;
@@ -13,8 +16,33 @@ interface PPAPHeaderProps {
 }
 
 export function PPAPHeader({ ppap, tasks = [] }: PPAPHeaderProps) {
+  const router = useRouter();
+  const [assignedTo, setAssignedTo] = useState(ppap.assigned_to || null);
+  const [takingOwnership, setTakingOwnership] = useState(false);
   const taskCounts = getTaskCounts(tasks);
   const nextActionData = getNextAction(ppap.workflow_phase, ppap.status);
+  
+  const handleTakeOwnership = async () => {
+    setTakingOwnership(true);
+    try {
+      const currentUser = 'System User'; // In production, get from auth context
+      
+      await supabase
+        .from('ppap_records')
+        .update({ 
+          assigned_to: currentUser,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ppap.id);
+      
+      setAssignedTo(currentUser);
+      router.refresh();
+    } catch (error) {
+      console.error('Failed to take ownership:', error);
+    } finally {
+      setTakingOwnership(false);
+    }
+  };
   
   const getBannerColor = () => {
     switch (nextActionData.priority) {
@@ -48,6 +76,21 @@ export function PPAPHeader({ ppap, tasks = [] }: PPAPHeaderProps) {
             <div className="flex items-center gap-4 mb-3">
               <h1 className="text-4xl font-bold text-gray-900">{ppap.ppap_number}</h1>
               <StatusUpdateControl ppapId={ppap.id} currentStatus={ppap.status} />
+              {!assignedTo && (
+                <button
+                  onClick={handleTakeOwnership}
+                  disabled={takingOwnership}
+                  className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {takingOwnership ? 'Taking...' : '✋ Take Ownership'}
+                </button>
+              )}
+              {assignedTo && (
+                <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                  <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Owner</span>
+                  <p className="text-sm font-medium text-blue-900">{assignedTo || ''}</p>
+                </div>
+              )}
             </div>
             <div className="flex items-baseline gap-3">
               <span className="text-sm font-medium text-gray-600">Part Number:</span>
