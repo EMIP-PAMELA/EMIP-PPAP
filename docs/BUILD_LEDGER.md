@@ -4,6 +4,405 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 23:45 CT - [FEAT] Phase 24 - Admin Dashboard
+- Summary: Built comprehensive admin dashboard with PPAP oversight, assignment control, filtering, admin notes, and event visibility.
+- Files changed:
+  - `app/admin/ppap/page.tsx` - New admin page with server-side data fetching
+  - `src/features/ppap/components/AdminDashboard.tsx` - Client-side dashboard component
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Centralized PPAP management, assignment workflow, admin oversight, activity tracking
+- No schema changes - uses existing ppap_records and ppap_events tables
+
+**Problem:**
+
+No centralized admin view for PPAP oversight:
+- No way to view all PPAPs at once
+- No assignment management capability
+- No admin notes or communication channel
+- No visibility into PPAP activity and events
+- Manual tracking required for oversight
+
+This limited effective PPAP program management.
+
+**Solution:**
+
+**1. Created Admin Page**
+
+New file: `app/admin/ppap/page.tsx`
+
+**Server-side data fetching:**
+```typescript
+async function getAllPPAPs() {
+  const { data, error } = await supabase
+    .from('ppap_records')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  return data as PPAPRecord[];
+}
+
+export default async function AdminPPAPPage() {
+  const ppaps = await getAllPPAPs();
+  
+  return <AdminDashboard ppaps={ppaps} />;
+}
+```
+
+**Benefits:**
+- Server-side rendering
+- Initial data load on page load
+- SEO-friendly (if public)
+
+**2. Display All PPAPs Grouped**
+
+**Grouping logic:**
+```typescript
+const activePpaps = filteredPpaps.filter(p => p.workflow_phase !== 'COMPLETE');
+const completedPpaps = filteredPpaps.filter(p => p.workflow_phase === 'COMPLETE');
+```
+
+**Active PPAPs section:**
+- Shows all non-complete PPAPs
+- Full interaction (assign, view details, add notes)
+- Color-coded by status and phase
+
+**Completed PPAPs section:**
+- Shows completed PPAPs
+- Green background (bg-green-50)
+- Read-only view
+- Historical record
+
+**3. Added Filters**
+
+**Filter UI:**
+```tsx
+<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+  <select value={filterCustomer} onChange={...}>
+    <option value="">All Customers</option>
+    {customers.map(customer => ...)}
+  </select>
+  
+  <select value={filterStatus} onChange={...}>
+    <option value="">All Statuses</option>
+    {statuses.map(status => ...)}
+  </select>
+  
+  <select value={filterPhase} onChange={...}>
+    <option value="">All Phases</option>
+    {phases.map(phase => ...)}
+  </select>
+</div>
+```
+
+**Filter logic:**
+```typescript
+const filteredPpaps = ppaps.filter(ppap => {
+  if (filterCustomer && ppap.customer_name !== filterCustomer) return false;
+  if (filterStatus && ppap.status !== filterStatus) return false;
+  if (filterPhase && ppap.workflow_phase !== filterPhase) return false;
+  return true;
+});
+```
+
+**Dynamic filter options:**
+```typescript
+const customers = Array.from(new Set(ppaps.map(p => p.customer_name).filter(Boolean)));
+const statuses = Array.from(new Set(ppaps.map(p => p.status).filter(Boolean)));
+const phases = Array.from(new Set(ppaps.map(p => p.workflow_phase).filter(Boolean)));
+```
+
+**Benefits:**
+- Client-side filtering (instant)
+- Dynamic options from data
+- Multiple simultaneous filters
+- Clear all options
+
+**4. Assignment Control**
+
+**Assignment dropdown:**
+```tsx
+<select
+  value={ppap.assigned_to || ''}
+  onChange={(e) => handleAssignment(ppap.id, e.target.value)}
+  className="px-3 py-1 text-sm border border-gray-300 rounded"
+>
+  <option value="">Unassigned</option>
+  <option value="System User">System User</option>
+  <option value="Matt">Matt</option>
+  <option value="Engineer 1">Engineer 1</option>
+  <option value="Engineer 2">Engineer 2</option>
+</select>
+```
+
+**Assignment handler:**
+```typescript
+const handleAssignment = async (ppapId: string, assignedTo: string) => {
+  // Update database
+  await supabase
+    .from('ppap_records')
+    .update({ assigned_to: assignedTo })
+    .eq('id', ppapId);
+
+  // Log event
+  await logEvent({
+    ppap_id: ppapId,
+    event_type: 'ASSIGNED',
+    event_data: {
+      assigned_to: assignedTo,
+      previous: ppaps.find(p => p.id === ppapId)?.assigned_to,
+    },
+    actor: 'Admin',
+    actor_role: 'Administrator',
+  });
+
+  // Update local state
+  setPpaps(ppaps.map(p => 
+    p.id === ppapId ? { ...p, assigned_to: assignedTo } : p
+  ));
+};
+```
+
+**Benefits:**
+- Instant assignment updates
+- Event logging for audit trail
+- Previous assignment tracked
+- Local state update (no reload)
+
+**5. Admin Notes**
+
+**Admin note UI:**
+```tsx
+<div>
+  <h4 className="text-sm font-bold text-gray-900 mb-3">Add Admin Note</h4>
+  <textarea
+    value={adminNote}
+    onChange={(e) => setAdminNote(e.target.value)}
+    placeholder="Enter admin note..."
+    rows={3}
+    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+  />
+  <button
+    onClick={handleAddNote}
+    disabled={addingNote || !adminNote.trim()}
+    className="mt-2 px-4 py-2 bg-red-600 text-white rounded-lg"
+  >
+    💬 Add Admin Note
+  </button>
+</div>
+```
+
+**Admin note handler:**
+```typescript
+const handleAddNote = async () => {
+  await logEvent({
+    ppap_id: selectedPpapId,
+    event_type: 'CONVERSATION_ADDED',
+    event_data: {
+      note: adminNote,
+      admin_note: true, // Flag for admin notes
+    },
+    actor: 'Admin',
+    actor_role: 'Administrator',
+  });
+  
+  // Refresh events
+  // ...
+};
+```
+
+**Visual highlighting:**
+```tsx
+<div className={`p-3 rounded-lg text-sm ${
+  isAdminNote(event)
+    ? 'bg-red-50 border-2 border-red-300' // Red border for admin notes
+    : 'bg-gray-50 border border-gray-200'
+}`}>
+  {isAdminNote(event) && (
+    <span className="ml-2 px-2 py-0.5 bg-red-600 text-white text-xs rounded">
+      ADMIN
+    </span>
+  )}
+</div>
+```
+
+**Benefits:**
+- Prominent admin communication channel
+- Red border/badge for visibility
+- Logged as events (audit trail)
+- Flagged with `admin_note: true`
+
+**6. Event Visibility**
+
+**Event fetching:**
+```typescript
+useEffect(() => {
+  if (!selectedPpapId) return;
+
+  const fetchEvents = async () => {
+    const { data } = await supabase
+      .from('ppap_events')
+      .select('*')
+      .eq('ppap_id', selectedPpapId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (data) {
+      setEvents(data as PPAPEvent[]);
+    }
+  };
+
+  fetchEvents();
+}, [selectedPpapId]);
+```
+
+**Event display:**
+```tsx
+<div className="space-y-2 max-h-64 overflow-y-auto">
+  {events.map(event => (
+    <div className="p-3 rounded-lg">
+      <div className="flex items-start gap-2">
+        <span>{getEventIcon(event.event_type)}</span>
+        <div>
+          <div className="font-medium">
+            {event.event_type.replace(/_/g, ' ')}
+          </div>
+          {/* Event-specific data */}
+          <p className="text-xs text-gray-500">
+            {new Date(event.created_at).toLocaleString()} • {event.actor}
+          </p>
+        </div>
+      </div>
+    </div>
+  ))}
+</div>
+```
+
+**Event icons:**
+```typescript
+const getEventIcon = (eventType: string) => {
+  switch (eventType) {
+    case 'ASSIGNED': return '👤';
+    case 'PHASE_ADVANCED': return '➡️';
+    case 'DOCUMENT_ADDED': return '📄';
+    case 'CONVERSATION_ADDED': return '💬';
+    case 'STATUS_CHANGED': return '🔄';
+    default: return '📌';
+  }
+};
+```
+
+**Visible events:**
+- Ownership changes (ASSIGNED)
+- Phase advances (PHASE_ADVANCED)
+- Document uploads (DOCUMENT_ADDED)
+- Admin notes (CONVERSATION_ADDED with admin_note flag)
+- Status changes (STATUS_CHANGED)
+
+**User Flow:**
+
+**Before Phase 24:**
+1. Admin needs to check PPAP status
+2. **No centralized view** - must check individually
+3. No assignment capability
+4. No oversight tools
+5. Manual tracking in spreadsheets
+6. No event visibility
+
+**After Phase 24:**
+1. Admin visits `/admin/ppap`
+2. **Sees all PPAPs** grouped by Active/Completed
+3. Filters by customer: "Acme Corp"
+4. Sees 5 active PPAPs
+5. Selects assignment dropdown for PPAP-001
+6. Assigns to "Matt"
+7. **Assignment logged** as event
+8. Clicks "View Details"
+9. Sees recent activity:
+   - Document uploaded yesterday
+   - Phase advanced to SAMPLE
+   - Assigned to Matt (just now)
+10. Adds admin note: "Rush order - expedite review"
+11. **Note saved** with red border/badge
+12. Other engineers see admin note prominently
+13. Full audit trail in events
+
+**Benefits:**
+- ✅ Centralized PPAP oversight
+- ✅ All PPAPs displayed at once
+- ✅ Grouped by Active/Completed
+- ✅ Filters: Customer, Status, Phase
+- ✅ Assignment control with dropdown
+- ✅ Assignment event logging
+- ✅ Admin notes with red highlighting
+- ✅ Event visibility panel
+- ✅ Recent activity tracking
+- ✅ Ownership changes visible
+- ✅ Phase changes visible
+- ✅ Upload events visible
+- ✅ Instant filtering (client-side)
+- ✅ No page reload needed
+- ✅ Full audit trail
+
+**Technical Implementation:**
+
+**app/admin/ppap/page.tsx:**
+- Server component (async function)
+- Fetches all PPAPs on load
+- Passes data to client component
+- Clean separation of concerns
+
+**AdminDashboard.tsx:**
+- Client component ('use client')
+- useState for filters and selection
+- useEffect for event fetching
+- Real-time filtering
+- Assignment updates with event logging
+- Admin notes with CONVERSATION_ADDED events
+- Event display with icons and formatting
+- Red border/badge for admin notes
+- Expandable detail panels
+
+**Event Schema:**
+```typescript
+// Assignment
+{
+  event_type: 'ASSIGNED',
+  event_data: {
+    assigned_to: string,
+    previous: string
+  }
+}
+
+// Admin Note
+{
+  event_type: 'CONVERSATION_ADDED',
+  event_data: {
+    note: string,
+    admin_note: true
+  }
+}
+```
+
+**Validation:**
+- ✅ Admin page created at /admin/ppap
+- ✅ All PPAPs displayed
+- ✅ Grouped by Active/Completed
+- ✅ Filters implemented (Customer, Status, Phase)
+- ✅ Assignment dropdown working
+- ✅ Assignment events logged
+- ✅ Admin notes functionality
+- ✅ Admin notes highlighted (red border)
+- ✅ Event visibility panel
+- ✅ Ownership events shown
+- ✅ Phase change events shown
+- ✅ Upload events shown
+- ✅ No TypeScript errors
+- ✅ No schema changes
+
+- Commit: `feat: phase 24 admin dashboard`
+
+---
+
 ## 2026-03-21 23:30 CT - [FEAT] Phase 23 - Markup Tool MVP
 - Summary: Built interactive drawing markup tool with click-to-place annotations, structured data model, auto-numbering, and visual requirement mapping.
 - Files changed:

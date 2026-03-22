@@ -1,0 +1,400 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { PPAPRecord, PPAPEvent } from '@/src/types/database.types';
+import { supabase } from '@/src/lib/supabaseClient';
+import { logEvent } from '@/src/features/events/mutations';
+import { formatDate } from '@/src/lib/utils';
+import { WORKFLOW_PHASE_LABELS } from '../constants/workflowPhases';
+
+interface AdminDashboardProps {
+  ppaps: PPAPRecord[];
+}
+
+export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
+  const [ppaps, setPpaps] = useState<PPAPRecord[]>(initialPpaps);
+  const [filterCustomer, setFilterCustomer] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterPhase, setFilterPhase] = useState<string>('');
+  const [selectedPpapId, setSelectedPpapId] = useState<string | null>(null);
+  const [events, setEvents] = useState<PPAPEvent[]>([]);
+  const [adminNote, setAdminNote] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
+
+  // Get unique filter values
+  const customers = Array.from(new Set(ppaps.map(p => p.customer_name).filter(Boolean)));
+  const statuses = Array.from(new Set(ppaps.map(p => p.status).filter(Boolean)));
+  const phases = Array.from(new Set(ppaps.map(p => p.workflow_phase).filter(Boolean)));
+
+  // Filter PPAPs
+  const filteredPpaps = ppaps.filter(ppap => {
+    if (filterCustomer && ppap.customer_name !== filterCustomer) return false;
+    if (filterStatus && ppap.status !== filterStatus) return false;
+    if (filterPhase && ppap.workflow_phase !== filterPhase) return false;
+    return true;
+  });
+
+  // Group PPAPs
+  const activePpaps = filteredPpaps.filter(p => p.workflow_phase !== 'COMPLETE');
+  const completedPpaps = filteredPpaps.filter(p => p.workflow_phase === 'COMPLETE');
+
+  // Fetch events for selected PPAP
+  useEffect(() => {
+    if (!selectedPpapId) {
+      setEvents([]);
+      return;
+    }
+
+    const fetchEvents = async () => {
+      const { data, error } = await supabase
+        .from('ppap_events')
+        .select('*')
+        .eq('ppap_id', selectedPpapId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (!error && data) {
+        setEvents(data as PPAPEvent[]);
+      }
+    };
+
+    fetchEvents();
+  }, [selectedPpapId]);
+
+  const handleAssignment = async (ppapId: string, assignedTo: string) => {
+    try {
+      // Update assignment
+      await supabase
+        .from('ppap_records')
+        .update({ assigned_to: assignedTo })
+        .eq('id', ppapId);
+
+      // Log event
+      await logEvent({
+        ppap_id: ppapId,
+        event_type: 'ASSIGNED',
+        event_data: {
+          assigned_to: assignedTo,
+          previous: ppaps.find(p => p.id === ppapId)?.assigned_to,
+        },
+        actor: 'Admin',
+        actor_role: 'Administrator',
+      });
+
+      // Update local state
+      setPpaps(ppaps.map(p => 
+        p.id === ppapId ? { ...p, assigned_to: assignedTo } : p
+      ));
+
+      alert('Assignment updated successfully');
+    } catch (error) {
+      console.error('Failed to update assignment:', error);
+      alert('Failed to update assignment');
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!selectedPpapId || !adminNote.trim()) return;
+
+    setAddingNote(true);
+    try {
+      await logEvent({
+        ppap_id: selectedPpapId,
+        event_type: 'CONVERSATION_ADDED',
+        event_data: {
+          note: adminNote,
+          admin_note: true,
+        },
+        actor: 'Admin',
+        actor_role: 'Administrator',
+      });
+
+      // Refresh events
+      const { data } = await supabase
+        .from('ppap_events')
+        .select('*')
+        .eq('ppap_id', selectedPpapId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (data) {
+        setEvents(data as PPAPEvent[]);
+      }
+
+      setAdminNote('');
+      alert('Admin note added successfully');
+    } catch (error) {
+      console.error('Failed to add note:', error);
+      alert('Failed to add note');
+    } finally {
+      setAddingNote(false);
+    }
+  };
+
+  const getEventIcon = (eventType: string) => {
+    switch (eventType) {
+      case 'ASSIGNED':
+        return '👤';
+      case 'PHASE_ADVANCED':
+        return '➡️';
+      case 'DOCUMENT_ADDED':
+        return '📄';
+      case 'CONVERSATION_ADDED':
+        return '💬';
+      case 'STATUS_CHANGED':
+        return '🔄';
+      default:
+        return '📌';
+    }
+  };
+
+  const isAdminNote = (event: PPAPEvent) => {
+    return event.event_data?.admin_note === true;
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Filters */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-bold text-gray-900 mb-4">Filters</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
+            <select
+              value={filterCustomer}
+              onChange={(e) => setFilterCustomer(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Customers</option>
+              {customers.map(customer => (
+                <option key={customer} value={customer}>{customer || ''}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Statuses</option>
+              {statuses.map(status => (
+                <option key={status} value={status}>{status || ''}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Phase</label>
+            <select
+              value={filterPhase}
+              onChange={(e) => setFilterPhase(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Phases</option>
+              {phases.map(phase => (
+                <option key={phase} value={phase}>{WORKFLOW_PHASE_LABELS[phase as keyof typeof WORKFLOW_PHASE_LABELS] || phase}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Active PPAPs */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-bold text-gray-900 mb-4">
+          Active PPAPs ({activePpaps.length})
+        </h2>
+        <div className="space-y-3">
+          {activePpaps.map(ppap => (
+            <div
+              key={ppap.id}
+              className={`p-4 border-2 rounded-lg transition-all ${
+                selectedPpapId === ppap.id
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-lg font-bold text-gray-900">{ppap.ppap_number}</h3>
+                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded">
+                      {ppap.status}
+                    </span>
+                    <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded">
+                      {WORKFLOW_PHASE_LABELS[ppap.workflow_phase as keyof typeof WORKFLOW_PHASE_LABELS] || ppap.workflow_phase}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Part:</span>{' '}
+                      <span className="font-medium">{ppap.part_number || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Customer:</span>{' '}
+                      <span className="font-medium">{ppap.customer_name || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Created:</span>{' '}
+                      <span className="font-medium">{formatDate(ppap.created_at)}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Assigned:</span>{' '}
+                      <span className="font-medium">{ppap.assigned_to || 'Unassigned'}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <select
+                    value={ppap.assigned_to || ''}
+                    onChange={(e) => handleAssignment(ppap.id, e.target.value)}
+                    className="px-3 py-1 text-sm border border-gray-300 rounded"
+                  >
+                    <option value="">Unassigned</option>
+                    <option value="System User">System User</option>
+                    <option value="Matt">Matt</option>
+                    <option value="Engineer 1">Engineer 1</option>
+                    <option value="Engineer 2">Engineer 2</option>
+                  </select>
+                  <button
+                    onClick={() => setSelectedPpapId(selectedPpapId === ppap.id ? null : ppap.id)}
+                    className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                  >
+                    {selectedPpapId === ppap.id ? 'Hide Details' : 'View Details'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Event Panel */}
+              {selectedPpapId === ppap.id && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Admin Notes */}
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 mb-3">Add Admin Note</h4>
+                      <textarea
+                        value={adminNote}
+                        onChange={(e) => setAdminNote(e.target.value)}
+                        placeholder="Enter admin note..."
+                        rows={3}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                      <button
+                        onClick={handleAddNote}
+                        disabled={addingNote || !adminNote.trim()}
+                        className="mt-2 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:bg-gray-400 transition-colors"
+                      >
+                        {addingNote ? 'Adding...' : '💬 Add Admin Note'}
+                      </button>
+                    </div>
+
+                    {/* Event History */}
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 mb-3">Recent Activity</h4>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {events.length === 0 && (
+                          <p className="text-sm text-gray-500 italic">No events yet</p>
+                        )}
+                        {events.map(event => (
+                          <div
+                            key={event.id}
+                            className={`p-3 rounded-lg text-sm ${
+                              isAdminNote(event)
+                                ? 'bg-red-50 border-2 border-red-300'
+                                : 'bg-gray-50 border border-gray-200'
+                            }`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <span className="text-lg">{getEventIcon(event.event_type)}</span>
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-900">
+                                  {event.event_type.replace(/_/g, ' ')}
+                                  {isAdminNote(event) && (
+                                    <span className="ml-2 px-2 py-0.5 bg-red-600 text-white text-xs rounded">
+                                      ADMIN
+                                    </span>
+                                  )}
+                                </div>
+                                {event.event_data?.note && (
+                                  <p className="text-gray-700 mt-1">{event.event_data.note}</p>
+                                )}
+                                {event.event_data?.assigned_to && (
+                                  <p className="text-gray-700 mt-1">
+                                    Assigned to: <strong>{event.event_data.assigned_to}</strong>
+                                  </p>
+                                )}
+                                {event.event_data?.file_name && (
+                                  <p className="text-gray-700 mt-1">
+                                    File: {event.event_data.file_name}
+                                  </p>
+                                )}
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {new Date(event.created_at).toLocaleString()} • {event.actor || 'System'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          {activePpaps.length === 0 && (
+            <p className="text-gray-500 text-center py-8 italic">No active PPAPs found</p>
+          )}
+        </div>
+      </div>
+
+      {/* Completed PPAPs */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-bold text-gray-900 mb-4">
+          Completed PPAPs ({completedPpaps.length})
+        </h2>
+        <div className="space-y-3">
+          {completedPpaps.map(ppap => (
+            <div
+              key={ppap.id}
+              className="p-4 border border-gray-200 rounded-lg bg-green-50"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-lg font-bold text-gray-900">{ppap.ppap_number}</h3>
+                    <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">
+                      COMPLETE
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Part:</span>{' '}
+                      <span className="font-medium">{ppap.part_number || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Customer:</span>{' '}
+                      <span className="font-medium">{ppap.customer_name || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Completed:</span>{' '}
+                      <span className="font-medium">{formatDate(ppap.updated_at)}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Assigned:</span>{' '}
+                      <span className="font-medium">{ppap.assigned_to || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+          {completedPpaps.length === 0 && (
+            <p className="text-gray-500 text-center py-8 italic">No completed PPAPs found</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
