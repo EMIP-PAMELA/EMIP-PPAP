@@ -4,6 +4,320 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 21:50 CT - [FEAT] Phase 19 - Task Orchestration Layer
+- Summary: Introduced task-based guidance system that transforms PPAP workflow from phase-based to action-driven experience. Tasks displayed per phase with progress tracking and auto-guidance.
+- Files changed:
+  - `src/features/ppap/utils/getPhaseTasks.ts` - NEW - Task engine returning phase-specific task checklists
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Added task panel with progress and highlighting
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Clearer user guidance, actionable task lists, visible progress, reduces cognitive load
+- No schema changes - pure UI/UX enhancement
+
+**Problem:**
+
+PPAP workflow was phase-based but lacked granular task guidance:
+- Users saw phases but not specific actions required
+- No clear progress indicator within a phase
+- Unclear what to do next
+- High cognitive load to remember all requirements
+- No checklist to track completion
+
+This created confusion and increased risk of missed requirements.
+
+**Solution:**
+
+**1. Created Task Engine (getPhaseTasks.ts)**
+
+New utility that returns phase-specific task checklists:
+
+```typescript
+export interface PhaseTask {
+  id: string;
+  label: string;
+  description?: string;
+  completed: boolean;
+}
+
+export interface PhaseTasksResult {
+  phase: WorkflowPhase;
+  tasks: PhaseTask[];
+  completedCount: number;
+  totalCount: number;
+}
+
+export function getPhaseTasks(
+  phase: WorkflowPhase,
+  phaseData?: Record<string, unknown>
+): PhaseTasksResult {
+  // Returns tasks based on current phase
+}
+```
+
+**Phase-Specific Tasks:**
+
+**INITIATION Phase:**
+1. ✓ Complete PPAP initiation data
+   - Fill in project info, contacts, part details, and drawing data
+2. ✓ Confirm drawing review
+   - Verify drawing is understood and part is defined
+3. ✓ Confirm capability requirements
+   - Ensure parts are producible and capability can be met
+
+**DOCUMENTATION Phase:**
+1. ✓ Prepare required documents
+   - Gather all necessary PPAP documentation
+2. ✓ Create markup drawing
+   - Mark up engineering drawing with inspection data
+3. ✓ Complete dimensional results
+   - Record dimensional inspection measurements
+4. ✓ Upload all required documents
+   - Upload Design Record, Control Plan, DFMEA, PFMEA, etc.
+
+**SAMPLE Phase:**
+1. ✓ Prepare samples
+   - Manufacture samples per PPAP requirements
+2. ✓ Inspect samples
+   - Perform dimensional and functional inspection
+3. ✓ Ship samples
+   - Package and ship samples to customer
+
+**REVIEW Phase:**
+1. ✓ Await review decision
+   - Customer is reviewing PPAP submission
+2. ✓ Track review status
+   - Monitor customer feedback and questions
+
+**COMPLETE Phase:**
+1. ✓ Archive PPAP records
+   - Store all PPAP documentation for future reference
+
+**2. Added Task Panel to Workflow**
+
+Integrated task panel in PPAPWorkflowWrapper:
+
+```tsx
+const phaseTasksData = getPhaseTasks(currentPhase);
+
+<div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
+  <div className="flex items-center justify-between mb-4">
+    <h3 className="text-lg font-bold text-gray-900">Tasks for this Phase</h3>
+    <div className="text-sm font-semibold text-gray-700">
+      <span className="text-blue-600">{phaseTasksData.completedCount || 0}</span> of{' '}
+      <span className="text-gray-900">{phaseTasksData.totalCount || 0}</span> tasks completed
+    </div>
+  </div>
+  
+  {/* Task list */}
+</div>
+```
+
+**Visual Design:**
+- White card with border and shadow
+- Title: "Tasks for this Phase"
+- Progress counter in top-right
+- Task checklist below
+
+**3. Progress Tracking**
+
+Dynamic progress display:
+
+```tsx
+<span className="text-blue-600">{phaseTasksData.completedCount || 0}</span> of{' '}
+<span className="text-gray-900">{phaseTasksData.totalCount || 0}</span> tasks completed
+```
+
+**Examples:**
+- "0 of 3 tasks completed" (INITIATION)
+- "2 of 4 tasks completed" (DOCUMENTATION)
+- "3 of 3 tasks completed" (SAMPLE)
+
+**Benefits:**
+- Instant visibility into phase progress
+- Clear completion status
+- Motivational (gamification effect)
+
+**4. Auto-Guidance with Highlighting**
+
+First incomplete task is automatically highlighted:
+
+```tsx
+{phaseTasksData.tasks.map((task, index) => {
+  const isFirstIncomplete = !task.completed && 
+    phaseTasksData.tasks.slice(0, index).every(t => t.completed);
+  
+  return (
+    <div className={`flex items-start p-4 rounded-lg border-2 transition-all ${
+      task.completed
+        ? 'bg-green-50 border-green-200'
+        : isFirstIncomplete
+        ? 'bg-blue-50 border-blue-400 shadow-md'  // HIGHLIGHTED
+        : 'bg-gray-50 border-gray-200'
+    }`}>
+      {/* Task checkbox and label */}
+      {isFirstIncomplete && (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-blue-600 text-white">
+          NEXT
+        </span>
+      )}
+    </div>
+  );
+})}
+```
+
+**Visual Treatment:**
+- **Completed tasks**: Green background, green border, strikethrough text
+- **Next task (highlighted)**: Blue background, blue-400 border, shadow, "NEXT" badge
+- **Future tasks**: Gray background, gray border
+
+**Logic:**
+- Find first task where `!task.completed`
+- AND all previous tasks are completed
+- Apply special styling + NEXT badge
+
+**Benefits:**
+- Clear visual cue for next action
+- Sequential guidance
+- Reduces decision paralysis
+- Guides user through workflow step-by-step
+
+**5. Task Display UI**
+
+Each task shows:
+
+```tsx
+<div className="flex items-start p-4 rounded-lg border-2">
+  {/* Checkbox */}
+  <input
+    type="checkbox"
+    checked={!!task.completed}
+    readOnly
+    className="h-5 w-5 text-blue-600 border-gray-300 rounded cursor-default"
+  />
+  
+  {/* Task info */}
+  <div className="ml-3 flex-1">
+    <div className="flex items-center gap-2">
+      <label className={`text-sm font-semibold ${
+        task.completed ? 'text-green-800 line-through' : 'text-gray-900'
+      }`}>
+        {task.label || ''}
+      </label>
+      {isFirstIncomplete && (
+        <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs font-bold">
+          NEXT
+        </span>
+      )}
+    </div>
+    {task.description && (
+      <p className="mt-1 text-xs text-gray-600">{task.description || ''}</p>
+    )}
+  </div>
+</div>
+```
+
+**Features:**
+- Checkbox (read-only, visual indicator)
+- Task label (bold, struck through when complete)
+- NEXT badge (for highlighted task)
+- Optional description (helper text)
+
+**6. Safe Rendering**
+
+All values use safe patterns:
+
+```typescript
+// Progress display
+{phaseTasksData.completedCount || 0}
+{phaseTasksData.totalCount || 0}
+
+// Task checkbox
+checked={!!task.completed}
+
+// Task label and description
+{task.label || ''}
+{task.description || ''}
+```
+
+No React warnings or undefined errors.
+
+**User Flow:**
+
+**Before Phase 19:**
+1. User lands on PPAP workflow page
+2. Sees "INITIATION Phase" form
+3. Must remember all requirements
+4. No checklist or progress indicator
+5. Unclear what to do first
+6. Submits when form allows
+
+**After Phase 19:**
+1. User lands on PPAP workflow page
+2. Sees "Tasks for this Phase" panel
+3. **First task highlighted with NEXT badge**
+4. Progress shows "0 of 3 tasks completed"
+5. User completes first task → next task auto-highlights
+6. Progress updates: "1 of 3 tasks completed"
+7. Clear sequential guidance through all tasks
+8. Visual satisfaction as tasks turn green
+
+**Benefits:**
+- ✅ Action-driven (not just phase-based)
+- ✅ Clear task checklist per phase
+- ✅ Visible progress tracking
+- ✅ Auto-guidance (NEXT badge)
+- ✅ Reduces cognitive load
+- ✅ Sequential workflow (do this, then that)
+- ✅ Visual feedback (green = done)
+- ✅ Gamification effect (progress motivation)
+- ✅ Reduces missed requirements
+- ✅ Better user confidence
+
+**Technical Implementation:**
+
+**getPhaseTasks.ts:**
+- Switch statement for each phase
+- Returns array of PhaseTask objects
+- Calculates completedCount and totalCount
+- Extensible for future dynamic completion tracking
+
+**PPAPWorkflowWrapper.tsx:**
+```typescript
+// Import
+import { getPhaseTasks } from '../utils/getPhaseTasks';
+
+// Call utility
+const phaseTasksData = getPhaseTasks(currentPhase);
+
+// Render panel before phase forms
+<div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
+  {/* Header with progress */}
+  {/* Task list with highlighting */}
+</div>
+```
+
+**Future Enhancements:**
+- Dynamic completion based on form data
+- Clickable tasks that scroll to relevant section
+- Task-level time estimates
+- Completion celebration animation
+- Task history/audit trail
+
+**Validation:**
+- ✅ getPhaseTasks.ts created with all phases
+- ✅ PhaseTask and PhaseTasksResult interfaces defined
+- ✅ Task panel added to PPAPWorkflowWrapper
+- ✅ Progress tracking shows "X of Y tasks completed"
+- ✅ First incomplete task highlighted with blue background
+- ✅ NEXT badge displays on highlighted task
+- ✅ Completed tasks show green with strikethrough
+- ✅ Safe rendering with || 0, || '', and !!
+- ✅ No TypeScript errors
+- ✅ No schema changes
+
+- Commit: `feat: phase 19 task orchestration layer`
+
+---
+
 ## 2026-03-21 21:40 CT - [FIX] Phase 18.2 - Document Workflow Stabilization & Validation Clarity
 - Summary: Stabilized Phase 18 implementation with improved validation feedback, upload warnings, and false completion prevention. Removed hardcoded user references.
 - Files changed:

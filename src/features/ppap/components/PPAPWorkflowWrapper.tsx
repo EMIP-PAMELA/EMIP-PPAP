@@ -9,6 +9,7 @@ import { SampleForm } from './SampleForm';
 import { ReviewForm } from './ReviewForm';
 import { WorkflowPhase, isValidWorkflowPhase, WORKFLOW_PHASE_LABELS } from '../constants/workflowPhases';
 import { getNextAction } from '../utils/getNextAction';
+import { getPhaseTasks } from '../utils/getPhaseTasks';
 
 interface PPAPWorkflowWrapperProps {
   ppap: PPAPRecord;
@@ -34,6 +35,7 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
   }, []);
 
   const nextActionData = getNextAction(ppap.workflow_phase, ppap.status);
+  const phaseTasksData = getPhaseTasks(currentPhase);
   
   const scrollToActivePhase = () => {
     if (activePhaseRef.current) {
@@ -63,6 +65,65 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
       </div>
 
       <PhaseIndicator currentPhase={currentPhase} />
+
+      {/* Phase Tasks Panel */}
+      <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-gray-900">Tasks for this Phase</h3>
+          <div className="text-sm font-semibold text-gray-700">
+            <span className="text-blue-600">{phaseTasksData.completedCount || 0}</span> of{' '}
+            <span className="text-gray-900">{phaseTasksData.totalCount || 0}</span> tasks completed
+          </div>
+        </div>
+
+        {phaseTasksData.tasks.length > 0 ? (
+          <div className="space-y-3">
+            {phaseTasksData.tasks.map((task, index) => {
+              const isFirstIncomplete = !task.completed && phaseTasksData.tasks.slice(0, index).every(t => t.completed);
+              return (
+                <div
+                  key={task.id}
+                  className={`flex items-start p-4 rounded-lg border-2 transition-all ${
+                    task.completed
+                      ? 'bg-green-50 border-green-200'
+                      : isFirstIncomplete
+                      ? 'bg-blue-50 border-blue-400 shadow-md'
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center h-6">
+                    <input
+                      type="checkbox"
+                      checked={!!task.completed}
+                      readOnly
+                      className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-default"
+                    />
+                  </div>
+                  <div className="ml-3 flex-1">
+                    <div className="flex items-center gap-2">
+                      <label className={`text-sm font-semibold ${
+                        task.completed ? 'text-green-800 line-through' : 'text-gray-900'
+                      }`}>
+                        {task.label || ''}
+                      </label>
+                      {isFirstIncomplete && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-blue-600 text-white">
+                          NEXT
+                        </span>
+                      )}
+                    </div>
+                    {task.description && (
+                      <p className="mt-1 text-xs text-gray-600">{task.description || ''}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500 italic">No tasks defined for this phase.</p>
+        )}
+      </div>
       
       {currentPhase === 'INITIATION' && (
         <div ref={activePhaseRef}>
