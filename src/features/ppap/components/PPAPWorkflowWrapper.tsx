@@ -35,7 +35,11 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
   }, []);
 
   const nextActionData = getNextAction(ppap.workflow_phase, ppap.status);
-  const phaseTasksData = getPhaseTasks(currentPhase);
+  
+  // Get phase tasks with data-driven completion
+  // Note: Phase data is managed within child form components
+  // Tasks will show completion based on data passed here
+  const phaseTasksData = getPhaseTasks(currentPhase, {});
   
   const scrollToActivePhase = () => {
     if (activePhaseRef.current) {
@@ -69,7 +73,26 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
       {/* Phase Tasks Panel */}
       <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-900">Tasks for this Phase</h3>
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">Tasks for this Phase</h3>
+            <div className="mt-1">
+              {phaseTasksData.phaseStatus === 'READY_TO_ADVANCE' && (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-300">
+                  ✓ READY TO ADVANCE
+                </span>
+              )}
+              {phaseTasksData.phaseStatus === 'IN_PROGRESS' && (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">
+                  ⚡ IN PROGRESS
+                </span>
+              )}
+              {phaseTasksData.phaseStatus === 'COMPLETE' && (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                  ✓ COMPLETE
+                </span>
+              )}
+            </div>
+          </div>
           <div className="text-sm font-semibold text-gray-700">
             <span className="text-blue-600">{phaseTasksData.completedCount || 0}</span> of{' '}
             <span className="text-gray-900">{phaseTasksData.totalCount || 0}</span> tasks completed

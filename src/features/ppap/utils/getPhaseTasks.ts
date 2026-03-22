@@ -12,16 +12,18 @@ export interface PhaseTasksResult {
   tasks: PhaseTask[];
   completedCount: number;
   totalCount: number;
+  phaseStatus: 'IN_PROGRESS' | 'READY_TO_ADVANCE' | 'COMPLETE';
 }
 
 /**
  * Get tasks for a specific workflow phase
- * Returns task checklist to guide user actions
+ * Returns task checklist with data-driven completion status
  */
 export function getPhaseTasks(
   phase: WorkflowPhase,
   phaseData?: Record<string, unknown>
 ): PhaseTasksResult {
+  const data = phaseData || {};
   let tasks: PhaseTask[] = [];
 
   switch (phase) {
@@ -31,50 +33,61 @@ export function getPhaseTasks(
           id: 'initiation_data',
           label: 'Complete PPAP initiation data',
           description: 'Fill in project info, contacts, part details, and drawing data',
-          completed: false,
+          completed: !!(data.project_name && data.quality_rep && data.part_description),
         },
         {
           id: 'drawing_review',
           label: 'Confirm drawing review',
           description: 'Verify drawing is understood and part is defined',
-          completed: false,
+          completed: !!(data.drawing_understood && data.part_defined),
         },
         {
           id: 'capability_check',
           label: 'Confirm capability requirements',
           description: 'Ensure parts are producible and capability can be met',
-          completed: false,
+          completed: !!(data.parts_producible && data.capability_met),
         },
       ];
       break;
 
     case 'DOCUMENTATION':
-      tasks = [
-        {
-          id: 'prepare_documents',
-          label: 'Prepare required documents',
-          description: 'Gather all necessary PPAP documentation',
-          completed: false,
-        },
-        {
-          id: 'markup_drawing',
-          label: 'Create markup drawing',
-          description: 'Mark up engineering drawing with inspection data',
-          completed: false,
-        },
-        {
-          id: 'dimensional_results',
-          label: 'Complete dimensional results',
-          description: 'Record dimensional inspection measurements',
-          completed: false,
-        },
-        {
-          id: 'upload_documents',
-          label: 'Upload all required documents',
-          description: 'Upload Design Record, Control Plan, DFMEA, PFMEA, etc.',
-          completed: false,
-        },
-      ];
+      {
+        const checkedDocsCount = [
+          data.design_record,
+          data.dimensional_results,
+          data.dfmea,
+          data.pfmea,
+          data.control_plan,
+          data.msa,
+        ].filter(Boolean).length;
+        
+        tasks = [
+          {
+            id: 'prepare_documents',
+            label: 'Prepare required documents',
+            description: 'Gather all necessary PPAP documentation',
+            completed: checkedDocsCount > 0,
+          },
+          {
+            id: 'markup_drawing',
+            label: 'Create markup drawing',
+            description: 'Mark up engineering drawing with inspection data',
+            completed: !!(data.dimensional_results),
+          },
+          {
+            id: 'dimensional_results',
+            label: 'Complete dimensional results',
+            description: 'Record dimensional inspection measurements',
+            completed: !!(data.dimensional_results),
+          },
+          {
+            id: 'upload_documents',
+            label: 'Upload all required documents',
+            description: 'Upload Design Record, Control Plan, DFMEA, PFMEA, etc.',
+            completed: checkedDocsCount >= 4,
+          },
+        ];
+      }
       break;
 
     case 'SAMPLE':
@@ -83,19 +96,19 @@ export function getPhaseTasks(
           id: 'prepare_samples',
           label: 'Prepare samples',
           description: 'Manufacture samples per PPAP requirements',
-          completed: false,
+          completed: !!(data.sample_quantity && Number(data.sample_quantity) > 0),
         },
         {
           id: 'sample_inspection',
           label: 'Inspect samples',
           description: 'Perform dimensional and functional inspection',
-          completed: false,
+          completed: !!(data.inspection_complete),
         },
         {
           id: 'ship_samples',
           label: 'Ship samples',
           description: 'Package and ship samples to customer',
-          completed: false,
+          completed: !!(data.shipping_date),
         },
       ];
       break;
@@ -106,13 +119,13 @@ export function getPhaseTasks(
           id: 'await_review',
           label: 'Await review decision',
           description: 'Customer is reviewing PPAP submission',
-          completed: false,
+          completed: !!(data.decision),
         },
         {
           id: 'track_status',
           label: 'Track review status',
           description: 'Monitor customer feedback and questions',
-          completed: false,
+          completed: !!(data.decision),
         },
       ];
       break;
@@ -133,11 +146,23 @@ export function getPhaseTasks(
   }
 
   const completedCount = tasks.filter(t => t.completed).length;
+  const totalCount = tasks.length;
+  
+  // Determine phase status
+  let phaseStatus: 'IN_PROGRESS' | 'READY_TO_ADVANCE' | 'COMPLETE';
+  if (phase === 'COMPLETE') {
+    phaseStatus = 'COMPLETE';
+  } else if (completedCount === totalCount && totalCount > 0) {
+    phaseStatus = 'READY_TO_ADVANCE';
+  } else {
+    phaseStatus = 'IN_PROGRESS';
+  }
 
   return {
     phase,
     tasks,
     completedCount,
-    totalCount: tasks.length,
+    totalCount,
+    phaseStatus,
   };
 }
