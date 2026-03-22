@@ -69,6 +69,7 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
           <InitiationForm
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
+            ppapType={ppap.ppap_type}
             currentPhase={currentPhase}
             setPhase={setCurrentPhase}
           />

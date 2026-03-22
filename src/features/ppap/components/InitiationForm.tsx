@@ -8,6 +8,7 @@ import { WorkflowPhase } from '../constants/workflowPhases';
 interface InitiationFormProps {
   ppapId: string;
   partNumber: string;
+  ppapType?: string | null;
   currentPhase: WorkflowPhase;
   setPhase: (phase: WorkflowPhase) => void;
 }
@@ -15,7 +16,6 @@ interface InitiationFormProps {
 type Section = 'project_info' | 'contacts' | 'part_info' | 'drawing' | 'shipment' | 'warrant';
 
 interface InitiationData {
-  ppap_type: string;
   project_name: string;
   project_number: string;
   quality_rep: string;
@@ -35,7 +35,7 @@ interface InitiationData {
   packaging_met: boolean;
 }
 
-export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: InitiationFormProps) {
+export function InitiationForm({ ppapId, partNumber, ppapType, currentPhase, setPhase }: InitiationFormProps) {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>('project_info');
   const [loading, setLoading] = useState(false);
@@ -43,7 +43,6 @@ export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: I
   const [successMessage, setSuccessMessage] = useState('');
 
   const [formData, setFormData] = useState<InitiationData>({
-    ppap_type: '',
     project_name: '',
     project_number: '',
     quality_rep: '',
@@ -75,7 +74,6 @@ export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: I
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.ppap_type) newErrors.ppap_type = 'PPAP Type is required';
     if (!formData.project_name) newErrors.project_name = 'Project Name is required';
     if (!formData.quality_rep) newErrors.quality_rep = 'Quality Rep is required';
     if (!formData.quality_email) newErrors.quality_email = 'Quality Email is required';
@@ -163,10 +161,29 @@ export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: I
     }
   };
 
+  const getPPAPTypeLabel = (type?: string | null): string => {
+    if (!type) return 'Not Specified';
+    switch (type) {
+      case 'NPI': return 'New Product Introduction (NPI)';
+      case 'CHANGE': return 'Engineering Change';
+      case 'MAINTENANCE': return 'Production / Maintenance';
+      default: return type;
+    }
+  };
+
   return (
     <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-300 rounded-xl shadow-sm p-8">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Initiation Phase</h2>
+        {ppapType && (
+          <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+            <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">PPAP Type</span>
+            <p className="text-sm font-medium text-blue-900 mt-0.5">{getPPAPTypeLabel(ppapType)}</p>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center justify-between mb-2">
+        <div />
         {successMessage && (
           <div className="text-sm font-semibold text-green-800 bg-green-100 border border-green-300 px-6 py-3 rounded-lg shadow-sm">
             {successMessage || ''}
@@ -204,33 +221,6 @@ export function InitiationForm({ ppapId, partNumber, currentPhase, setPhase }: I
             <div className="space-y-6">
               <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b border-gray-200">PPAP Project Information</h3>
               
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  PPAP Type <span className="text-red-600">*</span>
-                </label>
-                <select
-                  value={formData.ppap_type || ''}
-                  onChange={(e) => updateField('ppap_type', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
-                    errors.ppap_type ? 'border-red-400' : 'border-gray-400'
-                  }`}
-                >
-                  <option value="">Select PPAP Type</option>
-                  <option value="NPI">New Product Introduction (NPI)</option>
-                  <option value="SER">Engineering Change Request (ECR / SER)</option>
-                  <option value="Maintenance">Production / Maintenance</option>
-                </select>
-                <p className="mt-1 text-xs text-gray-600">
-                  {formData.ppap_type === 'NPI' && 'Used when launching a brand-new product or part'}
-                  {formData.ppap_type === 'SER' && 'Used when modifying an existing product or design'}
-                  {formData.ppap_type === 'Maintenance' && 'Used for ongoing production updates or minor revisions'}
-                  {!formData.ppap_type && 'Select the appropriate PPAP type for this submission'}
-                </p>
-                {errors.ppap_type && (
-                  <p className="mt-1 text-sm text-red-600">{errors.ppap_type || ''}</p>
-                )}
-              </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Project Name <span className="text-red-600">*</span>

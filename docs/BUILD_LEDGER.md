@@ -4,6 +4,180 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 21:00 CT - [FIX] Phase 17.1 - Remove Duplicate PPAP Type Input from Initiation Phase
+- Summary: Eliminated duplicate PPAP Type input from InitiationForm. PPAP Type is now single-source at intake, displayed read-only in Initiation phase for context.
+- Files changed:
+  - `src/features/ppap/components/InitiationForm.tsx` - Removed ppap_type field, validation, state. Added read-only display.
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Pass ppap_type prop to InitiationForm
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Prevents duplicate data entry, ensures single source of truth, improves UX consistency
+
+**Problem:**
+
+After Phase 17 introduced PPAP Type at intake, InitiationForm still asked users to re-enter the same information:
+- PPAP Type was defined at PPAP creation (intake)
+- InitiationForm asked for PPAP Type again (duplicate entry)
+- Risk of data inconsistency if user selected different type
+- Unnecessary friction and confusion for users
+
+**Solution:**
+
+**Removed from InitiationForm:**
+1. ❌ `ppap_type` field from `InitiationData` interface
+2. ❌ `ppap_type: ''` from formData state initialization
+3. ❌ `if (!formData.ppap_type) newErrors.ppap_type = 'PPAP Type is required'` validation
+4. ❌ PPAP Type dropdown UI (28 lines removed: label, select, options, helper text, error display)
+5. ❌ PPAP Type from event logging (already exists at record level)
+
+**Added to InitiationForm:**
+1. ✅ `ppapType?: string | null` prop in InitiationFormProps
+2. ✅ `getPPAPTypeLabel()` helper function to map enum values to display labels
+3. ✅ Read-only PPAP Type badge display at top-right of form header
+4. ✅ Badge styling: blue-50 background, blue-200 border, positioned next to "Initiation Phase" title
+
+**Code Changes:**
+
+**InitiationFormProps:**
+```typescript
+// Before
+interface InitiationFormProps {
+  ppapId: string;
+  partNumber: string;
+  currentPhase: WorkflowPhase;
+  setPhase: (phase: WorkflowPhase) => void;
+}
+
+// After
+interface InitiationFormProps {
+  ppapId: string;
+  partNumber: string;
+  ppapType?: string | null;  // NEW - passed from parent
+  currentPhase: WorkflowPhase;
+  setPhase: (phase: WorkflowPhase) => void;
+}
+```
+
+**InitiationData Interface:**
+```typescript
+// Before
+interface InitiationData {
+  ppap_type: string;  // REMOVED
+  project_name: string;
+  // ... other fields
+}
+
+// After
+interface InitiationData {
+  project_name: string;  // ppap_type removed
+  // ... other fields
+}
+```
+
+**Validation:**
+```typescript
+// Before
+if (!formData.ppap_type) newErrors.ppap_type = 'PPAP Type is required';
+if (!formData.project_name) newErrors.project_name = 'Project Name is required';
+
+// After
+if (!formData.project_name) newErrors.project_name = 'Project Name is required';
+```
+
+**Read-Only Display:**
+```typescript
+const getPPAPTypeLabel = (type?: string | null): string => {
+  if (!type) return 'Not Specified';
+  switch (type) {
+    case 'NPI': return 'New Product Introduction (NPI)';
+    case 'CHANGE': return 'Engineering Change';
+    case 'MAINTENANCE': return 'Production / Maintenance';
+    default: return type;
+  }
+};
+
+// In header
+{ppapType && (
+  <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+    <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">PPAP Type</span>
+    <p className="text-sm font-medium text-blue-900 mt-0.5">{getPPAPTypeLabel(ppapType)}</p>
+  </div>
+)}
+```
+
+**PPAPWorkflowWrapper Update:**
+```typescript
+// Before
+<InitiationForm
+  ppapId={ppap.id}
+  partNumber={ppap.part_number || ''}
+  currentPhase={currentPhase}
+  setPhase={setCurrentPhase}
+/>
+
+// After
+<InitiationForm
+  ppapId={ppap.id}
+  partNumber={ppap.part_number || ''}
+  ppapType={ppap.ppap_type}  // NEW - pass from parent record
+  currentPhase={currentPhase}
+  setPhase={setCurrentPhase}
+/>
+```
+
+**UI Changes:**
+
+Before:
+- Initiation Phase header
+- PPAP Type dropdown (editable, required)
+  - Options: NPI, SER, Maintenance
+  - Helper text explaining each type
+  - Error message if not selected
+- Project Name field
+- (rest of form)
+
+After:
+- Initiation Phase header with PPAP Type badge (read-only, top-right)
+  - Shows: "PPAP Type: New Product Introduction (NPI)"
+  - Not editable
+  - Visual context only
+- Project Name field (first editable field)
+- (rest of form)
+
+**Value Mapping:**
+
+Intake values → Display labels:
+- `NPI` → "New Product Introduction (NPI)"
+- `CHANGE` → "Engineering Change"
+- `MAINTENANCE` → "Production / Maintenance"
+
+Note: Old "SER" value from InitiationForm replaced with "CHANGE" from intake (Phase 17 alignment).
+
+**Benefits:**
+- ✅ Eliminates duplicate data entry
+- ✅ Single source of truth (intake)
+- ✅ Prevents data inconsistency
+- ✅ Reduces user friction
+- ✅ Clearer workflow (type defined once)
+- ✅ Read-only display provides context without allowing edits
+- ✅ Aligns with Phase 17 intake refinement
+
+**Validation:**
+- ✅ ppap_type removed from InitiationData interface
+- ✅ ppap_type removed from formData state
+- ✅ ppap_type validation removed
+- ✅ PPAP Type field UI removed (28 lines)
+- ✅ ppapType prop added to InitiationFormProps
+- ✅ Read-only badge displays PPAP Type
+- ✅ getPPAPTypeLabel() maps enum to display text
+- ✅ PPAPWorkflowWrapper passes ppap.ppap_type
+- ✅ Safe rendering with `ppapType &&` check
+- ✅ No TypeScript errors
+- ✅ Single source of truth maintained
+
+- Commit: `fix: remove duplicate ppap type input from initiation phase`
+
+---
+
 ## 2026-03-21 20:29 CT - [FEAT] Phase 17 - PPAP Intake Refinement
 - Summary: Refined PPAP intake to match real-world workflow where customers own PPAP numbers. Added classification system and removed premature fields. Minimal intake focused on essential workflow-driving data.
 - Files changed:
