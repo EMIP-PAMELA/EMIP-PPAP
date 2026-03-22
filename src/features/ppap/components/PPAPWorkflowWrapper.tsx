@@ -23,6 +23,7 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
     : 'INITIATION';
   
   const [currentPhase, setCurrentPhase] = useState<WorkflowPhase>(initialPhase);
+  const [documentationSection, setDocumentationSection] = useState<'checklist' | 'upload' | 'readiness' | 'confirmation' | undefined>(undefined);
   const activePhaseRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to active phase on mount
@@ -44,6 +45,22 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
   const scrollToActivePhase = () => {
     if (activePhaseRef.current) {
       activePhaseRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const handleTaskClick = (taskId: string) => {
+    // Map task IDs to documentation sections
+    const taskSectionMap: Record<string, 'checklist' | 'upload' | 'readiness'> = {
+      'prepare_documents': 'checklist',
+      'markup_drawing': 'checklist',
+      'dimensional_results': 'checklist',
+      'upload_documents': 'upload',
+    };
+
+    const targetSection = taskSectionMap[taskId];
+    if (targetSection && currentPhase === 'DOCUMENTATION') {
+      setDocumentationSection(targetSection);
+      scrollToActivePhase();
     }
   };
 
@@ -103,16 +120,18 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
           <div className="space-y-3">
             {phaseTasksData.tasks.map((task, index) => {
               const isFirstIncomplete = !task.completed && phaseTasksData.tasks.slice(0, index).every(t => t.completed);
+              const isClickable = currentPhase === 'DOCUMENTATION' && ['prepare_documents', 'markup_drawing', 'dimensional_results', 'upload_documents'].includes(task.id);
               return (
                 <div
                   key={task.id}
+                  onClick={() => isClickable && handleTaskClick(task.id)}
                   className={`flex items-start p-4 rounded-lg border-2 transition-all ${
                     task.completed
                       ? 'bg-green-50 border-green-200'
                       : isFirstIncomplete
                       ? 'bg-blue-50 border-blue-400 shadow-md'
                       : 'bg-gray-50 border-gray-200'
-                  }`}
+                  } ${isClickable ? 'cursor-pointer hover:shadow-lg hover:border-blue-500' : ''}`}
                 >
                   <div className="flex items-center h-6">
                     <input
@@ -167,6 +186,7 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
             partNumber={ppap.part_number || ''}
             currentPhase={currentPhase}
             setPhase={setCurrentPhase}
+            initialSection={documentationSection}
           />
         </div>
       )}

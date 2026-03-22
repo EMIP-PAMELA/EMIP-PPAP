@@ -4,6 +4,316 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 22:10 CT - [FIX] Phase 20.1 - Documentation Workflow UX Alignment & Validation Cleanup
+- Summary: Fixed documentation phase UX inconsistencies, removed false upload interactions, converted blocking validation to guidance-based warnings, and made tasks clickable for navigation.
+- Files changed:
+  - `src/features/ppap/components/DocumentationForm.tsx` - Removed fake upload behavior, added disclaimer, fixed error persistence, converted errors to warnings
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Made tasks clickable with section navigation
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Improved user flow clarity, eliminated confusion from fake upload state, better validation UX
+- No schema changes - pure UX alignment
+
+**Problem:**
+
+Documentation phase had several UX inconsistencies and false interactions:
+- Upload buttons appeared to work but actually just set fake state
+- Users confused by non-functional upload interactions
+- Blocking validation errors prevented submission unnecessarily
+- Error messages persisted when changing sections
+- Tasks were not actionable (couldn't click to navigate)
+- Stacked error banners cluttered UI
+
+This created misleading UX and frustrated user expectations.
+
+**Solution:**
+
+**1. Made Tasks Clickable with Navigation**
+
+Added task click handlers to navigate to relevant sections in Documentation phase:
+
+```typescript
+const [documentationSection, setDocumentationSection] = useState<'checklist' | 'upload' | 'readiness' | 'confirmation' | undefined>(undefined);
+
+const handleTaskClick = (taskId: string) => {
+  const taskSectionMap: Record<string, 'checklist' | 'upload' | 'readiness'> = {
+    'prepare_documents': 'checklist',
+    'markup_drawing': 'checklist',
+    'dimensional_results': 'checklist',
+    'upload_documents': 'upload',
+  };
+
+  const targetSection = taskSectionMap[taskId];
+  if (targetSection && currentPhase === 'DOCUMENTATION') {
+    setDocumentationSection(targetSection);
+    scrollToActivePhase();
+  }
+};
+```
+
+**Task to Section Mapping:**
+- "Prepare required documents" → `checklist`
+- "Create markup drawing" → `checklist`
+- "Complete dimensional results" → `checklist`
+- "Upload all required documents" → `upload`
+
+**Visual Treatment:**
+```tsx
+const isClickable = currentPhase === 'DOCUMENTATION' && 
+  ['prepare_documents', 'markup_drawing', 'dimensional_results', 'upload_documents'].includes(task.id);
+
+<div
+  onClick={() => isClickable && handleTaskClick(task.id)}
+  className={`... ${isClickable ? 'cursor-pointer hover:shadow-lg hover:border-blue-500' : ''}`}
+>
+```
+
+**Clickable tasks show:**
+- Pointer cursor on hover
+- Shadow elevation on hover
+- Blue border highlight on hover
+
+**2. Removed Fake Upload State**
+
+**Before:**
+```tsx
+<button
+  onClick={() => {
+    // Placeholder for upload - mark as uploaded in UI
+    setUploadedDocs(prev => ({ ...prev, [doc.key]: true }));
+  }}
+>
+  Upload {doc.label}
+</button>
+```
+
+**After:**
+```tsx
+{/* Upload Coming Soon Notice */}
+<div className="mt-6 p-6 border-2 border-dashed border-gray-300 rounded-lg text-center bg-gray-50">
+  <p className="text-sm font-semibold text-gray-600">Upload Coming Soon</p>
+  <p className="text-xs text-gray-500 mt-1">File upload functionality will be available in a future update</p>
+</div>
+```
+
+**Changes:**
+- Removed all upload button click handlers that set `uploadedDocs`
+- Removed quick upload button grid
+- Added clear "Upload Coming Soon" placeholder
+- No false state changes
+
+**3. Added Upload Disclaimer**
+
+**Before:**
+```tsx
+<div className="p-4 bg-yellow-50 border border-yellow-400">
+  <p className="font-bold">⚠️ Documents are not yet permanently saved. Upload functionality is in progress.</p>
+</div>
+```
+
+**After:**
+```tsx
+<div className="mt-4 p-4 bg-blue-50 border border-blue-300 rounded-lg text-sm text-blue-800">
+  <p className="font-bold">ℹ️ Upload functionality not yet implemented.</p>
+  <p className="mt-2 text-xs">Use the checklist to track which documents you have prepared. File upload integration is coming soon.</p>
+</div>
+```
+
+**Changes:**
+- Changed from warning (yellow) to info (blue)
+- Clear statement: "not yet implemented"
+- Explicit guidance: "Use the checklist to track"
+- Set expectations: "coming soon"
+
+**4. Fixed Error Persistence**
+
+Added error clearing when user changes sections:
+
+```tsx
+{SECTIONS.map(section => (
+  <button
+    onClick={() => {
+      setActiveSection(section.id as Section);
+      setErrors({});  // Clear errors on section change
+    }}
+  >
+    {section.label}
+  </button>
+))}
+```
+
+**Also clears errors on input change:**
+```typescript
+const updateField = (field: keyof DocumentationData, value: string | boolean) => {
+  setFormData(prev => ({ ...prev, [field]: value }));
+  if (errors[field]) {
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[field];
+      return newErrors;
+    });
+  }
+};
+```
+
+**Benefits:**
+- Errors don't persist across sections
+- User sees relevant validation only
+- Fresh start when switching sections
+- Immediate feedback when fixing issues
+
+**5. Converted Blocking Errors to Warnings**
+
+**Before (Blocking):**
+```typescript
+// Blocked submission
+const missingDocs = getMissingDocuments();
+if (missingDocs.length > 0) {
+  newErrors.documents = 'Required documents not checked';
+}
+
+const checkedButNotUploaded = getCheckedButNotUploaded();
+if (checkedButNotUploaded.length > 0) {
+  newErrors.upload = 'Documents checked but not uploaded';
+}
+```
+
+**After (Guidance Only):**
+```typescript
+const validateForm = (): boolean => {
+  const newErrors: Record<string, string> = {};
+
+  if (!formData.suggested_date) {
+    newErrors.suggested_date = 'Suggested submission date is required';
+  }
+
+  if (!formData.acknowledgement) {
+    newErrors.acknowledgement = 'You must acknowledge the submission';
+  }
+
+  // Missing documents and upload state NO LONGER block submission
+  setErrors(newErrors);
+  return Object.keys(newErrors).length === 0;
+};
+```
+
+**Only blocking validations:**
+- Suggested submission date (required)
+- Acknowledgement checkbox (required)
+
+**Non-blocking guidance:**
+- Missing documents (shown as info)
+- Upload status (not validated)
+
+**6. Cleaned UI Clutter**
+
+**Before:**
+- Multiple error banners stacked
+- Red blocking error for missing docs
+- Red blocking error for upload status
+- Yellow warning for upload system
+
+**After:**
+- Single contextual guidance banner
+- Only shown in relevant section
+- Info-level styling (blue)
+- Clear, concise messaging
+
+```tsx
+{/* Guidance Warnings - Non-blocking */}
+{getMissingDocuments().length > 0 && activeSection === 'checklist' && (
+  <div className="mb-6 p-4 bg-blue-50 border border-blue-300 rounded-lg text-sm text-blue-800 font-medium">
+    <p className="font-bold">ℹ️ Document Guidance</p>
+    <p className="mt-1">Consider checking these documents:</p>
+    <div className="mt-2">
+      <ul className="mt-1 ml-4 list-disc text-xs">
+        {getMissingDocuments().map(doc => (
+          <li key={doc}>{doc || ''}</li>
+        ))}
+      </ul>
+    </div>
+  </div>
+)}
+```
+
+**Visual Treatment:**
+- Blue background (info, not warning)
+- "Consider checking" (suggestion, not requirement)
+- Only shows in checklist section (contextual)
+- Single banner (no stacking)
+
+**User Flow:**
+
+**Before Phase 20.1:**
+1. User sees Documentation tasks in task panel
+2. Tasks are not clickable (static display)
+3. User clicks "Upload Design Record" button
+4. Button appears to work → uploadedDocs state changes
+5. Task shows "✓ Uploaded" (false feedback)
+6. User tries to submit
+7. **Blocked by missing docs error** (even though form is complete)
+8. Error persists when switching sections
+9. User confused by validation mismatch
+
+**After Phase 20.1:**
+1. User sees Documentation tasks in task panel
+2. **Tasks are clickable with hover effects**
+3. User clicks "Upload all required documents" task
+4. **Automatically navigates to Upload section**
+5. Sees "Upload Coming Soon" placeholder (clear expectations)
+6. No fake upload buttons (no false feedback)
+7. Guidance shown: "Consider checking these documents" (helpful)
+8. User can submit even if some docs unchecked (non-blocking)
+9. Switching sections clears errors (clean slate)
+10. Clear, aligned user experience
+
+**Benefits:**
+- ✅ Tasks are now actionable (clickable navigation)
+- ✅ No false upload interactions
+- ✅ Clear upload status communication
+- ✅ Non-blocking validation (guidance-based)
+- ✅ Error messages clear on section change
+- ✅ Clean UI without clutter
+- ✅ Aligned expectations with reality
+- ✅ Better user flow clarity
+- ✅ Reduced user confusion
+- ✅ Consistent task system integration
+
+**Technical Implementation:**
+
+**DocumentationForm.tsx:**
+- Added `initialSection?: Section` prop
+- Changed `useState<Section>('checklist')` to `useState<Section>(initialSection || 'checklist')`
+- Removed fake upload onClick handler: `setUploadedDocs(prev => ({ ...prev, [doc.key]: true }))`
+- Replaced upload buttons with "Upload Coming Soon" placeholder
+- Added `setErrors({})` to section navigation onClick
+- Removed blocking validation for documents and upload
+- Converted error banners to single contextual guidance banner
+- Changed warning styling from yellow to blue (info)
+
+**PPAPWorkflowWrapper.tsx:**
+- Added `documentationSection` state
+- Created `handleTaskClick` function with task-to-section mapping
+- Added click handler to task divs
+- Added hover styles for clickable tasks
+- Passed `initialSection={documentationSection}` to DocumentationForm
+
+**Validation:**
+- ✅ Tasks clickable in Documentation phase
+- ✅ Tasks navigate to correct sections
+- ✅ Fake upload buttons removed
+- ✅ Upload disclaimer added
+- ✅ Errors clear on section change
+- ✅ Errors clear on input change
+- ✅ Blocking validation converted to guidance
+- ✅ Only required fields block submission
+- ✅ UI clutter cleaned up
+- ✅ No TypeScript errors
+- ✅ No schema changes
+
+- Commit: `fix: phase 20.1 documentation workflow UX alignment`
+
+---
+
 ## 2026-03-21 22:00 CT - [FEAT] Phase 20 - Dynamic Task Completion Based on Real Data
 - Summary: Converted task system from static hardcoded completion to data-driven completion based on real form and workflow state. Tasks now accurately reflect actual work completed.
 - Files changed:

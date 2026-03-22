@@ -11,6 +11,7 @@ interface DocumentationFormProps {
   partNumber: string;
   currentPhase: WorkflowPhase;
   setPhase: (phase: WorkflowPhase) => void;
+  initialSection?: Section;
 }
 
 type Section = 'checklist' | 'upload' | 'readiness' | 'confirmation';
@@ -53,9 +54,9 @@ const SECTIONS = [
   { id: 'confirmation', label: 'Confirmation' },
 ] as const;
 
-export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase }: DocumentationFormProps) {
+export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, initialSection }: DocumentationFormProps) {
   const router = useRouter();
-  const [activeSection, setActiveSection] = useState<Section>('checklist');
+  const [activeSection, setActiveSection] = useState<Section>(initialSection || 'checklist');
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -104,18 +105,6 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase }
 
     if (!formData.acknowledgement) {
       newErrors.acknowledgement = 'You must acknowledge the submission';
-    }
-
-    // Check for missing critical documents
-    const missingDocs = getMissingDocuments();
-    if (missingDocs.length > 0) {
-      newErrors.documents = 'Required documents not checked';
-    }
-
-    // Prevent false completion - checked but not uploaded
-    const checkedButNotUploaded = getCheckedButNotUploaded();
-    if (checkedButNotUploaded.length > 0) {
-      newErrors.upload = 'Documents checked but not uploaded';
     }
 
     setErrors(newErrors);
@@ -220,7 +209,10 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase }
             {SECTIONS.map(section => (
               <button
                 key={section.id}
-                onClick={() => setActiveSection(section.id as Section)}
+                onClick={() => {
+                  setActiveSection(section.id as Section);
+                  setErrors({});
+                }}
                 className={`w-full text-left px-4 py-2 rounded text-sm font-medium transition-colors ${
                   activeSection === section.id
                     ? 'bg-blue-100 text-blue-700'
@@ -241,34 +233,18 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase }
             </div>
           )}
 
-          {errors.documents && (
-            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-300 rounded-lg text-sm text-yellow-800 font-medium">
-              <p className="font-bold">⚠️ Missing Documents</p>
-              <p className="mt-1">{errors.documents || ''}</p>
+          {/* Guidance Warnings - Non-blocking */}
+          {getMissingDocuments().length > 0 && activeSection === 'checklist' && (
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-300 rounded-lg text-sm text-blue-800 font-medium">
+              <p className="font-bold">ℹ️ Document Guidance</p>
+              <p className="mt-1">Consider checking these documents:</p>
               <div className="mt-2">
-                <p className="font-semibold text-xs">You are missing:</p>
                 <ul className="mt-1 ml-4 list-disc text-xs">
                   {getMissingDocuments().map(doc => (
                     <li key={doc}>{doc || ''}</li>
                   ))}
                 </ul>
               </div>
-            </div>
-          )}
-
-          {errors.upload && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800 font-medium">
-              <p className="font-bold">🚫 Cannot Submit - Documents Not Uploaded</p>
-              <p className="mt-1">You have checked documents but have not uploaded them yet.</p>
-              <div className="mt-2">
-                <p className="font-semibold text-xs">Documents checked but not uploaded:</p>
-                <ul className="mt-1 ml-4 list-disc text-xs">
-                  {getCheckedButNotUploaded().map(doc => (
-                    <li key={doc}>{doc || ''}</li>
-                  ))}
-                </ul>
-              </div>
-              <p className="mt-2 text-xs">Please upload these documents or uncheck them before submitting.</p>
             </div>
           )}
 
@@ -351,27 +327,16 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase }
                   </div>
                 </div>
 
-                {/* Upload System Warning */}
-                <div className="mt-4 p-4 bg-yellow-50 border border-yellow-400 rounded-lg text-sm text-yellow-800">
-                  <p className="font-bold">⚠️ Documents are not yet permanently saved. Upload functionality is in progress.</p>
-                  <p className="mt-2 text-xs">The upload interface is a UI framework. Files will not be stored until backend integration is complete. Use the checklist to track which documents you have prepared separately.</p>
+                {/* Upload Disclaimer */}
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-300 rounded-lg text-sm text-blue-800">
+                  <p className="font-bold">ℹ️ Upload functionality not yet implemented.</p>
+                  <p className="mt-2 text-xs">Use the checklist to track which documents you have prepared. File upload integration is coming soon.</p>
                 </div>
 
-                {/* Quick Upload Buttons */}
-                <div className="mt-6 grid grid-cols-2 gap-3">
-                  {REQUIRED_DOCUMENTS.slice(0, 4).map(doc => (
-                    <button
-                      key={doc.key}
-                      type="button"
-                      className="px-4 py-2 border border-gray-300 rounded text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
-                      onClick={() => {
-                        // Placeholder for upload - mark as uploaded in UI
-                        setUploadedDocs(prev => ({ ...prev, [doc.key]: true }));
-                      }}
-                    >
-                      Upload {doc.label}
-                    </button>
-                  ))}
+                {/* Upload Coming Soon Notice */}
+                <div className="mt-6 p-6 border-2 border-dashed border-gray-300 rounded-lg text-center bg-gray-50">
+                  <p className="text-sm font-semibold text-gray-600">Upload Coming Soon</p>
+                  <p className="text-xs text-gray-500 mt-1">File upload functionality will be available in a future update</p>
                 </div>
               </div>
             </div>
