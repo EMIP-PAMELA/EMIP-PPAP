@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { logEvent } from '@/src/features/events/mutations';
 import { updateWorkflowPhase } from '../mutations/updateWorkflowPhase';
 import { WorkflowPhase } from '../constants/workflowPhases';
+import { uploadPPAPDocument } from '../utils/uploadFile';
+import { supabase } from '@/src/lib/supabaseClient';
 
 interface DocumentationFormProps {
   ppapId: string;
@@ -55,10 +57,19 @@ const SECTIONS = [
   { id: 'confirmation', label: 'Confirmation' },
 ] as const;
 
+interface UploadedFile {
+  file_name: string;
+  file_path: string;
+  document_type: string;
+  uploaded_at: string;
+}
+
 export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, initialSection, isReadOnly = false }: DocumentationFormProps) {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>(initialSection || 'checklist');
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState('');
@@ -80,6 +91,91 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
     tooling: false,
     acknowledgement: false,
   });
+
+  // Fetch uploaded files from events
+  useEffect(() => {
+    const fetchUploadedFiles = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('ppap_events')
+          .select('event_data, created_at')
+          .eq('ppap_id', ppapId)
+          .eq('event_type', 'DOCUMENT_ADDED')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const files: UploadedFile[] = (data || []).map(event => ({
+          file_name: event.event_data.file_name,
+          file_path: event.event_data.file_path,
+          document_type: event.event_data.document_type || 'general',
+          uploaded_at: event.created_at,
+        }));
+
+        setUploadedFiles(files);
+      } catch (error) {
+        console.error('Failed to fetch uploaded files:', error);
+      }
+    };
+
+    fetchUploadedFiles();
+  }, [ppapId]);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploading(true);
+    setErrors({});
+
+    try {
+      for (const file of Array.from(files)) {
+        // Upload file to Supabase Storage
+        const filePath = await uploadPPAPDocument(file, ppapId);
+
+        // Log upload event
+        await logEvent({
+          ppap_id: ppapId,
+          event_type: 'DOCUMENT_ADDED',
+          event_data: {
+            file_name: file.name,
+            file_path: filePath,
+            document_type: 'general',
+          },
+          actor: 'System User',
+          actor_role: 'Engineer',
+        });
+      }
+
+      // Refresh uploaded files list
+      const { data, error } = await supabase
+        .from('ppap_events')
+        .select('event_data, created_at')
+        .eq('ppap_id', ppapId)
+        .eq('event_type', 'DOCUMENT_ADDED')
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        const refreshedFiles: UploadedFile[] = (data || []).map(event => ({
+          file_name: event.event_data.file_name,
+          file_path: event.event_data.file_path,
+          document_type: event.event_data.document_type || 'general',
+          uploaded_at: event.created_at,
+        }));
+        setUploadedFiles(refreshedFiles);
+      }
+
+      setSuccessMessage(`Successfully uploaded ${files.length} file(s)`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error) {
+      console.error('Upload failed:', error);
+      setErrors({ upload: error instanceof Error ? error.message : 'Upload failed' });
+    } finally {
+      setUploading(false);
+      // Reset input
+      event.target.value = '';
+    }
+  };
 
   const getMissingDocuments = (): string[] => {
     return REQUIRED_DOCUMENTS
@@ -324,16 +420,27 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
                   Upload documents required for this PPAP submission.
                 </p>
 
-                {/* Drag & Drop Area */}
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50 hover:bg-gray-100 transition-colors">
-                  <div className="space-y-2">
+                {/* Upload area */}
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-gray-400 transition-colors">
+                  <div className="space-y-4">
                     <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                       <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <div className="text-sm text-gray-600">
-                      <label htmlFor="file-upload" className="relative cursor-pointer rounded-md font-medium text-blue-600 hover:text-blue-500">
-                        <span>Click to upload</span>
-                        <input id="file-upload" name="file-upload" type="file" className="sr-only" multiple />
+                      <label htmlFor="file-upload" className={`relative rounded-md font-medium ${
+                        uploading || isReadOnly ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:text-blue-500 cursor-pointer'
+                      }`}>
+                        <span>{uploading ? 'Uploading...' : 'Click to upload'}</span>
+                        <input 
+                          id="file-upload" 
+                          name="file-upload" 
+                          type="file" 
+                          className="sr-only" 
+                          multiple 
+                          onChange={handleFileUpload}
+                          disabled={uploading || isReadOnly}
+                          accept=".pdf,.doc,.docx,.xls,.xlsx"
+                        />
                       </label>
                       <span className="pl-1">or drag and drop</span>
                     </div>
@@ -341,17 +448,39 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
                   </div>
                 </div>
 
-                {/* Upload Disclaimer */}
-                <div className="mt-4 p-4 bg-blue-50 border border-blue-300 rounded-lg text-sm text-blue-800">
-                  <p className="font-bold">ℹ️ Upload functionality not yet implemented.</p>
-                  <p className="mt-2 text-xs">Use the checklist to track which documents you have prepared. File upload integration is coming soon.</p>
-                </div>
+                {errors.upload && (
+                  <div className="mt-4 p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800">
+                    <p className="font-bold">⚠️ Upload Error</p>
+                    <p className="mt-1 text-xs">{errors.upload || ''}</p>
+                  </div>
+                )}
 
-                {/* Upload Coming Soon Notice */}
-                <div className="mt-6 p-6 border-2 border-dashed border-gray-300 rounded-lg text-center bg-gray-50">
-                  <p className="text-sm font-semibold text-gray-600">Upload Coming Soon</p>
-                  <p className="text-xs text-gray-500 mt-1">File upload functionality will be available in a future update</p>
-                </div>
+                {/* Uploaded Files List */}
+                {uploadedFiles.length > 0 && (
+                  <div className="mt-6">
+                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Uploaded Documents ({uploadedFiles.length})</h4>
+                    <div className="space-y-2">
+                      {(uploadedFiles || []).map((file, index) => (
+                        <div key={index} className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <svg className="h-5 w-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                            </svg>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{file.file_name || 'Unknown file'}</p>
+                              <p className="text-xs text-gray-600">
+                                Uploaded {new Date(file.uploaded_at).toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs font-semibold text-green-700 px-3 py-1 bg-green-100 rounded-full">
+                            ✓ Uploaded
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -480,10 +609,15 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
 
           {/* Action Buttons */}
           <div className="mt-8 pt-6 border-t border-gray-200 flex justify-between items-center">
-            <div>
+            <div className="flex gap-4">
               {successMessage && (
                 <div className="text-sm font-semibold text-green-800 bg-green-100 border border-green-300 px-6 py-3 rounded-lg shadow-sm">
                   {successMessage || ''}
+                </div>
+              )}
+              {uploading && (
+                <div className="text-sm font-semibold text-blue-800 bg-blue-100 border border-blue-300 px-6 py-3 rounded-lg shadow-sm">
+                  📤 Uploading files...
                 </div>
               )}
             </div>
