@@ -4,6 +4,178 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 19:33 CT - [FEAT] Phase 15 - Dashboard & Next Action Intelligence
+- Summary: Transformed PPAP Records page from static table into intelligent dashboard with next action guidance, summary metrics, and priority-based visual indicators. All logic derived from existing fields - no schema changes.
+- Files changed:
+  - `src/features/ppap/utils/getNextAction.ts` - NEW: Next action logic and priority utilities
+  - `src/features/ppap/components/PPAPListTable.tsx` - Added Next Action column, clickable rows, priority highlighting
+  - `app/ppap/page.tsx` - Added dashboard summary cards and grouping
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Significantly improved usability and workflow visibility with actionable insights
+
+**Next Action Intelligence:**
+
+1. **Created getNextAction Utility**
+   - Location: `src/features/ppap/utils/getNextAction.ts`
+   - Derives next action from `workflow_phase` and `status`
+   - Returns action text and priority level
+   - No database changes - pure derived logic
+
+2. **Priority Levels**
+   - **Urgent** (red): Status = CLOSED → "Fix Issues and Resubmit"
+   - **Warning** (amber): INITIATION/DOCUMENTATION/SAMPLE phases
+   - **Normal** (gray): REVIEW/COMPLETE phases
+
+3. **Action Mapping**
+   - INITIATION → "Complete Initiation" (warning)
+   - DOCUMENTATION → "Submit Documentation" (warning)
+   - SAMPLE → "Submit Sample Information" (warning)
+   - REVIEW → "Awaiting Review Decision" (normal)
+   - COMPLETE → "PPAP Complete" (normal)
+   - CLOSED status → "Fix Issues and Resubmit" (urgent) - overrides phase
+
+**Dashboard Summary Cards:**
+
+1. **Total PPAPs**
+   - Count: All PPAP records
+   - Color: Gray
+   - Purpose: Overall system overview
+
+2. **Active PPAPs**
+   - Count: workflow_phase ≠ COMPLETE
+   - Color: Blue
+   - Purpose: Work in progress tracking
+
+3. **Completed PPAPs**
+   - Count: workflow_phase = COMPLETE
+   - Color: Green
+   - Purpose: Success tracking
+
+4. **Needs Attention**
+   - Count: priority = urgent OR warning
+   - Color: Amber
+   - Purpose: Action item visibility
+
+**Table Enhancements:**
+
+1. **Next Action Column**
+   - Displays action text derived from phase/status
+   - Color-coded by priority:
+     - Urgent: text-red-700
+     - Warning: text-amber-700
+     - Normal: text-gray-600
+   - Font: font-semibold for visibility
+
+2. **Row Highlighting**
+   - Urgent priority: bg-red-50 (light red background)
+   - Warning priority: bg-yellow-50 (light amber background)
+   - Normal priority: no background color
+   - Helps users quickly identify items needing attention
+
+3. **Clickable Rows**
+   - Entire row is clickable (cursor-pointer)
+   - Navigates to PPAP detail page
+   - Hover effect: hover:bg-gray-100
+   - Improved UX - no need to click specific link
+
+4. **Visual Hierarchy Improvements**
+   - PPAP Number: font-bold text-base (larger, bolder)
+   - Part Number: font-medium (emphasized)
+   - Customer/Plant: text-gray-600 (dimmed secondary info)
+   - Increased row height: py-4 (more breathing room)
+   - Header: font-bold uppercase (stronger definition)
+   - Increased padding: px-6 (more spacious)
+
+**Lightweight Grouping:**
+
+1. **Active PPAPs Section**
+   - Header: "Active PPAPs"
+   - Filter: workflow_phase ≠ COMPLETE
+   - Displayed first for priority visibility
+
+2. **Completed PPAPs Section**
+   - Header: "Completed PPAPs"
+   - Filter: workflow_phase = COMPLETE
+   - Displayed below active items
+
+3. **Client-Side Filtering**
+   - No database changes required
+   - Derived from existing workflow_phase field
+   - Renders conditionally if section has items
+
+**Empty State Enhancement:**
+
+1. **Improved Visual Design**
+   - Large icon: 📋 emoji (visual interest)
+   - Larger heading: text-2xl font-bold
+   - More descriptive text
+   - Larger button: px-8 py-4 text-lg
+   - Better spacing and centering
+
+2. **Clear Call-to-Action**
+   - "Create New PPAP" button prominently displayed
+   - Encourages first-time users to start
+
+**Performance Optimizations:**
+
+1. **useMemo for Next Actions**
+   - Memoizes next action calculations in PPAPListTable
+   - Prevents recalculation on every render
+   - Dependency: ppaps array
+
+2. **Derived Metrics**
+   - Summary cards calculate from existing data
+   - No additional database queries
+   - Client-side computation
+
+**Technical Implementation:**
+
+1. **Type Safety**
+   - Created `ActionPriority` type: 'normal' | 'warning' | 'urgent'
+   - Created `NextActionResult` interface
+   - Full TypeScript support
+
+2. **Helper Functions**
+   - `getNextAction()`: Derives action and priority
+   - `getPriorityColor()`: Returns text color class
+   - `getPriorityBackground()`: Returns bg color class
+   - Clean separation of concerns
+
+3. **Component Updates**
+   - PPAPListTable: Added useRouter hook for navigation
+   - PPAPListTable: Added useMemo for performance
+   - Page: Server component with metric calculations
+   - No breaking changes to props or interfaces
+
+**Benefits:**
+- ✅ Users see exactly what to do next
+- ✅ Priority-based visual cues (red/amber/gray)
+- ✅ Quick overview via summary cards
+- ✅ Faster navigation (clickable rows)
+- ✅ Better information hierarchy
+- ✅ Clear separation of active vs completed work
+- ✅ No manual refresh needed (metrics auto-calculate)
+- ✅ Performance optimized with memoization
+- ✅ No schema changes required
+- ✅ No breaking changes to existing functionality
+
+**Validation:**
+- ✅ Next action displays correctly for each phase
+- ✅ Priority colors render correctly (red/amber/gray)
+- ✅ Row backgrounds highlight based on priority
+- ✅ Rows navigate on click
+- ✅ Summary cards show correct counts
+- ✅ Active/Completed grouping works
+- ✅ Empty state displays when no PPAPs
+- ✅ No console errors
+- ✅ No React errors
+- ✅ useMemo prevents unnecessary recalculations
+- ✅ All existing functionality preserved
+
+- Commit: `feat: phase 15 dashboard and next action intelligence`
+
+---
+
 ## 2026-03-21 19:08 CT - [FEAT] Phase 14 - UI Polish & Terminology Normalization
 - Summary: Comprehensive UI/UX improvements focused on visual hierarchy, contrast, spacing, and professional polish. Replaced technical acronyms with customer-friendly labels. No schema or workflow logic changes.
 - Files changed:

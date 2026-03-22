@@ -1,67 +1,95 @@
 'use client';
 
 import { PPAPRecord } from '@/src/types/database.types';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { formatDate } from '@/src/lib/utils';
+import { useMemo } from 'react';
+import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils/getNextAction';
 
 interface PPAPListTableProps {
   ppaps: PPAPRecord[];
 }
 
 export function PPAPListTable({ ppaps }: PPAPListTableProps) {
+  const router = useRouter();
+
+  // Memoize next action calculations
+  const ppapsWithActions = useMemo(() => {
+    return ppaps.map(ppap => ({
+      ...ppap,
+      nextActionData: getNextAction(ppap.workflow_phase, ppap.status),
+    }));
+  }, [ppaps]);
+
+  const handleRowClick = (ppapId: string) => {
+    router.push(`/ppap/${ppapId}`);
+  };
+
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div className="bg-white border border-gray-300 rounded-xl shadow-sm overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-gray-100 border-b border-gray-300">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 PPAP Number
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 Part Number
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 Customer
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 Plant
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Next Action
+              </th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 Request Date
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {ppaps.map((ppap) => {
+            {ppapsWithActions.map((ppap) => {
+              const priorityBg = getPriorityBackground(ppap.nextActionData.priority);
+              const priorityColor = getPriorityColor(ppap.nextActionData.priority);
+              
               return (
-                <tr key={ppap.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <Link
-                      href={`/ppap/${ppap.id}`}
-                      className="text-blue-600 hover:text-blue-800 font-medium"
-                    >
+                <tr 
+                  key={ppap.id} 
+                  onClick={() => handleRowClick(ppap.id)}
+                  className={`hover:bg-gray-100 cursor-pointer transition-colors ${priorityBg}`}
+                >
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-blue-600 font-bold text-base">
                       {ppap.ppap_number}
-                    </Link>
+                    </span>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                     {ppap.part_number}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                     {ppap.customer_name}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                     {ppap.plant}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(ppap.status)}`}>
                       {ppap.status.replace(/_/g, ' ')}
                     </span>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`text-sm font-semibold ${priorityColor}`}>
+                      {ppap.nextActionData.nextAction}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                     {formatDate(ppap.request_date)}
                   </td>
                 </tr>
