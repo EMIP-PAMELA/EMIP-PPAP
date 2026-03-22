@@ -85,6 +85,11 @@ export type MoldStatus =
   | 'VALIDATED'
   | 'BLOCKED';
 
+export type PPAPType =
+  | 'NPI'
+  | 'CHANGE'
+  | 'MAINTENANCE';
+
 export interface PPAPRecord {
   id: string;
   ppap_number: string;
@@ -92,6 +97,7 @@ export interface PPAPRecord {
   customer_name: string;
   plant: string;
   request_date: string;
+  ppap_type?: PPAPType | null;
   status: PPAPStatus;
   workflow_phase: string;
   created_at: string;
@@ -141,10 +147,12 @@ export interface PPAPEvent {
 }
 
 export interface CreatePPAPInput {
+  ppap_number: string;
   part_number: string;
   customer_name: string;
-  plant: string;
+  plant?: string;
   request_date: string;
+  ppap_type: PPAPType;
 }
 
 export interface UpdatePPAPInput {

@@ -32,7 +32,7 @@ export function PPAPListTable({ ppaps }: PPAPListTableProps) {
           <thead className="bg-gray-100 border-b border-gray-300">
             <tr>
               <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                PPAP Number
+                Customer PPAP Number
               </th>
               <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 Part Number

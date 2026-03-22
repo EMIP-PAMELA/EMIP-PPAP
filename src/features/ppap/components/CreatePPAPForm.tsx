@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createPPAP } from '@/src/features/ppap/mutations';
-import type { CreatePPAPInput } from '@/src/types/database.types';
+import type { CreatePPAPInput, PPAPType } from '@/src/types/database.types';
 
 export function CreatePPAPForm() {
   const router = useRouter();
@@ -17,7 +17,7 @@ export function CreatePPAPForm() {
     setError(null);
 
     try {
-      if (!formData.part_number || !formData.customer_name || !formData.plant || !formData.request_date) {
+      if (!formData.ppap_number || !formData.part_number || !formData.customer_name || !formData.request_date || !formData.ppap_type) {
         throw new Error('Please fill in all required fields');
       }
 
@@ -45,6 +45,21 @@ export function CreatePPAPForm() {
       <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-8">
         <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b border-gray-200">PPAP Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label htmlFor="ppap_number" className="block text-sm font-semibold text-gray-700 mb-2">
+              Customer PPAP Number <span className="text-red-600">*</span>
+            </label>
+            <input
+              type="text"
+              id="ppap_number"
+              required
+              className="w-full px-4 py-3 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              value={formData.ppap_number || ''}
+              onChange={(e) => handleChange('ppap_number', e.target.value.trim())}
+              placeholder="Enter customer-assigned PPAP number"
+            />
+          </div>
+
           <div>
             <label htmlFor="part_number" className="block text-sm font-semibold text-gray-700 mb-2">
               Part Number <span className="text-red-600">*</span>
@@ -76,20 +91,20 @@ export function CreatePPAPForm() {
           </div>
 
           <div>
-            <label htmlFor="plant" className="block text-sm font-semibold text-gray-700 mb-2">
-              Plant <span className="text-red-600">*</span>
+            <label htmlFor="ppap_type" className="block text-sm font-semibold text-gray-700 mb-2">
+              What type of PPAP is this? <span className="text-red-600">*</span>
             </label>
             <select
-              id="plant"
+              id="ppap_type"
               required
               className="w-full px-4 py-3 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              value={formData.plant || ''}
-              onChange={(e) => handleChange('plant', e.target.value)}
+              value={formData.ppap_type || ''}
+              onChange={(e) => handleChange('ppap_type', e.target.value as PPAPType)}
             >
-              <option value="">Select Plant</option>
-              <option value="Van Buren">Van Buren</option>
-              <option value="Ball Ground">Ball Ground</option>
-              <option value="Warner Robins">Warner Robins</option>
+              <option value="">Select PPAP Type</option>
+              <option value="NPI">New Product Introduction (NPI)</option>
+              <option value="CHANGE">Engineering Change / Modification</option>
+              <option value="MAINTENANCE">Production / Maintenance Update</option>
             </select>
           </div>
 

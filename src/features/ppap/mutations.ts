@@ -8,16 +8,15 @@ import type {
 import { logEvent } from '@/src/features/events/mutations';
 
 export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
-  const ppapNumber = generatePPAPNumber();
-
   const { data, error } = await supabase
     .from('ppap_records')
     .insert({
-      ppap_number: ppapNumber,
+      ppap_number: input.ppap_number.trim(),
       part_number: input.part_number,
       customer_name: input.customer_name,
-      plant: input.plant,
+      plant: input.plant || 'Van Buren',
       request_date: input.request_date,
+      ppap_type: input.ppap_type,
       status: 'NEW',
     })
     .select()
@@ -40,9 +39,10 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
     event_type: 'PPAP_CREATED',
     actor: 'Matt',
     event_data: {
-      ppap_number: ppapNumber,
+      ppap_number: input.ppap_number,
       part_number: input.part_number,
       customer_name: input.customer_name,
+      ppap_type: input.ppap_type,
     },
   });
 
@@ -209,8 +209,3 @@ export async function deletePPAP(
   }
 }
 
-function generatePPAPNumber(): string {
-  const yearSuffix = new Date().getFullYear().toString().slice(-2);
-  const timestamp = Date.now().toString().slice(-6);
-  return `PPAP-${timestamp}-${yearSuffix}`;
-}

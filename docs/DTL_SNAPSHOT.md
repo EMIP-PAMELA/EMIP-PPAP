@@ -32,24 +32,25 @@ All table schemas in this document have been verified against the live Supabase 
 
 **Purpose:** Core PPAP record tracking across all sites
 
-**Verified Schema (10 columns):**
+**Verified Schema (11 columns):**
 
 | Column | Type | Constraints | Purpose |
 |--------|------|-------------|---------|
 | `id` | UUID | NOT NULL, DEFAULT gen_random_uuid() | Unique record identifier |
-| `ppap_number` | VARCHAR | NOT NULL | Business identifier (e.g., PPAP-123456-26) |
+| `ppap_number` | VARCHAR | NOT NULL | Customer-assigned PPAP number (not system-generated) |
 | `part_number` | VARCHAR | NOT NULL | Part identification number |
 | `customer_name` | VARCHAR | NOT NULL | Customer name |
 | `plant` | VARCHAR | NOT NULL | Manufacturing plant/site |
 | `request_date` | TIMESTAMPTZ | NOT NULL | Date PPAP was requested |
+| `ppap_type` | VARCHAR(50) | NULL | PPAP classification (NPI, CHANGE, MAINTENANCE) |
 | `status` | VARCHAR | NOT NULL, DEFAULT 'NEW' | Workflow status (NEW, IN_PROGRESS, SUBMITTED, APPROVED, REJECTED) |
 | `workflow_phase` | VARCHAR(50) | NOT NULL, DEFAULT 'INITIATION' | Current workflow phase (INITIATION, DOCUMENTATION, SAMPLE, REVIEW, COMPLETE) |
 | `created_at` | TIMESTAMPTZ | NULL, DEFAULT now() | Record creation timestamp |
 | `updated_at` | TIMESTAMPTZ | NULL, DEFAULT now() | Record update timestamp |
 
 **Safe Query Operations:**
-- ✅ `SELECT * FROM ppap_records` returns 10 columns
-- ✅ Filter by: `status`, `workflow_phase`, `plant`, `customer_name` (use ILIKE for case-insensitive)
+- ✅ `SELECT * FROM ppap_records` returns 11 columns
+- ✅ Filter by: `status`, `workflow_phase`, `plant`, `customer_name`, `ppap_type` (use ILIKE for case-insensitive)
 - ✅ Order by: `created_at`, `updated_at`, `request_date`
 - ✅ No soft delete filtering needed (deleted_at does not exist)
 
@@ -57,11 +58,12 @@ All table schemas in this document have been verified against the live Supabase 
 ```typescript
 // INSERT
 {
-  ppap_number: string;    // REQUIRED
+  ppap_number: string;    // REQUIRED - Customer-assigned PPAP number
   part_number: string;    // REQUIRED
   customer_name: string;  // REQUIRED
   plant: string;          // REQUIRED
   request_date: string;   // REQUIRED (ISO date)
+  ppap_type?: string;     // OPTIONAL - Valid values: NPI, CHANGE, MAINTENANCE
   status?: 'NEW';         // OPTIONAL (defaults to 'NEW')
   workflow_phase?: 'INITIATION'; // OPTIONAL (defaults to 'INITIATION')
 }
@@ -70,7 +72,8 @@ All table schemas in this document have been verified against the live Supabase 
 {
   status?: string;
   workflow_phase?: string; // Valid values: INITIATION, DOCUMENTATION, SAMPLE, REVIEW, COMPLETE
-  updated_at?: string;  // Auto-updated by trigger
+  ppap_type?: string;      // Valid values: NPI, CHANGE, MAINTENANCE
+  updated_at?: string;     // Auto-updated by trigger
 }
 ```
 

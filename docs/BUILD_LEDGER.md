@@ -4,6 +4,210 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 20:29 CT - [FEAT] Phase 17 - PPAP Intake Refinement
+- Summary: Refined PPAP intake to match real-world workflow where customers own PPAP numbers. Added classification system and removed premature fields. Minimal intake focused on essential workflow-driving data.
+- Files changed:
+  - `docs/DTL_SNAPSHOT.md` - Added ppap_type column documentation
+  - `src/types/database.types.ts` - Added PPAPType, updated PPAPRecord and CreatePPAPInput
+  - `src/features/ppap/components/CreatePPAPForm.tsx` - Added customer PPAP number and type, removed plant
+  - `src/features/ppap/components/PPAPListTable.tsx` - Updated label to 'Customer PPAP Number'
+  - `src/features/ppap/mutations.ts` - Removed generatePPAPNumber, use customer input
+  - `docs/BUILD_LEDGER.md` - This entry
+- Schema change: Added ppap_type VARCHAR(50) column to ppap_records (nullable)
+- Impact: Aligns intake with real-world PPAP ownership model, improves usability with plain-language classification
+
+**Problem:**
+
+Previous intake model had fundamental mismatches with real-world PPAP workflow:
+- System generated PPAP numbers (customers actually own these)
+- No classification of PPAP type
+- Asked for plant during intake (premature, deferred to initiation phase)
+- Confusing terminology ("PPAP Number" vs customer reality)
+
+This created friction for users and misrepresented actual PPAP ownership.
+
+**Solution:**
+
+**1. Customer-Owned PPAP Numbers**
+- Removed `generatePPAPNumber()` function entirely
+- Changed ppap_number from system-generated to customer-provided input
+- Added "Customer PPAP Number" field as first required field
+- Trim whitespace on input: `input.ppap_number.trim()`
+- Updated label across app: "Customer PPAP Number" (not just "PPAP Number")
+
+Before:
+```typescript
+const ppapNumber = generatePPAPNumber(); // PPAP-123456-26
+```
+
+After:
+```typescript
+ppap_number: input.ppap_number.trim(), // Customer provides
+```
+
+**2. PPAP Type Classification**
+- Added `ppap_type` column to ppap_records schema (VARCHAR(50), nullable)
+- Created PPAPType enum with plain-language options:
+  - `NPI` - "New Product Introduction (NPI)"
+  - `CHANGE` - "Engineering Change / Modification"
+  - `MAINTENANCE` - "Production / Maintenance Update"
+- Required field in create form with dropdown selector
+- Stored in event log for audit trail
+
+**3. Removed Premature Fields**
+- **Plant selection removed from intake form**
+  - Still required in database (defaults to 'Van Buren')
+  - Deferred to Initiation phase where it makes more contextual sense
+  - Aligns with natural workflow progression
+  - UI only change - no schema modification
+
+**4. Label Clarity**
+- Updated all references from "PPAP Number" → "Customer PPAP Number"
+- Files updated:
+  - CreatePPAPForm.tsx (field label)
+  - PPAPListTable.tsx (column header)
+- Makes ownership clear at every touchpoint
+
+**Schema Changes:**
+
+```sql
+-- Add ppap_type column to ppap_records
+ALTER TABLE ppap_records ADD COLUMN ppap_type VARCHAR(50);
+
+-- Allowed values: NPI, CHANGE, MAINTENANCE
+-- Nullable (existing records won't have type)
+```
+
+**TypeScript Type Changes:**
+
+```typescript
+// New enum
+export type PPAPType =
+  | 'NPI'
+  | 'CHANGE'
+  | 'MAINTENANCE';
+
+// Updated PPAPRecord
+export interface PPAPRecord {
+  // ... existing fields
+  ppap_type?: PPAPType | null; // NEW
+}
+
+// Updated CreatePPAPInput
+export interface CreatePPAPInput {
+  ppap_number: string;      // NEW - was auto-generated
+  part_number: string;
+  customer_name: string;
+  plant?: string;           // CHANGED - now optional (UI doesn't ask)
+  request_date: string;
+  ppap_type: PPAPType;      // NEW - required classification
+}
+```
+
+**CreatePPAPForm Changes:**
+
+Before (4 fields):
+1. Part Number
+2. Customer Name
+3. Plant (dropdown)
+4. Request Date
+
+After (4 fields):
+1. **Customer PPAP Number** (text input, trimmed)
+2. Part Number
+3. Customer Name
+4. **PPAP Type** (dropdown: NPI/CHANGE/MAINTENANCE)
+5. Request Date
+
+Plant removed - deferred to Initiation phase.
+
+**Validation Updates:**
+
+```typescript
+// Before
+if (!formData.part_number || !formData.customer_name || !formData.plant || !formData.request_date)
+
+// After
+if (!formData.ppap_number || !formData.part_number || !formData.customer_name || !formData.request_date || !formData.ppap_type)
+```
+
+Error messages:
+- "Customer PPAP number is required"
+- "PPAP type is required"
+
+**Mutation Changes:**
+
+Removed generatePPAPNumber() function (lines 212-216):
+```typescript
+// DELETED - no longer auto-generating
+function generatePPAPNumber(): string {
+  const yearSuffix = new Date().getFullYear().toString().slice(-2);
+  const timestamp = Date.now().toString().slice(-6);
+  return `PPAP-${timestamp}-${yearSuffix}`;
+}
+```
+
+Updated createPPAP insert:
+```typescript
+.insert({
+  ppap_number: input.ppap_number.trim(),  // Customer input (trimmed)
+  part_number: input.part_number,
+  customer_name: input.customer_name,
+  plant: input.plant || 'Van Buren',      // Default if not provided
+  request_date: input.request_date,
+  ppap_type: input.ppap_type,             // NEW - classification
+  status: 'NEW',
+})
+```
+
+Event log updated to include ppap_type in PPAP_CREATED event.
+
+**Benefits:**
+- ✅ Matches real-world PPAP ownership (customer owns number)
+- ✅ Clear classification system (NPI/Change/Maintenance)
+- ✅ Plain language options (understandable by non-engineers)
+- ✅ Minimal intake (only essential fields)
+- ✅ Deferred plant selection to appropriate phase
+- ✅ Improved terminology clarity
+- ✅ Better audit trail (type captured at creation)
+- ✅ Prevents duplicate system-generated numbers
+- ✅ Aligns with industry standard PPAP practices
+
+**Validation:**
+- ✅ Customer PPAP Number required and trimmed
+- ✅ PPAP Type required dropdown
+- ✅ Plant removed from create form
+- ✅ Plant defaults to 'Van Buren' if not provided
+- ✅ Safe rendering with `|| ''` fallbacks
+- ✅ generatePPAPNumber function removed
+- ✅ Labels updated to 'Customer PPAP Number'
+- ✅ TypeScript types aligned with schema
+- ✅ DTL_SNAPSHOT.md updated first (protocol followed)
+- ✅ Event logging includes ppap_type
+
+**DTL Protocol Compliance:**
+1. ✅ Schema change requested (ppap_type column)
+2. ✅ DTL_SNAPSHOT.md updated BEFORE code changes
+3. ✅ Column documented with type, constraints, purpose
+4. ✅ Safe mutation payload documented
+5. ✅ BUILD_LEDGER.md updated with schema change
+6. ✅ TypeScript types updated to match schema
+7. ✅ Code updated to use new field
+8. ✅ Single atomic commit planned
+
+**User Instructions:**
+
+**REQUIRED: Run this SQL in Supabase before testing:**
+```sql
+ALTER TABLE ppap_records ADD COLUMN ppap_type VARCHAR(50);
+```
+
+This adds the ppap_type column to support PPAP classification.
+
+- Commit: `feat: phase 17 intake refinement`
+
+---
+
 ## 2026-03-21 20:09 CT - [FEAT] Phase 16 - Workflow Orchestration & Guided UX
 - Summary: Transformed PPAP UX from passive data display into guided workflow orchestration with next-action system, auto-navigation, and visual guidance. Users now have clear direction at every step.
 - Files changed:
