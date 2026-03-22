@@ -4,6 +4,414 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 23:30 CT - [FEAT] Phase 23 - Markup Tool MVP
+- Summary: Built interactive drawing markup tool with click-to-place annotations, structured data model, auto-numbering, and visual requirement mapping.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - New interactive markup component
+  - `src/features/ppap/components/DocumentationForm.tsx` - Added markup tool integration and navigation
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Visual annotation capability for engineering drawings, structured requirement tracking
+- No schema changes - uses existing ppap_events table with DOCUMENT_ADDED type
+
+**Problem:**
+
+Documentation phase lacked visual annotation capabilities:
+- No way to mark up engineering drawings
+- No structured annotation system
+- No visual requirement mapping
+- Engineers couldn't communicate dimensional requirements visually
+- No collaborative markup capability
+
+This limited effective communication of engineering requirements.
+
+**Solution:**
+
+**1. Created MarkupTool Component**
+
+New file: `src/features/ppap/components/MarkupTool.tsx`
+
+**Full-screen modal interface:**
+```tsx
+<div className="fixed inset-0 bg-black bg-opacity-50 z-50">
+  <div className="bg-white rounded-xl w-[95vw] h-[95vh] flex flex-col">
+    {/* Header */}
+    {/* Main Canvas + Annotation Panel */}
+  </div>
+</div>
+```
+
+**Two-panel layout:**
+- **Left:** Interactive canvas with overlay
+- **Right:** Annotation list panel (w-96)
+
+**2. Document Display & Overlay System**
+
+**Canvas structure:**
+```tsx
+<div
+  ref={containerRef}
+  onClick={handleCanvasClick}
+  className="relative bg-gray-100 border-2 border-gray-300 rounded-lg cursor-crosshair"
+  style={{ width: '100%', paddingBottom: '75%' }}
+>
+  {/* Placeholder or drawing */}
+  
+  {/* Annotations Overlay */}
+  {annotations.map(annotation => (
+    <div
+      className="absolute"
+      style={{
+        left: `${annotation.x}%`,
+        top: `${annotation.y}%`,
+        transform: 'translate(-50%, -50%)',
+      }}
+    >
+      {/* Marker */}
+    </div>
+  ))}
+</div>
+```
+
+**Position system:**
+- Container: `position: relative`
+- Markers: `position: absolute`
+- Coordinates stored as percentages (responsive)
+- Transform centers markers on click point
+
+**3. Click-to-Annotate Functionality**
+
+**Annotation creation:**
+```typescript
+const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  if (!containerRef.current) return;
+
+  const rect = containerRef.current.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * 100; // Store as percentage
+  const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+  const newAnnotation: Annotation = {
+    id: `annotation-${Date.now()}`,
+    x,
+    y,
+    label_number: annotations.length + 1, // Auto-numbered
+    type: selectedType,
+    shape: selectedShape,
+    description: '',
+  };
+
+  setAnnotations([...annotations, newAnnotation]);
+};
+```
+
+**Benefits:**
+- Percentage-based positioning (responsive)
+- Instant visual feedback
+- Auto-numbered sequentially
+- Preserves annotation order
+
+**4. Structured Annotation Data Model**
+
+```typescript
+interface Annotation {
+  id: string;              // Unique identifier
+  x: number;              // X position (percentage)
+  y: number;              // Y position (percentage)
+  label_number: number;   // Auto-incremented (1, 2, 3...)
+  type: AnnotationType;   // 'dimension' | 'note' | 'material'
+  shape: AnnotationShape; // 'circle' | 'box'
+  description: string;    // User-entered description
+}
+```
+
+**Type system:**
+```typescript
+type AnnotationType = 'dimension' | 'note' | 'material';
+type AnnotationShape = 'circle' | 'box';
+```
+
+**Benefits:**
+- Structured, queryable data
+- Type-safe annotation handling
+- Extensible for future features
+- Clear separation of concerns
+
+**5. Auto-Numbering System**
+
+**Sequential numbering:**
+```typescript
+label_number: annotations.length + 1
+```
+
+**Visual display:**
+```tsx
+<div className="w-8 h-8 rounded-full border-2 bg-blue-500 flex items-center justify-center text-white font-bold text-sm">
+  {annotation.label_number}
+</div>
+```
+
+**Benefits:**
+- Automatic sequential numbering (1, 2, 3...)
+- No manual tracking needed
+- Clear reference system
+- Easy to correlate with documentation
+
+**6. Annotation Panel**
+
+**Right-side panel:**
+```tsx
+<div className="w-96 border-l border-gray-200 bg-gray-50 overflow-auto">
+  <div className="p-6">
+    <h3 className="text-lg font-bold text-gray-900 mb-4">
+      Annotations ({annotations.length})
+    </h3>
+    
+    {annotations.map(annotation => (
+      <div className="p-4 bg-white border border-gray-200 rounded-lg">
+        {/* Annotation details */}
+        {/* Edit/Delete controls */}
+      </div>
+    ))}
+  </div>
+</div>
+```
+
+**Features:**
+- List all annotations
+- Shows number, type, shape
+- Inline editing of descriptions
+- Delete functionality
+- Color-coded by type
+
+**Edit mode:**
+```tsx
+{editingId === annotation.id ? (
+  <textarea
+    value={editDescription}
+    onChange={(e) => setEditDescription(e.target.value)}
+    placeholder="Add description..."
+  />
+) : (
+  <p>{annotation.description || <em>No description</em>}</p>
+)}
+```
+
+**7. Save/Load via ppap_events**
+
+**Save annotations:**
+```typescript
+await logEvent({
+  ppap_id: ppapId,
+  event_type: 'DOCUMENT_ADDED',
+  event_data: {
+    annotations,
+    markup: true, // Flag to identify markup events
+  },
+  actor: 'System User',
+  actor_role: 'Engineer',
+});
+```
+
+**Load annotations:**
+```typescript
+useEffect(() => {
+  const { data } = await supabase
+    .from('ppap_events')
+    .select('event_data')
+    .eq('ppap_id', ppapId)
+    .eq('event_type', 'DOCUMENT_ADDED')
+    .order('created_at', { ascending: false });
+
+  // Find markup data (has annotations property)
+  const markupEvent = data?.find(event => event.event_data.annotations);
+  if (markupEvent) {
+    setAnnotations(markupEvent.event_data.annotations);
+  }
+}, [ppapId]);
+```
+
+**Benefits:**
+- No new tables needed
+- Event-driven persistence
+- Full audit trail
+- Versioned markup history
+
+**8. Shapes & Color Coding**
+
+**Shape options:**
+- **Circle:** `rounded-full` - soft, non-intrusive
+- **Box:** Square - bold, prominent
+
+**Color coding by type:**
+```typescript
+const TYPE_COLORS: Record<AnnotationType, string> = {
+  dimension: 'bg-blue-500 border-blue-600',   // Blue - dimensional callouts
+  note: 'bg-yellow-500 border-yellow-600',    // Yellow - general notes
+  material: 'bg-green-500 border-green-600',  // Green - material specs
+};
+```
+
+**Toolbar selection:**
+```tsx
+<select value={selectedType}>
+  <option value="dimension">Dimension (Blue)</option>
+  <option value="note">Note (Yellow)</option>
+  <option value="material">Material (Green)</option>
+</select>
+
+<select value={selectedShape}>
+  <option value="circle">Circle</option>
+  <option value="box">Box</option>
+</select>
+```
+
+**Visual consistency:**
+- Markers on canvas match panel display
+- Color-coded for quick identification
+- Shape reflects annotation purpose
+
+**9. Navigation Integration**
+
+**Added button in DocumentationForm checklist section:**
+```tsx
+<button
+  onClick={() => setShowMarkupTool(true)}
+  disabled={isReadOnly}
+  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+>
+  🖊️ Open Markup Tool
+</button>
+```
+
+**Modal display:**
+```tsx
+{showMarkupTool && (
+  <MarkupTool
+    ppapId={ppapId}
+    partNumber={partNumber}
+    onClose={() => setShowMarkupTool(false)}
+  />
+)}
+```
+
+**Benefits:**
+- Easy access from Documentation phase
+- Context-aware (knows PPAP ID and part)
+- Modal overlay (focused interaction)
+- Close returns to Documentation
+
+**User Flow:**
+
+**Before Phase 23:**
+1. User has engineering drawing
+2. Needs to mark dimensional requirements
+3. **No markup capability** - must use external tools
+4. No structured annotation storage
+5. Disconnected from PPAP workflow
+6. Manual tracking required
+
+**After Phase 23:**
+1. User in Documentation phase
+2. Clicks "🖊️ Open Markup Tool" button
+3. **Markup tool opens** in full-screen modal
+4. Selects annotation type (Dimension - Blue)
+5. Selects shape (Circle)
+6. **Clicks on drawing** to place annotation
+7. Marker appears with number "1"
+8. Annotation added to right panel
+9. Clicks marker or panel item to edit
+10. Adds description: "Critical dimension ±0.001"
+11. **Saves annotations** - logged to events
+12. Closes markup tool
+13. Returns to Documentation
+14. Annotations persist across sessions
+15. **Full audit trail** in events
+
+**Benefits:**
+- ✅ Interactive drawing markup capability
+- ✅ Click-to-place annotation system
+- ✅ Structured annotation data model
+- ✅ Auto-numbering (1, 2, 3...)
+- ✅ Annotation panel with edit/delete
+- ✅ Save/load via ppap_events
+- ✅ Shapes (circle, box)
+- ✅ Color coding by type (dimension, note, material)
+- ✅ Percentage-based positioning (responsive)
+- ✅ Full-screen modal interface
+- ✅ Easy navigation from Documentation
+- ✅ Read-only mode support
+- ✅ No new database tables
+- ✅ Event-driven persistence
+- ✅ Visual requirement mapping
+
+**Technical Implementation:**
+
+**MarkupTool.tsx:**
+- Full-screen modal (fixed, z-50)
+- Two-panel layout (canvas + annotation list)
+- Relative/absolute positioning system
+- Click-to-place annotations
+- Percentage-based coordinates
+- Auto-numbering system
+- Shape rendering (circle/box)
+- Color coding by type
+- Inline editing
+- Delete functionality
+- Save to ppap_events with DOCUMENT_ADDED type
+- Load from ppap_events (find events with annotations property)
+
+**DocumentationForm.tsx:**
+- Imported MarkupTool component
+- Added showMarkupTool state
+- Added "Open Markup Tool" button in checklist section
+- Wrapped return in fragment for modal rendering
+- Passes ppapId, partNumber, onClose props
+
+**Annotation Data Structure:**
+```typescript
+{
+  id: "annotation-1234567890",
+  x: 45.2,           // Percentage
+  y: 62.8,           // Percentage
+  label_number: 1,   // Auto-incremented
+  type: "dimension", // dimension | note | material
+  shape: "circle",   // circle | box
+  description: "Critical dimension ±0.001"
+}
+```
+
+**Event Schema:**
+```typescript
+{
+  ppap_id: string,
+  event_type: 'DOCUMENT_ADDED',
+  event_data: {
+    annotations: Annotation[],
+    markup: true
+  },
+  actor: string,
+  actor_role: string,
+  created_at: timestamp
+}
+```
+
+**Validation:**
+- ✅ MarkupTool.tsx created with full functionality
+- ✅ Interactive canvas with overlay system
+- ✅ Click-to-place annotations working
+- ✅ Auto-numbering implemented
+- ✅ Annotation panel with edit/delete
+- ✅ Save/load via ppap_events
+- ✅ Shapes and color coding implemented
+- ✅ Navigation button in DocumentationForm
+- ✅ Modal display working
+- ✅ Read-only mode respected
+- ✅ No TypeScript errors
+- ✅ No schema changes
+
+- Commit: `feat: phase 23 markup tool MVP`
+
+---
+
 ## 2026-03-21 23:15 CT - [FEAT] Phase 22 - File Upload Backend via Supabase Storage
 - Summary: Implemented real file upload system using Supabase Storage, replacing placeholder upload UI with actual persistent storage and event logging.
 - Files changed:

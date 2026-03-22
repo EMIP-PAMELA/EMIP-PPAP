@@ -7,6 +7,7 @@ import { updateWorkflowPhase } from '../mutations/updateWorkflowPhase';
 import { WorkflowPhase } from '../constants/workflowPhases';
 import { uploadPPAPDocument } from '../utils/uploadFile';
 import { supabase } from '@/src/lib/supabaseClient';
+import { MarkupTool } from './MarkupTool';
 
 interface DocumentationFormProps {
   ppapId: string;
@@ -73,6 +74,7 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState('');
+  const [showMarkupTool, setShowMarkupTool] = useState(false);
 
   const [formData, setFormData] = useState<DocumentationData>({
     suggested_date: '',
@@ -291,7 +293,16 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
   };
 
   return (
-    <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-300 rounded-xl shadow-sm">
+    <>
+      {showMarkupTool && (
+        <MarkupTool
+          ppapId={ppapId}
+          partNumber={partNumber}
+          onClose={() => setShowMarkupTool(false)}
+        />
+      )}
+
+      <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-300 rounded-xl shadow-sm">
       <div className="border-b border-gray-200 px-8 py-6">
         <h2 className="text-2xl font-bold text-gray-900">Documentation Phase</h2>
         <p className="text-sm text-gray-600 mt-1">
@@ -364,11 +375,25 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
               <div>
                 <h3 className="text-base font-semibold text-gray-900 mb-2">Required Documents Checklist</h3>
                 <p className="text-sm text-gray-600 mb-4">
-                  Check all documents that are included in this submission.
-                  <span className="block mt-1 font-medium">
-                    {countCheckedDocuments()} of {REQUIRED_DOCUMENTS.length} documents checked
+                  Review and check the documents you have prepared for this PPAP submission.
+                  <span className="block mt-2 text-xs text-gray-500">
+                    ✓ = Document prepared and ready
                   </span>
                 </p>
+
+                {/* Markup Tool Button */}
+                <div className="mb-4">
+                  <button
+                    onClick={() => setShowMarkupTool(true)}
+                    disabled={isReadOnly}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                  >
+                    🖊️ Open Markup Tool
+                  </button>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Mark up engineering drawings with annotations and dimensional callouts
+                  </p>
+                </div>
                 
                 <div className="space-y-3">
                   {REQUIRED_DOCUMENTS.map(doc => {
@@ -631,6 +656,7 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
