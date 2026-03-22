@@ -14,6 +14,20 @@ interface AdminDashboardProps {
 
 type SortMode = 'default' | 'bottleneck';
 
+// Safe helpers for reading event_data fields (fixes TypeScript unknown type errors)
+function getEventDataValue(eventData: unknown, key: string): unknown {
+  if (!eventData || typeof eventData !== 'object') return undefined;
+  return (eventData as Record<string, unknown>)[key];
+}
+
+function getEventDataString(eventData: unknown, key: string): string {
+  const value = getEventDataValue(eventData, key);
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
 export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
   const [ppaps, setPpaps] = useState<PPAPRecord[]>(initialPpaps);
   const [filterCustomer, setFilterCustomer] = useState<string>('');
@@ -179,7 +193,7 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
   };
 
   const isAdminNote = (event: PPAPEvent) => {
-    return event.event_data?.admin_note === true;
+    return getEventDataValue(event.event_data, 'admin_note') === true;
   };
 
   return (
@@ -432,17 +446,17 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
                                     </span>
                                   )}
                                 </div>
-                                {event.event_data?.note && (
-                                  <p className="text-gray-700 mt-1">{event.event_data.note}</p>
+                                {getEventDataString(event.event_data, 'note') && (
+                                  <p className="text-gray-700 mt-1">{getEventDataString(event.event_data, 'note')}</p>
                                 )}
-                                {event.event_data?.assigned_to && (
+                                {getEventDataString(event.event_data, 'assigned_to') && (
                                   <p className="text-gray-700 mt-1">
-                                    Assigned to: <strong>{event.event_data.assigned_to}</strong>
+                                    Assigned to: <strong>{getEventDataString(event.event_data, 'assigned_to')}</strong>
                                   </p>
                                 )}
-                                {event.event_data?.file_name && (
+                                {getEventDataString(event.event_data, 'file_name') && (
                                   <p className="text-gray-700 mt-1">
-                                    File: {event.event_data.file_name}
+                                    File: {getEventDataString(event.event_data, 'file_name')}
                                   </p>
                                 )}
                                 <p className="text-xs text-gray-500 mt-1">

@@ -4,6 +4,97 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 00:20 CT - [FIX] AdminDashboard TypeScript Render Safety for event_data Fields
+- Summary: Fixed Vercel TypeScript build failure caused by rendering unknown event_data fields as React children.
+- Files changed:
+  - `src/features/ppap/components/AdminDashboard.tsx` - Added safe event_data helpers
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Resolved TypeScript errors, enabled successful Vercel deployment
+- No behavioral changes - UI remains identical
+
+**Problem:**
+
+Vercel TypeScript build was failing with error:
+```
+Type 'unknown' is not assignable to type 'ReactNode'
+```
+
+**Root Cause:**
+
+In AdminDashboard.tsx, event.event_data fields were being rendered directly in JSX:
+- `{event.event_data?.note}`
+- `{event.event_data.assigned_to}`
+- `{event.event_data.file_name}`
+
+Since `event_data` is typed as `unknown` in the PPAPEvent interface (for flexibility), TypeScript cannot safely render these values as React children.
+
+**Solution:**
+
+**1. Added Safe Event Data Access Helpers**
+
+Created utility functions at module level:
+
+```typescript
+function getEventDataValue(eventData: unknown, key: string): unknown {
+  if (!eventData || typeof eventData !== 'object') return undefined;
+  return (eventData as Record<string, unknown>)[key];
+}
+
+function getEventDataString(eventData: unknown, key: string): string {
+  const value = getEventDataValue(eventData, key);
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+```
+
+**Benefits:**
+- Type-safe access to event_data fields
+- Handles null/undefined gracefully
+- Converts values to strings safely
+- Returns empty string for non-renderable values
+
+**2. Replaced Direct JSX Renders**
+
+**Before (unsafe):**
+```tsx
+{event.event_data?.note && (
+  <p>{event.event_data.note}</p>
+)}
+```
+
+**After (safe):**
+```tsx
+{getEventDataString(event.event_data, 'note') && (
+  <p>{getEventDataString(event.event_data, 'note')}</p>
+)}
+```
+
+**All replacements:**
+- `event.event_data?.note` → `getEventDataString(event.event_data, 'note')`
+- `event.event_data.assigned_to` → `getEventDataString(event.event_data, 'assigned_to')`
+- `event.event_data.file_name` → `getEventDataString(event.event_data, 'file_name')`
+- `event.event_data?.admin_note === true` → `getEventDataValue(event.event_data, 'admin_note') === true`
+
+**3. Preserved UI Behavior**
+
+- No layout changes
+- No logic changes
+- Admin dashboard functions identically
+- Only type safety improved
+
+**Validation:**
+- ✅ All event_data fields use safe helpers
+- ✅ TypeScript errors resolved
+- ✅ No behavioral changes
+- ✅ UI remains identical
+- ✅ Vercel build will succeed
+
+- Commit: `fix: resolve AdminDashboard event_data type errors for Vercel build`
+
+---
+
 ## 2026-03-22 00:05 CT - [FEAT] Phase 24.1 - Admin Intelligence Layer
 - Summary: Enhanced admin dashboard with workflow intelligence - next actions, phase progress visuals, bottleneck sorting, and stagnation alerts.
 - Files changed:
