@@ -4,6 +4,64 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 00:25 CT - [FIX] AdminDashboard JSX Syntax Error After event_data Hardening
+- Summary: Corrected malformed JSX closing structure in activePpaps.map block.
+- Files changed:
+  - `src/features/ppap/components/AdminDashboard.tsx` - Fixed map block closing syntax
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Resolved Vercel build parser error, no behavioral changes
+- Syntax-only fix
+
+**Problem:**
+
+Vercel build failing with JSX parser error:
+```
+Expected '</', got ')'
+at line near: ))}
+```
+
+**Root Cause:**
+
+In the `activePpaps.map(ppap => { return (...) })` block, the closing syntax was malformed:
+
+**Before (incorrect):**
+```jsx
+{activePpaps.map(ppap => {
+  const nextAction = ...;
+  const stagnant = ...;
+  
+  return (
+    <div>...</div>
+  ))}  // WRONG: extra closing parenthesis
+```
+
+**After (correct):**
+```jsx
+{activePpaps.map(ppap => {
+  const nextAction = ...;
+  const stagnant = ...;
+  
+  return (
+    <div>...</div>
+  );
+  })}  // CORRECT: proper closing structure
+```
+
+**Fix:**
+- Changed `))}` to `); })`
+- Added semicolon after return statement
+- Proper closing: `)` for return, `}` for arrow function, `)` for map call
+
+**Validation:**
+- ✅ JSX syntax corrected
+- ✅ Parser error resolved
+- ✅ No behavioral changes
+- ✅ Dashboard functionality preserved
+
+- Commit: `fix: correct AdminDashboard JSX syntax error for Vercel build`
+
+---
+
 ## 2026-03-22 00:20 CT - [FIX] AdminDashboard TypeScript Render Safety for event_data Fields
 - Summary: Fixed Vercel TypeScript build failure caused by rendering unknown event_data fields as React children.
 - Files changed:

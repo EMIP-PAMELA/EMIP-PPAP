@@ -472,7 +472,8 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
                 </div>
               )}
             </div>
-          ))}
+          );
+          })}
           {activePpaps.length === 0 && (
             <p className="text-gray-500 text-center py-8 italic">No active PPAPs found</p>
           )}
