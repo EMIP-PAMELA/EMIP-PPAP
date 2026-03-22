@@ -13,18 +13,21 @@ export default async function PPAPListPage() {
     error = e instanceof Error ? e.message : 'Failed to load PPAPs';
   }
 
+  // Ensure safe initialization before use
+  const ppapsSafe = ppaps || [];
+
   // Calculate summary metrics
-  const totalPPAPs = ppaps?.length || 0;
-  const activePPAPs = ppaps?.filter(p => p.workflow_phase !== 'COMPLETE').length || 0;
-  const completedPPAPs = ppaps?.filter(p => p.workflow_phase === 'COMPLETE').length || 0;
-  const needsAttention = ppaps?.filter(p => {
+  const totalPPAPs = ppapsSafe.length;
+  const activePPAPs = ppapsSafe.filter(p => p.workflow_phase !== 'COMPLETE').length;
+  const completedPPAPs = ppapsSafe.filter(p => p.workflow_phase === 'COMPLETE').length;
+  const needsAttention = ppapsSafe.filter(p => {
     const action = getNextAction(p.workflow_phase, p.status);
     return action.priority === 'urgent' || action.priority === 'warning';
-  }).length || 0;
+  }).length;
 
   // Group PPAPs
-  const activePPAPsList = ppaps?.filter(p => p.workflow_phase !== 'COMPLETE') || [];
-  const completedPPAPsList = ppaps?.filter(p => p.workflow_phase === 'COMPLETE') || [];
+  const activePPAPsList = ppapsSafe.filter(p => p.workflow_phase !== 'COMPLETE');
+  const completedPPAPsList = ppapsSafe.filter(p => p.workflow_phase === 'COMPLETE');
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -51,7 +54,7 @@ export default async function PPAPListPage() {
           </div>
         )}
 
-        {!error && ppaps && ppaps.length === 0 && (
+        {!error && ppapsSafe.length === 0 && (
           <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-16 text-center">
             <div className="max-w-md mx-auto">
               <div className="text-6xl mb-4">📋</div>
@@ -71,7 +74,7 @@ export default async function PPAPListPage() {
           </div>
         )}
 
-        {!error && ppaps && ppaps.length > 0 && (
+        {!error && ppapsSafe.length > 0 && (
           <>
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
