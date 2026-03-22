@@ -4,6 +4,309 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 00:05 CT - [FEAT] Phase 24.1 - Admin Intelligence Layer
+- Summary: Enhanced admin dashboard with workflow intelligence - next actions, phase progress visuals, bottleneck sorting, and stagnation alerts.
+- Files changed:
+  - `src/features/ppap/components/AdminDashboard.tsx` - Added workflow intelligence features
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Intelligent PPAP prioritization, visual workflow tracking, proactive bottleneck identification
+- No schema changes - uses existing fields with derived intelligence
+
+**Problem:**
+
+Admin dashboard lacked workflow intelligence:
+- No visibility into next required actions
+- No visual phase progress tracking
+- No bottleneck prioritization
+- No alerts for stagnant PPAPs
+- Manual assessment required for priority
+
+This prevented proactive PPAP management and bottleneck resolution.
+
+**Solution:**
+
+**1. Next Action Column**
+
+Added intelligent next action display using `getNextAction()`:
+
+```typescript
+const nextAction = getNextAction(ppap.workflow_phase, ppap.status);
+
+<div className={`mb-3 px-3 py-2 rounded-lg border-2 ${
+  nextAction.priority === 'urgent'
+    ? 'bg-red-50 border-red-300'
+    : nextAction.priority === 'warning'
+    ? 'bg-yellow-50 border-yellow-300'
+    : 'bg-gray-50 border-gray-300'
+}`}>
+  <div className="flex items-center gap-2">
+    <span className={`text-xs font-semibold ${getPriorityColor(nextAction.priority)}`}>
+      {nextAction.priority === 'urgent' ? '🚨 URGENT' : nextAction.priority === 'warning' ? '⚠️ ACTION NEEDED' : '📋 NEXT'}
+    </span>
+    <span className="text-sm font-medium text-gray-900">{nextAction.nextAction}</span>
+  </div>
+</div>
+```
+
+**Next action examples:**
+- INITIATION → "Complete Initiation" (warning)
+- DOCUMENTATION → "Submit Documentation" (warning)
+- SAMPLE → "Submit Sample Information" (warning)
+- REVIEW → "Awaiting Review Decision" (normal)
+- CLOSED status → "Fix Issues and Resubmit" (urgent)
+
+**Color coding:**
+- **Urgent (red):** CLOSED status, critical issues
+- **Warning (yellow):** Action required from engineer
+- **Normal (gray):** Waiting on others
+
+**2. Phase Progress Visual**
+
+Interactive phase progress indicator:
+
+```tsx
+<div className="mb-3 flex items-center gap-2">
+  {WORKFLOW_PHASES.filter(p => p !== 'COMPLETE').map((phase, idx) => {
+    const isActive = phase === ppap.workflow_phase;
+    const currentPhaseIndex = WORKFLOW_PHASES.findIndex(p => p === ppap.workflow_phase);
+    const thisPhaseIndex = WORKFLOW_PHASES.indexOf(phase);
+    const isPast = thisPhaseIndex < currentPhaseIndex && currentPhaseIndex >= 0;
+    
+    return (
+      <div key={phase} className="flex items-center">
+        <div className={`px-2 py-1 text-xs font-semibold rounded ${
+          isActive
+            ? 'bg-blue-600 text-white'      // Current phase
+            : isPast
+            ? 'bg-green-500 text-white'     // Completed phases
+            : 'bg-gray-200 text-gray-500'   // Future phases
+        }`}>
+          {phase === 'INITIATION' ? 'INIT' : phase === 'DOCUMENTATION' ? 'DOC' : phase}
+        </div>
+        {idx < WORKFLOW_PHASES.filter(p => p !== 'COMPLETE').length - 1 && (
+          <span className="mx-1 text-gray-400">→</span>
+        )}
+      </div>
+    );
+  })}
+</div>
+```
+
+**Visual format:**
+```
+INIT → DOC → SAMPLE → REVIEW
+```
+
+**Color states:**
+- **Green:** Completed phases
+- **Blue:** Current active phase
+- **Gray:** Future phases
+- **Arrows:** Show workflow progression
+
+**Benefits:**
+- Instant visual status
+- Clear workflow position
+- Progress at a glance
+- No reading required
+
+**3. Bottleneck View**
+
+Priority-based sorting mode:
+
+```typescript
+type SortMode = 'default' | 'bottleneck';
+
+const sortByBottleneck = (ppapList: PPAPRecord[]): PPAPRecord[] => {
+  return [...ppapList].sort((a, b) => {
+    const aNextAction = getNextAction(a.workflow_phase, a.status);
+    const bNextAction = getNextAction(b.workflow_phase, b.status);
+    
+    // Priority order: urgent > warning > normal
+    const priorityOrder = { urgent: 0, warning: 1, normal: 2 };
+    return priorityOrder[aNextAction.priority] - priorityOrder[bNextAction.priority];
+  });
+};
+
+// Apply bottleneck sorting if enabled
+if (sortMode === 'bottleneck') {
+  activePpaps = sortByBottleneck(activePpaps);
+}
+```
+
+**Toggle buttons:**
+```tsx
+<button
+  onClick={() => setSortMode('bottleneck')}
+  className={`px-4 py-2 text-sm font-medium rounded-lg ${
+    sortMode === 'bottleneck'
+      ? 'bg-red-600 text-white'
+      : 'bg-gray-100 text-gray-700'
+  }`}
+>
+  🚨 Bottleneck View
+</button>
+```
+
+**Sorting priority:**
+1. **Urgent** (red) - Critical issues, CLOSED status
+2. **Warning** (yellow) - Action needed
+3. **Normal** (gray) - Waiting on others
+
+**Benefits:**
+- Focus on critical PPAPs first
+- Proactive bottleneck resolution
+- Clear prioritization
+- One-click toggle
+
+**4. Owner + Phase Stagnation Alerts**
+
+Automatic detection of stagnant PPAPs:
+
+```typescript
+const isStagnant = (ppap: PPAPRecord): boolean => {
+  if (!ppap.assigned_to) return false;
+  
+  // Check if updated recently (within 7 days)
+  const daysSinceUpdate = (Date.now() - new Date(ppap.updated_at).getTime()) / (1000 * 60 * 60 * 24);
+  return daysSinceUpdate > 7;
+};
+```
+
+**Visual alerts:**
+```tsx
+{stagnant && (
+  <div className="mb-3 px-3 py-2 bg-orange-100 border border-orange-300 rounded text-sm text-orange-900 font-medium">
+    ⚠️ Stagnation Alert: Assigned but no updates in 7+ days
+  </div>
+)}
+
+// Row highlighting
+className={`p-4 border-2 rounded-lg ${
+  stagnant
+    ? 'border-orange-400 bg-orange-50'  // Orange for stagnant
+    : 'border-gray-200 hover:border-gray-300'
+}`}
+```
+
+**Alert criteria:**
+- PPAP has assigned owner
+- No updates in 7+ days
+- Still in active phase
+
+**Visual indicators:**
+- Orange border and background
+- Prominent warning banner
+- Clear alert message
+
+**User Flow:**
+
+**Before Phase 24.1:**
+1. Admin opens dashboard
+2. Sees list of PPAPs
+3. **No priority guidance** - must assess manually
+4. **No phase visibility** - must read text
+5. Clicks into each PPAP to check status
+6. **Manual bottleneck identification**
+7. No alerts for stagnant work
+
+**After Phase 24.1:**
+1. Admin opens dashboard
+2. **Sees "🚨 Bottleneck View" button** - clicks it
+3. PPAPs auto-sorted by priority:
+   - PPAP-003 at top: **"🚨 URGENT: Fix Issues and Resubmit"** (red)
+   - PPAP-001: **"⚠️ ACTION NEEDED: Submit Documentation"** (yellow)
+   - PPAP-005: **"⚠️ Stagnation Alert"** (orange border)
+4. **Visual phase progress** shows at a glance:
+   - PPAP-001: INIT (green) → **DOC (blue)** → SAMPLE (gray) → REVIEW (gray)
+   - PPAP-005: INIT (green) → DOC (green) → **SAMPLE (blue)** → REVIEW (gray)
+5. **Immediately identifies:**
+   - Critical issues needing urgent attention
+   - Action items blocking progress
+   - Stagnant PPAPs requiring follow-up
+6. Prioritizes work effectively
+7. Clicks stagnant PPAP, adds admin note: "Please update status"
+
+**Benefits:**
+- ✅ Next action displayed with priority
+- ✅ Color-coded urgency (red/yellow/gray)
+- ✅ Phase progress visual (INIT → DOC → SAMPLE → REVIEW)
+- ✅ Completed phases shown in green
+- ✅ Current phase highlighted in blue
+- ✅ Bottleneck view with priority sorting
+- ✅ Toggle between default and bottleneck sort
+- ✅ Stagnation alerts (7+ days no update)
+- ✅ Orange highlighting for stagnant PPAPs
+- ✅ Proactive bottleneck identification
+- ✅ Visual workflow intelligence
+- ✅ No manual assessment required
+- ✅ Clear action priorities
+
+**Technical Implementation:**
+
+**AdminDashboard.tsx:**
+- Added `SortMode` type (`'default' | 'bottleneck'`)
+- Added `sortMode` state
+- Added `isStagnant()` helper (7-day check)
+- Added `sortByBottleneck()` function
+- Imported `getNextAction`, `getPriorityColor`, `getPriorityBackground`
+- Added sort mode toggle buttons
+- Added next action display per PPAP
+- Added phase progress visual component
+- Added stagnation alert banner
+- Added stagnation row highlighting
+
+**Next Action Logic:**
+```typescript
+// From getNextAction.ts (existing utility)
+switch (workflow_phase) {
+  case 'INITIATION': return { nextAction: 'Complete Initiation', priority: 'warning' };
+  case 'DOCUMENTATION': return { nextAction: 'Submit Documentation', priority: 'warning' };
+  case 'SAMPLE': return { nextAction: 'Submit Sample Information', priority: 'warning' };
+  case 'REVIEW': return { nextAction: 'Awaiting Review Decision', priority: 'normal' };
+  case 'COMPLETE': return { nextAction: 'PPAP Complete', priority: 'normal' };
+}
+
+// Status override
+if (status === 'CLOSED') {
+  return { nextAction: 'Fix Issues and Resubmit', priority: 'urgent' };
+}
+```
+
+**Phase Progress Rendering:**
+- Maps WORKFLOW_PHASES array
+- Filters out COMPLETE (shown separately)
+- Calculates isActive and isPast states
+- Color codes: green (past), blue (current), gray (future)
+- Adds arrows between phases
+- Abbreviates: INIT, DOC, SAMPLE, REVIEW
+
+**Bottleneck Sorting:**
+- Priority order: urgent (0) → warning (1) → normal (2)
+- Sorts by priority value (lower first)
+- Maintains original order within same priority
+
+**Stagnation Detection:**
+- Checks assigned_to exists
+- Calculates days since updated_at
+- Returns true if > 7 days
+- Visual: orange border, orange background, alert banner
+
+**Validation:**
+- ✅ Next action column implemented
+- ✅ Priority color coding working
+- ✅ Phase progress visual implemented
+- ✅ Bottleneck view toggle added
+- ✅ Priority sorting functional
+- ✅ Stagnation alerts implemented
+- ✅ 7-day threshold working
+- ✅ Orange highlighting applied
+- ✅ No schema changes
+- ✅ Uses existing fields only
+
+- Commit: `feat: phase 24.1 admin intelligence layer`
+
+---
+
 ## 2026-03-21 23:55 CT - [FEAT] Phase 23.1 - Markup-Document Binding
 - Summary: Enhanced markup tool with document selection, file-specific annotation binding, and improved workflow integrity.
 - Files changed:

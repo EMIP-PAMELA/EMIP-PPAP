@@ -5,17 +5,21 @@ import { PPAPRecord, PPAPEvent } from '@/src/types/database.types';
 import { supabase } from '@/src/lib/supabaseClient';
 import { logEvent } from '@/src/features/events/mutations';
 import { formatDate } from '@/src/lib/utils';
-import { WORKFLOW_PHASE_LABELS } from '../constants/workflowPhases';
+import { WORKFLOW_PHASE_LABELS, WORKFLOW_PHASES } from '../constants/workflowPhases';
+import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils/getNextAction';
 
 interface AdminDashboardProps {
   ppaps: PPAPRecord[];
 }
+
+type SortMode = 'default' | 'bottleneck';
 
 export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
   const [ppaps, setPpaps] = useState<PPAPRecord[]>(initialPpaps);
   const [filterCustomer, setFilterCustomer] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [filterPhase, setFilterPhase] = useState<string>('');
+  const [sortMode, setSortMode] = useState<SortMode>('default');
   const [selectedPpapId, setSelectedPpapId] = useState<string | null>(null);
   const [events, setEvents] = useState<PPAPEvent[]>([]);
   const [adminNote, setAdminNote] = useState('');
@@ -34,9 +38,35 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
     return true;
   });
 
+  // Helper: Check if PPAP is stagnant (assigned but phase not moving)
+  const isStagnant = (ppap: PPAPRecord): boolean => {
+    if (!ppap.assigned_to) return false;
+    
+    // Check if updated recently (within 7 days)
+    const daysSinceUpdate = (Date.now() - new Date(ppap.updated_at).getTime()) / (1000 * 60 * 60 * 24);
+    return daysSinceUpdate > 7;
+  };
+
+  // Sort by bottleneck priority
+  const sortByBottleneck = (ppapList: PPAPRecord[]): PPAPRecord[] => {
+    return [...ppapList].sort((a, b) => {
+      const aNextAction = getNextAction(a.workflow_phase, a.status);
+      const bNextAction = getNextAction(b.workflow_phase, b.status);
+      
+      // Priority order: urgent > warning > normal
+      const priorityOrder = { urgent: 0, warning: 1, normal: 2 };
+      return priorityOrder[aNextAction.priority] - priorityOrder[bNextAction.priority];
+    });
+  };
+
   // Group PPAPs
-  const activePpaps = filteredPpaps.filter(p => p.workflow_phase !== 'COMPLETE');
+  let activePpaps = filteredPpaps.filter(p => p.workflow_phase !== 'COMPLETE');
   const completedPpaps = filteredPpaps.filter(p => p.workflow_phase === 'COMPLETE');
+  
+  // Apply bottleneck sorting if enabled
+  if (sortMode === 'bottleneck') {
+    activePpaps = sortByBottleneck(activePpaps);
+  }
 
   // Fetch events for selected PPAP
   useEffect(() => {
@@ -156,7 +186,31 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
     <div className="space-y-6">
       {/* Filters */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Filters</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900">Filters</h2>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setSortMode('default')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                sortMode === 'default'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Default Sort
+            </button>
+            <button
+              onClick={() => setSortMode('bottleneck')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                sortMode === 'bottleneck'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              🚨 Bottleneck View
+            </button>
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
@@ -206,15 +260,27 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
           Active PPAPs ({activePpaps.length})
         </h2>
         <div className="space-y-3">
-          {activePpaps.map(ppap => (
+          {activePpaps.map(ppap => {
+            const nextAction = getNextAction(ppap.workflow_phase, ppap.status);
+            const stagnant = isStagnant(ppap);
+            
+            return (
             <div
               key={ppap.id}
               className={`p-4 border-2 rounded-lg transition-all ${
                 selectedPpapId === ppap.id
                   ? 'border-blue-500 bg-blue-50'
+                  : stagnant
+                  ? 'border-orange-400 bg-orange-50'
                   : 'border-gray-200 hover:border-gray-300'
               }`}
             >
+              {stagnant && (
+                <div className="mb-3 px-3 py-2 bg-orange-100 border border-orange-300 rounded text-sm text-orange-900 font-medium">
+                  ⚠️ Stagnation Alert: Assigned but no updates in 7+ days
+                </div>
+              )}
+              
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
@@ -225,6 +291,56 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
                     <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded">
                       {WORKFLOW_PHASE_LABELS[ppap.workflow_phase as keyof typeof WORKFLOW_PHASE_LABELS] || ppap.workflow_phase}
                     </span>
+                  </div>
+                  
+                  {/* Phase Progress Visual */}
+                  <div className="mb-3 flex items-center gap-2">
+                    {WORKFLOW_PHASES.filter(p => p !== 'COMPLETE').map((phase, idx) => {
+                      const isActive = phase === ppap.workflow_phase;
+                      const currentPhaseIndex = WORKFLOW_PHASES.findIndex(p => p === ppap.workflow_phase);
+                      const thisPhaseIndex = WORKFLOW_PHASES.indexOf(phase);
+                      const isPast = thisPhaseIndex < currentPhaseIndex && currentPhaseIndex >= 0;
+                      
+                      return (
+                        <div key={phase} className="flex items-center">
+                          <div
+                            className={`px-2 py-1 text-xs font-semibold rounded ${
+                              isActive
+                                ? 'bg-blue-600 text-white'
+                                : isPast
+                                ? 'bg-green-500 text-white'
+                                : 'bg-gray-200 text-gray-500'
+                            }`}
+                          >
+                            {phase === 'INITIATION' ? 'INIT' : phase === 'DOCUMENTATION' ? 'DOC' : phase}
+                          </div>
+                          {idx < WORKFLOW_PHASES.filter(p => p !== 'COMPLETE').length - 1 && (
+                            <span className="mx-1 text-gray-400">→</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {ppap.workflow_phase === 'COMPLETE' && (
+                      <div className="px-2 py-1 text-xs font-semibold rounded bg-green-600 text-white">
+                        COMPLETE
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Next Action */}
+                  <div className={`mb-3 px-3 py-2 rounded-lg border-2 ${
+                    nextAction.priority === 'urgent'
+                      ? 'bg-red-50 border-red-300'
+                      : nextAction.priority === 'warning'
+                      ? 'bg-yellow-50 border-yellow-300'
+                      : 'bg-gray-50 border-gray-300'
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-semibold ${getPriorityColor(nextAction.priority)}`}>
+                        {nextAction.priority === 'urgent' ? '🚨 URGENT' : nextAction.priority === 'warning' ? '⚠️ ACTION NEEDED' : '📋 NEXT'}
+                      </span>
+                      <span className="text-sm font-medium text-gray-900">{nextAction.nextAction}</span>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
