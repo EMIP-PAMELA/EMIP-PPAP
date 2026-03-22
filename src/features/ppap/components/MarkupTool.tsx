@@ -42,6 +42,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [editDescription, setEditDescription] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -79,6 +80,30 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
     fetchFiles();
   }, [ppapId, selectedFile]);
+
+  // Generate signed URL when file is selected
+  useEffect(() => {
+    const loadFileUrl = async () => {
+      if (!selectedFile) {
+        setFileUrl(null);
+        return;
+      }
+
+      const { data, error } = await supabase.storage
+        .from('ppap-documents')
+        .createSignedUrl(selectedFile, 3600); // 1 hour
+
+      if (error) {
+        console.error('Failed to load file URL:', error.message);
+        setFileUrl(null);
+        return;
+      }
+
+      setFileUrl(data?.signedUrl || null);
+    };
+
+    loadFileUrl();
+  }, [selectedFile]);
 
   // Load existing annotations for selected file
   useEffect(() => {
@@ -294,10 +319,11 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
               )}
 
               {/* Annotations Overlay */}
-              {annotations.map((annotation) => (
+              <div className="absolute inset-0 pointer-events-none">
+                {annotations.map((annotation) => (
                 <div
                   key={annotation.id}
-                  className="absolute"
+                  className="absolute pointer-events-auto"
                   style={{
                     left: `${annotation.x}%`,
                     top: `${annotation.y}%`,
@@ -326,7 +352,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     </div>
                   )}
                 </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
 

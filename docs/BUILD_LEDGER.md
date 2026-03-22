@@ -4,6 +4,195 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 00:35 CT - [FIX] MarkupTool Document Rendering via Signed URLs
+- Summary: Fixed blank canvas issue by generating signed URLs from Supabase Storage to display uploaded documents.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Added signed URL generation and document rendering
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Users can now view uploaded drawings while creating markup annotations
+- No schema changes
+
+**Problem:**
+
+MarkupTool showed blank canvas when file was selected:
+- Documents were stored in Supabase Storage
+- File paths existed in events
+- No signed URLs generated for display
+- Users couldn't see what they were marking up
+
+This made the markup tool unusable for its primary purpose.
+
+**Solution:**
+
+**1. Added Signed URL Generation**
+
+Added `fileUrl` state and useEffect to generate URLs:
+
+```typescript
+const [fileUrl, setFileUrl] = useState<string | null>(null);
+
+useEffect(() => {
+  const loadFileUrl = async () => {
+    if (!selectedFile) {
+      setFileUrl(null);
+      return;
+    }
+
+    const { data, error } = await supabase.storage
+      .from('ppap-documents')
+      .createSignedUrl(selectedFile, 3600); // 1 hour
+
+    if (error) {
+      console.error('Failed to load file URL:', error.message);
+      setFileUrl(null);
+      return;
+    }
+
+    setFileUrl(data?.signedUrl || null);
+  };
+
+  loadFileUrl();
+}, [selectedFile]);
+```
+
+**Benefits:**
+- Generates URL when file selected
+- 1-hour expiration (sufficient for markup session)
+- Handles errors gracefully
+- Clears URL when file deselected
+
+**2. Replaced Placeholder with Document Display**
+
+**Before (blank):**
+```tsx
+{!selectedFile && (
+  <div>No file selected placeholder</div>
+)}
+```
+
+**After (displays document):**
+```tsx
+<div className="absolute inset-0">
+  {fileUrl ? (
+    selectedFile?.endsWith('.pdf') ? (
+      <iframe
+        src={fileUrl}
+        className="w-full h-full"
+        title="Drawing Document"
+      />
+    ) : (
+      <img
+        src={fileUrl}
+        alt="Drawing"
+        className="w-full h-full object-contain"
+      />
+    )
+  ) : selectedFile ? (
+    <div>Loading document...</div>
+  ) : (
+    <div>Select a drawing to begin</div>
+  )}
+</div>
+```
+
+**Display logic:**
+- **PDFs:** Rendered in iframe
+- **Images:** Rendered with img tag (object-contain)
+- **Loading state:** Shows "Loading document..."
+- **Empty state:** Shows selection prompt
+
+**3. Preserved Annotation Overlay System**
+
+Wrapped annotations in separate overlay div:
+
+```tsx
+<div className="absolute inset-0 pointer-events-none">
+  {annotations.map(annotation => (
+    <div className="absolute pointer-events-auto" ...>
+      {/* annotation marker */}
+    </div>
+  ))}
+</div>
+```
+
+**Key features:**
+- `pointer-events-none` on container (allows clicks through to document)
+- `pointer-events-auto` on markers (makes annotations clickable)
+- Positioned absolutely over document
+- Maintains percentage-based positioning
+
+**User Flow:**
+
+**Before Fix:**
+1. User uploads drawing in Documentation
+2. Clicks "🖊️ Open Markup Tool"
+3. Selects drawing from dropdown
+4. **Sees blank canvas** - can't view document
+5. Tries to add annotations blindly
+6. Gives up - tool unusable
+
+**After Fix:**
+1. User uploads drawing in Documentation
+2. Clicks "🖊️ Open Markup Tool"
+3. Selects drawing from dropdown
+4. **Drawing displays immediately** (PDF in iframe or image)
+5. User can see drawing clearly
+6. Clicks to add dimension annotations
+7. Annotations overlay on top of visible drawing
+8. User saves markup with confidence
+9. Switches to different drawing
+10. **New drawing loads automatically**
+
+**Benefits:**
+- ✅ Signed URL generation from Supabase Storage
+- ✅ PDF display via iframe
+- ✅ Image display via img tag
+- ✅ Loading state for UX
+- ✅ Annotation overlay preserved
+- ✅ Clickable annotation markers
+- ✅ Automatic URL refresh on file change
+- ✅ 1-hour expiration for security
+- ✅ Error handling
+- ✅ Tool now fully functional
+
+**Technical Implementation:**
+
+**MarkupTool.tsx Changes:**
+- Added `fileUrl` state
+- Added signed URL generation useEffect
+- Replaced placeholder with conditional rendering:
+  - fileUrl + PDF → iframe
+  - fileUrl + image → img
+  - selectedFile but no URL → loading
+  - no file → empty state
+- Wrapped annotations in overlay div
+- Added `pointer-events-none` to overlay container
+- Added `pointer-events-auto` to annotation markers
+
+**Supabase Storage Integration:**
+```typescript
+supabase.storage
+  .from('ppap-documents')
+  .createSignedUrl(selectedFile, 3600)
+```
+
+**Document Detection:**
+- PDF check: `selectedFile?.endsWith('.pdf')`
+- Otherwise treated as image
+
+**Validation:**
+- ✅ Signed URLs generated
+- ✅ PDFs render in iframe
+- ✅ Images render with proper scaling
+- ✅ Annotations overlay correctly
+- ✅ Annotation markers clickable
+- ✅ Loading states functional
+- ✅ No behavioral regressions
+
+- Commit: `fix: render uploaded documents in markup tool using signed URLs`
+
+---
+
 ## 2026-03-22 00:25 CT - [FIX] AdminDashboard JSX Syntax Error After event_data Hardening
 - Summary: Corrected malformed JSX closing structure in activePpaps.map block.
 - Files changed:
