@@ -4,6 +4,289 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 21:40 CT - [FIX] Phase 18.2 - Document Workflow Stabilization & Validation Clarity
+- Summary: Stabilized Phase 18 implementation with improved validation feedback, upload warnings, and false completion prevention. Removed hardcoded user references.
+- Files changed:
+  - `src/features/ppap/components/PPAPHeader.tsx` - Fixed ownership placeholder (System User instead of hardcoded name)
+  - `src/features/ppap/components/DocumentationForm.tsx` - Added upload warning, explicit missing document list, false completion prevention
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Improves user trust, prevents data confusion, strengthens workflow clarity
+- No schema changes
+
+**Problem:**
+
+Phase 18 introduced document workflow improvements but had stability issues:
+- Hardcoded user name in ownership function ('Matt')
+- No explicit warning that uploads aren't persisted
+- Generic "missing documents" error without specifics
+- Users could submit with checked-but-not-uploaded documents (false completion)
+- Risk of user confusion about upload status
+
+This created potential for data loss and workflow confusion.
+
+**Solution:**
+
+**1. Fixed Ownership Placeholder**
+
+Before:
+```typescript
+const currentUser = 'Matt'; // In production, get from auth context
+```
+
+After:
+```typescript
+const currentUser = 'System User'; // In production, get from auth context
+```
+
+Removes hardcoded personal name, uses generic system placeholder.
+
+**2. Added Upload System Warning**
+
+Added prominent warning banner in Upload Documents section:
+
+```tsx
+<div className="mt-4 p-4 bg-yellow-50 border border-yellow-400 rounded-lg text-sm text-yellow-800">
+  <p className="font-bold">⚠️ Documents are not yet permanently saved. Upload functionality is in progress.</p>
+  <p className="mt-2 text-xs">
+    The upload interface is a UI framework. Files will not be stored until backend integration is complete. 
+    Use the checklist to track which documents you have prepared separately.
+  </p>
+</div>
+```
+
+**Visual Treatment:**
+- Yellow background (warning color)
+- Yellow-400 border (stronger emphasis)
+- Bold warning text
+- Explicit guidance on current state
+
+**Benefits:**
+- Clear user expectations
+- No false sense of persistence
+- Reduces support burden
+- Transparent about current limitations
+
+**3. Added Explicit Missing Document List**
+
+Enhanced validation feedback with specific document names:
+
+```typescript
+const getMissingDocuments = (): string[] => {
+  return REQUIRED_DOCUMENTS
+    .filter(doc => !formData[doc.key as keyof DocumentationData])
+    .map(doc => doc.label);
+};
+```
+
+**Before:**
+```
+⚠️ Missing Documents
+5 required document(s) not checked
+```
+
+**After:**
+```
+⚠️ Missing Documents
+Required documents not checked
+
+You are missing:
+• Design Record
+• Dimensional Results
+• DFMEA
+• PFMEA
+• Control Plan
+```
+
+**UI Implementation:**
+```tsx
+{errors.documents && (
+  <div className="mb-6 p-4 bg-yellow-50 border border-yellow-300 rounded-lg text-sm text-yellow-800 font-medium">
+    <p className="font-bold">⚠️ Missing Documents</p>
+    <p className="mt-1">{errors.documents || ''}</p>
+    <div className="mt-2">
+      <p className="font-semibold text-xs">You are missing:</p>
+      <ul className="mt-1 ml-4 list-disc text-xs">
+        {getMissingDocuments().map(doc => (
+          <li key={doc}>{doc || ''}</li>
+        ))}
+      </ul>
+    </div>
+  </div>
+)}
+```
+
+**Benefits:**
+- Explicit actionable feedback
+- User knows exactly what to check
+- Reduces guesswork
+- Faster error resolution
+
+**4. Prevented False Completion**
+
+Added validation to prevent submitting with checked-but-not-uploaded documents:
+
+```typescript
+const getCheckedButNotUploaded = (): string[] => {
+  return REQUIRED_DOCUMENTS
+    .filter(doc => {
+      const isChecked = !!formData[doc.key as keyof DocumentationData];
+      const isUploaded = uploadedDocs[doc.key];
+      return isChecked && !isUploaded;
+    })
+    .map(doc => doc.label);
+};
+
+// In validateForm()
+const checkedButNotUploaded = getCheckedButNotUploaded();
+if (checkedButNotUploaded.length > 0) {
+  newErrors.upload = 'Documents checked but not uploaded';
+}
+```
+
+**Error UI:**
+```tsx
+{errors.upload && (
+  <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800 font-medium">
+    <p className="font-bold">🚫 Cannot Submit - Documents Not Uploaded</p>
+    <p className="mt-1">You have checked documents but have not uploaded them yet.</p>
+    <div className="mt-2">
+      <p className="font-semibold text-xs">Documents checked but not uploaded:</p>
+      <ul className="mt-1 ml-4 list-disc text-xs">
+        {getCheckedButNotUploaded().map(doc => (
+          <li key={doc}>{doc || ''}</li>
+        ))}
+      </ul>
+    </div>
+    <p className="mt-2 text-xs">Please upload these documents or uncheck them before submitting.</p>
+  </div>
+)}
+```
+
+**Visual Treatment:**
+- Red background (blocking error)
+- 🚫 icon (clear rejection)
+- Specific list of problematic documents
+- Guidance on resolution
+
+**Benefits:**
+- Prevents false completion state
+- Users can't claim completion without uploads
+- Clear feedback on what's blocking
+- Maintains data integrity
+
+**5. Safe Rendering Verification**
+
+All form values use safe rendering patterns:
+
+```typescript
+// Text inputs
+value={formData.suggested_date || ''}
+value={formData.comments || ''}
+
+// Checkboxes
+checked={!!formData.can_meet_date}
+checked={!!formData.docs_ready}
+checked={!!formData.acknowledgement}
+checked={isChecked} // where isChecked = !!formData[...]
+
+// Lists
+{getMissingDocuments().map(doc => (
+  <li key={doc}>{doc || ''}</li>
+))}
+```
+
+No React warnings or undefined errors possible.
+
+**Validation Flow:**
+
+**Before Phase 18.2:**
+1. User checks "Design Record" checkbox
+2. User forgets to upload file
+3. User can submit form
+4. ❌ False completion - document claimed but not uploaded
+5. Confusion later when file is missing
+
+**After Phase 18.2:**
+1. User checks "Design Record" checkbox
+2. User forgets to upload file
+3. User attempts to submit
+4. ✋ **Blocked with error**: "Cannot Submit - Documents Not Uploaded"
+5. Explicit list: "Design Record" checked but not uploaded
+6. User uploads file OR unchecks box
+7. ✅ Can now submit with accurate state
+
+**Error Hierarchy:**
+
+1. **Red (Blocking)** - `errors.upload` - Documents checked but not uploaded
+2. **Red (Blocking)** - `errors._form` - General form error
+3. **Yellow (Warning)** - `errors.documents` - Missing required documents
+4. **Yellow (Info)** - Upload system warning banner
+
+**Code Changes:**
+
+**PPAPHeader.tsx:**
+```typescript
+// Before
+const currentUser = 'Matt';
+
+// After
+const currentUser = 'System User';
+```
+
+**DocumentationForm.tsx:**
+
+Added helper functions:
+```typescript
+const getMissingDocuments = (): string[] => { /* ... */ };
+const getCheckedButNotUploaded = (): string[] => { /* ... */ };
+```
+
+Updated validation:
+```typescript
+// Check missing docs
+const missingDocs = getMissingDocuments();
+if (missingDocs.length > 0) {
+  newErrors.documents = 'Required documents not checked';
+}
+
+// Prevent false completion
+const checkedButNotUploaded = getCheckedButNotUploaded();
+if (checkedButNotUploaded.length > 0) {
+  newErrors.upload = 'Documents checked but not uploaded';
+}
+```
+
+Added error displays:
+- Missing documents with explicit list
+- Checked-but-not-uploaded with explicit list
+- Upload system warning banner
+
+**Benefits:**
+- ✅ Removed hardcoded user references
+- ✅ Clear upload status transparency
+- ✅ Explicit validation feedback (no guessing)
+- ✅ False completion prevention
+- ✅ Stronger user trust
+- ✅ Reduced confusion about upload persistence
+- ✅ Actionable error messages
+- ✅ Better data integrity
+
+**Validation:**
+- ✅ Ownership placeholder changed to 'System User'
+- ✅ Upload warning banner added (yellow, prominent)
+- ✅ getMissingDocuments() helper function
+- ✅ getCheckedButNotUploaded() helper function
+- ✅ Missing document list displays specific items
+- ✅ Checked-but-not-uploaded validation blocks submission
+- ✅ Error UI shows specific document names
+- ✅ All safe rendering patterns verified (|| '', !!)
+- ✅ No TypeScript errors
+- ✅ No schema changes
+
+- Commit: `fix: phase 18.2 document workflow stabilization`
+
+---
+
 ## 2026-03-21 21:30 CT - [FEAT] Phase 18 - Document Workflow Overhaul & Intake Enrichment
 - Summary: Transformed documentation phase into guided submission workflow with integrated upload UI, linked checklist, and missing document validation. Added intake document loading and ownership model.
 - Files changed:
