@@ -5,6 +5,7 @@ import { formatDate } from '@/src/lib/utils';
 import Link from 'next/link';
 import { StatusUpdateControl } from './StatusUpdateControl';
 import { getTaskCounts } from '@/src/features/tasks/utils/taskUtils';
+import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils/getNextAction';
 
 interface PPAPHeaderProps {
   ppap: PPAPRecord;
@@ -13,9 +14,34 @@ interface PPAPHeaderProps {
 
 export function PPAPHeader({ ppap, tasks = [] }: PPAPHeaderProps) {
   const taskCounts = getTaskCounts(tasks);
+  const nextActionData = getNextAction(ppap.workflow_phase, ppap.status);
+  
+  const getBannerColor = () => {
+    switch (nextActionData.priority) {
+      case 'urgent':
+        return 'bg-red-50 border-red-300 text-red-900';
+      case 'warning':
+        return 'bg-yellow-50 border-yellow-300 text-yellow-900';
+      default:
+        return 'bg-gray-50 border-gray-300 text-gray-900';
+    }
+  };
 
   return (
     <div className="bg-white border border-gray-300 rounded-xl shadow-sm">
+      {/* You Are Here Banner */}
+      <div className={`px-6 py-4 border-b-2 ${getBannerColor()}`}>
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📍</span>
+          <div>
+            <p className="text-sm font-bold uppercase tracking-wide">You Are Here</p>
+            <p className="text-base font-semibold">
+              Next Step: <span className="font-bold">{nextActionData.nextAction || ''}</span> to continue this PPAP
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">

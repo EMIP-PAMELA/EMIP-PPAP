@@ -4,6 +4,172 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-21 20:09 CT - [FEAT] Phase 16 - Workflow Orchestration & Guided UX
+- Summary: Transformed PPAP UX from passive data display into guided workflow orchestration with next-action system, auto-navigation, and visual guidance. Users now have clear direction at every step.
+- Files changed:
+  - `src/features/ppap/components/PPAPListTable.tsx` - Added Continue button
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Auto-scroll, Next Action panel
+  - `src/features/ppap/components/PPAPHeader.tsx` - You Are Here banner
+  - `src/features/ppap/components/PhaseIndicator.tsx` - Enhanced active phase highlight
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Dramatically improved workflow clarity and user guidance through PPAP process
+- No schema changes - UI/UX enhancement only
+
+**Workflow Orchestration Features:**
+
+1. **Continue Button in Dashboard**
+   - Location: PPAPListTable - new Action column
+   - Button: "Continue →" with blue styling
+   - Behavior: Direct navigation to PPAP detail page
+   - Replaces generic "view" - actionable language
+   - Stops propagation to prevent double-click
+   - Safe rendering: All values use `|| ''` fallback
+
+2. **Auto-Scroll to Active Phase**
+   - Location: PPAPWorkflowWrapper
+   - useRef + scrollIntoView on mount
+   - Smooth scroll, centered on active phase
+   - 300ms delay for DOM rendering
+   - activePhaseRef attached to current phase div
+   - Immediate focus on relevant content
+
+3. **Next Action Panel**
+   - Location: Top of PPAPWorkflowWrapper
+   - Gradient background (blue-50 to indigo-50)
+   - Shows: Next action text + current phase name
+   - "Go to Section →" button scrolls to active phase
+   - Uses getNextAction() for intelligent text
+   - Priority-agnostic (always actionable)
+   - Safe rendering with `|| ''` fallbacks
+
+4. **"You Are Here" Guidance Banner**
+   - Location: Top of PPAPHeader (above main header)
+   - Dynamic color based on priority:
+     - Urgent: bg-red-50, border-red-300
+     - Warning: bg-yellow-50, border-yellow-300
+     - Normal: bg-gray-50, border-gray-300
+   - Icon: 📍 (location pin)
+   - Text: "Next Step: [action] to continue this PPAP"
+   - Always visible - constant guidance
+   - Uses getNextAction() for context
+
+5. **Enhanced Active Phase Highlight**
+   - Location: PhaseIndicator
+   - Active phase features:
+     - ring-4 ring-blue-300 (stronger ring)
+     - animate-pulse (subtle animation)
+     - shadow-lg (elevated appearance)
+   - Completed phases: Green with checkmark
+   - Future phases: opacity-60 (dimmed/disabled look)
+   - Visual hierarchy crystal clear
+
+6. **Safe Rendering Implementation**
+   - All text values: `{value || ''}`
+   - All input values: `value={field || ''}`
+   - All status text: `{status.replace(/_/g, ' ')}`
+   - Prevents React #418 errors
+   - No undefined/null rendering
+   - Applied to all new components
+
+**Technical Implementation:**
+
+1. **PPAPListTable Updates**
+   - Added Action column header
+   - Removed onClick from tr, moved to td elements
+   - Continue button with e.stopPropagation()
+   - Safe rendering on all table cells
+   - Maintains row highlighting by priority
+
+2. **PPAPWorkflowWrapper Enhancements**
+   - Imported: useRef, useEffect, getNextAction, WORKFLOW_PHASE_LABELS
+   - activePhaseRef: useRef<HTMLDivElement>(null)
+   - useEffect hook for auto-scroll on mount
+   - scrollToActivePhase() function for button
+   - Next Action panel at top of component
+   - activePhaseRef attached to each phase div
+
+3. **PPAPHeader Banner**
+   - Imported: getNextAction, getPriorityColor, getPriorityBackground
+   - getBannerColor() function for dynamic styling
+   - nextActionData calculated from ppap props
+   - Banner positioned above existing header content
+   - border-b-2 for strong separation
+
+4. **PhaseIndicator Visual Upgrade**
+   - Enhanced shadow: shadow-md → shadow-lg
+   - Added animate-pulse to active phase
+   - Added opacity-60 to future phases
+   - Stronger ring: ring-blue-200 → ring-blue-300
+   - Better visual distinction between states
+
+**User Experience Improvements:**
+
+Before Phase 16:
+- Users landed on PPAP page, scrolled to find active phase
+- No clear "what to do next" guidance
+- Static phase indicator
+- Generic "view" or click anywhere behavior
+- Passive data consumption
+
+After Phase 16:
+- ✅ "Continue" button signals clear action
+- ✅ Auto-scroll brings user to active work
+- ✅ "You Are Here" banner provides context
+- ✅ Next Action panel shows exact next step
+- ✅ "Go to Section" button for quick navigation
+- ✅ Active phase visually prominent (pulse + ring)
+- ✅ Future phases clearly disabled/dimmed
+- ✅ Guided workflow orchestration
+
+**Priority-Based Visual Cues:**
+
+You Are Here Banner Colors:
+- **Urgent** (CLOSED status): Red background → immediate attention
+- **Warning** (INITIATION/DOCUMENTATION/SAMPLE): Yellow → action needed
+- **Normal** (REVIEW/COMPLETE): Gray → informational
+
+Consistent with Phase 15 dashboard priority system.
+
+**Navigation Flow:**
+
+1. User sees PPAP in dashboard with "Continue →" button
+2. Clicks Continue → navigates to PPAP detail
+3. "You Are Here" banner shows next step
+4. Page auto-scrolls to active phase (smooth)
+5. Next Action panel at top provides context
+6. User can click "Go to Section →" to re-scroll
+7. Active phase has pulsing blue ring
+8. User completes form, advances to next phase
+9. Cycle repeats with new next action
+
+**Benefits:**
+- ✅ Clear workflow direction at all times
+- ✅ Reduced cognitive load (system guides user)
+- ✅ Faster task completion (direct navigation)
+- ✅ Better visual hierarchy (active vs inactive)
+- ✅ Professional, polished UX
+- ✅ Reduced training needed (self-explanatory)
+- ✅ No accidental navigation to wrong phase
+- ✅ Consistent guidance across all phases
+- ✅ Mobile-friendly (no breaking changes)
+
+**Validation:**
+- ✅ Continue button navigates correctly
+- ✅ Auto-scroll works on page load
+- ✅ Next Action panel shows correct text
+- ✅ "Go to Section" button scrolls to active phase
+- ✅ You Are Here banner shows correct priority colors
+- ✅ Active phase has pulse animation
+- ✅ Future phases dimmed
+- ✅ All safe rendering (no React errors)
+- ✅ No TypeScript errors
+- ✅ No schema changes
+- ✅ All existing functionality preserved
+
+- Commit: `feat: phase 16 workflow orchestration and guided UX`
+
+---
+
 ## 2026-03-21 19:47 CT - [FIX] Handle Missing PPAP Records Safely Using maybeSingle
 - Summary: Replaced all Supabase `.single()` calls with `.maybeSingle()` to prevent runtime crashes when PPAP records are not found. Added explicit null handling and error messages.
 - Files changed:

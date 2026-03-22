@@ -52,6 +52,9 @@ export function PPAPListTable({ ppaps }: PPAPListTableProps) {
               <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 Request Date
               </th>
+              <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Action
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -62,35 +65,45 @@ export function PPAPListTable({ ppaps }: PPAPListTableProps) {
               return (
                 <tr 
                   key={ppap.id} 
-                  onClick={() => handleRowClick(ppap.id)}
-                  className={`hover:bg-gray-100 cursor-pointer transition-colors ${priorityBg}`}
+                  className={`hover:bg-gray-100 transition-colors ${priorityBg}`}
                 >
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-6 py-4 whitespace-nowrap cursor-pointer" onClick={() => handleRowClick(ppap.id)}>
                     <span className="text-blue-600 font-bold text-base">
-                      {ppap.ppap_number}
+                      {ppap.ppap_number || ''}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                    {ppap.part_number}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium cursor-pointer" onClick={() => handleRowClick(ppap.id)}>
+                    {ppap.part_number || ''}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                    {ppap.customer_name}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 cursor-pointer" onClick={() => handleRowClick(ppap.id)}>
+                    {ppap.customer_name || ''}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                    {ppap.plant}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 cursor-pointer" onClick={() => handleRowClick(ppap.id)}>
+                    {ppap.plant || ''}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-6 py-4 whitespace-nowrap cursor-pointer" onClick={() => handleRowClick(ppap.id)}>
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(ppap.status)}`}>
                       {ppap.status.replace(/_/g, ' ')}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-6 py-4 whitespace-nowrap cursor-pointer" onClick={() => handleRowClick(ppap.id)}>
                     <span className={`text-sm font-semibold ${priorityColor}`}>
-                      {ppap.nextActionData.nextAction}
+                      {ppap.nextActionData.nextAction || ''}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 cursor-pointer" onClick={() => handleRowClick(ppap.id)}>
                     {formatDate(ppap.request_date)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRowClick(ppap.id);
+                      }}
+                      className="inline-flex items-center gap-1 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                    >
+                      Continue →
+                    </button>
                   </td>
                 </tr>
               );

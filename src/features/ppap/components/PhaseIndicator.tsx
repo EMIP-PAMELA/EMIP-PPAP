@@ -27,12 +27,12 @@ export function PhaseIndicator({ currentPhase }: PhaseIndicatorProps) {
             <div key={phase.key} className="flex items-center flex-1">
               <div className="flex flex-col items-center flex-1">
                 <div
-                  className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-base transition-all shadow-md ${
+                  className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-base transition-all shadow-lg ${
                     isActive
-                      ? 'bg-blue-600 text-white ring-4 ring-blue-200'
+                      ? 'bg-blue-600 text-white ring-4 ring-blue-300 animate-pulse'
                       : isCompleted
                       ? 'bg-green-600 text-white'
-                      : 'bg-gray-300 text-gray-600'
+                      : 'bg-gray-300 text-gray-600 opacity-60'
                   }`}
                 >
                   {isCompleted ? '✓' : index + 1}
