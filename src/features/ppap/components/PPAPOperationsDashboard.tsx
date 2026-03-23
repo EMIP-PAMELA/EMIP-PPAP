@@ -257,22 +257,7 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
       <Joyride
         steps={tourSteps}
         run={runTour}
-        continuous
-        showSkipButton
         callback={handleTourCallback}
-        styles={{
-          tooltip: {
-            borderRadius: '8px',
-            padding: '12px',
-          },
-        }}
-        floaterProps={{
-          styles: {
-            floater: {
-              zIndex: 10000,
-            },
-          },
-        }}
       />
 
       {/* Header with Take a Tour Button */}
