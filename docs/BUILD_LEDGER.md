@@ -4,6 +4,126 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 10:00 CT - [FIX] Phase 23.14.8.1 - Type-Safe Export Guard for selectedFile
+- Summary: Fixed TypeScript build failure by adding type guard for nullable selectedFile before calling getSignedUrl.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Type guard for selectedFile
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: TypeScript build passes, export logic type-safe under strict typing
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- `selectedFile` state is `string | null`
+- `getSignedUrl` expects `string` parameter
+- TypeScript compilation error: "Argument of type 'string | null' is not assignable to parameter of type 'string'"
+- No type narrowing before function call
+
+**Symptoms:**
+- TypeScript build failure
+- Type safety violation
+- Export could theoretically run with null selectedFile
+
+**Implementation:**
+
+**Added Type Guard Before getSignedUrl Call**
+
+**Before:**
+```tsx
+const exportImageWithAnnotations = async (jsPDF: any, html2canvas: any) => {
+  // Find image element
+  const img = exportRef.current?.querySelector('img');
+  
+  // Generate FRESH signed URL for export
+  const freshUrl = await getSignedUrl(selectedFile); // ❌ TypeScript error
+};
+```
+
+**After:**
+```tsx
+const exportImageWithAnnotations = async (jsPDF: any, html2canvas: any) => {
+  // Type-safe guard: ensure selectedFile is valid string
+  if (!selectedFile || typeof selectedFile !== 'string') {
+    console.error('Export blocked: invalid selectedFile', selectedFile);
+    throw new Error('No drawing selected. Please select a drawing before exporting.');
+  }
+
+  // Find image element
+  const img = exportRef.current?.querySelector('img');
+  
+  // Generate FRESH signed URL (selectedFile is now narrowed to string)
+  const freshUrl = await getSignedUrl(selectedFile); // ✅ TypeScript happy
+};
+```
+
+**Benefits:**
+- TypeScript type narrowing works automatically
+- No unsafe casting (`as string` or `as any`)
+- Real type safety enforced
+- Clear error message if triggered
+- Build passes strict type checking
+
+**Type Narrowing Flow:**
+
+```typescript
+// Before guard:
+selectedFile: string | null
+
+// After guard:
+if (!selectedFile || typeof selectedFile !== 'string') {
+  throw new Error(...);
+}
+
+// TypeScript infers:
+selectedFile: string ✅
+
+// Safe call:
+getSignedUrl(selectedFile) // No error
+```
+
+**Why This Works:**
+- TypeScript's control flow analysis
+- Recognizes `typeof` check + early return
+- Narrows type in remaining scope
+- No runtime overhead (guard already existed conceptually)
+- Best practice for type safety
+
+**Benefits:**
+
+**Type Safety:**
+- ✅ No TypeScript compilation errors
+- ✅ No unsafe type assertions
+- ✅ Real type narrowing used
+- ✅ Strict typing enforced
+
+**Code Quality:**
+- ✅ Proper guard pattern
+- ✅ Clear error message
+- ✅ No type bypassing
+- ✅ Maintainable solution
+
+**Build Stability:**
+- ✅ TypeScript build passes
+- ✅ No type warnings
+- ✅ Strict mode compatible
+- ✅ CI/CD safe
+
+**Validation:**
+- ✅ Type guard added
+- ✅ TypeScript type narrowing working
+- ✅ No casting used
+- ✅ Build passes
+- ✅ Export logic type-safe
+- ✅ No schema changes
+
+**Note:**
+Minor type safety fix for export pipeline. TypeScript correctly flagged nullable `selectedFile` being passed to function expecting `string`. Solution: proper type guard with early return, allowing TypeScript's control flow analysis to narrow the type. No unsafe casting - proper type safety maintained.
+
+- Commit: `fix: phase 23.14.8.1 enforce type-safe selectedFile before export`
+
+---
+
 ## 2026-03-23 09:50 CT - [FIX] Phase 23.14.8 - Split Export Pipeline for PDF vs Image Rendering
 - Summary: Fixed export failure when drawing is a PDF by detecting file type and using separate export paths.
 - Files changed:

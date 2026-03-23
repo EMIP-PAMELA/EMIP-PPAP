@@ -412,6 +412,12 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   };
 
   const exportImageWithAnnotations = async (jsPDF: any, html2canvas: any) => {
+    // Type-safe guard: ensure selectedFile is valid string
+    if (!selectedFile || typeof selectedFile !== 'string') {
+      console.error('Export blocked: invalid selectedFile', selectedFile);
+      throw new Error('No drawing selected. Please select a drawing before exporting.');
+    }
+
     // Find image element
     const img = exportRef.current?.querySelector('img');
     
@@ -423,7 +429,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       throw new Error('Image element is not valid');
     }
 
-    // Generate FRESH signed URL for export (no stale state dependency)
+    // Generate FRESH signed URL for export (selectedFile is now narrowed to string)
     const freshUrl = await getSignedUrl(selectedFile);
 
     if (!freshUrl) {
