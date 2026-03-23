@@ -4,6 +4,112 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 00:10 CT - [FIX] Phase 23.13.1 - JSX Structure Stabilization
+- Summary: Fixed unmatched JSX elements causing build failure in MarkupTool.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Added missing closing div
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Restored build stability after layout refactor
+- No functional changes
+
+**Problem:**
+
+**Unmatched JSX Elements:**
+
+Build failure after Phase 23.13 panel refactor:
+```
+Unexpected token at end of MarkupTool.tsx
+```
+
+**Root Cause:**
+
+Missing closing `</div>` for Full-Height Canvas Area container:
+```tsx
+// Line 645: Opens Full-Height Canvas Area
+<div className="relative w-full h-screen overflow-hidden bg-gray-100">
+  <div className="absolute inset-0 overflow-auto p-6">
+    <div ref={containerRef}>
+      <div className="relative w-full max-w-[1200px]">
+        {/* Drawing and annotations */}
+      </div>
+    </div>
+  </div>
+  {/* MISSING CLOSING DIV HERE */}
+</div>
+
+{/* Right panel starts - should be sibling, not inside canvas */}
+```
+
+**Structure Analysis:**
+
+Canvas container opened at line 645 but never closed before right panel starts at line 849. The closing sequence at lines 844-847 only closed the inner divs (annotations overlay, width constraint, containerRef, scroll container) but missed the outermost canvas container.
+
+**Implementation:**
+
+**Added Missing Close:**
+
+```tsx
+// Line 844-848 (BEFORE)
+                })}
+              </div>  // close annotations overlay
+            </div>    // close max-w-1200px
+          </div>       // close containerRef
+          </div>       // close absolute inset-0 overflow-auto
+                       // ❌ MISSING close for Full-Height Canvas Area
+
+          {/* Floating Right Annotation Panel */}
+
+// Line 844-849 (AFTER)
+                })}
+              </div>  // close annotations overlay (737)
+            </div>    // close max-w-1200px (667)
+          </div>       // close containerRef (659)
+          </div>       // close absolute inset-0 overflow-auto (646)
+          </div>       // ✅ close Full-Height Canvas Area (645)
+
+          {/* Floating Right Annotation Panel */}
+```
+
+**Correct Structure:**
+
+```tsx
+<div className="flex-1 relative overflow-hidden">
+  
+  {/* Left Tool Panel */}
+  {leftPanelOpen ? (...) : (...)}
+
+  {/* Full-Height Canvas Area */}
+  <div className="relative w-full h-screen overflow-hidden bg-gray-100">
+    {/* Canvas content */}
+  </div>  ← ✅ Now properly closed
+
+  {/* Right Annotation Panel */}
+  {rightPanelOpen ? (...) : (...)}
+
+</div>
+```
+
+**Benefits:**
+
+**Build Stability:**
+- ✅ JSX structure balanced
+- ✅ All containers properly closed
+- ✅ Panel siblings at correct level
+- ✅ No syntax errors
+
+**Validation:**
+- ✅ Added missing closing div
+- ✅ Preserved all functionality
+- ✅ No behavioral changes
+- ✅ Turbopack builds successfully
+
+**Note:**
+Simple one-line fix adding missing `</div>` to properly close Full-Height Canvas Area container. Canvas and panels now correctly structured as siblings within the overflow-hidden flex container. No functional changes, pure syntax correction.
+
+- Commit: `fix: phase 23.13.1 resolve JSX structure error in MarkupTool`
+
+---
+
 ## 2026-03-23 00:05 CT - [FIX] Phase 23.13 - Canvas Expansion and Panel Ergonomics
 - Summary: Fixed vertical canvas clipping and added collapsible overlay panels for improved workspace usability.
 - Files changed:

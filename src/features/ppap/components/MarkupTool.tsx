@@ -845,6 +845,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
             </div>
           </div>
           </div>
+          </div>
 
           {/* Floating Right Annotation Panel */}
           {rightPanelOpen ? (
