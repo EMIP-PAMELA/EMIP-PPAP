@@ -361,6 +361,33 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     const isPdf = selectedFile.toLowerCase().endsWith('.pdf');
     console.log('Is PDF:', isPdf);
 
+    // Create single export source of truth
+    const exportImageSrc = isPdf
+      ? (typeof renderedImage === 'string' && renderedImage.startsWith('data:image/')
+          ? renderedImage
+          : undefined)
+      : (typeof fileUrl === 'string' ? fileUrl : undefined);
+
+    console.log('Export source decision', {
+      isPdf,
+      usingRenderedImage: isPdf,
+      hasRenderedImage: !!renderedImage,
+      hasFileUrl: !!fileUrl,
+      exportImageSrcPreview:
+        typeof exportImageSrc === 'string'
+          ? exportImageSrc.slice(0, 80)
+          : null,
+    });
+
+    // Hard fail if no valid export source
+    if (!exportImageSrc) {
+      throw new Error(
+        isPdf
+          ? 'No rendered PDF image available for export.'
+          : 'No drawing image available for export.'
+      );
+    }
+
     setExporting(true);
     try {
       // Dynamic import of jsPDF (always needed)
@@ -378,7 +405,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       const html2canvasModule = await import('html2canvas');
       const html2canvas = html2canvasModule.default;
       
-      await exportImageWithAnnotations(jsPDF, html2canvas);
+      await exportImageWithAnnotations(jsPDF, html2canvas, exportImageSrc);
       alert('Export complete!');
     } catch (error) {
       console.error('Export failed:', error);
@@ -454,7 +481,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     pdf.save(`ppap-markup-${partNumber || 'drawing'}-${Date.now()}.pdf`);
   };
 
-  const exportImageWithAnnotations = async (jsPDF: any, html2canvas: any) => {
+  const exportImageWithAnnotations = async (jsPDF: any, html2canvas: any, imageSrc: string) => {
     // Type-safe guard: ensure selectedFile is valid string
     if (!selectedFile || typeof selectedFile !== 'string') {
       console.error('Export blocked: invalid selectedFile', selectedFile);
@@ -472,19 +499,11 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       throw new Error('Image element is not valid');
     }
 
-    // Generate FRESH signed URL for export (selectedFile is now narrowed to string)
-    const freshUrl = await getSignedUrl(selectedFile);
+    // Use provided imageSrc (data URL for PDFs, signed URL for images)
+    console.log('Loading image for export from provided source:', imageSrc.slice(0, 80));
+    img.src = imageSrc;
 
-    // Safety validation: ensure we have a valid string URL
-    if (!freshUrl || typeof freshUrl !== 'string') {
-      console.warn('Invalid fileUrl for image render:', freshUrl);
-      throw new Error('Failed to load drawing image.');
-    }
-
-    // Update image with fresh URL
-    img.src = freshUrl;
-
-    // Wait for image to load with fresh URL
+    // Wait for image to load
     await new Promise<void>((resolve, reject) => {
       if (img.complete && img.naturalWidth > 0) {
         return resolve();
@@ -511,10 +530,10 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     }
 
     // Debug logging
-    console.log({
+    console.log('Export image loaded successfully:', {
       selectedFile,
-      freshUrl,
-      imgSrc: img.src,
+      imageSrcPreview: imageSrc.slice(0, 80),
+      imgSrc: img.src.slice(0, 80),
       loaded: img.complete,
       width: img.naturalWidth,
       height: img.naturalHeight,

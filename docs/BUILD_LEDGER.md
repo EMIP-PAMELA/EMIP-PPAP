@@ -4,6 +4,305 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 13:32 CT - [FIX] Phase 23.15.4 - Fix PDF Export to Use Rendered PNG Data URL
+- Summary: Fixed PDF export to use pdfjs-rendered PNG data URL instead of attempting to load original PDF URL as image.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Unified export source selection, updated export function signature
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Eliminated "Image load error" during PDF export, enabled full PDF markup export
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- PDF rendered successfully to PNG data URL for display (`renderedImage` state)
+- Export function still attempted to load original PDF signed URL as an image
+- Browser cannot load PDF files as `<img src>` (not an image format)
+- Export failed with "Image load error"
+- Console showed "Resolved fileUrl for export: <pdf url>" instead of using rendered image
+
+**Symptoms:**
+- PDF displays correctly in markup tool
+- Annotations work on PDF
+- Export fails with "Image load error"
+- Console logs show PDF URL being used for export
+- Export never completes for PDF files
+- Image files export correctly (they use signed URL directly)
+
+**Implementation:**
+
+**Before (Using PDF URL - Broken):**
+```tsx
+const handleExportMarkup = async () => {
+  // ...
+  const isPdf = selectedFile.toLowerCase().endsWith('.pdf');
+  
+  // ❌ No distinction in export source
+  await exportImageWithAnnotations(jsPDF, html2canvas);
+}
+
+const exportImageWithAnnotations = async (jsPDF: any, html2canvas: any) => {
+  // ❌ Always fetches signed URL, even for PDFs
+  const freshUrl = await getSignedUrl(selectedFile);
+  
+  if (!freshUrl || typeof freshUrl !== 'string') {
+    throw new Error('Failed to load drawing image.');
+  }
+  
+  // ❌ Tries to load PDF URL as image
+  img.src = freshUrl; // Fails for PDFs
+  
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = () => reject(new Error('Image load error')); // ❌ Triggers here
+  });
+}
+```
+
+**After (Using Rendered PNG - Working):**
+```tsx
+const handleExportMarkup = async () => {
+  // ...
+  const isPdf = selectedFile.toLowerCase().endsWith('.pdf');
+  
+  // ✅ Create single export source of truth
+  const exportImageSrc = isPdf
+    ? (typeof renderedImage === 'string' && renderedImage.startsWith('data:image/')
+        ? renderedImage
+        : undefined)
+    : (typeof fileUrl === 'string' ? fileUrl : undefined);
+
+  console.log('Export source decision', {
+    isPdf,
+    usingRenderedImage: isPdf,
+    hasRenderedImage: !!renderedImage,
+    hasFileUrl: !!fileUrl,
+    exportImageSrcPreview:
+      typeof exportImageSrc === 'string'
+        ? exportImageSrc.slice(0, 80)
+        : null,
+  });
+
+  // ✅ Hard fail if no valid export source
+  if (!exportImageSrc) {
+    throw new Error(
+      isPdf
+        ? 'No rendered PDF image available for export.'
+        : 'No drawing image available for export.'
+    );
+  }
+  
+  // ✅ Pass explicit image source
+  await exportImageWithAnnotations(jsPDF, html2canvas, exportImageSrc);
+}
+
+const exportImageWithAnnotations = async (
+  jsPDF: any,
+  html2canvas: any,
+  imageSrc: string // ✅ Explicit parameter
+) => {
+  // ✅ Use provided imageSrc directly (data URL for PDFs, signed URL for images)
+  console.log('Loading image for export from provided source:', imageSrc.slice(0, 80));
+  img.src = imageSrc; // ✅ Works for both data URLs and signed URLs
+  
+  await new Promise((resolve, reject) => {
+    img.onload = resolve; // ✅ Succeeds for both
+    img.onerror = () => reject(new Error('Image load error'));
+  });
+}
+```
+
+**Key Changes:**
+
+**1. Single Export Source of Truth:**
+```tsx
+const exportImageSrc = isPdf
+  ? (typeof renderedImage === 'string' && renderedImage.startsWith('data:image/')
+      ? renderedImage
+      : undefined)
+  : (typeof fileUrl === 'string' ? fileUrl : undefined);
+```
+- PDFs: Use `renderedImage` (PNG data URL from pdfjs)
+- Images: Use `fileUrl` (signed URL from Supabase)
+- Type-safe with explicit checks
+
+**2. Hard Fail on Missing Source:**
+```tsx
+if (!exportImageSrc) {
+  throw new Error(
+    isPdf
+      ? 'No rendered PDF image available for export.'
+      : 'No drawing image available for export.'
+  );
+}
+```
+- Prevents export from starting without valid source
+- Clear error messages for debugging
+- Fails fast instead of silent failure
+
+**3. Updated Function Signature:**
+```tsx
+// Before
+const exportImageWithAnnotations = async (jsPDF: any, html2canvas: any)
+
+// After
+const exportImageWithAnnotations = async (jsPDF: any, html2canvas: any, imageSrc: string)
+```
+- Explicit `imageSrc` parameter
+- No ambiguity about image source
+- Function doesn't need to know about file types
+
+**4. Removed PDF URL Fetching:**
+```tsx
+// REMOVED:
+const freshUrl = await getSignedUrl(selectedFile);
+if (!freshUrl || typeof freshUrl !== 'string') {
+  throw new Error('Failed to load drawing image.');
+}
+img.src = freshUrl;
+
+// REPLACED WITH:
+img.src = imageSrc; // Use provided source
+```
+- No more `getSignedUrl` call for PDFs
+- No more "Resolved fileUrl for export" log
+- Direct use of provided image source
+
+**5. Enhanced Debug Logging:**
+```tsx
+console.log('Export source decision', {
+  isPdf,
+  usingRenderedImage: isPdf,
+  hasRenderedImage: !!renderedImage,
+  hasFileUrl: !!fileUrl,
+  exportImageSrcPreview: exportImageSrc?.slice(0, 80),
+});
+
+console.log('Loading image for export from provided source:', imageSrc.slice(0, 80));
+
+console.log('Export image loaded successfully:', {
+  selectedFile,
+  imageSrcPreview: imageSrc.slice(0, 80),
+  imgSrc: img.src.slice(0, 80),
+  loaded: img.complete,
+  width: img.naturalWidth,
+  height: img.naturalHeight,
+});
+```
+- Clear visibility into export source decision
+- Preview of data URL vs signed URL
+- Confirmation of successful load
+
+**Why This Works:**
+
+**Data URL vs Signed URL:**
+
+**PDF Flow:**
+1. PDF uploaded → Supabase storage
+2. Signed URL fetched → `fileUrl` state
+3. PDF rendered to PNG via pdfjs → `renderedImage` state (data URL)
+4. Display uses `renderedImage` (PNG)
+5. Export uses `renderedImage` (PNG) ✅
+
+**Image Flow:**
+1. Image uploaded → Supabase storage
+2. Signed URL fetched → `fileUrl` state
+3. No rendering needed → `renderedImage` stays null
+4. Display uses `fileUrl` (signed URL)
+5. Export uses `fileUrl` (signed URL) ✅
+
+**Browser Image Loading:**
+- `<img src="data:image/png;base64,...">` ✅ Works (PNG data)
+- `<img src="https://.../file.jpg">` ✅ Works (image file)
+- `<img src="https://.../file.pdf">` ❌ Fails (not an image)
+
+**Export Pipeline:**
+```
+PDF:
+  renderedImage (data:image/png) → img.src → html2canvas → PDF page 1 ✅
+
+Image:
+  fileUrl (https://.../file.jpg) → img.src → html2canvas → PDF page 1 ✅
+```
+
+**Benefits:**
+
+**Functionality:**
+- ✅ PDF export now works end-to-end
+- ✅ Full marked-up drawing in export (page 1)
+- ✅ Annotation sheet in export (page 2)
+- ✅ Image export still works correctly
+
+**Code Quality:**
+- ✅ Single source of truth for export image
+- ✅ Explicit function parameters
+- ✅ Clear separation of concerns
+- ✅ Type-safe source selection
+
+**Debugging:**
+- ✅ Clear console logs show source decision
+- ✅ Preview of data URL vs signed URL
+- ✅ Easy to verify correct path taken
+- ✅ Informative error messages
+
+**User Experience:**
+- ✅ PDF markup export works as expected
+- ✅ No confusing error messages
+- ✅ Consistent behavior across file types
+- ✅ Production-ready feature
+
+**Validation:**
+- ✅ PDF renders in markup tool
+- ✅ Annotations work on PDF
+- ✅ Export succeeds for PDF
+- ✅ Console shows `data:image/png` being used for PDFs
+- ✅ Console does NOT show PDF URL being used for export
+- ✅ Exported PDF page 1 contains drawing + markers
+- ✅ Exported PDF page 2 contains annotation sheet
+- ✅ Image files still export correctly
+- ✅ No schema changes
+
+**Technical Details:**
+
+**Data URL Format:**
+```
+data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...
+```
+- Self-contained image data
+- No network request needed
+- Works in `<img src>`
+- Works in html2canvas
+- Perfect for export
+
+**Signed URL Format:**
+```
+https://supabase.co/storage/v1/object/sign/ppap-documents/file.jpg?token=...
+```
+- Network request required
+- CORS headers needed
+- Works in `<img src>`
+- Works in html2canvas
+- Used for original images
+
+**Export Flow Comparison:**
+
+**Before (Broken for PDFs):**
+```
+PDF → getSignedUrl → PDF URL → img.src → ❌ Image load error
+```
+
+**After (Working for PDFs):**
+```
+PDF → renderedImage → PNG data URL → img.src → ✅ Loads successfully
+```
+
+**Note:**
+Critical fix for PDF export functionality. Previous implementation attempted to load the original PDF signed URL as an image source during export, which failed because browsers cannot render PDF files in `<img>` tags. The fix creates a single source of truth for export images: PDFs use the pdfjs-rendered PNG data URL (`renderedImage`), while regular images use the signed URL (`fileUrl`). Updated `exportImageWithAnnotations` to accept an explicit `imageSrc` parameter, removing all PDF URL fetching logic. Added comprehensive debug logging to verify correct source selection. PDF exports now work end-to-end with full drawing + annotations.
+
+- Commit: `fix: phase 23.15.4 use rendered PDF image source during export`
+
+---
+
 ## 2026-03-23 13:00 CT - [FIX] Phase 23.15.3 - Annotation Placement Coordinate Fix
 - Summary: Corrected annotation placement drift by using actual image bounds instead of container bounds.
 - Files changed:
