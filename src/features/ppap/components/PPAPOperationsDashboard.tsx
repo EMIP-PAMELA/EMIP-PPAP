@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Joyride, Step, STATUS } from 'react-joyride';
 import { PPAPRecord, PPAPEvent } from '@/src/types/database.types';
 import { supabase } from '@/src/lib/supabaseClient';
 import { logEvent } from '@/src/features/events/mutations';
@@ -40,50 +39,6 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
   const [events, setEvents] = useState<PPAPEvent[]>([]);
   const [adminNote, setAdminNote] = useState('');
   const [addingNote, setAddingNote] = useState(false);
-  const [runTour, setRunTour] = useState(false);
-
-  // Tour configuration with value-focused messaging
-  const tourSteps: Step[] = [
-    {
-      target: '[data-tour="dashboard-summary"]',
-      content: 'This is your PPAP command center. Track active workload, completed PPAPs, and items needing immediate attention—all in one view.',
-    },
-    {
-      target: '[data-tour="dashboard-filters"]',
-      content: 'Use filters to focus instantly on the PPAPs that need your attention. Narrow by customer, status, or phase to prioritize what matters now.',
-    },
-    {
-      target: '[data-tour="active-ppaps"]',
-      content: 'Current PPAP work is visible here. See status, phase, ownership, and bottlenecks in one place—no more hunting through emails or spreadsheets.',
-    },
-    {
-      target: '[data-tour="next-action"]',
-      content: 'The system shows what needs to happen next for each PPAP. This reduces ambiguity and keeps work moving forward.',
-    },
-    {
-      target: '[data-tour="phase-progress"]',
-      content: 'Instant visibility into where each PPAP stands in the workflow. Helps prevent missed steps and hidden delays.',
-    },
-    {
-      target: '[data-tour="continue-work"]',
-      content: 'Jump directly into the live workflow for any PPAP. Bridge from high-level oversight into hands-on execution.',
-    },
-    {
-      target: '[data-tour="management-controls"]',
-      content: 'Enable coordination, assignments, and issue visibility across teams. Keep communication tied to the PPAP record instead of scattered in email.',
-    },
-    {
-      target: '[data-tour="dashboard-summary"]',
-      content: 'This system centralizes PPAP tracking, documentation, markup, and communication in one place. Designed to keep engineering, quality, quoting, and management aligned.',
-    },
-  ];
-
-  const handleTourCallback = (data: any) => {
-    const { status } = data;
-    if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
-      setRunTour(false);
-    }
-  };
 
   // Get unique filter values
   const customers = Array.from(new Set(ppaps.map(p => p.customer_name).filter(Boolean)));
@@ -253,26 +208,8 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
 
   return (
     <div className="space-y-6">
-      {/* Tour Component */}
-      <Joyride
-        steps={tourSteps}
-        run={runTour}
-        callback={handleTourCallback}
-      />
-
-      {/* Header with Take a Tour Button */}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-3xl font-bold text-gray-900">PPAP Operations Dashboard</h1>
-        <button
-          onClick={() => setRunTour(true)}
-          className="px-4 py-2 bg-gray-100 text-gray-700 border-2 border-gray-300 rounded-lg font-semibold hover:bg-gray-200 transition-colors shadow-sm"
-        >
-          🎯 Take a Tour
-        </button>
-      </div>
-
       {/* Summary Metrics */}
-      <div data-tour="dashboard-summary" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-white to-gray-50 border-2 border-gray-300 rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
           <div className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">
             Total PPAPs
@@ -303,7 +240,7 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
       </div>
 
       {/* Filters */}
-      <div data-tour="dashboard-filters" className="bg-white border-2 border-gray-300 rounded-xl shadow-md p-6">
+      <div className="bg-white border-2 border-gray-300 rounded-xl shadow-md p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-xl font-bold text-gray-900">Filters</h2>
           <div className="flex gap-2">
@@ -373,7 +310,7 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
       </div>
 
       {/* Active PPAPs */}
-      <div data-tour="active-ppaps" className="bg-white border-2 border-gray-300 rounded-xl shadow-md p-6">
+      <div className="bg-white border-2 border-gray-300 rounded-xl shadow-md p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-5 pb-3 border-b-2 border-gray-200">
           Active PPAPs ({activePpaps.length})
         </h2>
@@ -438,7 +375,7 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
                   </div>
                   
                   {/* Phase Progress Visual */}
-                  <div data-tour="phase-progress" className="mb-3 flex items-center gap-2">
+                  <div className="mb-3 flex items-center gap-2">
                     {WORKFLOW_PHASES.filter(p => p !== 'COMPLETE').map((phase, idx) => {
                       const isActive = phase === ppap.workflow_phase;
                       const currentPhaseIndex = WORKFLOW_PHASES.findIndex(p => p === ppap.workflow_phase);
@@ -472,7 +409,7 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
                   </div>
                   
                   {/* Next Action */}
-                  <div data-tour="next-action" className={`mb-3 px-3 py-2 rounded-lg border-2 ${
+                  <div className={`mb-3 px-3 py-2 rounded-lg border-2 ${
                     nextAction.priority === 'urgent'
                       ? 'bg-red-50 border-red-300'
                       : nextAction.priority === 'warning'
@@ -508,7 +445,6 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
                 <div className="flex flex-col gap-2">
                   <Link
                     href={`/ppap/${ppap.id}`}
-                    data-tour="continue-work"
                     className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors font-semibold text-center shadow-sm"
                   >
                     Continue Work →
@@ -521,7 +457,7 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
                   </button>
                   
                   {/* Management Controls */}
-                  <div data-tour="management-controls" className="pt-3 mt-1 border-t border-gray-200 px-2">
+                  <div className="pt-3 mt-1 border-t border-gray-200 px-2">
                     <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Management</div>
                     <select
                       value={ppap.assigned_to || ''}
