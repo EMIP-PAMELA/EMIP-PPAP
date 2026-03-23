@@ -1,15 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { v4 as uuidv4 } from 'uuid';
 import { createPPAP } from '@/src/features/ppap/mutations';
+import { uploadPPAPDocument } from '@/src/features/ppap/utils/uploadFile';
+import { logEvent } from '@/src/features/events/mutations';
 import type { CreatePPAPInput, PPAPType } from '@/src/types/database.types';
+
+interface UploadedFile {
+  file_name: string;
+  file_path: string;
+}
 
 export function CreatePPAPForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<CreatePPAPInput>>({});
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const tempPpapId = useRef(uuidv4());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,6 +42,46 @@ export function CreatePPAPForm() {
 
   const handleChange = (field: keyof CreatePPAPInput, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleInitialUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setUploading(true);
+    const uploadedList: UploadedFile[] = [];
+
+    for (const file of files) {
+      try {
+        const path = await uploadPPAPDocument(file, tempPpapId.current);
+
+        await logEvent({
+          ppap_id: tempPpapId.current,
+          event_type: 'DOCUMENT_ADDED',
+          event_data: {
+            file_name: file.name,
+            file_path: path,
+            document_type: 'initial',
+          },
+          actor: 'System User',
+          actor_role: 'Engineer',
+        });
+
+        uploadedList.push({
+          file_name: file.name,
+          file_path: path,
+        });
+      } catch (err) {
+        console.error('Upload failed for', file.name, ':', err);
+        setError(`Failed to upload ${file.name}`);
+      }
+    }
+
+    setUploadedFiles((prev) => [...prev, ...uploadedList]);
+    setUploading(false);
+
+    // Reset input
+    e.target.value = '';
   };
 
   return (
@@ -139,8 +190,16 @@ export function CreatePPAPForm() {
             </svg>
             <div className="text-sm text-gray-600">
               <label htmlFor="intake-file-upload" className="relative cursor-pointer rounded-md font-medium text-blue-600 hover:text-blue-500">
-                <span>Click to upload</span>
-                <input id="intake-file-upload" name="intake-file-upload" type="file" className="sr-only" multiple />
+                <span>{uploading ? 'Uploading...' : 'Click to upload'}</span>
+                <input 
+                  id="intake-file-upload" 
+                  name="intake-file-upload" 
+                  type="file" 
+                  className="sr-only" 
+                  multiple 
+                  onChange={handleInitialUpload}
+                  disabled={uploading}
+                />
               </label>
               <span className="pl-1">or drag and drop</span>
             </div>
@@ -148,10 +207,21 @@ export function CreatePPAPForm() {
           </div>
         </div>
 
-        <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-          <p className="font-semibold">📝 Note:</p>
-          <p className="mt-1">File upload backend integration pending. UI framework in place for intake document loading.</p>
-        </div>
+        {uploadedFiles.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <p className="text-sm font-semibold text-gray-700">Uploaded Files ({uploadedFiles.length}):</p>
+            <div className="space-y-1">
+              {uploadedFiles.map((file, index) => (
+                <div key={`${file.file_path}-${index}`} className="flex items-center gap-2 text-sm text-gray-600 bg-green-50 border border-green-200 rounded px-3 py-2">
+                  <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span className="flex-1">{file.file_name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-4 pt-4">
