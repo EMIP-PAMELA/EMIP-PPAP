@@ -97,33 +97,39 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
   // Auto-select first file when uploadedFiles changes
   useEffect(() => {
-    if (
-      uploadedFiles.length > 0 &&
-      (!selectedFile || typeof selectedFile !== 'string')
-    ) {
-      setSelectedFile(uploadedFiles[0].file_path);
+    if (uploadedFiles.length > 0) {
+      const firstFile = uploadedFiles[0]?.file_path;
+
+      if (typeof firstFile === 'string') {
+        setSelectedFile((prev) =>
+          typeof prev === 'string' ? prev : firstFile
+        );
+      }
     }
+  }, [uploadedFiles]);
+
+  // Debug logging
+  useEffect(() => {
+    console.log('uploadedFiles:', uploadedFiles);
+    console.log('selectedFile (after auto):', selectedFile);
   }, [uploadedFiles, selectedFile]);
 
   // Generate signed URL when file is selected
   useEffect(() => {
-    const loadFileUrl = async () => {
-      if (!selectedFile || typeof selectedFile !== 'string') {
-        console.log('Selected file:', selectedFile);
-        setFileUrl(null);
-        return;
-      }
+    if (!selectedFile || typeof selectedFile !== 'string') {
+      setFileUrl(null);
+      return;
+    }
 
-      console.log('Selected file:', selectedFile);
-
+    const loadUrl = async () => {
       const { data, error } = await supabase.storage
         .from('ppap-documents')
-        .createSignedUrl(selectedFile, 3600); // 1 hour
+        .createSignedUrl(selectedFile, 3600);
 
-      console.log('Signed URL result:', data, error);
+      console.log('Signed URL:', data, error);
 
       if (error) {
-        console.error('Supabase signed URL error:', error);
+        console.error(error);
         setFileUrl(null);
         return;
       }
@@ -131,7 +137,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       setFileUrl(data?.signedUrl || null);
     };
 
-    loadFileUrl();
+    loadUrl();
   }, [selectedFile]);
 
   // Load existing annotations for selected file
@@ -483,6 +489,11 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     setEditDescription('');
   };
 
+  // Hard render guard - prevent premature render
+  const hasValidSelection =
+    typeof selectedFile === 'string' &&
+    selectedFile.length > 0;
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
       <div className="bg-white rounded-xl shadow-2xl w-[95vw] h-[95vh] flex flex-col">
@@ -641,8 +652,14 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
               <div className={`absolute inset-0 ${
                 mode === 'navigate' ? 'pointer-events-auto' : 'pointer-events-none'
               }`}>
-                {typeof fileUrl === 'string' && fileUrl.length > 0 ? (
-                  typeof selectedFile === 'string' && selectedFile.endsWith('.pdf') ? (
+                {!hasValidSelection ? (
+                  <div className="flex items-center justify-center h-full text-gray-500">
+                    {uploadedFiles.length === 0
+                      ? "No drawings uploaded yet"
+                      : "Preparing drawing..."}
+                  </div>
+                ) : fileUrl ? (
+                  selectedFile.endsWith('.pdf') ? (
                     <iframe
                       src={fileUrl}
                       className="w-full h-full"
@@ -656,35 +673,9 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                       className="w-full h-full object-contain"
                     />
                   )
-                ) : selectedFile ? (
-                  <div className="flex items-center justify-center h-full text-gray-500">
-                    Loading document...
-                  </div>
-                ) : uploadedFiles.length === 0 ? (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center text-gray-400">
-                      <svg className="mx-auto h-24 w-24 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      <p className="text-sm font-medium text-gray-600 mb-2">No drawings uploaded yet</p>
-                      <p className="text-xs text-gray-500 mb-4">Upload drawings in the Documentation phase to begin markup</p>
-                      <button
-                        onClick={onClose}
-                        className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                      >
-                        Go to Documentation Phase
-                      </button>
-                    </div>
-                  </div>
                 ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center text-gray-400">
-                      <svg className="mx-auto h-24 w-24 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <p className="text-sm font-medium">Select a drawing to begin</p>
-                      <p className="text-xs mt-1">Choose a drawing from the dropdown above</p>
-                    </div>
+                  <div className="flex items-center justify-center h-full text-gray-500">
+                    Loading drawing...
                   </div>
                 )}
               </div>

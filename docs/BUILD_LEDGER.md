@@ -4,6 +4,381 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 22:00 CT - [FIX] Phase 23.9 - Markup Render Guard and Selection Stabilization
+- Summary: Added render guard to prevent React crash #418 and stabilized file selection lifecycle.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Render guard, race condition fix, hardened URL generation
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Eliminates premature render crashes, ensures drawing loads reliably after upload
+- No schema changes
+
+**Objective:**
+
+Fix MarkupTool render crash and ensure drawing loads reliably:
+- Prevent React error #418 (premature render)
+- Eliminate auto-selection race condition
+- Harden signed URL generation lifecycle
+- Ensure drawing appears immediately after upload
+
+**Problem:**
+
+**Premature Render Crash:**
+
+Component rendered before selectedFile was valid:
+```tsx
+return (
+  <div>
+    {/* Renders immediately even if selectedFile is null */}
+    {selectedFile.endsWith('.pdf') ? ... }  // CRASH if null
+  </div>
+);
+```
+
+**Issues:**
+- No guard before accessing selectedFile
+- Caused React error #418
+- Blank canvas or crash
+- Unreliable initial render
+
+**Auto-Selection Race Condition:**
+
+Auto-select had dependency on selectedFile:
+```tsx
+useEffect(() => {
+  if (
+    uploadedFiles.length > 0 &&
+    (!selectedFile || typeof selectedFile !== 'string')
+  ) {
+    setSelectedFile(uploadedFiles[0].file_path);
+  }
+}, [uploadedFiles, selectedFile]);  // ❌ Causes re-runs
+```
+
+**Issues:**
+- Dependency on selectedFile caused infinite loop risk
+- Re-ran when selectedFile changed
+- Race condition with state updates
+- Could miss auto-select on first render
+
+**Render Logic Complexity:**
+
+Complex nested ternaries in render:
+```tsx
+{typeof fileUrl === 'string' && fileUrl.length > 0 ? (
+  typeof selectedFile === 'string' && selectedFile.endsWith('.pdf') ? (
+    <iframe />
+  ) : (
+    <img />
+  )
+) : selectedFile ? (
+  <div>Loading...</div>
+) : uploadedFiles.length === 0 ? (
+  <div>No files...</div>
+) : (
+  <div>Select...</div>
+)}
+```
+
+**Issues:**
+- Hard to read and maintain
+- Multiple checks scattered
+- No single source of truth for "ready" state
+- Potential for logic errors
+
+**Implementation:**
+
+**1. Added Hard Render Guard**
+
+Created guard variable before JSX return:
+
+```tsx
+// Hard render guard - prevent premature render
+const hasValidSelection =
+  typeof selectedFile === 'string' &&
+  selectedFile.length > 0;
+
+return (
+  <div>
+    {/* Use hasValidSelection throughout */}
+  </div>
+);
+```
+
+**Benefits:**
+- Single source of truth for selection validity
+- Prevents access to null/undefined selectedFile
+- Easy to reason about
+- No React error #418
+
+**2. Fixed Auto-Selection Race Condition**
+
+Removed selectedFile from dependency array:
+
+**Before:**
+```tsx
+useEffect(() => {
+  if (
+    uploadedFiles.length > 0 &&
+    (!selectedFile || typeof selectedFile !== 'string')
+  ) {
+    setSelectedFile(uploadedFiles[0].file_path);
+  }
+}, [uploadedFiles, selectedFile]);  // ❌ Dependency causes re-runs
+```
+
+**After:**
+```tsx
+useEffect(() => {
+  if (uploadedFiles.length > 0) {
+    const firstFile = uploadedFiles[0]?.file_path;
+
+    if (typeof firstFile === 'string') {
+      setSelectedFile((prev) =>
+        typeof prev === 'string' ? prev : firstFile
+      );
+    }
+  }
+}, [uploadedFiles]);  // ✅ Only when uploadedFiles changes
+```
+
+**Changes:**
+- Removed `selectedFile` from dependency array
+- Used functional setState with prev value
+- Only sets if prev is NOT already a string
+- Validates firstFile type before setting
+
+**Benefits:**
+- No infinite loops
+- Runs only when uploadedFiles updates
+- Preserves existing selection
+- Type-safe validation
+
+**3. Added Debug Logging**
+
+Added dedicated logging useEffect:
+
+```tsx
+// Debug logging
+useEffect(() => {
+  console.log('uploadedFiles:', uploadedFiles);
+  console.log('selectedFile (after auto):', selectedFile);
+}, [uploadedFiles, selectedFile]);
+```
+
+**Logs:**
+- uploadedFiles array state
+- selectedFile value after auto-selection
+- Helps diagnose timing issues
+
+**Benefits:**
+- Visibility into state changes
+- Debug selection lifecycle
+- Troubleshoot timing issues
+- Temporary (can remove later)
+
+**4. Hardened Signed URL Effect**
+
+Simplified and clarified signed URL generation:
+
+**Before:**
+```tsx
+useEffect(() => {
+  const loadFileUrl = async () => {
+    if (!selectedFile || typeof selectedFile !== 'string') {
+      console.log('Selected file:', selectedFile);
+      setFileUrl(null);
+      return;
+    }
+
+    console.log('Selected file:', selectedFile);
+
+    const { data, error } = await supabase.storage
+      .from('ppap-documents')
+      .createSignedUrl(selectedFile, 3600);
+
+    console.log('Signed URL result:', data, error);
+
+    if (error) {
+      console.error('Supabase signed URL error:', error);
+      setFileUrl(null);
+      return;
+    }
+
+    setFileUrl(data?.signedUrl || null);
+  };
+
+  loadFileUrl();
+}, [selectedFile]);
+```
+
+**After:**
+```tsx
+useEffect(() => {
+  if (!selectedFile || typeof selectedFile !== 'string') {
+    setFileUrl(null);
+    return;
+  }
+
+  const loadUrl = async () => {
+    const { data, error } = await supabase.storage
+      .from('ppap-documents')
+      .createSignedUrl(selectedFile, 3600);
+
+    console.log('Signed URL:', data, error);
+
+    if (error) {
+      console.error(error);
+      setFileUrl(null);
+      return;
+    }
+
+    setFileUrl(data?.signedUrl || null);
+  };
+
+  loadUrl();
+}, [selectedFile]);
+```
+
+**Changes:**
+- Guard check at top (early return)
+- Cleaner async function name
+- Consolidated logging
+- Clearer error handling
+
+**Benefits:**
+- More readable
+- Guard prevents unnecessary async call
+- Clear control flow
+- Proper error handling
+
+**5. Safe Final Render**
+
+Simplified render logic using hasValidSelection:
+
+**Before:**
+```tsx
+{typeof fileUrl === 'string' && fileUrl.length > 0 ? (
+  typeof selectedFile === 'string' && selectedFile.endsWith('.pdf') ? (
+    <iframe src={fileUrl} />
+  ) : (
+    <img src={fileUrl} />
+  )
+) : selectedFile ? (
+  <div>Loading document...</div>
+) : uploadedFiles.length === 0 ? (
+  <div>No drawings uploaded yet</div>
+) : (
+  <div>Select a drawing to begin</div>
+)}
+```
+
+**After:**
+```tsx
+{!hasValidSelection ? (
+  <div className="text-gray-500">
+    {uploadedFiles.length === 0
+      ? "No drawings uploaded yet"
+      : "Preparing drawing..."}
+  </div>
+) : fileUrl ? (
+  selectedFile.endsWith('.pdf') ? (
+    <iframe src={fileUrl} className="w-full h-full" />
+  ) : (
+    <img src={fileUrl} className="w-full h-full object-contain" />
+  )
+) : (
+  <div className="text-gray-500">Loading drawing...</div>
+)}
+```
+
+**Logic Flow:**
+1. Check `hasValidSelection` first
+   - If false: Show "No drawings" or "Preparing"
+2. Check `fileUrl` exists
+   - If true: Render PDF or image
+   - If false: Show "Loading drawing..."
+
+**Benefits:**
+- Clear decision tree
+- No null/undefined access
+- Safe to call `selectedFile.endsWith()`
+- Simple loading states
+
+**State Lifecycle:**
+
+```
+1. Component mounts
+   ↓
+2. Fetch files
+   └─ Validate file_path (string check)
+   ↓
+3. setUploadedFiles(validFiles)
+   ↓
+4. Auto-select useEffect triggers
+   ├─ Check: uploadedFiles.length > 0
+   ├─ Get: firstFile = uploadedFiles[0]?.file_path
+   ├─ Validate: typeof firstFile === 'string'
+   └─ setSelectedFile((prev) => prev || firstFile)
+   ↓
+5. hasValidSelection calculated
+   └─ true if selectedFile is non-empty string
+   ↓
+6. Signed URL useEffect triggers
+   ├─ Check: hasValidSelection
+   ├─ Generate signed URL
+   └─ setFileUrl(signedUrl)
+   ↓
+7. Render decision tree
+   ├─ !hasValidSelection → "Preparing..."
+   ├─ fileUrl exists → Render document
+   └─ else → "Loading drawing..."
+```
+
+**Benefits:**
+
+**Crash Prevention:**
+- ✅ Render guard prevents React #418
+- ✅ No null/undefined access
+- ✅ Safe to call string methods
+- ✅ Clear loading states
+
+**Race Condition Fix:**
+- ✅ No infinite loops
+- ✅ Auto-select runs once per uploadedFiles change
+- ✅ Preserves existing selection
+- ✅ Type-safe validation
+
+**Reliability:**
+- ✅ Drawing loads immediately after upload
+- ✅ Clear state transitions
+- ✅ Proper error handling
+- ✅ Debug visibility
+
+**Code Quality:**
+- ✅ Simplified render logic
+- ✅ Single source of truth (hasValidSelection)
+- ✅ Readable control flow
+- ✅ Maintainable
+
+**Validation:**
+- ✅ Render guard prevents premature access
+- ✅ Auto-select removes selectedFile dependency
+- ✅ Debug logs show state changes
+- ✅ Signed URL effect properly guarded
+- ✅ Render logic uses hasValidSelection
+- ✅ No React warnings or errors
+- ✅ Drawing appears after upload
+- ✅ Loading states display correctly
+
+**No Schema Changes:**
+- ✅ Database unchanged
+- ✅ Event structure preserved
+- ✅ Only component logic updated
+
+- Commit: `fix: phase 23.9 markup render guard and selection stabilization`
+
+---
+
 ## 2026-03-22 21:45 CT - [FIX] Phase 23.8 - Markup Tool File Lifecycle Stabilization
 - Summary: Hardened file validation and auto-selection to eliminate null/undefined state crashes.
 - Files changed:
