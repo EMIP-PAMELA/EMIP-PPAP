@@ -4,6 +4,234 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 13:00 CT - [FIX] Phase 23.15.3 - Annotation Placement Coordinate Fix
+- Summary: Corrected annotation placement drift by using actual image bounds instead of container bounds.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Fixed coordinate calculation for clicks and drags
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Eliminated placement drift on left/right sides, annotations now land exactly under cursor
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- Click coordinates normalized against outer container (`containerRef`) instead of actual image bounds
+- Container includes padding, centering space, and max-width constraints
+- Image rendered at `max-w-[1200px]` within centered container
+- Coordinate mismatch causes drift toward center on left/right edges
+- Annotations placed correctly near center, but pulled toward center on sides
+
+**Symptoms:**
+- Clicking left edge: marker appears right of cursor (pulled toward center)
+- Clicking right edge: marker appears left of cursor (pulled toward center)
+- Clicking center: marker appears correctly under cursor
+- Drag repositioning also exhibits drift
+- Worse drift with wider viewports (more centering space)
+
+**Implementation:**
+
+**Before (Container Bounds - Incorrect):**
+```tsx
+const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  if (mode !== 'markup') return;
+  if (!containerRef.current) return;
+
+  // ❌ Using container bounds (includes padding/centering)
+  const rect = containerRef.current.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = (e.clientY - rect.top) / rect.height;
+
+  // Creates annotation with incorrect coordinates
+  const newAnnotation = { id, x, y, ... };
+}
+
+const handleAnnotationDrag = (e: React.MouseEvent) => {
+  if (!draggingAnnotationId || !containerRef.current) return;
+  
+  // ❌ Using container bounds for drag
+  const rect = containerRef.current.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = (e.clientY - rect.top) / rect.height;
+  
+  // Updates with incorrect coordinates
+}
+```
+
+**After (Image Bounds - Correct):**
+```tsx
+const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  if (draggingAnnotationId) return;
+  if (mode !== 'markup') return;
+  
+  // ✅ Use actual image bounds
+  const imageEl = imageRef.current;
+  if (!imageEl) return;
+
+  const rect = imageEl.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = (e.clientY - rect.top) / rect.height;
+
+  // ✅ Prevent clicks outside image from creating annotations
+  if (x < 0 || x > 1 || y < 0 || y > 1) {
+    console.log('Click outside image bounds, ignoring', { x, y });
+    return;
+  }
+
+  console.log('Placement rect:', rect);
+  console.log('Normalized click:', { x, y });
+
+  // Creates annotation with correct coordinates
+  const newAnnotation = { id, x, y, ... };
+}
+
+const handleAnnotationDrag = (e: React.MouseEvent) => {
+  if (!draggingAnnotationId || !imageRef.current) return;
+  
+  // ✅ Use image bounds for drag
+  const rect = imageRef.current.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+  
+  // Updates with correct coordinates
+}
+```
+
+**Key Changes:**
+
+**1. Switched from containerRef to imageRef:**
+- `containerRef.current` → `imageRef.current`
+- Container includes centering and padding
+- Image ref gives exact rendered image bounds
+
+**2. Added Click Guard:**
+```tsx
+if (x < 0 || x > 1 || y < 0 || y > 1) {
+  console.log('Click outside image bounds, ignoring', { x, y });
+  return;
+}
+```
+- Prevents clicks in padding/margin from creating bad annotations
+- Only allows clicks within actual image area
+
+**3. Added Debug Logging:**
+```tsx
+console.log('Placement rect:', rect);
+console.log('Normalized click:', { x, y });
+```
+- Helps verify correct bounds being used
+- Confirms normalized coordinates in 0-1 range
+
+**4. Preserved Coordinate Model:**
+- Still using normalized coordinates (0-1)
+- Still rendering with percentage positioning
+- Only changed source of bounding rect for calculation
+
+**Why This Works:**
+
+**Coordinate Space Alignment:**
+- Annotations rendered relative to image wrapper
+- Annotations positioned with `left: ${x * 100}%`, `top: ${y * 100}%`
+- Click coordinates now normalized against same image bounds
+- Perfect 1:1 mapping between click and render
+
+**Container vs Image Bounds:**
+
+**Container (wrong):**
+```
+|<-- padding -->|<-- image -->|<-- padding -->|
+^                ^              ^              ^
+0%              25%            75%           100%
+```
+Clicking at image left edge (25% of container) → normalized to 0.25 → renders at 25% of image → drift
+
+**Image (correct):**
+```
+|<-- image -->|
+^             ^
+0%          100%
+```
+Clicking at image left edge (0% of image) → normalized to 0.0 → renders at 0% of image → exact
+
+**DOM Structure (verified correct):**
+```tsx
+<div ref={exportRef} className="relative w-full max-w-[1200px]">
+  <img ref={imageRef} src={resolvedImageSrc} />
+  <div className="absolute inset-0">
+    {annotations.map(annotation => (
+      <div style={{ left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%` }}>
+        {/* marker */}
+      </div>
+    ))}
+  </div>
+</div>
+```
+- Image and overlay share same parent wrapper
+- Overlay uses `absolute inset-0` to match image dimensions
+- Percentage positioning works correctly
+
+**Benefits:**
+
+**Accuracy:**
+- ✅ Annotations land exactly under cursor
+- ✅ No drift on left/right edges
+- ✅ No drift on top/bottom edges
+- ✅ Consistent across viewport sizes
+
+**User Experience:**
+- ✅ Intuitive placement behavior
+- ✅ WYSIWYG annotation positioning
+- ✅ Accurate drag repositioning
+- ✅ Professional feel
+
+**Code Quality:**
+- ✅ Correct coordinate space usage
+- ✅ Guard against invalid clicks
+- ✅ Debug logging for verification
+- ✅ Preserved normalized coordinate model
+
+**Robustness:**
+- ✅ Works with centered images
+- ✅ Works with max-width constraints
+- ✅ Works across viewport sizes
+- ✅ Handles padding/margins correctly
+
+**Validation:**
+- ✅ Click dead center: marker exactly under cursor
+- ✅ Click left edge: marker exactly under cursor
+- ✅ Click right edge: marker exactly under cursor
+- ✅ Click top/bottom: marker exactly under cursor
+- ✅ Drag reposition: follows cursor accurately
+- ✅ Clicks outside image: ignored (no bad annotations)
+- ✅ No schema changes
+
+**Technical Details:**
+
+**getBoundingClientRect() on Image:**
+- Returns actual rendered image dimensions
+- Includes position relative to viewport
+- Accounts for CSS transforms, scaling, centering
+- Perfect for coordinate normalization
+
+**Normalized Coordinates (0-1):**
+- Stored as decimals: `x: 0.5` = 50% across image
+- Rendered as percentages: `left: 50%`
+- Resolution-independent
+- Works with any image size
+
+**Click Guard Logic:**
+- `x < 0`: click left of image
+- `x > 1`: click right of image
+- `y < 0`: click above image
+- `y > 1`: click below image
+- All rejected to prevent bad coordinates
+
+**Note:**
+Critical fix for annotation placement accuracy. Previous implementation normalized click coordinates against the outer container element, which included padding, centering space, and max-width constraints. This caused annotations to drift toward the center when placed on left/right edges. Switched to using actual image bounds (`imageRef.getBoundingClientRect()`) for coordinate calculation, ensuring perfect alignment between click position and marker placement. Added guard to prevent clicks outside image from creating annotations. Drag repositioning also updated to use image bounds. Annotations now land exactly under cursor across entire image.
+
+- Commit: `fix: phase 23.15.3 correct annotation placement to use image bounds`
+
+---
+
 ## 2026-03-23 12:48 CT - [FIX] Phase 23.15.2 - Resolve pdfjs Worker Loading Failure
 - Summary: Fixed PDF rendering failure by replacing unreliable CDN worker with local worker.
 - Files changed:

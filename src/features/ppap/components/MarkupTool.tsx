@@ -230,9 +230,10 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   };
 
   const handleAnnotationDrag = (e: React.MouseEvent) => {
-    if (!draggingAnnotationId || !containerRef.current) return;
+    if (!draggingAnnotationId || !imageRef.current) return;
     
-    const rect = containerRef.current.getBoundingClientRect();
+    // Use image bounds instead of container bounds for accurate positioning
+    const rect = imageRef.current.getBoundingClientRect();
     const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
 
@@ -253,13 +254,23 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     
     // Only allow annotation placement in markup mode
     if (mode !== 'markup') return;
-    if (!containerRef.current) return;
+    
+    // Use image bounds instead of container bounds for accurate positioning
+    const imageEl = imageRef.current;
+    if (!imageEl) return;
 
-    const rect = containerRef.current.getBoundingClientRect();
+    const rect = imageEl.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
 
-    console.log('Canvas clicked', { x, y, mode, tool: selectedTool, type: selectedType });
+    // Prevent clicks outside image from creating annotations
+    if (x < 0 || x > 1 || y < 0 || y > 1) {
+      console.log('Click outside image bounds, ignoring', { x, y });
+      return;
+    }
+
+    console.log('Placement rect:', rect);
+    console.log('Normalized click:', { x, y, mode, tool: selectedTool, type: selectedType });
 
     const newAnnotation: Annotation = {
       id: `annotation-${Date.now()}`,
