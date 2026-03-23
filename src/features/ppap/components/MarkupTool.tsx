@@ -5,6 +5,7 @@ import { supabase } from '@/src/lib/supabaseClient';
 import { logEvent } from '@/src/features/events/mutations';
 import { getPPAPDocuments } from '@/src/features/ppap/utils/getPPAPDocuments';
 import { uploadPPAPDocument } from '@/src/features/ppap/utils/uploadFile';
+import { renderPdfToImage } from '@/src/utils/renderPdfToImage';
 
 interface MarkupToolProps {
   ppapId: string;
@@ -55,6 +56,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [renderedImage, setRenderedImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -99,6 +101,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   useEffect(() => {
     if (!selectedFile || typeof selectedFile !== 'string') {
       setFileUrl(null);
+      setRenderedImage(null);
       return;
     }
 
@@ -112,6 +115,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       if (error) {
         console.error('Signed URL error:', error);
         setFileUrl(null);
+        setRenderedImage(null);
         return;
       }
 
@@ -119,6 +123,21 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       const extractedUrl = typeof data?.signedUrl === 'string' ? data.signedUrl : null;
       console.log('Resolved fileUrl:', extractedUrl);
       setFileUrl(extractedUrl);
+
+      // If PDF, render to image for annotation support
+      if (selectedFile.toLowerCase().endsWith('.pdf') && extractedUrl) {
+        try {
+          console.log('Rendering PDF to image for annotation support...');
+          const imageDataUrl = await renderPdfToImage(extractedUrl);
+          setRenderedImage(imageDataUrl);
+          console.log('PDF rendered successfully');
+        } catch (error) {
+          console.error('Failed to render PDF to image:', error);
+          setRenderedImage(null);
+        }
+      } else {
+        setRenderedImage(null);
+      }
     };
 
     loadUrl();
@@ -337,19 +356,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       const jsPdfAny = jsPdfModule as any;
       const jsPDF = jsPdfAny.jsPDF || jsPdfAny.default?.jsPDF || jsPdfAny.default;
 
-      // HARD SEPARATION: PDF path vs Image path
-      if (isPdf) {
-        // PDF EXPORT PATH: Annotation sheet only
-        // NO html2canvas, NO signed URLs, NO image rendering
-        alert('PDF drawings export annotation sheets only. Full overlay export coming in a future phase.');
-        
-        await exportPdfAnnotationsOnly(jsPDF);
-        alert('Export complete!');
-        return; // CRITICAL: Stop execution here for PDFs
-      }
-
-      // IMAGE EXPORT PATH ONLY (below this line)
-      // This code NEVER runs for PDFs
+      // UNIFIED EXPORT PATH: All files treated as images
+      // PDFs are pre-rendered to canvas images, so they work with html2canvas
       if (!exportRef.current) {
         alert('Export target not ready');
         return;
@@ -439,12 +447,6 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     if (!selectedFile || typeof selectedFile !== 'string') {
       console.error('Export blocked: invalid selectedFile', selectedFile);
       throw new Error('Invalid file.');
-    }
-
-    // Safety check: should never be called for PDFs
-    if (selectedFile.toLowerCase().endsWith('.pdf')) {
-      console.error('CRITICAL: exportImageWithAnnotations called for PDF file');
-      throw new Error('PDF files cannot use image export path.');
     }
 
     // Find image element
@@ -879,23 +881,15 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                         )}
                       </div>
                     </div>
-                  ) : fileUrl && typeof fileUrl === 'string' ? (
-                    selectedFile && typeof selectedFile === 'string' && selectedFile.endsWith('.pdf') ? (
-                      <iframe
-                        src={fileUrl}
-                        className="w-full h-full"
-                        title="Drawing Document"
-                      />
-                    ) : (
-                      <img
-                        ref={imageRef}
-                        src={fileUrl}
-                        crossOrigin="anonymous"
-                        referrerPolicy="no-referrer"
-                        alt="Drawing"
-                        className="max-w-[1200px] w-full h-auto object-contain"
-                      />
-                    )
+                  ) : (renderedImage || fileUrl) && typeof (renderedImage || fileUrl) === 'string' ? (
+                    <img
+                      ref={imageRef}
+                      src={renderedImage || fileUrl}
+                      crossOrigin="anonymous"
+                      referrerPolicy="no-referrer"
+                      alt="Drawing"
+                      className="max-w-[1200px] w-full h-auto object-contain"
+                    />
                   ) : (
                     <div className="flex items-center justify-center h-full text-gray-500">
                       Loading drawing...
