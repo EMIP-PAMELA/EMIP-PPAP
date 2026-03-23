@@ -4,6 +4,65 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 00:25 CT - [FIX] Phase 23.14.2 - TypeScript Compatibility Fix for Dynamic jsPDF Import
+- Summary: Fixed TypeScript type inference error for dynamic jsPDF import.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Added type cast to any
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Resolved TypeScript error without affecting runtime behavior
+- No schema changes
+
+**Problem:**
+
+**TypeScript Error:**
+
+```
+Property 'jsPDF' does not exist on type 'typeof jsPDF'
+```
+
+**Code:**
+```tsx
+const jsPDF = jsPdfModule.jsPDF || jsPdfModule.default?.jsPDF || jsPdfModule.default;
+```
+
+**Root Cause:**
+- TypeScript cannot infer module shape from `import('jspdf')`
+- Dynamic import returns complex type
+- Property access fails type checking
+
+**Implementation:**
+
+**Type Cast Solution:**
+
+```tsx
+// BEFORE:
+const jsPDF = jsPdfModule.jsPDF || jsPdfModule.default?.jsPDF || jsPdfModule.default;
+
+// AFTER:
+const jsPdfAny = jsPdfModule as any;
+const jsPDF = jsPdfAny.jsPDF || jsPdfAny.default?.jsPDF || jsPdfAny.default;
+```
+
+**Benefits:**
+- TypeScript type checking passes
+- No runtime behavior change
+- Preserves module shape compatibility
+- Cleaner readability with separate variable
+
+**Validation:**
+- ✅ Type cast to any
+- ✅ Constructor usage unchanged: `new jsPDF({...})`
+- ✅ Export logic preserved
+- ✅ No runtime changes
+- ✅ Browser-safe loading strategy intact
+
+**Note:**
+Simple type cast resolves TypeScript inference issue for dynamic import. Runtime behavior completely unchanged. PDF export functionality preserved.
+
+- Commit: `fix: phase 23.14.2 resolve TypeScript error for dynamic jsPDF import`
+
+---
+
 ## 2026-03-23 00:20 CT - [FIX] Phase 23.14.1 - Browser-Safe PDF Export Import Fix
 - Summary: Fixed Vercel build failure by switching to dynamic client-only imports for PDF export libraries.
 - Files changed:

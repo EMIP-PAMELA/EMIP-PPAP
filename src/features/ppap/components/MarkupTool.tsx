@@ -253,7 +253,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       ]);
 
       const html2canvas = html2canvasModule.default;
-      const jsPDF = jsPdfModule.jsPDF || jsPdfModule.default?.jsPDF || jsPdfModule.default;
+      const jsPdfAny = jsPdfModule as any;
+      const jsPDF = jsPdfAny.jsPDF || jsPdfAny.default?.jsPDF || jsPdfAny.default;
 
       // Hide UI panels before capture
       const panels = document.querySelectorAll('.export-hide');
