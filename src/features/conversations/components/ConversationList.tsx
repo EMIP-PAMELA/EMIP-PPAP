@@ -1,7 +1,7 @@
 'use client';
 
 import { PPAPConversation } from '@/src/types/database.types';
-import { formatDateTime } from '@/src/lib/utils';
+import { formatDateTime, safeText } from '@/src/lib/utils';
 import { AddConversationForm } from './AddConversationForm';
 import { useRouter } from 'next/navigation';
 
@@ -43,7 +43,7 @@ export function ConversationList({ ppapId, conversations }: ConversationListProp
                 <span className={`text-xs px-2 py-0.5 rounded-full ${getMessageTypeColor(conv.message_type)}`}>
                   {conv.message_type}
                 </span>
-                <p className="text-gray-700 flex-1">{conv.body}</p>
+                <p className="text-gray-700 flex-1">{safeText(conv.body)}</p>
               </div>
             </div>
           ))}

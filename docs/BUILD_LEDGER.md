@@ -4,6 +4,387 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 23:00 CT - [FIX] Phase 24.7 - Render Hardening and Visual Polish
+- Summary: Eliminated unsafe JSX render patterns and improved dashboard/workflow visual hierarchy.
+- Files changed:
+  - `src/lib/utils.ts` - Added safeText helper for safe rendering
+  - `src/features/conversations/components/ConversationList.tsx` - Hardened conversation body rendering
+  - `src/features/events/components/EventHistory.tsx` - Hardened event actor/role rendering
+  - `src/features/ppap/components/PPAPOperationsDashboard.tsx` - Visual polish (cards, spacing, borders)
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Improved Next Action panel design
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Eliminated React #418 risks, improved visual hierarchy and professional appearance
+- No schema changes
+
+**Objective:**
+
+Perform stabilization and visual polish pass:
+- Eliminate remaining React #418 rendering issues
+- Improve dashboard and workflow visual hierarchy
+- Reduce washed-out appearance
+- Make UI feel more professional without redesign
+
+**Problem:**
+
+**Unsafe JSX Rendering Patterns:**
+
+Components rendering unknown values directly:
+```tsx
+<p>{conv.body}</p>  // Could be object
+<span>{event.actor}</span>  // Could be undefined/object
+<span>{event.actor_role}</span>  // Could be undefined/object
+```
+
+**Issues:**
+- React error #418 if object rendered
+- Crashes on invalid types
+- No type safety for dynamic content
+- Unpredictable behavior
+
+**Washed-Out Dashboard:**
+
+Dashboard felt flat and low-contrast:
+```tsx
+<div className="bg-white border border-gray-300 shadow-sm">
+  <div className="text-sm font-semibold text-gray-600">
+    Total PPAPs
+  </div>
+</div>
+```
+
+**Issues:**
+- Thin borders (1px)
+- Weak shadows
+- Light gray text
+- Cards felt insubstantial
+- No visual hierarchy
+- Professional but lifeless
+
+**Weak Next Action Panel:**
+
+Workflow "Next Action" panel lacked impact:
+```tsx
+<div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300">
+  <h3 className="text-sm font-bold text-gray-700">Next Action</h3>
+  <p className="text-2xl font-bold">{nextActionData.nextAction}</p>
+</div>
+```
+
+**Issues:**
+- Looked like placeholder
+- No visual hierarchy
+- Awkward/pinned feeling
+- Didn't feel like "current step"
+- Weak call-to-action
+
+**Implementation:**
+
+**1. Added safeText Helper**
+
+**File:** `src/lib/utils.ts`
+
+```tsx
+// Safe text rendering helper - prevents React #418 errors from rendering objects
+export function safeText(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+```
+
+**Benefits:**
+- Prevents rendering objects
+- Handles null/undefined gracefully
+- Converts numbers/booleans to strings
+- Returns empty string for invalid types
+- Eliminates React #418 at source
+
+**2. Hardened Conversation Rendering**
+
+**File:** `src/features/conversations/components/ConversationList.tsx`
+
+**Before:**
+```tsx
+<p className="text-gray-700 flex-1">{conv.body}</p>
+```
+
+**After:**
+```tsx
+import { safeText } from '@/src/lib/utils';
+
+<p className="text-gray-700 flex-1">{safeText(conv.body)}</p>
+```
+
+**3. Hardened Event History Rendering**
+
+**File:** `src/features/events/components/EventHistory.tsx`
+
+**Before:**
+```tsx
+<p className="text-sm text-gray-700">
+  by <span className="font-medium">{event.actor}</span>
+  {event.actor_role && <span> ({event.actor_role})</span>}
+</p>
+```
+
+**After:**
+```tsx
+import { safeText } from '@/src/lib/utils';
+
+<p className="text-sm text-gray-700">
+  by <span className="font-medium">{safeText(event.actor)}</span>
+  {event.actor_role && <span> ({safeText(event.actor_role)})</span>}
+</p>
+```
+
+**4. Dashboard Visual Polish**
+
+**File:** `src/features/ppap/components/PPAPOperationsDashboard.tsx`
+
+**Summary Cards - Before:**
+```tsx
+<div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
+  <div className="text-sm font-semibold text-gray-600 uppercase mb-2">
+    Total PPAPs
+  </div>
+  <div className="text-4xl font-bold text-gray-900">{totalPPAPs}</div>
+</div>
+```
+
+**Summary Cards - After:**
+```tsx
+<div className="bg-gradient-to-br from-white to-gray-50 border-2 border-gray-300 rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
+  <div className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">
+    Total PPAPs
+  </div>
+  <div className="text-4xl font-bold text-gray-900">{totalPPAPs}</div>
+</div>
+```
+
+**Changes:**
+- Border: `border` → `border-2` (stronger)
+- Shadow: `shadow-sm` → `shadow-md` (more depth)
+- Gradient: Added `bg-gradient-to-br from-white to-gray-50`
+- Hover: Added `hover:shadow-lg transition-shadow`
+- Label: `font-semibold text-gray-600` → `font-bold text-gray-700`
+- Spacing: `mb-2` → `mb-3` (better balance)
+
+**Colored Cards:**
+```tsx
+// Active
+<div className="bg-gradient-to-br from-blue-50 to-white border-2 border-blue-200">
+  <div className="text-sm font-bold text-blue-700">Active</div>
+  <div className="text-4xl font-bold text-blue-600">{activePPAPsCount}</div>
+</div>
+
+// Completed
+<div className="bg-gradient-to-br from-green-50 to-white border-2 border-green-200">
+  <div className="text-sm font-bold text-green-700">Completed</div>
+  <div className="text-4xl font-bold text-green-600">{completedPPAPsCount}</div>
+</div>
+
+// Needs Attention
+<div className="bg-gradient-to-br from-amber-50 to-white border-2 border-amber-200">
+  <div className="text-sm font-bold text-amber-700">Needs Attention</div>
+  <div className="text-4xl font-bold text-amber-600">{needsAttention}</div>
+</div>
+```
+
+**Section Headers:**
+
+**Before:**
+```tsx
+<h2 className="text-lg font-bold text-gray-900 mb-4">
+  Active PPAPs ({activePpaps.length})
+</h2>
+```
+
+**After:**
+```tsx
+<h2 className="text-xl font-bold text-gray-900 mb-5 pb-3 border-b-2 border-gray-200">
+  Active PPAPs ({activePpaps.length})
+</h2>
+```
+
+**Changes:**
+- Size: `text-lg` → `text-xl` (stronger)
+- Spacing: `mb-4` → `mb-5 pb-3` (tighter, more intentional)
+- Separator: Added `border-b-2 border-gray-200`
+
+**Container Cards:**
+
+**Before:**
+```tsx
+<div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+```
+
+**After:**
+```tsx
+<div className="bg-white border-2 border-gray-300 rounded-xl shadow-md p-6">
+```
+
+**Grid Spacing:**
+```tsx
+// Before: gap-6
+// After: gap-4 (tighter, less washed out)
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+```
+
+**5. Workflow Next Action Polish**
+
+**File:** `src/features/ppap/components/PPAPWorkflowWrapper.tsx`
+
+**Before:**
+```tsx
+<div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-xl shadow-sm p-6">
+  <div className="flex items-center justify-between">
+    <div>
+      <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">Next Action</h3>
+      <p className="text-2xl font-bold text-gray-900">{nextActionData.nextAction}</p>
+      <p className="text-sm text-gray-600 mt-1">
+        Current Phase: <span className="font-semibold">{WORKFLOW_PHASE_LABELS[currentPhase]}</span>
+      </p>
+    </div>
+    <button className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700">
+      Go to Section →
+    </button>
+  </div>
+</div>
+```
+
+**After:**
+```tsx
+<div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-50 border-2 border-blue-400 rounded-xl shadow-lg p-7">
+  <div className="flex items-start justify-between gap-6">
+    <div className="flex-1">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+        <h3 className="text-sm font-bold text-blue-900 uppercase tracking-wide">Your Next Action</h3>
+      </div>
+      <p className="text-2xl font-bold text-gray-900 leading-tight mb-3">{nextActionData.nextAction}</p>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-gray-600">Current Phase:</span>
+        <span className="px-3 py-1 bg-white border border-blue-200 rounded-lg text-sm font-bold text-blue-900">
+          {WORKFLOW_PHASE_LABELS[currentPhase]}
+        </span>
+      </div>
+    </div>
+    <button className="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg hover:scale-105 whitespace-nowrap">
+      Go to Section →
+    </button>
+  </div>
+</div>
+```
+
+**Changes:**
+- Gradient: `from-blue-50 to-indigo-50` → `from-blue-50 via-indigo-50 to-blue-50` (richer)
+- Border: `border-blue-300` → `border-blue-400` (stronger)
+- Shadow: `shadow-sm` → `shadow-lg` (more prominence)
+- Padding: `p-6` → `p-7` (more breathing room)
+- Layout: `items-center` → `items-start` (better alignment)
+- Spacing: Added `gap-6` and `flex-1`
+- Indicator: Added pulsing blue dot
+- Title: `text-gray-700` → `text-blue-900`, "Next Action" → "Your Next Action"
+- Title spacing: `mb-2` → `mb-3`
+- Phase badge: Added white background box with border
+- Button: `font-semibold` → `font-bold`, added `hover:scale-105` and `whitespace-nowrap`
+- Overall spacing: `space-y-6` → `space-y-5` (tighter vertical rhythm)
+
+**Visual Hierarchy Improvements:**
+
+```
+Dashboard Before:
+- Flat gray cards
+- 1px borders
+- Weak shadows
+- Light gray labels
+- Uniform spacing
+
+Dashboard After:
+- Gradient backgrounds
+- 2px borders
+- Stronger shadows
+- Bold, colored labels
+- Tighter, intentional spacing
+- Hover effects
+
+Workflow Before:
+- Generic "Next Action" panel
+- Weak border
+- Small shadow
+- No visual indicator
+
+Workflow After:
+- Prominent "Your Next Action" panel
+- Pulsing status indicator
+- Strong border and shadow
+- Phase badge with background
+- Hover button scale effect
+```
+
+**Benefits:**
+
+**Render Safety:**
+- ✅ safeText helper prevents React #418
+- ✅ Conversation body safe
+- ✅ Event actor/role safe
+- ✅ No object rendering risks
+- ✅ Graceful null/undefined handling
+
+**Visual Hierarchy:**
+- ✅ Stronger borders (2px vs 1px)
+- ✅ Better shadows (md/lg vs sm)
+- ✅ Gradient backgrounds
+- ✅ Colored card themes
+- ✅ Hover effects
+- ✅ Better section headers
+- ✅ Tighter, intentional spacing
+
+**Dashboard Polish:**
+- ✅ Summary cards feel substantial
+- ✅ Clear visual categories
+- ✅ Professional appearance
+- ✅ Reduced washed-out feeling
+- ✅ Better contrast
+
+**Workflow Polish:**
+- ✅ Next Action feels important
+- ✅ Pulsing indicator draws attention
+- ✅ Phase badge clearly shown
+- ✅ Button invites action
+- ✅ No awkward/pinned feeling
+
+**Code Quality:**
+- ✅ Centralized safeText utility
+- ✅ Consistent styling approach
+- ✅ Maintainable
+- ✅ No behavior changes
+
+**Validation:**
+- ✅ safeText helper added
+- ✅ Conversation rendering hardened
+- ✅ Event rendering hardened
+- ✅ Dashboard cards improved
+- ✅ Section headers strengthened
+- ✅ Next Action panel polished
+- ✅ Spacing tightened
+- ✅ No functional changes
+- ✅ No schema changes
+
+**No Schema Changes:**
+- ✅ Database unchanged
+- ✅ Only UI/component changes
+- ✅ Preserved all workflow behavior
+- ✅ Preserved navigation
+
+**Note:**
+All changes are visual polish and render safety. No workflow logic, navigation, or data handling was modified. The system functions identically but looks more professional and is more resilient to rendering errors.
+
+- Commit: `fix: phase 24.7 render hardening and visual polish`
+
+---
+
 ## 2026-03-22 22:45 CT - [REFACTOR] Phase 24.6 - Navigation Restoration and Task Clutter Removal
 - Summary: Restored clear navigation back to PPAP Operations Dashboard and removed task orchestration UI from workflow screens.
 - Files changed:

@@ -209,30 +209,30 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
   return (
     <div className="space-y-6">
       {/* Summary Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
-          <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-gradient-to-br from-white to-gray-50 border-2 border-gray-300 rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
+          <div className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">
             Total PPAPs
           </div>
           <div className="text-4xl font-bold text-gray-900">{totalPPAPs}</div>
         </div>
 
-        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
-          <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
+        <div className="bg-gradient-to-br from-blue-50 to-white border-2 border-blue-200 rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
+          <div className="text-sm font-bold text-blue-700 uppercase tracking-wide mb-3">
             Active
           </div>
           <div className="text-4xl font-bold text-blue-600">{activePPAPsCount}</div>
         </div>
 
-        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
-          <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
+        <div className="bg-gradient-to-br from-green-50 to-white border-2 border-green-200 rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
+          <div className="text-sm font-bold text-green-700 uppercase tracking-wide mb-3">
             Completed
           </div>
           <div className="text-4xl font-bold text-green-600">{completedPPAPsCount}</div>
         </div>
 
-        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
-          <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
+        <div className="bg-gradient-to-br from-amber-50 to-white border-2 border-amber-200 rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
+          <div className="text-sm font-bold text-amber-700 uppercase tracking-wide mb-3">
             Needs Attention
           </div>
           <div className="text-4xl font-bold text-amber-600">{needsAttention}</div>
@@ -240,9 +240,9 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
       </div>
 
       {/* Filters */}
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-900">Filters</h2>
+      <div className="bg-white border-2 border-gray-300 rounded-xl shadow-md p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-xl font-bold text-gray-900">Filters</h2>
           <div className="flex gap-2">
             <button
               onClick={() => setSortMode('default')}
@@ -310,8 +310,8 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
       </div>
 
       {/* Active PPAPs */}
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">
+      <div className="bg-white border-2 border-gray-300 rounded-xl shadow-md p-6">
+        <h2 className="text-xl font-bold text-gray-900 mb-5 pb-3 border-b-2 border-gray-200">
           Active PPAPs ({activePpaps.length})
         </h2>
         
@@ -557,8 +557,8 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
       </div>
 
       {/* Completed PPAPs */}
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">
+      <div className="bg-white border-2 border-gray-300 rounded-xl shadow-md p-6">
+        <h2 className="text-xl font-bold text-gray-900 mb-5 pb-3 border-b-2 border-gray-200">
           Completed PPAPs ({completedPpaps.length})
         </h2>
         <div className="space-y-3">

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { PPAPEvent } from '@/src/types/database.types';
-import { formatDateTime } from '@/src/lib/utils';
+import { formatDateTime, safeText } from '@/src/lib/utils';
 
 interface EventHistoryProps {
   events: PPAPEvent[];
@@ -32,8 +32,8 @@ export function EventHistory({ events }: EventHistoryProps) {
                   <span className="text-xs text-gray-500">{formatDateTime(event.created_at)}</span>
                 </div>
                 <p className="text-sm text-gray-700">
-                  by <span className="font-medium">{event.actor}</span>
-                  {event.actor_role && <span className="text-gray-500"> ({event.actor_role})</span>}
+                  by <span className="font-medium">{safeText(event.actor)}</span>
+                  {event.actor_role && <span className="text-gray-500"> ({safeText(event.actor_role)})</span>}
                 </p>
                 {event.event_data && Object.keys(event.event_data).length > 0 && (
                   <details className="mt-1">

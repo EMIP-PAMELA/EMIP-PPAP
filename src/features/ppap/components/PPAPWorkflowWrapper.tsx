@@ -54,20 +54,26 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   const isFuturePhase = selectedPhaseIndex > currentPhaseIndex;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Next Action Panel */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-xl shadow-sm p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">Next Action</h3>
-            <p className="text-2xl font-bold text-gray-900">{nextActionData.nextAction || ''}</p>
-            <p className="text-sm text-gray-600 mt-1">
-              Current Phase: <span className="font-semibold">{WORKFLOW_PHASE_LABELS[currentPhase] || ''}</span>
-            </p>
+      <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-50 border-2 border-blue-400 rounded-xl shadow-lg p-7">
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+              <h3 className="text-sm font-bold text-blue-900 uppercase tracking-wide">Your Next Action</h3>
+            </div>
+            <p className="text-2xl font-bold text-gray-900 leading-tight mb-3">{nextActionData.nextAction || ''}</p>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-600">Current Phase:</span>
+              <span className="px-3 py-1 bg-white border border-blue-200 rounded-lg text-sm font-bold text-blue-900">
+                {WORKFLOW_PHASE_LABELS[currentPhase] || ''}
+              </span>
+            </div>
           </div>
           <button
             onClick={scrollToActivePhase}
-            className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-md"
+            className="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg hover:scale-105 whitespace-nowrap"
           >
             Go to Section →
           </button>

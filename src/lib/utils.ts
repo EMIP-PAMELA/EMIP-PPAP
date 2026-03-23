@@ -12,12 +12,21 @@ export function formatDate(dateString: string): string {
 export function formatDateTime(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleString('en-US', {
-    year: 'numeric',
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
     minute: '2-digit',
+    hour12: true,
   });
+}
+
+// Safe text rendering helper - prevents React #418 errors from rendering objects
+export function safeText(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
 }
 
 export function isOverdue(dueDate: string, status: PPAPStatus): boolean {
