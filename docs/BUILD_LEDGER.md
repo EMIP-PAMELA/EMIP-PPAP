@@ -4,6 +4,65 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 22:30 CT - [FIX] Remove uuid Dependency from CreatePPAPForm
+- Summary: Replaced uuid import with native temp ID generation to fix Vercel build failure.
+- Files changed:
+  - `src/features/ppap/components/CreatePPAPForm.tsx` - Removed uuid import, added native generateTempId helper
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Fixes Vercel module resolution error without changing upload behavior
+- No schema changes
+
+**Problem:**
+
+Vercel build failed with:
+```
+Module not found: Can't resolve 'uuid'
+```
+
+**Cause:**
+- CreatePPAPForm.tsx imported `uuid` package
+- Package not in dependencies
+- Adding package increases bundle size
+- Native crypto.randomUUID available in modern browsers
+
+**Solution:**
+
+Added native ID generator helper:
+
+```tsx
+const generateTempId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+```
+
+**Changes:**
+- Removed: `import { v4 as uuidv4 } from 'uuid';`
+- Added: `generateTempId()` helper function
+- Replaced: `useRef(uuidv4())` → `useRef(generateTempId())`
+
+**Benefits:**
+- ✅ No package dependency
+- ✅ Smaller bundle size
+- ✅ Native browser API (crypto.randomUUID)
+- ✅ Fallback for older environments
+- ✅ Same upload behavior preserved
+- ✅ Build succeeds on Vercel
+
+**Preserved Functionality:**
+- ✅ Temp PPAP ID generation
+- ✅ Pre-creation document upload
+- ✅ Event logging
+- ✅ Upload preview list
+- ✅ All upload flow intact
+
+- Commit: `fix: remove uuid dependency from create ppap upload flow`
+
+---
+
 ## 2026-03-22 22:15 CT - [FEAT] Phase 22.5 - Initial Document Upload Integration
 - Summary: Connected Create PPAP upload to Supabase storage, enabling front-loaded document intake.
 - Files changed:

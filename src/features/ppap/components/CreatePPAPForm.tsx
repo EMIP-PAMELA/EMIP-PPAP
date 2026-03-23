@@ -2,7 +2,6 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { v4 as uuidv4 } from 'uuid';
 import { createPPAP } from '@/src/features/ppap/mutations';
 import { uploadPPAPDocument } from '@/src/features/ppap/utils/uploadFile';
 import { logEvent } from '@/src/features/events/mutations';
@@ -13,6 +12,14 @@ interface UploadedFile {
   file_path: string;
 }
 
+const generateTempId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 export function CreatePPAPForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -20,7 +27,7 @@ export function CreatePPAPForm() {
   const [formData, setFormData] = useState<Partial<CreatePPAPInput>>({});
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
-  const tempPpapId = useRef(uuidv4());
+  const tempPpapId = useRef(generateTempId());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
