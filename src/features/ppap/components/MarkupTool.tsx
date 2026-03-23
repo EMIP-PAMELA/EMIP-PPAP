@@ -283,6 +283,12 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       return;
     }
 
+    if (!fileUrl) {
+      console.error('Signed URL missing');
+      alert('Drawing could not be loaded for export. Please try reloading the page.');
+      return;
+    }
+
     if (annotations.length === 0) {
       alert('No annotations to export');
       return;
@@ -305,80 +311,57 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       const jsPdfAny = jsPdfModule as any;
       const jsPDF = jsPdfAny.jsPDF || jsPdfAny.default?.jsPDF || jsPdfAny.default;
 
-      // Wait for drawing image to load before export
-      const drawingImg = exportRef.current?.querySelector('img');
-      if (drawingImg && drawingImg instanceof HTMLImageElement && !drawingImg.complete) {
+      // Validate image exists and is loaded
+      const img = exportRef.current?.querySelector('img');
+      
+      if (!img) {
+        throw new Error('No image found in export container');
+      }
+
+      if (!(img instanceof HTMLImageElement)) {
+        throw new Error('Image element is not valid');
+      }
+
+      // Wait for image to fully load if not complete
+      if (!img.complete) {
         await new Promise<void>((resolve, reject) => {
           const timeout = setTimeout(() => {
             reject(new Error('Image load timeout'));
           }, 10000);
           
-          drawingImg.onload = () => {
+          img.onload = () => {
             clearTimeout(timeout);
             resolve();
           };
-          drawingImg.onerror = () => {
+          img.onerror = () => {
             clearTimeout(timeout);
             reject(new Error('Image failed to load'));
           };
         });
       }
 
-      // Create clean export container off-screen
-      const exportContainer = document.createElement('div');
-      exportContainer.style.position = 'fixed';
-      exportContainer.style.top = '-10000px';
-      exportContainer.style.left = '0';
-      exportContainer.style.background = '#ffffff';
-      exportContainer.style.padding = '0';
-      exportContainer.style.margin = '0';
-      exportContainer.style.width = exportRef.current.offsetWidth + 'px';
-      exportContainer.style.height = exportRef.current.offsetHeight + 'px';
-      document.body.appendChild(exportContainer);
-
-      // Clone drawing area
-      const cloned = exportRef.current.cloneNode(true) as HTMLElement;
-      exportContainer.appendChild(cloned);
-
-      // Preserve drawing image source and force visibility
-      const sourceImg = exportRef.current.querySelector('img');
-      const clonedImg = cloned.querySelector('img');
-      if (sourceImg && clonedImg && sourceImg instanceof HTMLImageElement && clonedImg instanceof HTMLImageElement) {
-        clonedImg.src = sourceImg.src;
-        clonedImg.style.display = 'block';
-        clonedImg.style.maxWidth = '100%';
-        clonedImg.style.width = sourceImg.width + 'px';
-        clonedImg.style.height = sourceImg.height + 'px';
+      // Validate image actually loaded with content
+      if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+        throw new Error('Image loaded but has no dimensions - CORS or load failure');
       }
 
-      // Strip all styles that can break html2canvas
-      const allElements = exportContainer.querySelectorAll('*');
-      allElements.forEach((el) => {
-        if (!(el instanceof HTMLElement)) return;
-
-        // Skip images - preserve their styles
-        if (el.tagName === 'IMG') return;
-
-        // Remove ALL class-based styling influence
-        el.className = '';
-
-        // Force safe base styles
-        el.style.color = '#000000';
-        el.style.backgroundColor = 'transparent';
-        el.style.boxShadow = 'none';
-        el.style.filter = 'none';
+      // Debug logging
+      console.log({
+        fileUrl,
+        imgLoaded: img.complete,
+        naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight,
+        crossOrigin: img.crossOrigin,
       });
 
-      // Capture clean DOM
-      const canvas = await html2canvas(exportContainer, {
+      // Capture exportRef directly (no cloning)
+      const canvas = await html2canvas(exportRef.current, {
         scale: 2,
         useCORS: true,
+        allowTaint: false,
         backgroundColor: '#ffffff',
         logging: false,
       });
-
-      // Clean up temp DOM
-      document.body.removeChild(exportContainer);
 
       const imgData = canvas.toDataURL('image/png');
 
@@ -766,6 +749,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                       <img
                         ref={imageRef}
                         src={fileUrl}
+                        crossOrigin="anonymous"
+                        referrerPolicy="no-referrer"
                         alt="Drawing"
                         className="max-w-[1200px] w-full h-auto object-contain"
                       />
