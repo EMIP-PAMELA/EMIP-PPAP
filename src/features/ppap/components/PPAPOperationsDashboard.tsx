@@ -7,6 +7,7 @@ import { logEvent } from '@/src/features/events/mutations';
 import { formatDate } from '@/src/lib/utils';
 import { WORKFLOW_PHASE_LABELS, WORKFLOW_PHASES } from '../constants/workflowPhases';
 import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils/getNextAction';
+import Link from 'next/link';
 
 interface PPAPOperationsDashboardProps {
   ppaps: PPAPRecord[];
@@ -359,7 +360,12 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-lg font-bold text-gray-900">{ppap.ppap_number}</h3>
+                    <Link
+                      href={`/ppap/${ppap.id}`}
+                      className="text-lg font-bold text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer"
+                    >
+                      {ppap.ppap_number}
+                    </Link>
                     <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded">
                       {ppap.status}
                     </span>
@@ -437,9 +443,15 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
+                  <Link
+                    href={`/ppap/${ppap.id}`}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors font-semibold text-center shadow-sm"
+                  >
+                    Continue Work →
+                  </Link>
                   <button
                     onClick={() => setSelectedPpapId(selectedPpapId === ppap.id ? null : ppap.id)}
-                    className="px-3 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors font-medium"
+                    className="px-3 py-2 text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors font-medium"
                   >
                     {selectedPpapId === ppap.id ? 'Hide Details' : 'View Details'}
                   </button>

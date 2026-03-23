@@ -4,6 +4,334 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 21:30 CT - [FIX] Phase 24.5 - Dashboard → Workflow Navigation Bridge
+- Summary: Restored navigation from PPAP Operations Dashboard to PPAP workflow screen.
+- Files changed:
+  - `src/features/ppap/components/PPAPOperationsDashboard.tsx` - Made PPAP names clickable, added Continue Work button
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Users can now click PPAP name or Continue Work button to access workflow screen
+- No schema changes
+
+**Objective:**
+
+Restore navigation from PPAP Operations Dashboard to PPAP workflow screen:
+- Make PPAP names clickable
+- Add primary "Continue Work" action button
+- Preserve dashboard inspection capabilities
+- Enable direct access to workflow (/ppap/[id])
+
+**Problem:**
+
+**Missing Navigation to Workflow:**
+
+Dashboard displayed PPAP information but had no direct navigation to workflow:
+
+```tsx
+<h3 className="text-lg font-bold text-gray-900">{ppap.ppap_number}</h3>
+```
+
+**Issues:**
+- PPAP name not clickable
+- No primary action to continue work
+- Users could only "View Details" (expand)
+- No direct path to workflow screen
+- Had to navigate manually or remember URL pattern
+
+**Only Secondary Action:**
+
+Dashboard only had "View Details" button:
+```tsx
+<button onClick={() => setSelectedPpapId(...)}>
+  View Details
+</button>
+```
+
+**Issues:**
+- View Details is for quick inspection (expand/collapse)
+- Not a navigation action
+- Doesn't take user to workflow screen
+- No way to resume work on PPAP
+
+**Implementation:**
+
+**1. Added Link Import**
+
+```tsx
+import Link from 'next/link';
+```
+
+**2. Made PPAP Name Clickable**
+
+Wrapped PPAP number with Link component:
+
+**Before:**
+```tsx
+<h3 className="text-lg font-bold text-gray-900">{ppap.ppap_number}</h3>
+```
+
+**After:**
+```tsx
+<Link
+  href={`/ppap/${ppap.id}`}
+  className="text-lg font-bold text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer"
+>
+  {ppap.ppap_number}
+</Link>
+```
+
+**Styling:**
+- `text-blue-600`: Blue color (indicates link)
+- `hover:text-blue-800`: Darker blue on hover
+- `hover:underline`: Underline on hover (standard link behavior)
+- `cursor-pointer`: Pointer cursor
+- `transition-colors`: Smooth color transition
+
+**Benefits:**
+- Visually indicates clickability
+- Standard link appearance
+- Keyboard accessible
+- Follows web conventions
+
+**3. Added "Continue Work" Primary Action Button**
+
+Added prominent action button next to View Details:
+
+**Before:**
+```tsx
+<div className="flex flex-col gap-2">
+  <button onClick={() => setSelectedPpapId(...)}>
+    View Details
+  </button>
+  {/* Management Controls */}
+</div>
+```
+
+**After:**
+```tsx
+<div className="flex flex-col gap-2">
+  <Link
+    href={`/ppap/${ppap.id}`}
+    className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors font-semibold text-center shadow-sm"
+  >
+    Continue Work →
+  </Link>
+  <button
+    onClick={() => setSelectedPpapId(...)}
+    className="px-3 py-2 text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors font-medium"
+  >
+    {selectedPpapId === ppap.id ? 'Hide Details' : 'View Details'}
+  </button>
+  {/* Management Controls */}
+</div>
+```
+
+**Continue Work Button:**
+- `bg-blue-600`: Primary action color (matches Create New PPAP)
+- `text-white`: White text for contrast
+- `font-semibold`: Bold weight
+- `shadow-sm`: Subtle shadow for depth
+- `text-center`: Centered text
+- Arrow `→` indicates forward navigation
+
+**View Details Button (Updated):**
+- `bg-gray-100`: Secondary action (de-emphasized)
+- `text-gray-700`: Muted text color
+- `font-medium`: Normal weight
+- Remains functional for quick inspection
+
+**Button Hierarchy:**
+1. **Primary**: Continue Work (blue, prominent)
+2. **Secondary**: View Details (gray, subtle)
+3. **Management**: Assignment dropdown (below border)
+
+**4. Verified Route Exists**
+
+Confirmed `/app/ppap/[id]/page.tsx` exists:
+
+**Route File:** `c:\BUILDS\emip-ppap\app\ppap\[id]\page.tsx`
+
+**This page provides:**
+- PPAP workflow screen
+- Phase progress bubbles
+- Task management
+- Documentation
+- Markup tool access
+
+**No modifications made to this page** (per instructions).
+
+**5. Navigation Flow**
+
+**User Journey:**
+
+```
+Dashboard View
+  ↓
+User sees PPAP row:
+  ├─ Blue clickable PPAP name
+  ├─ Status & Phase badges
+  ├─ Phase progress visual
+  ├─ Next action indicator
+  └─ "Continue Work →" button (primary)
+  
+User clicks PPAP name OR Continue Work
+  ↓
+Navigates to: /ppap/[id]
+  ↓
+Workflow Screen:
+  ├─ PPAPHeader with "← Back to PPAP Dashboard"
+  ├─ Phase tabs (Initiation, Documentation, etc.)
+  ├─ Task list
+  ├─ Phase-specific forms
+  └─ Markup tool access
+  
+User continues work on PPAP
+  ↓
+User clicks "← Back to PPAP Dashboard"
+  ↓
+Returns to: /ppap (Operations Dashboard)
+```
+
+**Two Ways to Navigate:**
+1. **Click PPAP name**: Quick, direct (for users who recognize it's a link)
+2. **Click Continue Work**: Explicit, clear action (for all users)
+
+**6. Preserved Dashboard Inspection**
+
+**View Details remains functional:**
+- Expands event history panel
+- Shows management notes
+- Allows quick inspection without navigation
+- Complementary to workflow navigation
+
+**Dashboard capabilities preserved:**
+- Summary metrics
+- Filters (customer, status, phase)
+- Bottleneck view
+- Next action intelligence
+- Phase progress visual
+- Owner + stagnation alerts
+- Management controls (assignment)
+- All existing functionality intact
+
+**Before/After Comparison:**
+
+**PPAP Name:**
+- Before: Plain text (not clickable)
+- After: Blue link (clickable, navigates to workflow)
+
+**Primary Actions:**
+- Before: Only "View Details" (expands panel)
+- After: "Continue Work" (navigates to workflow) + "View Details" (expands panel)
+
+**Navigation Path:**
+- Before: No direct navigation from dashboard to workflow
+- After: Click PPAP name OR Continue Work → workflow screen
+
+**Button Hierarchy:**
+- Before: Single action (View Details)
+- After: Primary (Continue Work) + Secondary (View Details) + Management (Assignment)
+
+**Benefits:**
+
+**Direct Workflow Access:**
+- ✅ Click PPAP name to navigate
+- ✅ Click Continue Work to navigate
+- ✅ Two intuitive paths
+- ✅ Standard web conventions
+
+**Clear Action Hierarchy:**
+- ✅ Primary: Continue Work (blue, prominent)
+- ✅ Secondary: View Details (gray, subtle)
+- ✅ Management: Assignment (separated)
+
+**User Experience:**
+- ✅ Obvious how to resume work
+- ✅ Quick navigation to workflow
+- ✅ Maintains inspection capabilities
+- ✅ Familiar link styling
+
+**Workflow Continuity:**
+- ✅ Dashboard → Workflow → Back to Dashboard
+- ✅ Complete navigation loop
+- ✅ No dead ends
+- ✅ Smooth user flow
+
+**Validation:**
+- ✅ PPAP name is clickable link
+- ✅ PPAP name styled as link (blue, underline on hover)
+- ✅ Continue Work button present
+- ✅ Continue Work button styled as primary action
+- ✅ Both navigate to `/ppap/[id]`
+- ✅ View Details preserved (secondary action)
+- ✅ View Details still expands event panel
+- ✅ Route `/app/ppap/[id]/page.tsx` exists
+- ✅ Workflow screen accessible
+- ✅ Back navigation works (from workflow to dashboard)
+- ✅ All dashboard intelligence preserved
+
+**Technical Details:**
+
+**Link Component:**
+```tsx
+import Link from 'next/link';
+
+<Link href={`/ppap/${ppap.id}`}>
+  {ppap.ppap_number}
+</Link>
+```
+
+**Benefits of Link:**
+- Client-side navigation (fast)
+- Prefetching (Next.js optimization)
+- Keyboard accessible
+- Screen reader friendly
+- SEO friendly
+
+**Dynamic Route:**
+- Pattern: `/ppap/[id]`
+- Example: `/ppap/123e4567-e89b-12d3-a456-426614174000`
+- Maps to: `app/ppap/[id]/page.tsx`
+
+**Button vs Link:**
+- Continue Work: `<Link>` styled as button
+- View Details: `<button>` with onClick
+- Rationale: Navigation uses Link, state changes use button
+
+**CSS Classes:**
+- Primary button: `bg-blue-600 text-white hover:bg-blue-700`
+- Secondary button: `bg-gray-100 text-gray-700 hover:bg-gray-200`
+- Link text: `text-blue-600 hover:text-blue-800 hover:underline`
+
+**Preserved Functionality:**
+- ✅ Dashboard structure unchanged
+- ✅ Summary metrics working
+- ✅ Filters functional
+- ✅ Bottleneck view toggles
+- ✅ Next action displays
+- ✅ Phase progress shows
+- ✅ Stagnation alerts work
+- ✅ Management controls active
+- ✅ Event history expands
+- ✅ Assignment dropdown functional
+- ✅ No regressions
+
+**No Schema Changes:**
+- ✅ Database schema unchanged
+- ✅ No new tables
+- ✅ No new columns
+- ✅ No migrations
+
+**No Breaking Changes:**
+- ✅ Existing URLs work
+- ✅ Existing components preserved
+- ✅ Existing queries unchanged
+- ✅ Markup tool untouched
+- ✅ Workflow pages untouched
+
+- Commit: `fix: phase 24.5 restore navigation to PPAP workflow`
+
+---
+
 ## 2026-03-22 21:15 CT - [FIX] Phase 24.4 - Dashboard Entry and Navigation
 - Summary: Fixed homepage routing and navigation to unify entry point to PPAP Operations Dashboard.
 - Files changed:
