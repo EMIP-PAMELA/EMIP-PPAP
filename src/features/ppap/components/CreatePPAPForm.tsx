@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createPPAP } from '@/src/features/ppap/mutations';
 import { uploadPPAPDocument } from '@/src/features/ppap/utils/uploadFile';
 import { logEvent } from '@/src/features/events/mutations';
+import { supabase } from '@/src/lib/supabaseClient';
 import type { CreatePPAPInput, PPAPType } from '@/src/types/database.types';
 
 interface UploadedFile {
@@ -40,6 +41,28 @@ export function CreatePPAPForm() {
       }
 
       const ppap = await createPPAP(formData as CreatePPAPInput);
+
+      // CRITICAL: Migrate temp uploads to real ppapId
+      if (uploadedFiles.length > 0) {
+        console.log('Migrating temp uploads from', tempPpapId.current, 'to', ppap.id);
+        
+        for (const file of uploadedFiles) {
+          await logEvent({
+            ppap_id: ppap.id,
+            event_type: 'DOCUMENT_ADDED',
+            event_data: {
+              file_name: file.file_name,
+              file_path: file.file_path,
+              document_type: 'initial',
+            },
+            actor: 'System User',
+            actor_role: 'Engineer',
+          });
+        }
+        
+        console.log('Migration complete. Files now visible under ppapId:', ppap.id);
+      }
+
       router.push(`/ppap/${ppap.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create PPAP');

@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/src/lib/supabaseClient';
 import { logEvent } from '@/src/features/events/mutations';
+import { getPPAPDocuments } from '@/src/features/ppap/utils/getPPAPDocuments';
+import { uploadPPAPDocument } from '@/src/features/ppap/utils/uploadFile';
 
 interface MarkupToolProps {
   ppapId: string;
@@ -56,39 +58,20 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [loading, setLoading] = useState(false);
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
-  // Load uploaded files
+  // Load uploaded files using shared utility
   useEffect(() => {
     const fetchFiles = async () => {
       try {
-        const { data, error } = await supabase
-          .from('ppap_events')
-          .select('event_data')
-          .eq('ppap_id', ppapId)
-          .eq('event_type', 'DOCUMENT_ADDED')
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        // Filter to only file uploads (not markup events) and validate file_path
-        const files: UploadedFile[] = (data || [])
-          .filter(event => 
-            event.event_data.file_name && 
-            !event.event_data.markup &&
-            event.event_data.file_path &&
-            typeof event.event_data.file_path === 'string'
-          )
-          .map(event => ({
-            file_name: event.event_data.file_name,
-            file_path: event.event_data.file_path,
-          }));
-
-        setUploadedFiles(files);
+        const docs = await getPPAPDocuments(ppapId);
+        console.log('Documents loaded:', docs);
+        setUploadedFiles(docs);
       } catch (error) {
         console.error('Failed to fetch files:', error);
       }
@@ -99,16 +82,10 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
   // Auto-select first file when uploadedFiles changes
   useEffect(() => {
-    if (uploadedFiles.length > 0) {
-      const firstFile = uploadedFiles[0]?.file_path;
-
-      if (typeof firstFile === 'string') {
-        setSelectedFile((prev) =>
-          typeof prev === 'string' ? prev : firstFile
-        );
-      }
+    if (uploadedFiles.length > 0 && !selectedFile) {
+      setSelectedFile(uploadedFiles[0].file_path);
     }
-  }, [uploadedFiles]);
+  }, [uploadedFiles, selectedFile]);
 
   // Debug logging
   useEffect(() => {
@@ -467,9 +444,45 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
   const handleDeleteAnnotation = (id: string) => {
     setAnnotations(annotations.filter(a => a.id !== id));
-    if (editingId === id) {
-      setEditingId(null);
-      setEditDescription('');
+    if (selectedAnnotationId === id) {
+      setSelectedAnnotationId(null);
+    }
+  };
+
+  const handleInlineUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const path = await uploadPPAPDocument(file, ppapId);
+
+      await logEvent({
+        ppap_id: ppapId,
+        event_type: 'DOCUMENT_ADDED',
+        event_data: {
+          file_name: file.name,
+          file_path: path,
+          document_type: 'drawing',
+        },
+        actor: 'System User',
+        actor_role: 'Engineer',
+      });
+
+      // Refresh documents
+      const docs = await getPPAPDocuments(ppapId);
+      console.log('Documents refreshed after upload:', docs);
+      setUploadedFiles(docs);
+
+      // Auto-select new file
+      setSelectedFile(path);
+
+      alert('Drawing uploaded successfully!');
+    } catch (error) {
+      console.error('Failed to upload drawing:', error);
+      alert('Failed to upload drawing');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -691,10 +704,38 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                   mode === 'navigate' ? 'pointer-events-auto' : 'pointer-events-none'
                 }`}>
                   {!hasValidSelection ? (
-                    <div className="flex items-center justify-center h-full text-gray-500">
-                      {uploadedFiles.length === 0
-                        ? "No drawings uploaded yet"
-                        : "Preparing drawing..."}
+                    <div className="absolute inset-0 flex items-center justify-center border-2 border-dashed border-gray-300 bg-gray-50 pointer-events-auto">
+                      <div className="text-center p-8">
+                        <svg className="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <p className="text-lg font-semibold text-gray-900 mb-2">No Drawing Loaded</p>
+                        <p className="text-sm text-gray-500 mb-4">
+                          {uploadedFiles.length === 0 
+                            ? "Upload a drawing to begin markup"
+                            : "Preparing drawing..."}
+                        </p>
+                        {uploadedFiles.length === 0 && (
+                          <div>
+                            <input
+                              type="file"
+                              accept=".pdf,.png,.jpg,.jpeg"
+                              onChange={handleInlineUpload}
+                              disabled={uploading}
+                              className="hidden"
+                              id="inline-upload"
+                            />
+                            <label
+                              htmlFor="inline-upload"
+                              className={`inline-block px-6 py-3 bg-blue-600 text-white rounded-lg font-medium cursor-pointer hover:bg-blue-700 transition-colors ${
+                                uploading ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
+                            >
+                              {uploading ? 'Uploading...' : '📁 Upload Drawing'}
+                            </label>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ) : fileUrl ? (
                     selectedFile.endsWith('.pdf') ? (

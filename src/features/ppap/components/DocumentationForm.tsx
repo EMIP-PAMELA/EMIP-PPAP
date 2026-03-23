@@ -6,6 +6,7 @@ import { logEvent } from '@/src/features/events/mutations';
 import { updateWorkflowPhase } from '../mutations/updateWorkflowPhase';
 import { WorkflowPhase } from '../constants/workflowPhases';
 import { uploadPPAPDocument } from '../utils/uploadFile';
+import { getPPAPDocuments } from '../utils/getPPAPDocuments';
 import { supabase } from '@/src/lib/supabaseClient';
 import { MarkupTool } from './MarkupTool';
 
@@ -94,24 +95,18 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
     acknowledgement: false,
   });
 
-  // Fetch uploaded files from events
+  // Fetch uploaded files using shared utility
   useEffect(() => {
     const fetchUploadedFiles = async () => {
       try {
-        const { data, error } = await supabase
-          .from('ppap_events')
-          .select('event_data, created_at')
-          .eq('ppap_id', ppapId)
-          .eq('event_type', 'DOCUMENT_ADDED')
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        const files: UploadedFile[] = (data || []).map(event => ({
-          file_name: event.event_data.file_name,
-          file_path: event.event_data.file_path,
-          document_type: event.event_data.document_type || 'general',
-          uploaded_at: event.created_at,
+        const docs = await getPPAPDocuments(ppapId);
+        console.log('Documents loaded in DocumentationForm:', docs);
+        
+        const files = docs.map(doc => ({
+          file_name: doc.file_name,
+          file_path: doc.file_path,
+          document_type: doc.document_type || 'general',
+          uploaded_at: new Date().toISOString(),
         }));
 
         setUploadedFiles(files);
@@ -149,23 +144,15 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
         });
       }
 
-      // Refresh uploaded files list
-      const { data, error } = await supabase
-        .from('ppap_events')
-        .select('event_data, created_at')
-        .eq('ppap_id', ppapId)
-        .eq('event_type', 'DOCUMENT_ADDED')
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        const refreshedFiles: UploadedFile[] = (data || []).map(event => ({
-          file_name: event.event_data.file_name,
-          file_path: event.event_data.file_path,
-          document_type: event.event_data.document_type || 'general',
-          uploaded_at: event.created_at,
-        }));
-        setUploadedFiles(refreshedFiles);
-      }
+      // Refresh uploaded files list using shared utility
+      const docs = await getPPAPDocuments(ppapId);
+      const refreshedFiles: UploadedFile[] = docs.map(doc => ({
+        file_name: doc.file_name,
+        file_path: doc.file_path,
+        document_type: doc.document_type || 'general',
+        uploaded_at: new Date().toISOString(),
+      }));
+      setUploadedFiles(refreshedFiles);
 
       setSuccessMessage(`Successfully uploaded ${files.length} file(s)`);
       setTimeout(() => setSuccessMessage(''), 3000);
