@@ -4,6 +4,346 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 21:45 CT - [FIX] Phase 23.8 - Markup Tool File Lifecycle Stabilization
+- Summary: Hardened file validation and auto-selection to eliminate null/undefined state crashes.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Improved file fetch validation, auto-select logic, UX states
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Markup tool now reliably loads first file after upload, prevents render failures
+- No schema changes
+
+**Objective:**
+
+Stabilize Markup Tool file lifecycle and eliminate null/undefined selection issues:
+- Fix drawing not loading after upload
+- Eliminate selectedFile instability
+- Add auto-selection behavior
+- Prevent React render crashes
+- Improve UX for empty and loading states
+
+**Problem:**
+
+**File Validation Gaps:**
+
+File fetch didn't validate `file_path`:
+```tsx
+const files = (data || [])
+  .filter(event => event.event_data.file_name && !event.event_data.markup)
+  .map(event => ({
+    file_name: event.event_data.file_name,
+    file_path: event.event_data.file_path,  // Could be null/undefined
+  }));
+```
+
+**Issues:**
+- Invalid file_path values included
+- Could be null, undefined, or non-string
+- Caused signed URL generation failures
+- Led to render crashes
+
+**Auto-Selection Timing:**
+
+Auto-select logic ran in same useEffect as file fetch:
+```tsx
+useEffect(() => {
+  // fetch files
+  setUploadedFiles(files);
+  
+  if (files.length > 0 && !selectedFile) {
+    setSelectedFile(files[0].file_path);
+  }
+}, [ppapId, selectedFile]);  // Dependency on selectedFile
+```
+
+**Issues:**
+- Dependency on `selectedFile` caused re-runs
+- Could miss auto-select if timing off
+- Not reactive to `uploadedFiles` changes
+- Blank canvas after upload
+
+**Empty State Confusion:**
+
+Generic empty state message:
+```tsx
+<p>Select a drawing to begin</p>
+```
+
+**Issues:**
+- Same message for "no files" vs "no selection"
+- Didn't guide user to upload
+- No action button
+- Unclear next steps
+
+**Implementation:**
+
+**1. Hardened File Validation**
+
+Added strict validation for file_path:
+
+**Before:**
+```tsx
+const files = (data || [])
+  .filter(event => event.event_data.file_name && !event.event_data.markup)
+  .map(event => ({
+    file_name: event.event_data.file_name,
+    file_path: event.event_data.file_path,
+  }));
+```
+
+**After:**
+```tsx
+const files = (data || [])
+  .filter(event => 
+    event.event_data.file_name && 
+    !event.event_data.markup &&
+    event.event_data.file_path &&
+    typeof event.event_data.file_path === 'string'
+  )
+  .map(event => ({
+    file_name: event.event_data.file_name,
+    file_path: event.event_data.file_path,
+  }));
+```
+
+**Validation Checks:**
+- ✅ `file_name` exists
+- ✅ Not a markup event (`!markup`)
+- ✅ `file_path` exists
+- ✅ `file_path` is string type
+
+**Benefits:**
+- Filters out invalid entries
+- Prevents null/undefined in state
+- Ensures signed URL generation works
+- Eliminates type errors
+
+**2. Separated Auto-Selection Logic**
+
+Moved auto-select into dedicated useEffect:
+
+**Before:**
+```tsx
+useEffect(() => {
+  const fetchFiles = async () => {
+    // ... fetch logic
+    setUploadedFiles(files);
+    
+    if (files.length > 0 && !selectedFile) {
+      setSelectedFile(files[0].file_path);
+    }
+  };
+  fetchFiles();
+}, [ppapId, selectedFile]);
+```
+
+**After:**
+```tsx
+useEffect(() => {
+  const fetchFiles = async () => {
+    // ... fetch logic
+    setUploadedFiles(files);
+  };
+  fetchFiles();
+}, [ppapId]);
+
+// Auto-select first file when uploadedFiles changes
+useEffect(() => {
+  if (
+    uploadedFiles.length > 0 &&
+    (!selectedFile || typeof selectedFile !== 'string')
+  ) {
+    setSelectedFile(uploadedFiles[0].file_path);
+  }
+}, [uploadedFiles, selectedFile]);
+```
+
+**Benefits:**
+- Separate concerns (fetch vs select)
+- Reactive to `uploadedFiles` changes
+- Runs after state update
+- Consistent auto-selection
+- No dependency loops
+
+**3. Enhanced Empty State UX**
+
+Added conditional empty states:
+
+**No Files Uploaded:**
+```tsx
+{uploadedFiles.length === 0 ? (
+  <div className="text-center">
+    <svg>📄 icon</svg>
+    <p>No drawings uploaded yet</p>
+    <p>Upload drawings in the Documentation phase to begin markup</p>
+    <button onClick={onClose}>
+      Go to Documentation Phase
+    </button>
+  </div>
+) : (
+  <div className="text-center">
+    <svg>🖼️ icon</svg>
+    <p>Select a drawing to begin</p>
+    <p>Choose a drawing from the dropdown above</p>
+  </div>
+)}
+```
+
+**State Differentiation:**
+- **No files**: Show upload guidance + action button
+- **Files exist but none selected**: Show selection guidance
+
+**Benefits:**
+- Clear user guidance
+- Actionable next steps
+- Reduces confusion
+- Better onboarding
+
+**4. Verified Existing Safeguards**
+
+**Dropdown Already Fully Controlled:**
+```tsx
+<select
+  value={selectedFile || ''}
+  onChange={(e) => setSelectedFile(e.target.value)}
+>
+```
+- ✅ Uses `selectedFile || ''` for controlled component
+- ✅ No React warnings about controlled/uncontrolled
+
+**Signed URL Guards Already Present:**
+```tsx
+if (!selectedFile || typeof selectedFile !== 'string') {
+  console.log('Selected file:', selectedFile);
+  setFileUrl(null);
+  return;
+}
+
+const { data, error } = await supabase.storage
+  .from('ppap-documents')
+  .createSignedUrl(selectedFile, 3600);
+
+console.log('Signed URL result:', data, error);
+
+if (error) {
+  console.error('Supabase signed URL error:', error);
+  setFileUrl(null);
+  return;
+}
+
+setFileUrl(data?.signedUrl || null);
+```
+- ✅ Validates selectedFile before API call
+- ✅ Logs for debugging
+- ✅ Handles errors gracefully
+- ✅ Sets null on failure
+
+**Safe Rendering Already Implemented:**
+```tsx
+{typeof fileUrl === 'string' && fileUrl.length > 0 ? (
+  typeof selectedFile === 'string' && selectedFile.endsWith('.pdf') ? (
+    <iframe src={fileUrl} />
+  ) : (
+    <img src={fileUrl} />
+  )
+) : selectedFile ? (
+  <div>Loading document...</div>
+) : (
+  <div>Select a drawing...</div>
+)}
+```
+- ✅ Strict type checks
+- ✅ No crashes on null/undefined
+- ✅ Loading state displayed
+- ✅ Safe fallbacks
+
+**5. Validation Before Save**
+
+Save handler already validates:
+```tsx
+if (!selectedFile) {
+  alert('Please select a drawing first');
+  return;
+}
+
+if (annotations.length === 0) {
+  alert('No annotations to save');
+  return;
+}
+```
+- ✅ Prevents save without file
+- ✅ Prevents save without annotations
+- ✅ User-friendly error messages
+
+**File Lifecycle Flow:**
+
+```
+1. Component Mounts
+   ↓
+2. Fetch uploaded files (ppapId dependency)
+   ├─ Filter: file_name exists
+   ├─ Filter: Not markup event
+   ├─ Filter: file_path exists
+   └─ Filter: file_path is string
+   ↓
+3. setUploadedFiles(validFiles)
+   ↓
+4. Auto-select useEffect triggers
+   ├─ Check: uploadedFiles.length > 0
+   ├─ Check: !selectedFile OR selectedFile not string
+   └─ setSelectedFile(uploadedFiles[0].file_path)
+   ↓
+5. Signed URL useEffect triggers
+   ├─ Check: selectedFile exists and is string
+   ├─ Generate signed URL
+   └─ setFileUrl(signedUrl)
+   ↓
+6. Render document
+   ├─ Check: fileUrl is string with length > 0
+   ├─ Render PDF or image based on extension
+   └─ Show loading state if pending
+```
+
+**Benefits:**
+
+**Reliability:**
+- ✅ No null/undefined crashes
+- ✅ Auto-loads first file
+- ✅ Validates all file paths
+- ✅ Safe state transitions
+
+**User Experience:**
+- ✅ Drawing appears immediately after upload
+- ✅ Clear empty state messages
+- ✅ Action buttons when needed
+- ✅ Loading indicators
+
+**Developer Experience:**
+- ✅ Debug logs for troubleshooting
+- ✅ Separated concerns (fetch vs select)
+- ✅ Type-safe validation
+- ✅ Clear error handling
+
+**Validation:**
+- ✅ File validation filters invalid entries
+- ✅ Auto-select runs when uploadedFiles updates
+- ✅ First file selected automatically
+- ✅ Signed URL generated correctly
+- ✅ Document renders without errors
+- ✅ Empty state shows helpful message
+- ✅ Action button available when no files
+- ✅ No React warnings in console
+- ✅ Save validates selectedFile and annotations
+
+**No Schema Changes:**
+- ✅ Database schema unchanged
+- ✅ No new tables or columns
+- ✅ Event structure preserved
+- ✅ Only component logic updated
+
+- Commit: `fix: phase 23.8 markup tool file lifecycle stabilization`
+
+---
+
 ## 2026-03-22 21:30 CT - [FIX] Phase 24.5 - Dashboard → Workflow Navigation Bridge
 - Summary: Restored navigation from PPAP Operations Dashboard to PPAP workflow screen.
 - Files changed:
