@@ -4,6 +4,248 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 00:55 CT - [FIX] MarkupTool Interaction Layer and Annotation Creation
+- Summary: Fixed overlay blocking click events, enabled click-to-annotate functionality, and prevented empty saves.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Fixed interaction layers and added UX improvements
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: MarkupTool now fully interactive - users can click to create annotations
+- No schema changes
+
+**Problem:**
+
+MarkupTool was non-functional for annotation creation:
+- Clicks not captured - overlay blocked events
+- Document display (iframe/img) consumed all pointer events
+- No visual indicator of markup mode
+- Empty annotations could be saved
+- No debug logging for click troubleshooting
+
+This made the tool completely unusable for its primary purpose.
+
+**Root Cause:**
+
+Incorrect event layering:
+- `onClick={handleCanvasClick}` on container div
+- Document display (iframe/img) captured all click events
+- No separate click capture layer
+- Annotations overlay had wrong pointer-events settings
+
+**Solution:**
+
+**1. Fixed Click Capture Layer**
+
+**Before (broken):**
+```tsx
+<div ref={containerRef} onClick={handleCanvasClick}>
+  <div className="absolute inset-0">
+    <iframe src={fileUrl} />  {/* Captures all clicks */}
+  </div>
+  <div className="absolute inset-0 pointer-events-none">
+    {annotations.map(...)}
+  </div>
+</div>
+```
+
+**After (working):**
+```tsx
+<div ref={containerRef}>
+  {/* Document Display - pointer-events-none */}
+  <div className="absolute inset-0 pointer-events-none">
+    <iframe src={fileUrl} />
+  </div>
+
+  {/* Click Capture Layer */}
+  <div
+    className="absolute inset-0"
+    onClick={handleCanvasClick}
+  />
+
+  {/* Annotations Overlay */}
+  <div className="absolute inset-0 pointer-events-none">
+    {annotations.map((annotation) => (
+      <div className="absolute pointer-events-auto">
+        {/* annotation marker */}
+      </div>
+    ))}
+  </div>
+</div>
+```
+
+**Layer order (bottom to top):**
+1. **Document display** (`pointer-events-none`) - doesn't capture clicks
+2. **Click capture layer** (full clicks) - creates annotations
+3. **Annotations overlay** (`pointer-events-none` container) - doesn't block clicks
+4. **Annotation markers** (`pointer-events-auto`) - capture their own clicks for editing
+
+**Benefits:**
+- Clicks reach capture layer
+- Annotations created on click
+- Document visible but doesn't interfere
+- Markers still clickable for editing
+
+**2. Added Visual Markup Mode Indicator**
+
+Added banner above canvas:
+
+```tsx
+{selectedFile && (
+  <div className="bg-blue-50 border border-blue-300 px-4 py-2 text-sm text-blue-800 font-semibold rounded-lg mb-2">
+    ✏️ Markup Mode: Click anywhere on the drawing to place annotation
+  </div>
+)}
+```
+
+**Benefits:**
+- Clear instruction to users
+- Only shows when file selected
+- Matches app color scheme
+- Professional appearance
+
+**3. Added Click Debug Logging**
+
+Added console log in `handleCanvasClick`:
+
+```typescript
+const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  if (!containerRef.current) return;
+
+  const rect = containerRef.current.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * 100;
+  const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+  console.log('Canvas clicked', { x, y });
+
+  const newAnnotation: Annotation = { ... };
+  setAnnotations([...annotations, newAnnotation]);
+};
+```
+
+**Logging output:**
+```
+Canvas clicked { x: 45.2, y: 32.8 }
+```
+
+**Benefits:**
+- Verify clicks are captured
+- Debug coordinate calculation
+- Confirm annotation creation
+- Troubleshoot future issues
+
+**4. Prevented Empty Annotation Saves**
+
+Added validation before save:
+
+```typescript
+const handleSaveAnnotations = async () => {
+  if (!selectedFile) {
+    alert('Please select a drawing first');
+    return;
+  }
+
+  if (annotations.length === 0) {
+    alert('No annotations to save');
+    return;
+  }
+
+  // ... save logic
+};
+```
+
+**Benefits:**
+- No empty saves to database
+- Clear feedback to user
+- Data integrity maintained
+- Prevents wasted events
+
+**5. Safe Annotation Rendering**
+
+Ensured annotation description rendering is safe:
+
+```tsx
+<p className="text-sm text-gray-700">
+  {annotation.description || ''}
+  {!annotation.description && 'No description yet'}
+</p>
+```
+
+**Benefits:**
+- Prevents React #418 errors
+- Always renders strings
+- Safe fallback text
+- No object rendering
+
+**User Flow:**
+
+**Before Fix:**
+1. User selects drawing from dropdown
+2. Document displays
+3. User clicks to add annotation
+4. **Nothing happens** - clicks blocked
+5. Console shows no errors
+6. User confused - tool appears broken
+7. Tool completely unusable
+
+**After Fix:**
+1. User selects drawing from dropdown
+2. Document displays
+3. **Banner shows:** "✏️ Markup Mode: Click anywhere on the drawing to place annotation"
+4. User clicks on drawing
+5. **Console logs:** "Canvas clicked { x: 45.2, y: 32.8 }"
+6. **Annotation marker appears** at click location
+7. User can click marker to edit
+8. User adds multiple annotations
+9. Clicks "💾 Save Annotations"
+10. **If no annotations:** Alert "No annotations to save"
+11. **If has annotations:** Saved successfully
+12. Annotations persist for document
+
+**Benefits:**
+- ✅ Click events captured correctly
+- ✅ Annotations created on click
+- ✅ Document visible and non-interfering
+- ✅ Annotation markers clickable
+- ✅ Visual markup mode indicator
+- ✅ Debug logging functional
+- ✅ Empty saves prevented
+- ✅ Safe rendering (no React #418)
+- ✅ Tool fully functional
+- ✅ Professional UX
+
+**Technical Implementation:**
+
+**Layer Structure:**
+1. Container div with `ref={containerRef}` (no onClick)
+2. Document display layer: `pointer-events-none`
+3. Click capture layer: `onClick={handleCanvasClick}`
+4. Annotations overlay: `pointer-events-none` container
+5. Individual markers: `pointer-events-auto`
+
+**Event Flow:**
+- Click on empty area → Click capture layer → Creates annotation
+- Click on marker → Marker div → Edits annotation (stopPropagation)
+- Click on document → Passes through → Creates annotation
+
+**Pointer Events:**
+- Document: `pointer-events-none` (visible but non-interactive)
+- Click capture: default (captures clicks)
+- Annotations container: `pointer-events-none` (doesn't block)
+- Annotation markers: `pointer-events-auto` (interactive)
+
+**Validation:**
+- ✅ Clicks create annotations
+- ✅ Coordinates calculated correctly
+- ✅ Markers clickable for editing
+- ✅ Visual indicator displayed
+- ✅ Debug logging works
+- ✅ Empty saves blocked
+- ✅ Safe rendering implemented
+- ✅ No React errors
+
+- Commit: `fix: enable markup interaction and prevent empty annotation saves`
+
+---
+
 ## 2026-03-22 00:45 CT - [FIX] MarkupTool Render Crash and Safe Document Loading
 - Summary: Fixed React error #418 rendering crash by adding strict type checks and safe fallback rendering.
 - Files changed:

@@ -153,6 +153,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     const x = ((e.clientX - rect.left) / rect.width) * 100; // Store as percentage
     const y = ((e.clientY - rect.top) / rect.height) * 100;
 
+    console.log('Canvas clicked', { x, y });
+
     const newAnnotation: Annotation = {
       id: `annotation-${Date.now()}`,
       x,
@@ -169,6 +171,11 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const handleSaveAnnotations = async () => {
     if (!selectedFile) {
       alert('Please select a drawing first');
+      return;
+    }
+
+    if (annotations.length === 0) {
+      alert('No annotations to save');
       return;
     }
 
@@ -303,15 +310,21 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
               </div>
             </div>
 
+            {/* Markup Mode Indicator */}
+            {selectedFile && (
+              <div className="bg-blue-50 border border-blue-300 px-4 py-2 text-sm text-blue-800 font-semibold rounded-lg mb-2">
+                ✏️ Markup Mode: Click anywhere on the drawing to place annotation
+              </div>
+            )}
+
             {/* Drawing Canvas */}
             <div
               ref={containerRef}
-              onClick={handleCanvasClick}
               className="relative bg-gray-100 border-2 border-gray-300 rounded-lg overflow-hidden cursor-crosshair"
               style={{ width: '100%', paddingBottom: '75%' }}
             >
               {/* Document Display */}
-              <div className="absolute inset-0">
+              <div className="absolute inset-0 pointer-events-none">
                 {typeof fileUrl === 'string' && fileUrl.length > 0 ? (
                   typeof selectedFile === 'string' && selectedFile.endsWith('.pdf') ? (
                     <iframe
@@ -342,6 +355,12 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                   </div>
                 )}
               </div>
+
+              {/* Click Capture Layer */}
+              <div
+                className="absolute inset-0"
+                onClick={handleCanvasClick}
+              />
 
               {/* Annotations Overlay */}
               <div className="absolute inset-0 pointer-events-none">
