@@ -4,6 +4,317 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 00:45 CT - [FEAT] Phase 23.15 - Export Readability and Draggable Annotation Refinement
+- Summary: Improved PDF export quality and added drag-to-reposition for annotations with enhanced marker visibility.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - PDF scaling, annotation sheet compaction, drag repositioning, triangle size increase, React #418 hardening
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Export packages now readable and professional; annotations easier to position precisely
+- No schema changes
+
+**Problem:**
+
+**Export Quality Issues:**
+- PDF first page used raw canvas dimensions → unreadable tiny output
+- Annotation sheet verbose and wasteful of space
+- Triangle markers too small to read clearly
+
+**Usability Issues:**
+- No way to reposition placed annotations
+- Had to delete and re-place markers for corrections
+
+**Implementation:**
+
+**1. Fixed PDF First-Page Scale**
+
+**Before:**
+```tsx
+const pdf = new jsPDF({
+  orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
+  unit: 'px',
+  format: [canvas.width, canvas.height], // Raw canvas size!
+});
+pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+```
+
+**After:**
+```tsx
+const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
+const pdf = new jsPDF({
+  orientation,
+  unit: 'pt',
+  format: 'letter', // Standard page size
+});
+
+const pageWidth = pdf.internal.pageSize.getWidth();
+const pageHeight = pdf.internal.pageSize.getHeight();
+
+const margin = 40;
+const availableWidth = pageWidth - (margin * 2);
+const availableHeight = pageHeight - (margin * 2);
+
+// Calculate fitted dimensions preserving aspect ratio
+const imgAspect = canvas.width / canvas.height;
+const availableAspect = availableWidth / availableHeight;
+
+let imgWidth, imgHeight;
+if (imgAspect > availableAspect) {
+  imgWidth = availableWidth;
+  imgHeight = availableWidth / imgAspect;
+} else {
+  imgHeight = availableHeight;
+  imgWidth = availableHeight * imgAspect;
+}
+
+const xOffset = (pageWidth - imgWidth) / 2;
+const yOffset = (pageHeight - imgHeight) / 2;
+
+pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
+```
+
+**Benefits:**
+- Standard letter page size (portrait/landscape)
+- 40pt margins on all sides
+- Image centered and maximized
+- Aspect ratio preserved
+- Readable output
+
+**2. Compacted Annotation Sheet with Visual Shorthand**
+
+**Before (Verbose):**
+```tsx
+pdf.text(`#${ann.label_number}`, 40, y);
+pdf.text(`Type: ${ann.type}`, 80, y);
+y += 15;
+pdf.text(`Shape: ${ann.shape}`, 80, y);
+y += 15;
+pdf.text(`Note: ${ann.description || 'No description'}`, 80, y);
+y += 25; // Total: 55pt per annotation
+```
+
+**After (Compact):**
+```tsx
+const markerSymbol = getMarkerSymbol(ann.shape); // ●, ■, ▲, →, T
+const typeShorthand = getTypeShorthand(ann.type); // [DIM], [NOTE], [MAT], [CRIT]
+const description = String(ann.description || 'No description');
+
+// Compact format: "17 ▲ [MAT] Copper terminal callout"
+const annotationLine = `${ann.label_number} ${markerSymbol} ${typeShorthand} ${description}`;
+pdf.text(annotationLine, 40, y);
+y += 16; // Total: 16pt per annotation
+```
+
+**Visual Shorthand Mapping:**
+```
+circle    → ●
+box       → ■
+triangle  → ▲
+arrow     → →
+text      → T
+
+dimension → [DIM]
+note      → [NOTE]
+material  → [MAT]
+critical  → [CRIT]
+```
+
+**Example Output:**
+```
+PPAP Markup - Annotation Sheet
+
+Drawing: part-drawing.pdf
+Part Number: ABC-123
+Date: 3/23/2026
+Total Annotations: 5
+
+1 ● [DIM] Hole center reference
+2 ▲ [MAT] Copper terminal callout
+3 ■ [CRIT] Surface finish requirement
+4 → [NOTE] Assembly direction
+5 T [DIM] Tolerance callout
+```
+
+**Benefits:**
+- 3.4x more compact (55pt → 16pt per annotation)
+- Fits ~45 annotations per page vs ~12
+- Instantly recognizable marker symbols
+- Professional appearance
+- Less verbose
+
+**3. Increased Triangle Marker Size**
+
+**Before:**
+```tsx
+<div className="relative w-4 h-4 cursor-pointer">
+```
+
+**After:**
+```tsx
+<div className="relative w-6 h-6 cursor-grab">
+```
+
+**Benefits:**
+- 50% size increase (16px → 24px)
+- Number/label clearly readable
+- Visually balanced with other markers
+- Still non-obstructive
+
+**4. Drag-to-Reposition Annotations**
+
+**Added State:**
+```tsx
+const [draggingAnnotationId, setDraggingAnnotationId] = useState<string | null>(null);
+```
+
+**Drag Handlers:**
+```tsx
+const handleAnnotationDragStart = (e: React.MouseEvent, annotationId: string) => {
+  e.stopPropagation();
+  setDraggingAnnotationId(annotationId);
+};
+
+const handleAnnotationDrag = (e: React.MouseEvent) => {
+  if (!draggingAnnotationId || !containerRef.current) return;
+  
+  const rect = containerRef.current.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+  setAnnotations(annotations.map(ann =>
+    ann.id === draggingAnnotationId
+      ? { ...ann, x, y }
+      : ann
+  ));
+};
+
+const handleAnnotationDragEnd = () => {
+  setDraggingAnnotationId(null);
+};
+```
+
+**Marker Integration:**
+```tsx
+<div
+  className={`cursor-${draggingAnnotationId === annotation.id ? 'grabbing' : 'grab'}`}
+  onMouseDown={(e) => handleAnnotationDragStart(e, annotation.id)}
+  onClick={(e) => {
+    e.stopPropagation();
+    if (!draggingAnnotationId) {
+      setSelectedAnnotationId(annotation.id);
+      handleEditAnnotation(annotation.id);
+    }
+  }}
+>
+```
+
+**Container Events:**
+```tsx
+<div
+  ref={containerRef}
+  onMouseMove={handleAnnotationDrag}
+  onMouseUp={handleAnnotationDragEnd}
+  onMouseLeave={handleAnnotationDragEnd}
+>
+```
+
+**Benefits:**
+- Click and drag existing markers
+- Real-time position update
+- Normalized coordinates preserved (0-1)
+- Cursor changes (grab → grabbing)
+- No accidental placement while dragging
+- No schema changes required
+
+**5. React #418 Hardening**
+
+**Added String() Conversions:**
+```tsx
+// Export PDF annotation sheet
+const description = String(ann.description || 'No description');
+
+// Text marker rendering
+{String(annotation.description).substring(0, 40)}
+
+// Annotation panel rendering
+{String(annotation.description || '') || <em>No description</em>}
+
+// PDF metadata
+pdf.text(`Drawing: ${String(fileName)}`, 40, y);
+pdf.text(`Part Number: ${String(partNumber || 'N/A')}`, 40, y);
+```
+
+**Benefits:**
+- Prevents React #418 object rendering errors
+- Safe string conversion for all user content
+- Export metadata rendered safely
+- No raw object display
+
+**Export Workflow Enhanced:**
+
+```
+1. Create isolated export container
+2. Clone drawing with annotations
+3. Strip all classes
+4. Capture at 2x scale
+5. Remove temp container
+6. Create PDF with standard letter page
+7. Calculate fitted image dimensions (40pt margins)
+8. Center and add annotated drawing
+9. Add compact annotation sheet page
+10. Format: "# ● [TYPE] Description"
+11. Save PDF with timestamp
+
+Result: Readable, professional PPAP export package
+```
+
+**Benefits:**
+
+**Export Quality:**
+- ✅ Standard page size (letter)
+- ✅ Proper margins and centering
+- ✅ Readable scale
+- ✅ Professional appearance
+
+**Annotation Sheet:**
+- ✅ 3.4x more compact
+- ✅ Visual marker symbols
+- ✅ Type shorthand notation
+- ✅ Fits more per page
+
+**Marker Visibility:**
+- ✅ Triangle 50% larger
+- ✅ Clearly readable
+- ✅ Visually balanced
+
+**Usability:**
+- ✅ Drag to reposition markers
+- ✅ Real-time position update
+- ✅ Grab/grabbing cursor feedback
+- ✅ No schema changes
+
+**Code Quality:**
+- ✅ React #418 hardened
+- ✅ String() conversions
+- ✅ Safe rendering
+- ✅ No regressions
+
+**Validation:**
+- ✅ PDF first-page scale fixed
+- ✅ Annotation sheet compacted
+- ✅ Visual shorthand implemented
+- ✅ Triangle marker enlarged
+- ✅ Drag repositioning functional
+- ✅ React #418 hardened
+- ✅ No schema changes
+- ✅ Export functionality preserved
+
+**Note:**
+Comprehensive refinement of export quality and annotation editing UX. PDF packages now professional and readable. Drag-to-reposition makes precise annotation placement easy. Compact annotation sheet format reduces page waste and improves clarity.
+
+- Commit: `feat: phase 23.15 improve export readability and draggable annotation refinement`
+
+---
+
 ## 2026-03-23 00:35 CT - [FIX] Phase 23.14.4 - Isolated Export DOM to Eliminate html2canvas Color Parsing
 - Summary: Replaced live DOM capture with clean isolated export container to permanently eliminate color parsing errors.
 - Files changed:

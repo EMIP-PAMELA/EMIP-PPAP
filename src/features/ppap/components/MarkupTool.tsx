@@ -61,6 +61,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [uploading, setUploading] = useState(false);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [draggingAnnotationId, setDraggingAnnotationId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
@@ -156,7 +157,55 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     fetchAnnotations();
   }, [ppapId, selectedFile]);
 
+  // Helper for visual marker shorthand
+  const getMarkerSymbol = (shape: AnnotationShape): string => {
+    switch (shape) {
+      case 'circle': return '●';
+      case 'box': return '■';
+      case 'triangle': return '▲';
+      case 'arrow': return '→';
+      case 'text': return 'T';
+      default: return '●';
+    }
+  };
+
+  const getTypeShorthand = (type: AnnotationType): string => {
+    switch (type) {
+      case 'dimension': return '[DIM]';
+      case 'note': return '[NOTE]';
+      case 'material': return '[MAT]';
+      case 'critical': return '[CRIT]';
+      default: return '';
+    }
+  };
+
+  const handleAnnotationDragStart = (e: React.MouseEvent, annotationId: string) => {
+    e.stopPropagation();
+    setDraggingAnnotationId(annotationId);
+  };
+
+  const handleAnnotationDrag = (e: React.MouseEvent) => {
+    if (!draggingAnnotationId || !containerRef.current) return;
+    
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+    setAnnotations(annotations.map(ann =>
+      ann.id === draggingAnnotationId
+        ? { ...ann, x, y }
+        : ann
+    ));
+  };
+
+  const handleAnnotationDragEnd = () => {
+    setDraggingAnnotationId(null);
+  };
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Don't place new annotation if dragging
+    if (draggingAnnotationId) return;
+    
     // Only allow annotation placement in markup mode
     if (mode !== 'markup') return;
     if (!containerRef.current) return;
@@ -306,15 +355,44 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
       const imgData = canvas.toDataURL('image/png');
 
-      // Create PDF
+      // Create PDF with standard page size
+      const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
       const pdf = new jsPDF({
-        orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
-        unit: 'px',
-        format: [canvas.width, canvas.height],
+        orientation,
+        unit: 'pt',
+        format: 'letter',
       });
 
+      // Get page dimensions
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      
+      // Calculate margins and available space
+      const margin = 40;
+      const availableWidth = pageWidth - (margin * 2);
+      const availableHeight = pageHeight - (margin * 2);
+      
+      // Calculate fitted dimensions preserving aspect ratio
+      const imgAspect = canvas.width / canvas.height;
+      const availableAspect = availableWidth / availableHeight;
+      
+      let imgWidth, imgHeight;
+      if (imgAspect > availableAspect) {
+        // Image is wider - fit to width
+        imgWidth = availableWidth;
+        imgHeight = availableWidth / imgAspect;
+      } else {
+        // Image is taller - fit to height
+        imgHeight = availableHeight;
+        imgWidth = availableHeight * imgAspect;
+      }
+      
+      // Center the image
+      const xOffset = (pageWidth - imgWidth) / 2;
+      const yOffset = (pageHeight - imgHeight) / 2;
+
       // Add annotated drawing
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
 
       // Add annotation sheet page
       pdf.addPage('letter', 'portrait');
@@ -323,42 +401,42 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       const sortedAnnotations = [...annotations].sort((a, b) => a.label_number - b.label_number);
 
       // Generate annotation sheet
-      let y = 40;
+      let y = 50;
 
-      pdf.setFontSize(18);
+      pdf.setFontSize(16);
       pdf.text('PPAP Markup - Annotation Sheet', 40, y);
 
-      y += 20;
-      pdf.setFontSize(12);
-      pdf.text(`Drawing: ${fileName}`, 40, y);
-      y += 15;
-      pdf.text(`Part Number: ${partNumber || 'N/A'}`, 40, y);
-      y += 15;
+      y += 25;
+      pdf.setFontSize(10);
+      pdf.text(`Drawing: ${String(fileName)}`, 40, y);
+      y += 14;
+      pdf.text(`Part Number: ${String(partNumber || 'N/A')}`, 40, y);
+      y += 14;
       pdf.text(`Date: ${new Date().toLocaleDateString()}`, 40, y);
-      y += 15;
+      y += 14;
       pdf.text(`Total Annotations: ${annotations.length}`, 40, y);
 
-      y += 30;
+      y += 25;
 
-      // Add annotations
+      // Add annotations with compact visual shorthand
       sortedAnnotations.forEach((ann, index) => {
-        pdf.setFontSize(11);
+        const markerSymbol = getMarkerSymbol(ann.shape);
+        const typeShorthand = getTypeShorthand(ann.type);
+        const description = String(ann.description || 'No description');
+        
+        pdf.setFontSize(10);
         pdf.setFont(undefined, 'bold');
-        pdf.text(`#${ann.label_number}`, 40, y);
-
+        // Compact format: "17 ▲ [MAT] Copper terminal callout"
+        const annotationLine = `${ann.label_number} ${markerSymbol} ${typeShorthand} ${description}`;
         pdf.setFont(undefined, 'normal');
-        pdf.text(`Type: ${ann.type}`, 80, y);
-        y += 15;
-        pdf.text(`Shape: ${ann.shape}`, 80, y);
-        y += 15;
-        pdf.text(`Note: ${ann.description || 'No description'}`, 80, y);
+        pdf.text(annotationLine, 40, y);
 
-        y += 25;
+        y += 16;
 
         // Add new page if needed
-        if (y > 700 && index < sortedAnnotations.length - 1) {
+        if (y > 720 && index < sortedAnnotations.length - 1) {
           pdf.addPage();
-          y = 40;
+          y = 50;
         }
       });
 
@@ -595,6 +673,9 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                   mode === 'markup' ? 'cursor-crosshair' :
                   'cursor-pointer'
                 }`}
+                onMouseMove={handleAnnotationDrag}
+                onMouseUp={handleAnnotationDragEnd}
+                onMouseLeave={handleAnnotationDragEnd}
               >
                 <div ref={exportRef} className="relative w-full max-w-[1200px]">
                 {/* Document Display */}
@@ -685,11 +766,14 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                   >
                     {annotation.shape === 'circle' && (
                       <div
-                        className={`w-4 h-4 rounded-full border-2 ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-[10px] shadow cursor-pointer ${hoverScale} ${textColor}`}
+                        className={`w-4 h-4 rounded-full border-2 ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-[10px] shadow cursor-${draggingAnnotationId === annotation.id ? 'grabbing' : 'grab'} ${hoverScale} ${textColor}`}
+                        onMouseDown={(e) => handleAnnotationDragStart(e, annotation.id)}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedAnnotationId(annotation.id);
-                          handleEditAnnotation(annotation.id);
+                          if (!draggingAnnotationId) {
+                            setSelectedAnnotationId(annotation.id);
+                            handleEditAnnotation(annotation.id);
+                          }
                         }}
                       >
                         {annotation.label_number}
@@ -697,11 +781,14 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     )}
                     {annotation.shape === 'box' && (
                       <div
-                        className={`w-4 h-4 border-2 ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-[10px] shadow cursor-pointer ${hoverScale} ${textColor}`}
+                        className={`w-4 h-4 border-2 ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-[10px] shadow cursor-${draggingAnnotationId === annotation.id ? 'grabbing' : 'grab'} ${hoverScale} ${textColor}`}
+                        onMouseDown={(e) => handleAnnotationDragStart(e, annotation.id)}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedAnnotationId(annotation.id);
-                          handleEditAnnotation(annotation.id);
+                          if (!draggingAnnotationId) {
+                            setSelectedAnnotationId(annotation.id);
+                            handleEditAnnotation(annotation.id);
+                          }
                         }}
                       >
                         {annotation.label_number}
@@ -709,11 +796,14 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     )}
                     {annotation.shape === 'triangle' && (
                       <div
-                        className={`relative w-4 h-4 cursor-pointer ${hoverScale}`}
+                        className={`relative w-6 h-6 cursor-${draggingAnnotationId === annotation.id ? 'grabbing' : 'grab'} ${hoverScale}`}
+                        onMouseDown={(e) => handleAnnotationDragStart(e, annotation.id)}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedAnnotationId(annotation.id);
-                          handleEditAnnotation(annotation.id);
+                          if (!draggingAnnotationId) {
+                            setSelectedAnnotationId(annotation.id);
+                            handleEditAnnotation(annotation.id);
+                          }
                         }}
                       >
                         <div
@@ -726,11 +816,14 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     )}
                     {annotation.shape === 'arrow' && (
                       <div
-                        className={`relative cursor-pointer ${hoverScale}`}
+                        className={`relative cursor-${draggingAnnotationId === annotation.id ? 'grabbing' : 'grab'} ${hoverScale}`}
+                        onMouseDown={(e) => handleAnnotationDragStart(e, annotation.id)}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedAnnotationId(annotation.id);
-                          handleEditAnnotation(annotation.id);
+                          if (!draggingAnnotationId) {
+                            setSelectedAnnotationId(annotation.id);
+                            handleEditAnnotation(annotation.id);
+                          }
                         }}
                       >
                         <svg width="28" height="20" viewBox="0 0 28 20" className="drop-shadow">
@@ -755,17 +848,20 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     )}
                     {annotation.shape === 'text' && (
                       <div
-                        className={`px-2 py-1 ${borderWidth} ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-80 rounded shadow cursor-pointer ${hoverScale} max-w-[150px]`}
+                        className={`px-2 py-1 ${borderWidth} ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-80 rounded shadow cursor-${draggingAnnotationId === annotation.id ? 'grabbing' : 'grab'} ${hoverScale} max-w-[150px]`}
+                        onMouseDown={(e) => handleAnnotationDragStart(e, annotation.id)}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedAnnotationId(annotation.id);
-                          handleEditAnnotation(annotation.id);
+                          if (!draggingAnnotationId) {
+                            setSelectedAnnotationId(annotation.id);
+                            handleEditAnnotation(annotation.id);
+                          }
                         }}
                       >
                         <div className={`font-bold text-[10px] mb-0.5 ${textColor}`}>#{annotation.label_number}</div>
-                        {annotation.description && annotation.description.trim() && (
+                        {annotation.description && String(annotation.description).trim() && (
                           <div className={`text-[10px] leading-tight ${textColor}`}>
-                            {annotation.description.substring(0, 40)}{annotation.description.length > 40 ? '...' : ''}
+                            {String(annotation.description).substring(0, 40)}{String(annotation.description).length > 40 ? '...' : ''}
                           </div>
                         )}
                       </div>
@@ -865,7 +961,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     ) : (
                       <div>
                         <p className="text-sm text-gray-600">
-                          {annotation.description || <em className="text-gray-400">No description</em>}
+                          {String(annotation.description || '') || <em className="text-gray-400">No description</em>}
                         </p>
                         <button
                           onClick={() => handleEditAnnotation(annotation.id)}
