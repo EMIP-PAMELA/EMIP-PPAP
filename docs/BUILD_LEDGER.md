@@ -4,6 +4,66 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 23:30 CT - [FIX] Phase 23.10.1 - JSX Structure Fix
+- Summary: Resolved JSX syntax error in MarkupTool.tsx causing build failure.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Added missing closing div for Center Canvas Area
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Fixed Vercel build failure, component now renders correctly
+- No schema changes
+
+**Problem:**
+
+JSX syntax error in MarkupTool.tsx:
+- Missing closing `</div>` for Center Canvas Area section
+- Caused unbalanced JSX structure
+- Build failed with "Unexpected token" error
+
+**Solution:**
+
+Added missing closing div after line 839:
+
+```tsx
+// Before (missing closing div):
+            </div>  {/* closes drawing canvas */}
+          </div>    {/* closes left rail */}
+
+          {/* Annotation Panel */}
+
+// After (fixed):
+            </div>  {/* closes drawing canvas */}
+          </div>    {/* closes center canvas area */}
+          </div>    {/* closes left rail */}
+
+          {/* Annotation Panel */}
+```
+
+**Structure:**
+```
+return (
+  <div> {/* fixed overlay */}
+    <div> {/* main container */}
+      <div> {/* header */}
+      <div> {/* flex container */}
+        <div> {/* left rail */}
+        <div> {/* center canvas area - WAS MISSING CLOSING DIV */}
+        <div> {/* annotation panel */}
+      </div>
+    </div>
+  </div>
+);
+```
+
+**Validation:**
+- ✅ JSX structure balanced
+- ✅ All opening divs have matching closing divs
+- ✅ Component compiles successfully
+- ✅ No functional changes
+
+- Commit: `fix: phase 23.10.1 resolve MarkupTool JSX syntax error`
+
+---
+
 ## 2026-03-22 23:15 CT - [FIX] Phase 23.10 - Annotation Scaling and Layout Refinement
 - Summary: Fixed annotation positioning during zoom and improved dashboard layout spacing.
 - Files changed:

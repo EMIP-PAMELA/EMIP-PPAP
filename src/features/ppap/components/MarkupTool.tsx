@@ -837,6 +837,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
               </div>
             </div>
           </div>
+          </div>
 
           {/* Annotation Panel */}
           <div className="w-96 border-l border-gray-200 bg-gray-50 overflow-auto">
