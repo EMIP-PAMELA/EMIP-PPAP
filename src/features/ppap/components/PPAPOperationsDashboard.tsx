@@ -457,12 +457,12 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
                   </button>
                   
                   {/* Management Controls */}
-                  <div className="pt-2 border-t border-gray-200">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Management</div>
+                  <div className="pt-3 mt-1 border-t border-gray-200 px-2">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Management</div>
                     <select
                       value={ppap.assigned_to || ''}
                       onChange={(e) => handleAssignment(ppap.id, e.target.value)}
-                      className="w-full px-3 py-1 text-sm border border-gray-300 rounded"
+                      className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded"
                       title="Management: Reassign ownership"
                     >
                       <option value="">Unassigned</option>

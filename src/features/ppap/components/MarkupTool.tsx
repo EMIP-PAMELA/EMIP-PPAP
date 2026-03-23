@@ -56,6 +56,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [loading, setLoading] = useState(false);
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -182,8 +184,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     if (!containerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100; // Store as percentage
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    const x = (e.clientX - rect.left - offset.x) / (rect.width * scale);
+    const y = (e.clientY - rect.top - offset.y) / (rect.height * scale);
 
     console.log('Canvas clicked', { x, y, mode, tool: selectedTool, type: selectedType });
 
@@ -601,6 +603,34 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     </select>
                   </div>
 
+                  {/* Zoom Controls */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Zoom</label>
+                    <div className="space-y-1">
+                      <button
+                        onClick={() => setScale(prev => Math.min(prev + 0.2, 3))}
+                        className="w-full px-3 py-2 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 rounded text-sm font-medium transition-colors"
+                      >
+                        🔍+ Zoom In
+                      </button>
+                      <button
+                        onClick={() => setScale(prev => Math.max(prev - 0.2, 0.5))}
+                        className="w-full px-3 py-2 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 rounded text-sm font-medium transition-colors"
+                      >
+                        🔍- Zoom Out
+                      </button>
+                      <button
+                        onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }}
+                        className="w-full px-3 py-2 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 rounded text-sm font-medium transition-colors"
+                      >
+                        ↺ Reset View
+                      </button>
+                      <div className="text-center text-xs text-gray-600 mt-1">
+                        {Math.round(scale * 100)}%
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Action Buttons */}
                   <div className="pt-2 space-y-2">
                     <button
@@ -648,48 +678,56 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
               }`}
               style={{ width: '100%', paddingBottom: '75%' }}
             >
-              {/* Document Display */}
-              <div className={`absolute inset-0 ${
-                mode === 'navigate' ? 'pointer-events-auto' : 'pointer-events-none'
-              }`}>
-                {!hasValidSelection ? (
-                  <div className="flex items-center justify-center h-full text-gray-500">
-                    {uploadedFiles.length === 0
-                      ? "No drawings uploaded yet"
-                      : "Preparing drawing..."}
-                  </div>
-                ) : fileUrl ? (
-                  selectedFile.endsWith('.pdf') ? (
-                    <iframe
-                      src={fileUrl}
-                      className="w-full h-full"
-                      title="Drawing Document"
-                    />
+              {/* Transformed Drawing and Annotations Container */}
+              <div
+                className="absolute inset-0"
+                style={{
+                  transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+                  transformOrigin: 'top left',
+                }}
+              >
+                {/* Document Display */}
+                <div className={`w-full h-full ${
+                  mode === 'navigate' ? 'pointer-events-auto' : 'pointer-events-none'
+                }`}>
+                  {!hasValidSelection ? (
+                    <div className="flex items-center justify-center h-full text-gray-500">
+                      {uploadedFiles.length === 0
+                        ? "No drawings uploaded yet"
+                        : "Preparing drawing..."}
+                    </div>
+                  ) : fileUrl ? (
+                    selectedFile.endsWith('.pdf') ? (
+                      <iframe
+                        src={fileUrl}
+                        className="w-full h-full"
+                        title="Drawing Document"
+                      />
+                    ) : (
+                      <img
+                        ref={imageRef}
+                        src={fileUrl}
+                        alt="Drawing"
+                        className="w-full h-full object-contain"
+                      />
+                    )
                   ) : (
-                    <img
-                      ref={imageRef}
-                      src={fileUrl}
-                      alt="Drawing"
-                      className="w-full h-full object-contain"
-                    />
-                  )
-                ) : (
-                  <div className="flex items-center justify-center h-full text-gray-500">
-                    Loading drawing...
-                  </div>
+                    <div className="flex items-center justify-center h-full text-gray-500">
+                      Loading drawing...
+                    </div>
+                  )}
+                </div>
+
+                {/* Click Capture Layer - only active in markup mode */}
+                {mode === 'markup' && (
+                  <div
+                    className="absolute inset-0"
+                    onClick={handleCanvasClick}
+                  />
                 )}
-              </div>
 
-              {/* Click Capture Layer - only active in markup mode */}
-              {mode === 'markup' && (
-                <div
-                  className="absolute inset-0"
-                  onClick={handleCanvasClick}
-                />
-              )}
-
-              {/* Annotations Overlay */}
-              <div className="absolute inset-0 pointer-events-none">
+                {/* Annotations Overlay */}
+                <div className="absolute inset-0 pointer-events-none">
                 {annotations.map((annotation) => {
                   const isSelected = selectedAnnotationId === annotation.id;
                   const borderWidth = isSelected ? 'border-2' : 'border-[1.5px]';
@@ -701,8 +739,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     key={annotation.id}
                     className="absolute pointer-events-auto"
                     style={{
-                      left: `${annotation.x}%`,
-                      top: `${annotation.y}%`,
+                      left: `${annotation.x * 100}%`,
+                      top: `${annotation.y * 100}%`,
                       transform: 'translate(-50%, -50%)',
                     }}
                   >
