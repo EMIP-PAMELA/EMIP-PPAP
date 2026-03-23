@@ -4,6 +4,286 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 10:35 CT - [FEAT] Phase 24.8 - Guided Walkthrough / Product Tour
+- Summary: Added self-guided product tour to PPAP Operations Dashboard using react-joyride.
+- Files changed:
+  - `src/features/ppap/components/PPAPOperationsDashboard.tsx` - Tour implementation, data-tour attributes, Take a Tour button
+  - `package.json` - Added react-joyride dependency
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Improved demo capability and onboarding experience for management and new users
+- No schema changes
+
+**Objective:**
+
+Enable self-guided demonstration of the PPAP system's value without requiring manual coaching. Help management, new users, and stakeholders quickly understand the system's capabilities, workflow visibility, and organizational benefits.
+
+**Implementation:**
+
+**1. Installed react-joyride Library**
+
+```bash
+npm install react-joyride
+```
+
+**Benefits:**
+- Lightweight, proven tour library
+- Clean overlay-based walkthrough
+- Progress indicators and skip functionality
+- No need to build custom tour system
+
+**2. Added "Take a Tour" Button**
+
+**Location:** Dashboard header, top-right area
+
+```tsx
+<div className="flex items-center justify-between mb-4">
+  <h1 className="text-3xl font-bold text-gray-900">PPAP Operations Dashboard</h1>
+  <button
+    onClick={() => setRunTour(true)}
+    className="px-4 py-2 bg-gray-100 text-gray-700 border-2 border-gray-300 rounded-lg font-semibold hover:bg-gray-200 transition-colors shadow-sm"
+  >
+    🎯 Take a Tour
+  </button>
+</div>
+```
+
+**Benefits:**
+- Clearly visible without overshadowing "Create New PPAP"
+- Professional, secondary styling
+- Always available for re-viewing
+
+**3. Created Value-Focused Tour Configuration**
+
+**8 Strategic Steps:**
+
+1. **Dashboard Overview (Summary Metrics)**
+   - Message: "This is your PPAP command center. Track active workload, completed PPAPs, and items needing immediate attention—all in one view."
+   - Target: `[data-tour="dashboard-summary"]`
+
+2. **Filters / Prioritization**
+   - Message: "Use filters to focus instantly on the PPAPs that need your attention. Narrow by customer, status, or phase to prioritize what matters now."
+   - Target: `[data-tour="dashboard-filters"]`
+
+3. **Active PPAP Cards**
+   - Message: "Current PPAP work is visible here. See status, phase, ownership, and bottlenecks in one place—no more hunting through emails or spreadsheets."
+   - Target: `[data-tour="active-ppaps"]`
+
+4. **Next Action / Workflow Intelligence**
+   - Message: "The system shows what needs to happen next for each PPAP. This reduces ambiguity and keeps work moving forward."
+   - Target: `[data-tour="next-action"]`
+
+5. **Phase Progress Visualization**
+   - Message: "Instant visibility into where each PPAP stands in the workflow. Helps prevent missed steps and hidden delays."
+   - Target: `[data-tour="phase-progress"]`
+
+6. **Continue Work / Navigation**
+   - Message: "Jump directly into the live workflow for any PPAP. Bridge from high-level oversight into hands-on execution."
+   - Target: `[data-tour="continue-work"]`
+
+7. **Management Controls / Notes**
+   - Message: "Enable coordination, assignments, and issue visibility across teams. Keep communication tied to the PPAP record instead of scattered in email."
+   - Target: `[data-tour="management-controls"]`
+
+8. **Value Close / Final Step**
+   - Message: "This system centralizes PPAP tracking, documentation, markup, and communication in one place. Designed to keep engineering, quality, quoting, and management aligned."
+   - Target: `[data-tour="dashboard-summary"]` (returns to overview)
+
+**Benefits:**
+- Focuses on value and outcomes, not just controls
+- Emphasizes alignment, visibility, and workflow clarity
+- Professional, benefit-oriented language
+- Complete tour in under 2 minutes
+
+**4. Added Stable data-tour Attributes**
+
+**All key dashboard elements tagged:**
+```tsx
+<div data-tour="dashboard-summary">        // Summary metrics
+<div data-tour="dashboard-filters">        // Filters section
+<div data-tour="active-ppaps">            // Active PPAP list
+<div data-tour="next-action">             // Next action display
+<div data-tour="phase-progress">          // Phase visualization
+<Link data-tour="continue-work">          // Continue Work button
+<div data-tour="management-controls">     // Management controls
+```
+
+**Benefits:**
+- Stable selectors (not fragile class names)
+- Easy to maintain
+- Clear semantic naming
+- Tour-specific attributes don't pollute other systems
+
+**5. Implemented Tour State Management**
+
+```tsx
+const [runTour, setRunTour] = useState(false);
+
+const handleTourCallback = (data: CallBackProps) => {
+  const { status } = data;
+  if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
+    setRunTour(false);
+  }
+};
+```
+
+**Features:**
+- Start tour on button click
+- User can skip at any time
+- User can navigate forward/backward
+- Tour closes on finish or skip
+- Manual trigger only (no forced auto-start)
+
+**Benefits:**
+- Non-intrusive UX
+- User control
+- No localStorage complexity (kept simple for Phase 24.8)
+- Can be enhanced later with first-visit detection if needed
+
+**6. Joyride Configuration**
+
+```tsx
+<Joyride
+  steps={tourSteps}
+  run={runTour}
+  continuous
+  showProgress
+  showSkipButton
+  callback={handleTourCallback}
+  styles={{
+    options: {
+      primaryColor: '#2563eb',
+      zIndex: 10000,
+    },
+  }}
+/>
+```
+
+**Benefits:**
+- Blue primary color matches system branding
+- High z-index ensures overlay visibility
+- Progress bar shows tour completion
+- Skip button respects user agency
+- Continuous flow (no need to click "next" repeatedly)
+
+**7. Copy Quality Standards**
+
+**Before (robotic):** "This is the filter dropdown."
+
+**After (benefit-focused):** "Use filters to focus instantly on the PPAPs that need your attention."
+
+**Messaging Themes:**
+- Alignment across teams
+- Visibility into workflow
+- Ownership clarity
+- Faster issue resolution
+- Centralization of documentation and communication
+- Reduced ambiguity
+
+**Benefits:**
+- Professional language appropriate for management
+- Emphasizes business value
+- Explains "why" not just "what"
+- Sells the system's strategic benefits
+
+**8. Preserved Existing UI**
+
+**No changes to:**
+- Dashboard metrics calculation
+- Filter functionality
+- Active/completed PPAP sections
+- Continue Work navigation
+- Management controls behavior
+- Styling or layout
+
+**Tour layers on top cleanly with:**
+- No DOM restructuring
+- No CSS conflicts
+- No functional changes
+- Zero risk to existing features
+
+**Tour Flow:**
+
+```
+User clicks "Take a Tour"
+    ↓
+Overlay highlights summary metrics
+    ↓
+Explains command center value
+    ↓
+Moves to filters → active PPAPs → next action
+    ↓
+Shows phase progress → continue work → management controls
+    ↓
+Closes with system value proposition
+    ↓
+User can skip at any time or finish tour
+    ↓
+Tour state resets, dashboard fully interactive
+```
+
+**Use Cases:**
+
+**Management Demo:**
+- Show executives the PPAP system capabilities
+- Highlight visibility and coordination features
+- Explain workflow intelligence benefits
+- No manual presentation needed
+
+**New User Onboarding:**
+- Self-guided introduction to dashboard
+- Learn key features at own pace
+- Understand system value before diving in
+- Reduces training burden
+
+**Stakeholder Communication:**
+- Sales demos to potential customers
+- Quality team orientation
+- Engineering team introduction
+- Cross-functional alignment
+
+**Benefits:**
+
+**Demonstration:**
+- ✅ Self-guided system demo capability
+- ✅ No manual coaching required
+- ✅ Professional, benefit-focused messaging
+- ✅ Complete tour in ~2 minutes
+
+**Onboarding:**
+- ✅ New user orientation automated
+- ✅ Learn at own pace
+- ✅ Optional, non-intrusive
+- ✅ Can be re-run anytime
+
+**Value Communication:**
+- ✅ Highlights workflow visibility
+- ✅ Emphasizes team alignment
+- ✅ Shows management controls
+- ✅ Explains strategic benefits
+
+**User Experience:**
+- ✅ Clean overlay design
+- ✅ Skip/finish controls
+- ✅ Progress indicator
+- ✅ Non-blocking implementation
+
+**Validation:**
+- ✅ react-joyride installed
+- ✅ "Take a Tour" button added
+- ✅ 8 value-focused tour steps configured
+- ✅ data-tour attributes on all key elements
+- ✅ Tour state management implemented
+- ✅ Existing UI preserved
+- ✅ No schema changes
+- ✅ No dashboard redesign
+
+**Note:**
+Lightweight addition that significantly improves demo and onboarding capability. Tour focuses on business value and workflow benefits rather than just UI controls. Can be enhanced in future with localStorage-based first-visit detection, but kept simple for Phase 24.8 to minimize risk. Enables management presentations and stakeholder demos without requiring technical team involvement.
+
+- Commit: `feat: phase 24.8 add guided walkthrough to PPAP Operations Dashboard`
+
+---
+
 ## 2026-03-23 10:30 CT - [FIX] Phase 23.11.1 - Document Event Foreign-Key Integrity Fix
 - Summary: Fixed foreign key constraint violation by removing temp-id writes to ppap_events and deferring DOCUMENT_ADDED logging until real PPAP creation.
 - Files changed:
