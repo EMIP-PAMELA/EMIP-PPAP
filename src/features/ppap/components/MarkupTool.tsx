@@ -6,6 +6,7 @@ import { logEvent } from '@/src/features/events/mutations';
 import { getPPAPDocuments } from '@/src/features/ppap/utils/getPPAPDocuments';
 import { uploadPPAPDocument } from '@/src/features/ppap/utils/uploadFile';
 import { renderPdfToImage } from '@/src/utils/renderPdfToImage';
+import { sanitizeColorsForExport } from '@/src/utils/sanitizeColorsForExport';
 
 interface MarkupToolProps {
   ppapId: string;
@@ -540,8 +541,12 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       crossOrigin: img.crossOrigin,
     });
 
-    // Capture exportRef directly (no cloning, no manipulation)
-    const canvas = await html2canvas(exportRef.current, {
+    // Sanitize DOM for html2canvas compatibility
+    console.log('Sanitizing DOM for html2canvas export...');
+    const sanitizedElement = sanitizeColorsForExport(exportRef.current);
+
+    // Capture sanitized element
+    const canvas = await html2canvas(sanitizedElement, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
