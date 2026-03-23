@@ -59,8 +59,6 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -161,8 +159,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     if (!containerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left - offset.x) / (rect.width * scale);
-    const y = (e.clientY - rect.top - offset.y) / (rect.height * scale);
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
 
     console.log('Canvas clicked', { x, y, mode, tool: selectedTool, type: selectedType });
 
@@ -545,26 +543,10 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
           </div>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
-          {/* Left Tool Rail */}
-          <div className={`border-r border-gray-200 bg-gray-50 transition-all duration-300 flex-shrink-0 ${
-            isRailCollapsed ? 'w-12' : 'w-64'
-          }`}>
-            <div className="h-full flex flex-col">
-              {/* Rail Toggle */}
-              <div className="p-2 border-b border-gray-200">
-                <button
-                  onClick={() => setIsRailCollapsed(!isRailCollapsed)}
-                  className="w-full p-2 hover:bg-gray-200 rounded transition-colors text-gray-700"
-                  title={isRailCollapsed ? 'Expand tools' : 'Collapse tools'}
-                >
-                  {isRailCollapsed ? '☰' : '◀'}
-                </button>
-              </div>
-
-              {/* Tools Content */}
-              {!isRailCollapsed && (
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 relative overflow-hidden">
+          {/* Floating Left Tool Panel */}
+          <div className="absolute top-4 left-4 z-40 bg-white/95 backdrop-blur border rounded-lg shadow-lg w-56 max-h-[calc(100vh-200px)] overflow-y-auto">
+            <div className="p-3 space-y-3">
                   {/* Mode Controls */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Mode</label>
@@ -616,34 +598,6 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     </select>
                   </div>
 
-                  {/* Zoom Controls */}
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Zoom</label>
-                    <div className="space-y-1">
-                      <button
-                        onClick={() => setScale(prev => Math.min(prev + 0.2, 3))}
-                        className="w-full px-3 py-2 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 rounded text-sm font-medium transition-colors"
-                      >
-                        🔍+ Zoom In
-                      </button>
-                      <button
-                        onClick={() => setScale(prev => Math.max(prev - 0.2, 0.5))}
-                        className="w-full px-3 py-2 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 rounded text-sm font-medium transition-colors"
-                      >
-                        🔍- Zoom Out
-                      </button>
-                      <button
-                        onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }}
-                        className="w-full px-3 py-2 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 rounded text-sm font-medium transition-colors"
-                      >
-                        ↺ Reset View
-                      </button>
-                      <div className="text-center text-xs text-gray-600 mt-1">
-                        {Math.round(scale * 100)}%
-                      </div>
-                    </div>
-                  </div>
-
                   {/* Action Buttons */}
                   <div className="pt-2 space-y-2">
                     <button
@@ -662,13 +616,11 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                       {exporting ? 'Exporting...' : '📦 Export Package'}
                     </button>
                   </div>
-                </div>
-              )}
             </div>
           </div>
 
-          {/* Center Canvas Area */}
-          <div className="flex-1 p-6 overflow-auto">
+          {/* Center Canvas Area - Full Viewport */}
+          <div className="w-full h-[calc(100vh-80px)] p-6 overflow-auto">
 
             {/* Mode Indicator */}
             {selectedFile && (
@@ -684,21 +636,13 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
             {/* Drawing Canvas */}
             <div
               ref={containerRef}
-              className={`relative bg-gray-100 border-2 border-gray-300 rounded-lg overflow-hidden ${
+              className={`relative w-full h-full overflow-auto bg-gray-100 ${
                 mode === 'navigate' ? 'cursor-default' :
                 mode === 'markup' ? 'cursor-crosshair' :
                 'cursor-pointer'
               }`}
-              style={{ width: '100%', paddingBottom: '75%' }}
             >
-              {/* Transformed Drawing and Annotations Container */}
-              <div
-                className="absolute inset-0"
-                style={{
-                  transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-                  transformOrigin: 'top left',
-                }}
-              >
+              <div className="relative mx-auto">
                 {/* Document Display */}
                 <div className={`w-full h-full ${
                   mode === 'navigate' ? 'pointer-events-auto' : 'pointer-events-none'
@@ -787,7 +731,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                   >
                     {annotation.shape === 'circle' && (
                       <div
-                        className={`w-5 h-5 rounded-full ${borderWidth} ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-xs shadow cursor-pointer ${hoverScale} ${textColor}`}
+                        className={`w-4 h-4 rounded-full border-2 ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-[10px] shadow cursor-pointer ${hoverScale} ${textColor}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedAnnotationId(annotation.id);
@@ -799,7 +743,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     )}
                     {annotation.shape === 'box' && (
                       <div
-                        className={`w-5 h-5 ${borderWidth} ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-xs shadow cursor-pointer ${hoverScale} ${textColor}`}
+                        className={`w-4 h-4 border-2 ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-[10px] shadow cursor-pointer ${hoverScale} ${textColor}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedAnnotationId(annotation.id);
@@ -811,7 +755,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     )}
                     {annotation.shape === 'triangle' && (
                       <div
-                        className={`relative w-5 h-5 cursor-pointer ${hoverScale}`}
+                        className={`relative w-4 h-4 cursor-pointer ${hoverScale}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedAnnotationId(annotation.id);
@@ -880,10 +824,10 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
           </div>
           </div>
 
-          {/* Annotation Panel */}
-          <div className="w-96 border-l border-gray-200 bg-gray-50 overflow-auto">
-            <div className="p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">
+          {/* Floating Right Annotation Panel */}
+          <div className="absolute top-4 right-4 z-40 w-80 max-h-[80vh] overflow-auto bg-white border rounded-lg shadow-lg">
+            <div className="p-4">
+              <h3 className="text-base font-bold text-gray-900 mb-3">
                 Annotations ({annotations.length})
               </h3>
 

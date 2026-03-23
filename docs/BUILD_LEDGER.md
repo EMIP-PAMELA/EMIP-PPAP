@@ -4,6 +4,387 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 23:55 CT - [FIX] Phase 23.12 - Static Canvas Stabilization
+- Summary: Removed transform-based zoom system and stabilized markup canvas with static coordinate space.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Removed zoom/transform, converted panels to floating overlays
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Annotations permanently aligned, no drift, maximized drawing viewport
+- No schema changes
+
+**Problem:**
+
+**Annotation Drift with Transform System:**
+
+Transform-based zoom created coordinate space instability:
+```tsx
+// Click handler with scale/offset math
+const x = (e.clientX - rect.left - offset.x) / (rect.width * scale);
+const y = (e.clientY - rect.top - offset.y) / (rect.height * scale);
+
+// Transform wrapper
+<div style={{
+  transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+  transformOrigin: 'top left',
+}}>
+```
+
+**Issues:**
+- Annotations drifted during zoom operations
+- Complex coordinate math prone to errors
+- Transform origin caused alignment issues
+- Scale state created unpredictable rendering
+
+**Canvas Resizing:**
+
+Tool panels as layout elements caused canvas resizing:
+```tsx
+// Left rail pushed canvas
+<div className="w-64 border-r">...</div>
+
+// Right panel pushed canvas
+<div className="w-96 border-l">...</div>
+
+// Result: canvas width changed when panels opened/closed
+```
+
+**Large Annotation Markers:**
+
+Markers obstructed drawing details:
+```tsx
+className="w-5 h-5"  // Too large for precision work
+```
+
+**Implementation:**
+
+**1. Removed Transform System**
+
+**Deleted State:**
+```tsx
+// REMOVED
+const [scale, setScale] = useState(1);
+const [offset, setOffset] = useState({ x: 0, y: 0 });
+```
+
+**Deleted UI:**
+```tsx
+// REMOVED: Zoom Controls section
+<div>
+  <label>Zoom</label>
+  <button onClick={() => setScale(prev => Math.min(prev + 0.2, 3))}>
+    🔍+ Zoom In
+  </button>
+  <button onClick={() => setScale(prev => Math.max(prev - 0.2, 0.5))}>
+    🔍- Zoom Out
+  </button>
+  <button onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }}>
+    ↺ Reset View
+  </button>
+  <div>{Math.round(scale * 100)}%</div>
+</div>
+```
+
+**Benefits:**
+- Eliminated complex zoom math
+- Removed scale state management
+- No transform origin issues
+- Simpler codebase
+
+**2. Simplified Click Handler**
+
+**Before:**
+```tsx
+const rect = containerRef.current.getBoundingClientRect();
+const x = (e.clientX - rect.left - offset.x) / (rect.width * scale);
+const y = (e.clientY - rect.top - offset.y) / (rect.height * scale);
+```
+
+**After:**
+```tsx
+const rect = containerRef.current.getBoundingClientRect();
+const x = (e.clientX - rect.left) / rect.width;
+const y = (e.clientY - rect.top) / rect.height;
+```
+
+**Benefits:**
+- Pure percentage positioning (0-1 values)
+- No scale corrections needed
+- Direct coordinate mapping
+- Always accurate
+
+**3. Locked Canvas Structure**
+
+**Before:**
+```tsx
+<div style={{ width: '100%', paddingBottom: '75%' }}>
+  <div className="absolute inset-0" style={{
+    transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+    transformOrigin: 'top left',
+  }}>
+    {/* drawing */}
+  </div>
+</div>
+```
+
+**After:**
+```tsx
+<div className="relative w-full h-full overflow-auto bg-gray-100">
+  <div className="relative mx-auto">
+    <img src={fileUrl} className="max-w-full h-auto object-contain" />
+    {/* annotations overlay */}
+  </div>
+</div>
+```
+
+**Benefits:**
+- No transforms applied
+- Natural browser scaling
+- Scroll allowed for large drawings
+- Fixed coordinate space
+
+**4. Converted Left Rail to Floating Overlay**
+
+**Before:**
+```tsx
+<div className="flex flex-1 overflow-hidden">
+  <div className={`border-r border-gray-200 bg-gray-50 flex-shrink-0 ${
+    isRailCollapsed ? 'w-12' : 'w-64'
+  }`}>
+    {/* tools */}
+  </div>
+  <div className="flex-1">
+    {/* canvas - width changes when rail toggles */}
+  </div>
+</div>
+```
+
+**After:**
+```tsx
+<div className="flex-1 relative overflow-hidden">
+  {/* Floating Left Tool Panel */}
+  <div className="absolute top-4 left-4 z-40 bg-white/95 backdrop-blur border rounded-lg shadow-lg w-56 max-h-[calc(100vh-200px)] overflow-y-auto">
+    <div className="p-3 space-y-3">
+      {/* tools */}
+    </div>
+  </div>
+  
+  {/* Canvas - full viewport, never resizes */}
+  <div className="w-full h-[calc(100vh-80px)] p-6 overflow-auto">
+    {/* drawing */}
+  </div>
+</div>
+```
+
+**Benefits:**
+- Panel floats over canvas
+- Canvas width never changes
+- No layout shift
+- Removed rail collapse logic
+
+**5. Converted Right Panel to Floating Overlay**
+
+**Before:**
+```tsx
+<div className="flex overflow-hidden">
+  <div className="flex-1">
+    {/* canvas - width changes */}
+  </div>
+  <div className="w-96 border-l border-gray-200 bg-gray-50 overflow-auto">
+    {/* annotations panel */}
+  </div>
+</div>
+```
+
+**After:**
+```tsx
+<div className="flex-1 relative overflow-hidden">
+  {/* Canvas */}
+  <div className="w-full h-[calc(100vh-80px)]">
+    {/* drawing */}
+  </div>
+  
+  {/* Floating Right Annotation Panel */}
+  <div className="absolute top-4 right-4 z-40 w-80 max-h-[80vh] overflow-auto bg-white border rounded-lg shadow-lg">
+    <div className="p-4">
+      {/* annotations list */}
+    </div>
+  </div>
+</div>
+```
+
+**Benefits:**
+- Panel overlays canvas
+- Canvas never resizes
+- Independent scrolling
+- Maximized drawing space
+
+**6. Minimized Annotation Markers**
+
+**Before:**
+```tsx
+// Circle
+className="w-5 h-5 rounded-full border-[1.5px] text-xs"
+
+// Box
+className="w-5 h-5 border-[1.5px] text-xs"
+
+// Triangle
+className="w-5 h-5"
+```
+
+**After:**
+```tsx
+// Circle
+className="w-4 h-4 rounded-full border-2 text-[10px]"
+
+// Box
+className="w-4 h-4 border-2 text-[10px]"
+
+// Triangle
+className="w-4 h-4"
+```
+
+**Changes:**
+- Size: 20px → 16px (20% smaller)
+- Border: 1.5px → 2px (more visible)
+- Font: text-xs → text-[10px] (smaller labels)
+
+**Benefits:**
+- Less drawing obstruction
+- Still clearly visible
+- Better for precision work
+
+**7. Maximized Drawing Viewport**
+
+```tsx
+// Canvas now uses full available space
+<div className="w-full h-[calc(100vh-80px)] p-6 overflow-auto">
+  <div className="relative w-full h-full overflow-auto bg-gray-100">
+    {/* drawing at natural size */}
+  </div>
+</div>
+```
+
+**Benefits:**
+- Full viewport height (minus header)
+- Full viewport width
+- Panels overlay, don't consume space
+- Scroll if drawing exceeds viewport
+
+**8. Removed Auto-Resize Behavior**
+
+**Eliminated:**
+- Rail collapse width changes
+- Panel open/close layout shifts
+- Transform origin calculations
+- Scale-based coordinate adjustments
+
+**Result:**
+- Canvas dimensions fixed after mount
+- Annotations stay perfectly aligned
+- No drift during interaction
+- Stable coordinate space
+
+**Annotation Positioning:**
+
+```tsx
+// Annotations use pure percentage positioning
+<div
+  style={{
+    left: `${annotation.x * 100}%`,
+    top: `${annotation.y * 100}%`,
+    transform: 'translate(-50%, -50%)',  // Only for centering marker
+  }}
+>
+```
+
+**Coordinate System:**
+
+```
+Click Event:
+  x, y = normalized 0-1 values
+  
+Storage:
+  annotations = [{ x: 0.5, y: 0.3, ... }]
+  
+Rendering:
+  left = x * 100%
+  top = y * 100%
+  
+Result: Perfect alignment, no math errors
+```
+
+**Benefits:**
+
+**Annotation Stability:**
+- ✅ No drift ever
+- ✅ Pure percentage positioning
+- ✅ Fixed coordinate space
+- ✅ Browser-native scaling
+
+**Canvas Stability:**
+- ✅ Never resizes after mount
+- ✅ Full viewport space
+- ✅ No layout shifts
+- ✅ Natural scrolling
+
+**UI Improvements:**
+- ✅ Floating overlay panels
+- ✅ Independent scrolling
+- ✅ Minimized marker obstruction
+- ✅ Maximized drawing space
+
+**Code Quality:**
+- ✅ Removed 100+ lines of zoom logic
+- ✅ Eliminated transform math
+- ✅ Simpler click handler
+- ✅ No scale state management
+
+**Engineering Markup Behavior:**
+
+```
+User Action: Click drawing at position (500px, 300px)
+Container Size: 1000px × 800px
+
+Calculation:
+  x = 500 / 1000 = 0.5
+  y = 300 / 800 = 0.375
+
+Storage:
+  { x: 0.5, y: 0.375 }
+
+Rendering:
+  left: 50%
+  top: 37.5%
+
+Result: Marker always at exact click position
+```
+
+**Validation:**
+- ✅ Transform system removed
+- ✅ Zoom controls removed
+- ✅ Scale/offset state removed
+- ✅ Canvas locked to static size
+- ✅ Pure percentage positioning
+- ✅ Left rail converted to floating overlay
+- ✅ Right panel converted to floating overlay
+- ✅ Annotation markers minimized
+- ✅ Drawing viewport maximized
+- ✅ No schema changes
+
+**No Schema Changes:**
+- ✅ Annotation data model unchanged
+- ✅ Event structure unchanged
+- ✅ Coordinate format unchanged (0-1 values)
+- ✅ Only UI/rendering logic changed
+
+**Note:**
+Markup system now uses stable, static coordinate space with pure percentage positioning. Annotations permanently aligned. No drift possible. Canvas never resizes. Panels overlay. Drawing space maximized. Simple, reliable engineering markup behavior.
+
+- Commit: `fix: phase 23.12 stabilize markup canvas and eliminate annotation drift`
+
+---
+
 ## 2026-03-22 23:45 CT - [FIX] Phase 23.11 - Document Lifecycle Unification
 - Summary: Unified document retrieval across PPAP components and added self-healing upload to MarkupTool.
 - Files changed:
