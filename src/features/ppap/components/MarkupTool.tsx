@@ -32,9 +32,9 @@ const TYPE_COLORS: Record<AnnotationType, string> = {
 };
 
 const MODE_INFO: Record<InteractionMode, { label: string; description: string; icon: string }> = {
-  navigate: { label: 'Navigate', description: 'Inspect drawing', icon: '🔍' },
-  markup: { label: 'Markup', description: 'Click to place annotation', icon: '✏️' },
-  select: { label: 'Select', description: 'Edit existing annotations', icon: '👆' },
+  navigate: { label: 'Navigate', description: 'Inspect and interact with the drawing', icon: '🔍' },
+  markup: { label: 'Markup', description: 'Click anywhere on the drawing to place an annotation', icon: '✏️' },
+  select: { label: 'Select', description: 'Click an existing annotation to edit or remove it', icon: '👆' },
 };
 
 interface UploadedFile {
@@ -370,11 +370,17 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
             {/* Drawing Canvas */}
             <div
               ref={containerRef}
-              className="relative bg-gray-100 border-2 border-gray-300 rounded-lg overflow-hidden cursor-crosshair"
+              className={`relative bg-gray-100 border-2 border-gray-300 rounded-lg overflow-hidden ${
+                mode === 'navigate' ? 'cursor-default' :
+                mode === 'markup' ? 'cursor-crosshair' :
+                'cursor-pointer'
+              }`}
               style={{ width: '100%', paddingBottom: '75%' }}
             >
               {/* Document Display */}
-              <div className="absolute inset-0 pointer-events-none">
+              <div className={`absolute inset-0 ${
+                mode === 'navigate' ? 'pointer-events-auto' : 'pointer-events-none'
+              }`}>
                 {typeof fileUrl === 'string' && fileUrl.length > 0 ? (
                   typeof selectedFile === 'string' && selectedFile.endsWith('.pdf') ? (
                     <iframe
@@ -406,19 +412,21 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                 )}
               </div>
 
-              {/* Click Capture Layer */}
-              <div
-                className="absolute inset-0"
-                onClick={handleCanvasClick}
-              />
+              {/* Click Capture Layer - only active in markup mode */}
+              {mode === 'markup' && (
+                <div
+                  className="absolute inset-0"
+                  onClick={handleCanvasClick}
+                />
+              )}
 
               {/* Annotations Overlay */}
               <div className="absolute inset-0 pointer-events-none">
                 {annotations.map((annotation) => {
                   const isSelected = selectedAnnotationId === annotation.id;
-                  const baseClasses = `${TYPE_COLORS[annotation.type]} flex items-center justify-center font-bold text-sm shadow-lg cursor-pointer hover:scale-110 transition-transform`;
-                  const bgOpacity = isSelected ? 'bg-opacity-40' : 'bg-opacity-25';
-                  const borderWidth = isSelected ? 'border-3' : 'border-2';
+                  const borderWidth = isSelected ? 'border-2' : 'border-[1.5px]';
+                  const textColor = 'text-gray-900';
+                  const hoverScale = 'hover:scale-110 transition-transform';
                   
                   return (
                   <div
@@ -432,7 +440,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                   >
                     {annotation.shape === 'circle' && (
                       <div
-                        className={`w-10 h-10 rounded-full ${borderWidth} ${baseClasses} ${bgOpacity} text-gray-900`}
+                        className={`w-5 h-5 rounded-full ${borderWidth} ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-xs shadow cursor-pointer ${hoverScale} ${textColor}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedAnnotationId(annotation.id);
@@ -444,7 +452,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     )}
                     {annotation.shape === 'box' && (
                       <div
-                        className={`w-10 h-10 ${borderWidth} ${baseClasses} ${bgOpacity} text-gray-900`}
+                        className={`w-5 h-5 ${borderWidth} ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-xs shadow cursor-pointer ${hoverScale} ${textColor}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedAnnotationId(annotation.id);
@@ -456,41 +464,64 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     )}
                     {annotation.shape === 'triangle' && (
                       <div
-                        className={`w-10 h-10 ${borderWidth} ${baseClasses} ${bgOpacity} text-gray-900`}
-                        style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }}
+                        className={`relative w-5 h-5 cursor-pointer ${hoverScale}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedAnnotationId(annotation.id);
                           handleEditAnnotation(annotation.id);
                         }}
                       >
-                        <span className="mt-3">{annotation.label_number}</span>
+                        <div
+                          className={`absolute inset-0 ${borderWidth} ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center shadow`}
+                          style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }}
+                        >
+                          <span className={`font-bold text-xs ${textColor} mt-1`}>{annotation.label_number}</span>
+                        </div>
                       </div>
                     )}
                     {annotation.shape === 'arrow' && (
                       <div
-                        className={`relative w-12 h-8 ${borderWidth} ${baseClasses} ${bgOpacity} text-gray-900 rounded`}
+                        className={`relative cursor-pointer ${hoverScale}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedAnnotationId(annotation.id);
                           handleEditAnnotation(annotation.id);
                         }}
                       >
-                        <span className="absolute inset-0 flex items-center justify-center">→{annotation.label_number}</span>
+                        <svg width="28" height="20" viewBox="0 0 28 20" className="drop-shadow">
+                          <defs>
+                            <marker id={`arrowhead-${annotation.id}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                              <polygon points="0 0, 6 3, 0 6" className={TYPE_COLORS[annotation.type]} fill="currentColor" />
+                            </marker>
+                          </defs>
+                          <line 
+                            x1="2" y1="10" x2="22" y2="10" 
+                            className={TYPE_COLORS[annotation.type]} 
+                            stroke="currentColor" 
+                            strokeWidth={isSelected ? "2" : "1.5"}
+                            markerEnd={`url(#arrowhead-${annotation.id})`}
+                          />
+                          <circle cx="2" cy="10" r="6" className={`${TYPE_COLORS[annotation.type]} bg-white`} fill="white" fillOpacity="0.75" stroke="currentColor" strokeWidth={isSelected ? "2" : "1.5"} />
+                          <text x="2" y="10" textAnchor="middle" dominantBaseline="middle" className="font-bold text-xs fill-gray-900">
+                            {annotation.label_number}
+                          </text>
+                        </svg>
                       </div>
                     )}
                     {annotation.shape === 'text' && (
                       <div
-                        className={`px-3 py-2 ${borderWidth} ${baseClasses} ${bgOpacity} text-gray-900 rounded-lg max-w-xs`}
+                        className={`px-2 py-1 ${borderWidth} ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-80 rounded shadow cursor-pointer ${hoverScale} max-w-[150px]`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedAnnotationId(annotation.id);
                           handleEditAnnotation(annotation.id);
                         }}
                       >
-                        <div className="font-bold text-xs mb-1">#{annotation.label_number}</div>
-                        {annotation.description && (
-                          <div className="text-xs leading-tight">{annotation.description.substring(0, 30)}{annotation.description.length > 30 ? '...' : ''}</div>
+                        <div className={`font-bold text-[10px] mb-0.5 ${textColor}`}>#{annotation.label_number}</div>
+                        {annotation.description && annotation.description.trim() && (
+                          <div className={`text-[10px] leading-tight ${textColor}`}>
+                            {annotation.description.substring(0, 40)}{annotation.description.length > 40 ? '...' : ''}
+                          </div>
                         )}
                       </div>
                     )}

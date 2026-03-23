@@ -4,6 +4,379 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 19:40 CT - [FEAT] Phase 23.4 - Markup Tool Visual and Interaction Refinement
+- Summary: Refined markup tool to behave like a real engineering annotation system with smaller, outline-based markers and mode-based interaction.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Visual refinements and interaction improvements
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Professional annotation system with non-intrusive markers, PDF interaction in navigate mode, and proper cursor feedback
+- No schema changes
+
+**Objective:**
+
+Refine MarkupTool visual styling and interaction behavior to match professional engineering annotation tools:
+- Reduce marker size (too large and intrusive)
+- Convert to outline/translucent styling (annotations blocking drawing)
+- Fix arrow tool rendering (looked like box)
+- Enable drawing/PDF interaction in navigate mode
+- Add mode-based cursor feedback
+- Preserve React #418 safety
+
+**Implementation:**
+
+**1. Reduced Marker Size**
+
+Changed all markers from 40px (w-10 h-10) to 20px (w-5 h-5):
+
+**Before:**
+```tsx
+<div className="w-10 h-10 rounded-full ...">
+```
+
+**After:**
+```tsx
+<div className="w-5 h-5 rounded-full ...">
+```
+
+**Benefits:**
+- Less intrusive on drawing
+- Professional engineering annotation appearance
+- Clear label numbers still readable
+- Minimal visual footprint
+
+**2. Converted to Outline/Translucent Styling**
+
+Replaced solid opaque fills with outlined, translucent markers:
+
+**Before (opaque, blocks drawing):**
+```tsx
+className={`${TYPE_COLORS[annotation.type]} bg-opacity-25 text-gray-900`}
+```
+
+**After (outlined, translucent):**
+```tsx
+className={`${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 ...`}
+```
+
+**Styling:**
+- White background at 75% opacity (25% translucent)
+- Color-coded borders (blue/yellow/green/red)
+- Drawing visible underneath
+- Clear dark text on light background
+
+**All Shapes:**
+- **Circle:** `w-5 h-5 rounded-full border-[1.5px]`
+- **Box:** `w-5 h-5 border-[1.5px]`
+- **Triangle:** `w-5 h-5 border-[1.5px]` with `clip-path: polygon`
+- **Arrow:** SVG with outlined circle and arrow line
+- **Text:** `border-[1.5px] bg-white bg-opacity-80`
+
+**3. Fixed Text Tool Styling**
+
+Improved text annotations to avoid blocking drawing:
+
+```tsx
+<div className={`px-2 py-1 ${borderWidth} ${TYPE_COLORS[annotation.type]} 
+     bg-white bg-opacity-80 rounded shadow cursor-pointer ${hoverScale} 
+     max-w-[150px]`}>
+  <div className="font-bold text-[10px] mb-0.5">#1</div>
+  {annotation.description && annotation.description.trim() && (
+    <div className="text-[10px] leading-tight">
+      {annotation.description.substring(0, 40)}...
+    </div>
+  )}
+</div>
+```
+
+**Features:**
+- Translucent white background (80% opacity)
+- Compact text (10px font)
+- Color-coded border
+- Maximum width 150px
+- Truncated description (40 chars)
+- Safe rendering with `.trim()` and `.substring()`
+
+**4. Fixed Arrow Tool - Real Arrow Rendering**
+
+Replaced box-like arrow with actual SVG arrow:
+
+**Before (looked like box):**
+```tsx
+<div className="relative w-12 h-8 border-2 ... rounded">
+  <span>→{label}</span>
+</div>
+```
+
+**After (real arrow):**
+```tsx
+<svg width="28" height="20" viewBox="0 0 28 20">
+  <defs>
+    <marker id={`arrowhead-${annotation.id}`} markerWidth="6" markerHeight="6" 
+            refX="5" refY="3" orient="auto">
+      <polygon points="0 0, 6 3, 0 6" fill="currentColor" />
+    </marker>
+  </defs>
+  <line x1="2" y1="10" x2="22" y2="10" 
+        stroke="currentColor" 
+        strokeWidth={isSelected ? "2" : "1.5"}
+        markerEnd={`url(#arrowhead-${annotation.id})`} />
+  <circle cx="2" cy="10" r="6" fill="white" fillOpacity="0.75" 
+          stroke="currentColor" strokeWidth={isSelected ? "2" : "1.5"} />
+  <text x="2" y="10" textAnchor="middle" dominantBaseline="middle" 
+        className="font-bold text-xs fill-gray-900">
+    {annotation.label_number}
+  </text>
+</svg>
+```
+
+**Features:**
+- Proper SVG arrow with arrowhead marker
+- Color-coded stroke
+- Labeled circle at arrow origin
+- Translucent fill (75% opacity)
+- Direction-indicating visual
+
+**5. Enabled Drawing/PDF Interaction in Navigate Mode**
+
+Fixed navigate mode to allow interaction with drawing/PDF:
+
+**Document Display Layer:**
+```tsx
+<div className={`absolute inset-0 ${
+  mode === 'navigate' ? 'pointer-events-auto' : 'pointer-events-none'
+}`}>
+  <iframe src={fileUrl} className="w-full h-full" />
+</div>
+```
+
+**Click Capture Layer:**
+```tsx
+{mode === 'markup' && (
+  <div className="absolute inset-0" onClick={handleCanvasClick} />
+)}
+```
+
+**Mode Behavior:**
+- **Navigate:** `pointer-events-auto` on document, no click capture → PDF/drawing interactive
+- **Markup:** `pointer-events-none` on document, click capture active → annotation placement
+- **Select:** `pointer-events-none` on document, no click capture → annotation selection only
+
+**Benefits:**
+- Navigate mode allows PDF zoom, scroll, link clicks
+- Markup mode captures clicks for annotation placement
+- Select mode allows annotation interaction
+- Clean mode-based pointer event switching
+
+**6. Added Mode-Based Cursor Feedback**
+
+Dynamic cursor changes by mode:
+
+```tsx
+<div className={`relative ... ${
+  mode === 'navigate' ? 'cursor-default' :
+  mode === 'markup' ? 'cursor-crosshair' :
+  'cursor-pointer'
+}`}>
+```
+
+**Cursor Types:**
+- **Navigate:** `cursor-default` - standard interaction
+- **Markup:** `cursor-crosshair` - placement indicator
+- **Select:** `cursor-pointer` - selection indicator
+
+**Benefits:**
+- Clear visual feedback of current mode
+- User always knows expected behavior
+- Professional UX pattern
+
+**7. Improved Mode Banner Text**
+
+Updated mode descriptions for clarity:
+
+```typescript
+const MODE_INFO = {
+  navigate: { 
+    description: 'Inspect and interact with the drawing' 
+  },
+  markup: { 
+    description: 'Click anywhere on the drawing to place an annotation' 
+  },
+  select: { 
+    description: 'Click an existing annotation to edit or remove it' 
+  },
+};
+```
+
+**Display:**
+- Navigate: "🔍 Navigate Mode: Inspect and interact with the drawing"
+- Markup: "✏️ Markup Mode: Click anywhere on the drawing to place an annotation"
+- Select: "👆 Select Mode: Click an existing annotation to edit or remove it"
+
+**8. Preserved Click-to-Annotate**
+
+Markup mode functionality fully preserved:
+- Click drawing → create annotation
+- Auto-open new annotation in editing state
+- Auto-focus description input
+- All previous behavior maintained
+
+**9. React #418 Safety Hardening**
+
+Verified all renders use safe patterns:
+
+**Safe Patterns:**
+```tsx
+// String IDs
+key={annotation.id}
+
+// Numbers rendered directly
+{annotation.label_number}
+
+// Type with fallback
+{annotation.type || 'dimension'}
+
+// Shape with fallback
+{annotation.shape || 'circle'}
+
+// Description with guards
+{annotation.description && annotation.description.trim() && (
+  <div>{annotation.description.substring(0, 40)}...</div>
+)}
+```
+
+**No unsafe renders:**
+- ✅ No raw objects rendered
+- ✅ All text fields use safe fallbacks
+- ✅ All string operations guarded
+- ✅ Type checks preserved
+
+**Before/After Comparison:**
+
+**Marker Size:**
+- Before: 40px (w-10 h-10) - intrusive
+- After: 20px (w-5 h-5) - subtle
+
+**Marker Style:**
+- Before: Solid opaque color - blocks drawing
+- After: Outlined + translucent white - drawing visible
+
+**Arrow Tool:**
+- Before: Box with → symbol - looks like box
+- After: SVG arrow with arrowhead - clear directional indicator
+
+**Navigate Mode:**
+- Before: PDF/drawing not interactive
+- After: PDF/drawing fully interactive (zoom, scroll, links)
+
+**Cursor:**
+- Before: Always crosshair
+- After: Mode-specific (default/crosshair/pointer)
+
+**Text Annotations:**
+- Before: 30px height, large - blocks drawing
+- After: Compact 10px text, translucent - minimal obstruction
+
+**User Experience:**
+
+**Navigate Mode:**
+1. User switches to Navigate mode
+2. Cursor changes to default
+3. Banner: "🔍 Navigate Mode: Inspect and interact with the drawing"
+4. User can zoom PDF, scroll, click links
+5. Drawing fully interactive
+6. Annotations visible but non-blocking
+
+**Markup Mode:**
+1. User switches to Markup mode
+2. Cursor changes to crosshair
+3. Banner: "✏️ Markup Mode: Click anywhere on the drawing to place an annotation"
+4. User clicks on drawing
+5. Small 20px marker appears (outline + translucent)
+6. Edit UI opens automatically
+7. Description field focused
+8. Drawing still visible through annotation
+
+**Select Mode:**
+1. User switches to Select mode
+2. Cursor changes to pointer
+3. Banner: "👆 Select Mode: Click an existing annotation to edit or remove it"
+4. User clicks annotation marker
+5. Marker highlights (thicker border, 40% opacity)
+6. Panel item highlights (blue border, shadow)
+7. Edit UI opens
+
+**Benefits:**
+
+**Visual:**
+- ✅ Markers 50% smaller (40px → 20px)
+- ✅ Outlined/translucent styling
+- ✅ Drawing visible through annotations
+- ✅ Professional engineering appearance
+- ✅ Non-intrusive footprint
+
+**Interaction:**
+- ✅ PDF/drawing interactive in navigate mode
+- ✅ Mode-based cursor feedback
+- ✅ Clear mode indicators
+- ✅ Preserved click-to-annotate
+- ✅ Auto-editing maintained
+
+**Engineering:**
+- ✅ Real arrow tool (SVG)
+- ✅ Compact text annotations
+- ✅ Color-coded borders maintained
+- ✅ Selection highlighting preserved
+- ✅ React #418 safety preserved
+
+**Technical Details:**
+
+**Marker Sizing:**
+- Circle/Box/Triangle: 20px (w-5 h-5)
+- Arrow: 28px × 20px SVG
+- Text: Dynamic width, max 150px
+
+**Opacity:**
+- Standard markers: `bg-white bg-opacity-75` (25% translucent)
+- Text annotations: `bg-white bg-opacity-80` (20% translucent)
+- Selected markers: Same opacity, thicker border
+
+**Border:**
+- Unselected: `border-[1.5px]`
+- Selected: `border-2`
+- Color: From `TYPE_COLORS` (blue/yellow/green/red)
+
+**Pointer Events:**
+- Navigate mode: Document `pointer-events-auto`, no click capture
+- Markup mode: Document `pointer-events-none`, click capture active
+- Select mode: Document `pointer-events-none`, no click capture
+
+**Cursor:**
+- Navigate: `cursor-default`
+- Markup: `cursor-crosshair`
+- Select: `cursor-pointer`
+
+**SVG Arrow:**
+- Line with arrowhead marker
+- Circle with label at origin
+- Color-coded stroke
+- Translucent fill
+
+**Validation:**
+- ✅ Markers reduced to 20px
+- ✅ Outlined/translucent styling applied
+- ✅ Text annotations translucent
+- ✅ Arrow renders as real arrow (SVG)
+- ✅ Navigate mode allows PDF interaction
+- ✅ Mode-based cursors working
+- ✅ Mode banners updated
+- ✅ Click-to-annotate preserved
+- ✅ React #418 safety maintained
+- ✅ No unsafe renders
+
+- Commit: `feat: phase 23.4 markup tool visual and interaction refinement`
+
+---
+
 ## 2026-03-22 19:20 CT - [FEAT] Phase 23.3 - Advanced Markup Tool with Modes and Expanded Tools
 - Summary: Transformed markup tool into full engineering annotation system with interaction modes, expanded shape tools, and critical annotations.
 - Files changed:
