@@ -4,6 +4,142 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 12:43 CT - [FIX] Phase 23.15.1 - Resolve Null Src Type Error in Image Rendering
+- Summary: Fixed TypeScript error caused by null being passed to <img src>.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Added safe image source resolution
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Eliminated TypeScript type error, ensured <img> src never receives null
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- Expression `renderedImage || fileUrl` can evaluate to `string | null`
+- React `<img src>` requires `string | undefined`
+- TypeScript error: Type 'null' is not assignable to type 'string | undefined'
+- Logical OR operator (`||`) preserves null values
+
+**Symptoms:**
+- TypeScript compilation error in MarkupTool.tsx
+- Type mismatch on <img src> attribute
+- Potential runtime issues if null passed to src
+
+**Implementation:**
+
+**Before (Type Error):**
+```tsx
+// State types
+const [renderedImage, setRenderedImage] = useState<string | null>(null);
+const [fileUrl, setFileUrl] = useState<string | null>(null);
+
+// Rendering
+<img
+  src={renderedImage || fileUrl}  // ❌ Type: string | null
+  crossOrigin="anonymous"
+  alt="Drawing"
+/>
+```
+
+**After (Type Safe):**
+```tsx
+// State types (unchanged)
+const [renderedImage, setRenderedImage] = useState<string | null>(null);
+const [fileUrl, setFileUrl] = useState<string | null>(null);
+
+// Safe image source resolution using nullish coalescing
+const resolvedImageSrc = renderedImage ?? fileUrl ?? undefined;
+// Type: string | undefined ✅
+
+// Rendering
+<img
+  src={resolvedImageSrc}  // ✅ Type: string | undefined
+  crossOrigin="anonymous"
+  alt="Drawing"
+/>
+```
+
+**Key Changes:**
+
+**1. Added Safe Resolution Variable:**
+```tsx
+const resolvedImageSrc = renderedImage ?? fileUrl ?? undefined;
+```
+
+**How It Works:**
+- Nullish coalescing operator (`??`) only falls through on `null` or `undefined`
+- `renderedImage ?? fileUrl` returns first non-nullish value
+- Final `?? undefined` converts any remaining `null` to `undefined`
+- Result type: `string | undefined` (compatible with React img src)
+
+**2. Updated Conditional Rendering:**
+```tsx
+// Before
+{(renderedImage || fileUrl) && typeof (renderedImage || fileUrl) === 'string' ? (
+  <img src={renderedImage || fileUrl} />
+) : null}
+
+// After
+{resolvedImageSrc && typeof resolvedImageSrc === 'string' ? (
+  <img src={resolvedImageSrc} />
+) : null}
+```
+
+**Benefits:**
+- Single evaluation of image source
+- Cleaner conditional logic
+- Type-safe src attribute
+
+**Why This Works:**
+
+**Nullish Coalescing vs Logical OR:**
+
+**Logical OR (`||`):**
+- Falls through on falsy values: `false`, `0`, `''`, `null`, `undefined`, `NaN`
+- Can skip valid empty strings
+- Preserves null in chain
+
+**Nullish Coalescing (`??`):**
+- Falls through ONLY on `null` or `undefined`
+- Preserves other falsy values like `''` or `0`
+- Final `?? undefined` converts null to undefined
+
+**Type Compatibility:**
+- React `<img src>` accepts: `string | undefined`
+- Does NOT accept: `null`
+- `resolvedImageSrc` type: `string | undefined` ✅
+
+**Benefits:**
+
+**Type Safety:**
+- ✅ TypeScript compilation passes
+- ✅ No type errors on img src
+- ✅ Correct type inference
+
+**Code Quality:**
+- ✅ Single source of truth for image src
+- ✅ Cleaner conditional logic
+- ✅ Explicit null handling
+
+**Runtime Safety:**
+- ✅ No null values passed to DOM
+- ✅ Predictable fallback behavior
+- ✅ Consistent rendering
+
+**Validation:**
+- ✅ `resolvedImageSrc` type: `string | undefined`
+- ✅ TypeScript compilation succeeds
+- ✅ No runtime errors
+- ✅ Image rendering unchanged
+- ✅ No schema changes
+
+**Note:**
+Minor but important TypeScript fix. The expression `renderedImage || fileUrl` could evaluate to `null` when both values are null, but React's `<img src>` attribute requires `string | undefined`. Using nullish coalescing operator (`??`) with final fallback to `undefined` ensures type compatibility. This pattern is more precise than logical OR for handling nullable values in React props.
+
+- Commit: `fix: resolve null src type error in PDF/image rendering`
+
+---
+
 ## 2026-03-23 12:40 CT - [FEAT] Phase 23.15 - Enable Full PDF Markup Export via Canvas Rendering
 - Summary: Converted PDF rendering from iframe to canvas-based image rendering for full export capability.
 - Files changed:

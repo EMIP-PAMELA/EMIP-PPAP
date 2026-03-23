@@ -684,6 +684,9 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     typeof selectedFile === 'string' &&
     selectedFile.length > 0;
 
+  // Safe image source resolution: prevent null from reaching <img src>
+  const resolvedImageSrc = renderedImage ?? fileUrl ?? undefined;
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
       <div className="bg-white rounded-xl shadow-2xl w-[95vw] h-[95vh] flex flex-col">
@@ -881,10 +884,10 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                         )}
                       </div>
                     </div>
-                  ) : (renderedImage || fileUrl) && typeof (renderedImage || fileUrl) === 'string' ? (
+                  ) : resolvedImageSrc && typeof resolvedImageSrc === 'string' ? (
                     <img
                       ref={imageRef}
-                      src={renderedImage || fileUrl}
+                      src={resolvedImageSrc}
                       crossOrigin="anonymous"
                       referrerPolicy="no-referrer"
                       alt="Drawing"
