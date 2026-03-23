@@ -8,7 +8,7 @@ import { formatDate } from '@/src/lib/utils';
 import { WORKFLOW_PHASE_LABELS, WORKFLOW_PHASES } from '../constants/workflowPhases';
 import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils/getNextAction';
 
-interface AdminDashboardProps {
+interface PPAPOperationsDashboardProps {
   ppaps: PPAPRecord[];
 }
 
@@ -28,7 +28,7 @@ function getEventDataString(eventData: unknown, key: string): string {
   return '';
 }
 
-export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
+export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsDashboardProps) {
   const [ppaps, setPpaps] = useState<PPAPRecord[]>(initialPpaps);
   const [filterCustomer, setFilterCustomer] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -196,8 +196,48 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
     return getEventDataValue(event.event_data, 'admin_note') === true;
   };
 
+  // Calculate summary metrics
+  const totalPPAPs = ppaps.length;
+  const activePPAPsCount = ppaps.filter(p => p.workflow_phase !== 'COMPLETE').length;
+  const completedPPAPsCount = ppaps.filter(p => p.workflow_phase === 'COMPLETE').length;
+  const needsAttention = filteredPpaps.filter(p => {
+    const action = getNextAction(p.workflow_phase, p.status);
+    return action.priority === 'urgent' || action.priority === 'warning';
+  }).length;
+
   return (
     <div className="space-y-6">
+      {/* Summary Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
+          <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
+            Total PPAPs
+          </div>
+          <div className="text-4xl font-bold text-gray-900">{totalPPAPs}</div>
+        </div>
+
+        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
+          <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
+            Active
+          </div>
+          <div className="text-4xl font-bold text-blue-600">{activePPAPsCount}</div>
+        </div>
+
+        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
+          <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
+            Completed
+          </div>
+          <div className="text-4xl font-bold text-green-600">{completedPPAPsCount}</div>
+        </div>
+
+        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
+          <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
+            Needs Attention
+          </div>
+          <div className="text-4xl font-bold text-amber-600">{needsAttention}</div>
+        </div>
+      </div>
+
       {/* Filters */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
         <div className="flex items-center justify-between mb-4">
@@ -376,23 +416,29 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <select
-                    value={ppap.assigned_to || ''}
-                    onChange={(e) => handleAssignment(ppap.id, e.target.value)}
-                    className="px-3 py-1 text-sm border border-gray-300 rounded"
-                  >
-                    <option value="">Unassigned</option>
-                    <option value="System User">System User</option>
-                    <option value="Matt">Matt</option>
-                    <option value="Engineer 1">Engineer 1</option>
-                    <option value="Engineer 2">Engineer 2</option>
-                  </select>
                   <button
                     onClick={() => setSelectedPpapId(selectedPpapId === ppap.id ? null : ppap.id)}
-                    className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                    className="px-3 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors font-medium"
                   >
                     {selectedPpapId === ppap.id ? 'Hide Details' : 'View Details'}
                   </button>
+                  
+                  {/* Management Controls */}
+                  <div className="pt-2 border-t border-gray-200">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Management</div>
+                    <select
+                      value={ppap.assigned_to || ''}
+                      onChange={(e) => handleAssignment(ppap.id, e.target.value)}
+                      className="w-full px-3 py-1 text-sm border border-gray-300 rounded"
+                      title="Management: Reassign ownership"
+                    >
+                      <option value="">Unassigned</option>
+                      <option value="System User">System User</option>
+                      <option value="Matt">Matt</option>
+                      <option value="Engineer 1">Engineer 1</option>
+                      <option value="Engineer 2">Engineer 2</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -400,9 +446,9 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
               {selectedPpapId === ppap.id && (
                 <div className="mt-4 pt-4 border-t border-gray-200">
                   <div className="grid grid-cols-2 gap-4">
-                    {/* Admin Notes */}
+                    {/* Management Notes */}
                     <div>
-                      <h4 className="text-sm font-bold text-gray-900 mb-3">Add Admin Note</h4>
+                      <h4 className="text-sm font-bold text-gray-900 mb-3">Add Management Note</h4>
                       <textarea
                         value={adminNote}
                         onChange={(e) => setAdminNote(e.target.value)}
@@ -415,7 +461,7 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
                         disabled={addingNote || !adminNote.trim()}
                         className="mt-2 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:bg-gray-400 transition-colors"
                       >
-                        {addingNote ? 'Adding...' : '💬 Add Admin Note'}
+                        {addingNote ? 'Adding...' : '💬 Add Management Note'}
                       </button>
                     </div>
 
@@ -441,8 +487,8 @@ export function AdminDashboard({ ppaps: initialPpaps }: AdminDashboardProps) {
                                 <div className="font-medium text-gray-900">
                                   {event.event_type.replace(/_/g, ' ')}
                                   {isAdminNote(event) && (
-                                    <span className="ml-2 px-2 py-0.5 bg-red-600 text-white text-xs rounded">
-                                      ADMIN
+                                    <span className="ml-2 px-2 py-0.5 bg-purple-600 text-white text-xs rounded">
+                                      MGMT
                                     </span>
                                   )}
                                 </div>

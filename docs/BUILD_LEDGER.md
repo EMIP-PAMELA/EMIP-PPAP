@@ -4,6 +4,378 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 20:30 CT - [FEAT] Phase 24.2 - Unified PPAP Operations Dashboard
+- Summary: Unified PPAP list and oversight dashboard into single shared landing page for all users.
+- Files changed:
+  - `src/features/ppap/components/AdminDashboard.tsx` → `PPAPOperationsDashboard.tsx` - Renamed and refactored
+  - `app/ppap/page.tsx` - Updated to use unified dashboard
+  - `app/admin/ppap/page.tsx` - Removed (redundant)
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Single operational command view for all PPAP users with role-gated management controls
+- No schema changes
+
+**Objective:**
+
+Unify the separate PPAP list screen and admin dashboard into one shared landing page:
+- Make PPAP Operations Dashboard the main entry point for all users
+- Remove admin-only framing while preserving management controls
+- Merge overview metrics, filters, and work lists
+- Support multiple user types (engineers, management, quoting, submission)
+
+**Implementation:**
+
+**1. Renamed Component**
+
+Renamed `AdminDashboard` to `PPAPOperationsDashboard`:
+
+**Before:**
+```typescript
+interface AdminDashboardProps {
+  ppaps: PPAPRecord[];
+}
+
+export function AdminDashboard({ ppaps }: AdminDashboardProps) {
+```
+
+**After:**
+```typescript
+interface PPAPOperationsDashboardProps {
+  ppaps: PPAPRecord[];
+}
+
+export function PPAPOperationsDashboard({ ppaps }: PPAPOperationsDashboardProps) {
+```
+
+**2. Updated Main Page Title**
+
+Changed from admin-focused to organization-wide:
+
+**Before:**
+```tsx
+<h1>PPAP Admin Dashboard</h1>
+<p>Oversight and assignment control for all PPAP submissions</p>
+```
+
+**After:**
+```tsx
+<h1>PPAP Operations Dashboard</h1>
+<p>Track, prioritize, and resume PPAP work across the organization</p>
+```
+
+**3. Integrated Summary Metrics**
+
+Added overview metrics at top of dashboard:
+
+```typescript
+// Calculate summary metrics
+const totalPPAPs = ppaps.length;
+const activePPAPsCount = ppaps.filter(p => p.workflow_phase !== 'COMPLETE').length;
+const completedPPAPsCount = ppaps.filter(p => p.workflow_phase === 'COMPLETE').length;
+const needsAttention = filteredPpaps.filter(p => {
+  const action = getNextAction(p.workflow_phase, p.status);
+  return action.priority === 'urgent' || action.priority === 'warning';
+}).length;
+```
+
+**Summary Cards:**
+- **Total PPAPs** - All records (gray)
+- **Active** - In-progress PPAPs (blue)
+- **Completed** - Finished PPAPs (green)
+- **Needs Attention** - Urgent/warning priority (amber)
+
+**4. Marked Management Controls**
+
+Separated management controls visually:
+
+**Before:**
+- Assignment dropdown mixed with other actions
+- "Admin Note" framing
+
+**After:**
+```tsx
+{/* Management Controls */}
+<div className="pt-2 border-t border-gray-200">
+  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+    Management
+  </div>
+  <select
+    title="Management: Reassign ownership"
+    ...
+  >
+    <option value="">Unassigned</option>
+    ...
+  </select>
+</div>
+```
+
+**Management Note Section:**
+```tsx
+<h4>Add Management Note</h4>
+<button>💬 Add Management Note</button>
+```
+
+**Event Badge:**
+```tsx
+<span className="bg-purple-600 text-white text-xs rounded">
+  MGMT
+</span>
+```
+
+**5. Updated Main PPAP Page**
+
+Replaced table-only view with unified dashboard:
+
+**Before (app/ppap/page.tsx):**
+- Summary cards
+- PPAPListTable for active PPAPs
+- PPAPListTable for completed PPAPs
+- Separate component imports
+
+**After:**
+- Summary cards now in dashboard component
+- Single PPAPOperationsDashboard component
+- All intelligence in one place
+
+**Code:**
+```tsx
+import { PPAPOperationsDashboard } from '@/src/features/ppap/components/PPAPOperationsDashboard';
+
+export default async function PPAPOperationsPage() {
+  const ppapsSafe = ppaps || [];
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-[1800px] mx-auto px-6 py-8">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1>PPAP Operations Dashboard</h1>
+            <p>Track, prioritize, and resume PPAP work across the organization</p>
+          </div>
+          <Link href="/ppap/new">+ Create New PPAP</Link>
+        </div>
+
+        {!error && ppapsSafe.length > 0 && (
+          <PPAPOperationsDashboard ppaps={ppapsSafe} />
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+**6. Removed Admin-Only Route**
+
+Deleted `app/admin/ppap/page.tsx` (now redundant):
+- Main `/ppap` route now serves all users
+- No separate admin view needed
+- Single source of truth for PPAP operations
+
+**7. Preserved All Intelligence**
+
+Dashboard retains all existing features:
+- ✅ Next action column with priority colors
+- ✅ Phase progress visual (INIT → DOC → ACK → SUB → COMPLETE)
+- ✅ Bottleneck/stagnation signals (7+ days no update)
+- ✅ Active/completed grouping
+- ✅ Filters (customer, status, phase)
+- ✅ Bottleneck view toggle
+- ✅ Event history
+- ✅ Assignment tracking
+
+**8. Improved Primary Actions**
+
+Each PPAP card supports:
+
+**View Details Button:**
+```tsx
+<button className="bg-blue-600 text-white hover:bg-blue-700 rounded-lg">
+  {selectedPpapId === ppap.id ? 'Hide Details' : 'View Details'}
+</button>
+```
+
+**Management Section:**
+- Clearly labeled "Management"
+- Reassignment dropdown
+- Visual separation with border
+
+**Event Panel:**
+- Management notes with purple badge
+- Activity history
+- Actor tracking
+
+**9. Multi-User Support**
+
+Dashboard serves different user intents:
+
+**Engineer:**
+- See next actions (urgent/warning priority)
+- Resume work via "View Details"
+- Check assigned PPAPs
+- Track phase progress
+
+**Management:**
+- Inspect overall status (summary metrics)
+- Identify bottlenecks (bottleneck view)
+- Reassign ownership
+- Add management notes
+- Monitor stagnation alerts
+
+**Quoting/Front-end:**
+- Create new PPAP (+ button in header)
+- Load existing requests
+- Check customer PPAPs (filter)
+
+**Submission Owner:**
+- Locate completed packages (completed section)
+- View submission status
+- Access final documentation
+
+**10. Information Hierarchy**
+
+Layout order (top to bottom):
+
+1. **Summary Metrics** - Quick overview (4 cards)
+2. **Filters** - Customer, status, phase selectors
+3. **Bottleneck Toggle** - Default vs. priority sorting
+4. **Active PPAPs** - Work in progress
+   - Phase progress visual
+   - Next action with priority
+   - Stagnation alerts
+   - Management controls (embedded)
+5. **Completed PPAPs** - Finished work
+   - Completion date
+   - Final status
+
+**User Experience:**
+
+**Opening Dashboard:**
+1. User navigates to `/ppap`
+2. Sees "PPAP Operations Dashboard" title
+3. Summary metrics show at-a-glance status
+4. Active PPAPs listed with next actions
+5. Management controls available (if authorized)
+
+**Engineer Workflow:**
+1. Check "Needs Attention" metric (amber card)
+2. Enable "Bottleneck View" to see urgent items first
+3. Find PPAP with urgent next action
+4. Click "View Details" to see event history
+5. Resume work in PPAP detail page
+
+**Management Workflow:**
+1. Review summary metrics
+2. Check "Needs Attention" count
+3. Enable "Bottleneck View"
+4. Identify stagnant PPAPs (7+ days, orange alert)
+5. Reassign ownership via dropdown
+6. Add management note for context
+
+**Creating New PPAP:**
+1. Click "+ Create New PPAP" (always visible in header)
+2. Redirects to `/ppap/new`
+3. Standard intake flow
+
+**Before/After Comparison:**
+
+**Routing:**
+- Before: `/ppap` (list) + `/admin/ppap` (oversight)
+- After: `/ppap` (unified operations dashboard)
+
+**Title:**
+- Before: "PPAP Dashboard" / "PPAP Admin Dashboard"
+- After: "PPAP Operations Dashboard"
+
+**Subtitle:**
+- Before: "Manage PPAP submissions" / "Oversight and assignment control"
+- After: "Track, prioritize, and resume PPAP work across the organization"
+
+**Summary Metrics:**
+- Before: In list page only
+- After: Integrated into dashboard component
+
+**Intelligence:**
+- Before: Next action in table, full features in admin view
+- After: All features in one unified view
+
+**Management Controls:**
+- Before: Admin dashboard only
+- After: Clearly labeled "Management" section, visible to all
+
+**User Access:**
+- Before: Two separate interfaces
+- After: One shared interface, role-based controls
+
+**Benefits:**
+
+**Unified Experience:**
+- ✅ Single entry point for all users
+- ✅ No separate "admin" vs "user" dashboards
+- ✅ Everyone sees same operational view
+- ✅ Role-gated controls where appropriate
+
+**Improved Discoverability:**
+- ✅ Summary metrics always visible
+- ✅ Next actions prominent
+- ✅ Bottleneck view accessible to all
+- ✅ Stagnation alerts for all PPAPs
+
+**Better Organization:**
+- ✅ Clear information hierarchy
+- ✅ Metrics → Filters → Active → Completed
+- ✅ Management controls embedded contextually
+- ✅ Event history on demand
+
+**Reduced Complexity:**
+- ✅ One component instead of two
+- ✅ One route instead of two
+- ✅ Consistent feature set
+- ✅ Easier to maintain
+
+**Technical Details:**
+
+**Component Rename:**
+- File: `AdminDashboard.tsx` → `PPAPOperationsDashboard.tsx`
+- Export: `AdminDashboard` → `PPAPOperationsDashboard`
+- Props: `AdminDashboardProps` → `PPAPOperationsDashboardProps`
+
+**Summary Metrics:**
+```typescript
+const totalPPAPs = ppaps.length;
+const activePPAPsCount = ppaps.filter(p => p.workflow_phase !== 'COMPLETE').length;
+const completedPPAPsCount = ppaps.filter(p => p.workflow_phase === 'COMPLETE').length;
+const needsAttention = filteredPpaps.filter(p => {
+  const action = getNextAction(p.workflow_phase, p.status);
+  return action.priority === 'urgent' || action.priority === 'warning';
+}).length;
+```
+
+**Management Controls:**
+- Section label: "Management" (uppercase, gray text)
+- Border separator above controls
+- Title attribute for tooltip
+- Purple badge for management notes
+
+**Page Route:**
+- Main route: `/ppap` (PPAPOperationsPage)
+- Admin route: Removed (was `/admin/ppap`)
+
+**Validation:**
+- ✅ Summary metrics display correctly
+- ✅ Filters work (customer, status, phase)
+- ✅ Bottleneck view sorts by priority
+- ✅ Active/completed grouping works
+- ✅ Next action shows with priority colors
+- ✅ Phase progress visual displays
+- ✅ Stagnation alerts appear (7+ days)
+- ✅ Management controls functional
+- ✅ Event history loads on "View Details"
+- ✅ Management notes marked with MGMT badge
+- ✅ Create PPAP button accessible
+
+- Commit: `feat: phase 24.2 unified PPAP Operations Dashboard`
+
+---
+
 ## 2026-03-22 20:00 CT - [FEAT] Phase 23.5 - Markup Workspace Layout Refactor
 - Summary: Refactored markup tool into true 3-pane engineering workspace with collapsible left-side tool rail.
 - Files changed:

@@ -1,9 +1,10 @@
 import { getAllPPAPs } from '@/src/features/ppap/queries';
-import { PPAPListTable } from '@/src/features/ppap/components/PPAPListTable';
+import { PPAPOperationsDashboard } from '@/src/features/ppap/components/PPAPOperationsDashboard';
 import Link from 'next/link';
-import { getNextAction } from '@/src/features/ppap/utils/getNextAction';
 
-export default async function PPAPListPage() {
+export const dynamic = 'force-dynamic';
+
+export default async function PPAPOperationsPage() {
   let ppaps;
   let error;
 
@@ -16,27 +17,14 @@ export default async function PPAPListPage() {
   // Ensure safe initialization before use
   const ppapsSafe = ppaps || [];
 
-  // Calculate summary metrics
-  const totalPPAPs = ppapsSafe.length;
-  const activePPAPs = ppapsSafe.filter(p => p.workflow_phase !== 'COMPLETE').length;
-  const completedPPAPs = ppapsSafe.filter(p => p.workflow_phase === 'COMPLETE').length;
-  const needsAttention = ppapsSafe.filter(p => {
-    const action = getNextAction(p.workflow_phase, p.status);
-    return action.priority === 'urgent' || action.priority === 'warning';
-  }).length;
-
-  // Group PPAPs
-  const activePPAPsList = ppapsSafe.filter(p => p.workflow_phase !== 'COMPLETE');
-  const completedPPAPsList = ppapsSafe.filter(p => p.workflow_phase === 'COMPLETE');
-
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-[1800px] mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-4xl font-bold text-gray-900">PPAP Dashboard</h1>
+            <h1 className="text-4xl font-bold text-gray-900">PPAP Operations Dashboard</h1>
             <p className="text-gray-600 mt-2">
-              Manage PPAP submissions across all sites
+              Track, prioritize, and resume PPAP work across the organization
             </p>
           </div>
           <Link
@@ -75,54 +63,7 @@ export default async function PPAPListPage() {
         )}
 
         {!error && ppapsSafe.length > 0 && (
-          <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
-                <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                  Total PPAPs
-                </div>
-                <div className="text-4xl font-bold text-gray-900">{totalPPAPs}</div>
-              </div>
-
-              <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
-                <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                  Active
-                </div>
-                <div className="text-4xl font-bold text-blue-600">{activePPAPs}</div>
-              </div>
-
-              <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
-                <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                  Completed
-                </div>
-                <div className="text-4xl font-bold text-green-600">{completedPPAPs}</div>
-              </div>
-
-              <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
-                <div className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                  Needs Attention
-                </div>
-                <div className="text-4xl font-bold text-amber-600">{needsAttention}</div>
-              </div>
-            </div>
-
-            {/* Active PPAPs Section */}
-            {activePPAPsList.length > 0 && (
-              <div className="mb-8">
-                <h2 className="text-2xl font-bold text-gray-900 mb-4">Active PPAPs</h2>
-                <PPAPListTable ppaps={activePPAPsList} />
-              </div>
-            )}
-
-            {/* Completed PPAPs Section */}
-            {completedPPAPsList.length > 0 && (
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-4">Completed PPAPs</h2>
-                <PPAPListTable ppaps={completedPPAPsList} />
-              </div>
-            )}
-          </>
+          <PPAPOperationsDashboard ppaps={ppapsSafe} />
         )}
       </div>
     </div>
