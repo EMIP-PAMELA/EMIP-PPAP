@@ -179,6 +179,25 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     }
   };
 
+  // Generate fresh signed URL for export (no stale state)
+  const getSignedUrl = async (filePath: string): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('ppap-documents')
+        .createSignedUrl(filePath, 3600);
+
+      if (error) {
+        console.error('Signed URL generation failed:', error);
+        return null;
+      }
+
+      return data?.signedUrl || null;
+    } catch (error) {
+      console.error('Exception generating signed URL:', error);
+      return null;
+    }
+  };
+
   const handleAnnotationDragStart = (e: React.MouseEvent, annotationId: string) => {
     e.stopPropagation();
     setDraggingAnnotationId(annotationId);
@@ -283,12 +302,6 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       return;
     }
 
-    if (!fileUrl) {
-      console.error('Signed URL missing');
-      alert('Drawing could not be loaded for export. Please try reloading the page.');
-      return;
-    }
-
     if (annotations.length === 0) {
       alert('No annotations to export');
       return;
@@ -311,56 +324,69 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       const jsPdfAny = jsPdfModule as any;
       const jsPDF = jsPdfAny.jsPDF || jsPdfAny.default?.jsPDF || jsPdfAny.default;
 
-      // Validate image exists and is loaded
+      // Find image element
       const img = exportRef.current?.querySelector('img');
       
       if (!img) {
-        throw new Error('No image found in export container');
+        throw new Error('Export failed: no image element found');
       }
 
       if (!(img instanceof HTMLImageElement)) {
         throw new Error('Image element is not valid');
       }
 
-      // Wait for image to fully load if not complete
-      if (!img.complete) {
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error('Image load timeout'));
-          }, 10000);
-          
-          img.onload = () => {
-            clearTimeout(timeout);
-            resolve();
-          };
-          img.onerror = () => {
-            clearTimeout(timeout);
-            reject(new Error('Image failed to load'));
-          };
-        });
+      // Generate FRESH signed URL for export (no stale state dependency)
+      const freshUrl = await getSignedUrl(selectedFile);
+
+      if (!freshUrl) {
+        throw new Error('Failed to generate fresh signed URL');
       }
 
-      // Validate image actually loaded with content
+      // Update image with fresh URL
+      img.src = freshUrl;
+
+      // Wait for image to load with fresh URL
+      await new Promise<void>((resolve, reject) => {
+        if (img.complete && img.naturalWidth > 0) {
+          return resolve();
+        }
+
+        const timeout = setTimeout(() => {
+          reject(new Error('Image failed to load before export'));
+        }, 5000);
+
+        img.onload = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+
+        img.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('Image load error'));
+        };
+      });
+
+      // Validate image has actual dimensions
       if (img.naturalWidth === 0 || img.naturalHeight === 0) {
         throw new Error('Image loaded but has no dimensions - CORS or load failure');
       }
 
       // Debug logging
       console.log({
-        fileUrl,
-        imgLoaded: img.complete,
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight,
+        selectedFile,
+        freshUrl,
+        imgSrc: img.src,
+        loaded: img.complete,
+        width: img.naturalWidth,
+        height: img.naturalHeight,
         crossOrigin: img.crossOrigin,
       });
 
-      // Capture exportRef directly (no cloning)
+      // Capture exportRef directly (no cloning, no manipulation)
       const canvas = await html2canvas(exportRef.current, {
         scale: 2,
         useCORS: true,
-        allowTaint: false,
         backgroundColor: '#ffffff',
-        logging: false,
       });
 
       const imgData = canvas.toDataURL('image/png');
