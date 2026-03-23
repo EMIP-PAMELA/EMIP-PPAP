@@ -132,8 +132,9 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
           setRenderedImage(imageDataUrl);
           console.log('PDF rendered successfully');
         } catch (error) {
-          console.error('Failed to render PDF to image:', error);
+          console.error('PDF render failed:', error);
           setRenderedImage(null);
+          alert('Failed to render PDF preview. The file may be corrupted or unsupported.');
         }
       } else {
         setRenderedImage(null);

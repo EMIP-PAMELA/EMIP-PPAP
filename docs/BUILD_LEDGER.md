@@ -4,6 +4,202 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 12:48 CT - [FIX] Phase 23.15.2 - Resolve pdfjs Worker Loading Failure
+- Summary: Fixed PDF rendering failure by replacing unreliable CDN worker with local worker.
+- Files changed:
+  - `src/utils/renderPdfToImage.ts` - Configured local worker instead of CDN
+  - `src/features/ppap/components/MarkupTool.tsx` - Added user-facing error alert
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Restored PDF rendering pipeline, eliminated 404 worker fetch errors
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- pdfjs attempted to load worker from CDN: `cdnjs.cloudflare.com/.../pdf.worker.min.js`
+- CDN URL does not exist for installed pdfjs-dist version
+- 404 error on worker fetch
+- PDF rendering fails silently
+- User sees "Loading drawing..." indefinitely
+
+**Symptoms:**
+- PDF files do not render in markup tool
+- Console error: "Failed to fetch worker from CDN"
+- 404 error for pdf.worker.min.js
+- "Setting up fake worker" warning in console
+- Markup tool unusable for PDF files
+- No visual feedback to user
+
+**Implementation:**
+
+**Before (CDN Worker - Broken):**
+```tsx
+import * as pdfjsLib from 'pdfjs-dist';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// ❌ URL does not exist for installed version
+// ❌ 404 error
+// ❌ Rendering fails
+```
+
+**After (Local Worker - Working):**
+```tsx
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Use local worker from pdfjs-dist package instead of unreliable CDN
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).toString();
+// ✅ Worker bundled with package
+// ✅ No network dependency
+// ✅ Rendering works
+```
+
+**How It Works:**
+
+**URL Constructor with import.meta.url:**
+- `new URL(path, import.meta.url)` resolves relative to current module
+- Bundler (Next.js/Webpack/Vite) handles worker file resolution
+- Worker file included in build output
+- No external CDN dependency
+- No version mismatch issues
+
+**Added User-Facing Error Handling:**
+
+**Before:**
+```tsx
+try {
+  const imageDataUrl = await renderPdfToImage(extractedUrl);
+  setRenderedImage(imageDataUrl);
+} catch (error) {
+  console.error('Failed to render PDF to image:', error);
+  setRenderedImage(null);
+  // ❌ User sees no feedback
+}
+```
+
+**After:**
+```tsx
+try {
+  console.log('Rendering PDF to image for annotation support...');
+  const imageDataUrl = await renderPdfToImage(extractedUrl);
+  setRenderedImage(imageDataUrl);
+  console.log('PDF rendered successfully');
+} catch (error) {
+  console.error('PDF render failed:', error);
+  setRenderedImage(null);
+  alert('Failed to render PDF preview. The file may be corrupted or unsupported.');
+  // ✅ User gets clear error message
+}
+```
+
+**Why This Works:**
+
+**Local Worker Benefits:**
+- Worker file bundled with pdfjs-dist package
+- No external network requests
+- No CDN availability issues
+- No version mismatches
+- Reliable across environments
+
+**Build-Time Resolution:**
+- Next.js bundler resolves worker path
+- Worker included in build output
+- Served from same origin as app
+- No CORS issues
+- No 404 errors
+
+**Error Visibility:**
+- Console logging for developers
+- User alert for end users
+- Clear error messages
+- Graceful degradation
+
+**Benefits:**
+
+**Reliability:**
+- ✅ PDF rendering works consistently
+- ✅ No CDN dependency
+- ✅ No network failures
+- ✅ No version conflicts
+
+**User Experience:**
+- ✅ PDFs render visually in markup tool
+- ✅ Annotations work on PDFs
+- ✅ Clear error messages if rendering fails
+- ✅ No indefinite loading states
+
+**Developer Experience:**
+- ✅ No "fake worker" warnings
+- ✅ No 404 errors in console
+- ✅ Predictable behavior
+- ✅ Easy debugging
+
+**Production Readiness:**
+- ✅ Stable PDF rendering
+- ✅ No external dependencies
+- ✅ Offline-capable
+- ✅ Professional error handling
+
+**Validation:**
+- ✅ Worker loads from local package
+- ✅ No CDN fetch attempts
+- ✅ PDF renders to image successfully
+- ✅ User sees visual feedback on errors
+- ✅ No console warnings
+- ✅ No schema changes
+
+**Technical Details:**
+
+**Worker Resolution:**
+```tsx
+new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
+```
+
+**Result (example):**
+```
+/_next/static/chunks/pdf.worker.min.mjs
+```
+
+**Bundler Handling:**
+- Next.js detects worker import
+- Includes worker in build output
+- Serves from static assets
+- Handles cache headers
+- Optimizes delivery
+
+**Alternative Approaches Considered:**
+
+**1. Copy to public/ folder:**
+- ❌ Manual file management
+- ❌ Version sync issues
+- ❌ Build step complexity
+
+**2. Dynamic import:**
+- ❌ Async loading complexity
+- ❌ Race conditions
+- ❌ Error handling overhead
+
+**3. Inline worker:**
+- ❌ Large bundle size
+- ❌ No code splitting
+- ❌ Performance impact
+
+**4. Local worker with URL constructor (chosen):**
+- ✅ Automatic bundling
+- ✅ No manual steps
+- ✅ Clean implementation
+- ✅ Best performance
+
+**Note:**
+Critical fix for PDF rendering pipeline. Previous CDN-based worker configuration failed because the CDN URL did not exist for the installed pdfjs-dist version, causing 404 errors and silent rendering failures. Replaced with local worker using URL constructor and import.meta.url, allowing the bundler to resolve and include the worker file automatically. Added user-facing error alerts for better feedback. PDF rendering now works reliably without external dependencies.
+
+- Commit: `fix: phase 23.15.2 resolve pdfjs worker loading failure`
+
+---
+
 ## 2026-03-23 12:43 CT - [FIX] Phase 23.15.1 - Resolve Null Src Type Error in Image Rendering
 - Summary: Fixed TypeScript error caused by null being passed to <img src>.
 - Files changed:
