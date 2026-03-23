@@ -4,6 +4,399 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 19:20 CT - [FEAT] Phase 23.3 - Advanced Markup Tool with Modes and Expanded Tools
+- Summary: Transformed markup tool into full engineering annotation system with interaction modes, expanded shape tools, and critical annotations.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Major upgrade with modes, tools, and UX improvements
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Professional engineering annotation system with navigate/markup/select modes, 5 shape tools, critical type, and auto-editing
+- No schema changes
+
+**Objective:**
+
+Upgrade MarkupTool from basic annotation placement to a full engineering annotation system with:
+- Interaction modes (navigate, markup, select)
+- Expanded tool system (circle, box, triangle, arrow, text)
+- Critical annotation type for safety issues
+- Improved visibility with translucent markers
+- Professional UX with auto-editing and selection
+
+**Implementation:**
+
+**1. Interaction Modes**
+
+Added three distinct modes with toolbar controls:
+
+```typescript
+type InteractionMode = 'navigate' | 'markup' | 'select';
+
+const MODE_INFO: Record<InteractionMode, { label: string; description: string; icon: string }> = {
+  navigate: { label: 'Navigate', description: 'Inspect drawing', icon: '🔍' },
+  markup: { label: 'Markup', description: 'Click to place annotation', icon: '✏️' },
+  select: { label: 'Select', description: 'Edit existing annotations', icon: '👆' },
+};
+```
+
+**Mode Toolbar:**
+- Three button toggles for mode selection
+- Active mode highlighted in blue
+- Clear visual feedback
+
+**Mode Behavior:**
+- **Navigate:** Inspect drawing only, no annotation placement
+- **Markup:** Click anywhere to create annotation
+- **Select:** Click existing annotations to edit
+
+**Mode Guard in Click Handler:**
+```typescript
+const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  // Only allow annotation placement in markup mode
+  if (mode !== 'markup') return;
+  // ... create annotation
+};
+```
+
+**2. Expanded Tool System**
+
+Added 5 shape tools:
+
+```typescript
+type AnnotationShape = 'circle' | 'box' | 'triangle' | 'arrow' | 'text';
+```
+
+**Tool Selector:**
+- Dropdown with all 5 tools
+- Selected tool applies to next annotation
+- Separated from type (meaning/color)
+
+**Shape Rendering:**
+- **Circle:** `rounded-full` border
+- **Box:** Square border
+- **Triangle:** CSS `clip-path: polygon(50% 0%, 0% 100%, 100% 100%)`
+- **Arrow:** Horizontal rectangle with → symbol
+- **Text:** Bubble with label + description preview
+
+**3. Critical Annotation Type**
+
+Added red critical type for safety/urgent issues:
+
+```typescript
+type AnnotationType = 'dimension' | 'note' | 'material' | 'critical';
+
+const TYPE_COLORS: Record<AnnotationType, string> = {
+  dimension: 'border-blue-600 bg-blue-500',
+  note: 'border-yellow-600 bg-yellow-500',
+  material: 'border-green-600 bg-green-500',
+  critical: 'border-red-600 bg-red-500',  // NEW
+};
+```
+
+**Use Cases:**
+- Safety violations
+- Urgent design flaws
+- Critical manufacturing constraints
+- High-priority issues
+
+**4. Translucent Annotation Rendering**
+
+Updated all markers to be translucent (25% opacity) with outline focus:
+
+```typescript
+const bgOpacity = isSelected ? 'bg-opacity-40' : 'bg-opacity-25';
+const borderWidth = isSelected ? 'border-3' : 'border-2';
+```
+
+**Benefits:**
+- Drawing visible through annotations
+- Clear label numbers (dark text on light bg)
+- Selected annotations highlighted (40% opacity)
+- Professional engineering appearance
+
+**All Shapes Implemented:**
+
+**Circle:**
+```tsx
+<div className={`w-10 h-10 rounded-full border-2 ${baseClasses} bg-opacity-25 text-gray-900`}>
+  {annotation.label_number}
+</div>
+```
+
+**Box:**
+```tsx
+<div className={`w-10 h-10 border-2 ${baseClasses} bg-opacity-25 text-gray-900`}>
+  {annotation.label_number}
+</div>
+```
+
+**Triangle:**
+```tsx
+<div 
+  className={`w-10 h-10 border-2 ${baseClasses} bg-opacity-25 text-gray-900`}
+  style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }}
+>
+  <span className="mt-3">{annotation.label_number}</span>
+</div>
+```
+
+**Arrow:**
+```tsx
+<div className={`relative w-12 h-8 border-2 ${baseClasses} bg-opacity-25 text-gray-900 rounded`}>
+  <span className="absolute inset-0 flex items-center justify-center">
+    →{annotation.label_number}
+  </span>
+</div>
+```
+
+**Text:**
+```tsx
+<div className={`px-3 py-2 border-2 ${baseClasses} bg-opacity-25 text-gray-900 rounded-lg max-w-xs`}>
+  <div className="font-bold text-xs mb-1">#{annotation.label_number}</div>
+  {annotation.description && (
+    <div className="text-xs leading-tight">
+      {annotation.description.substring(0, 30)}...
+    </div>
+  )}
+</div>
+```
+
+**5. Auto-Open New Annotation Editing**
+
+When annotation created, immediately enter edit mode:
+
+```typescript
+setAnnotations([...annotations, newAnnotation]);
+
+// Auto-open editing for new annotation
+setEditingId(newAnnotation.id);
+setEditDescription('');
+setSelectedAnnotationId(newAnnotation.id);
+
+// Auto-focus description input
+setTimeout(() => {
+  descriptionInputRef.current?.focus();
+}, 50);
+```
+
+**User Flow:**
+1. User clicks in markup mode
+2. Annotation marker appears
+3. **Edit UI opens automatically**
+4. **Description field focused**
+5. User can type immediately
+6. No need to click "Edit" button
+
+**Benefits:**
+- Faster workflow
+- Fewer clicks
+- Natural editing flow
+- Immediate context
+
+**6. Mode Indicator Banner**
+
+Dynamic banner shows current mode:
+
+```tsx
+{selectedFile && (
+  <div className={`px-4 py-2 text-sm font-semibold rounded-lg mb-2 ${
+    mode === 'navigate' ? 'bg-gray-100 border border-gray-300 text-gray-800' :
+    mode === 'markup' ? 'bg-blue-50 border border-blue-300 text-blue-800' :
+    'bg-purple-50 border border-purple-300 text-purple-800'
+  }`}>
+    {MODE_INFO[mode].icon} {MODE_INFO[mode].label} Mode: {MODE_INFO[mode].description}
+  </div>
+)}
+```
+
+**Display:**
+- **Navigate:** Gray - "🔍 Navigate Mode: Inspect drawing"
+- **Markup:** Blue - "✏️ Markup Mode: Click to place annotation"
+- **Select:** Purple - "👆 Select Mode: Edit existing annotations"
+
+**7. Selection Highlighting**
+
+Selected annotations highlighted in two places:
+
+**Canvas Markers:**
+- Selected: 40% opacity, thicker border
+- Unselected: 25% opacity, normal border
+
+**Side Panel:**
+- Selected: Blue border, shadow
+- Unselected: Gray border
+
+```tsx
+className={`p-4 bg-white rounded-lg transition-all ${
+  selectedAnnotationId === annotation.id
+    ? 'border-2 border-blue-500 shadow-md'
+    : 'border border-gray-200'
+}`}
+```
+
+**8. Safe Rendering Guards**
+
+All values safely rendered:
+
+```tsx
+// Type fallback
+{annotation.type || 'dimension'}
+
+// Shape fallback
+{annotation.shape || 'circle'}
+
+// Description substring (prevent object render)
+{annotation.description.substring(0, 30)}...
+```
+
+**9. Tool/Type Separation**
+
+Clear separation of concerns:
+
+**Type (Meaning/Color):**
+- Dimension (blue) - measurements
+- Note (yellow) - general info
+- Material (green) - material specs
+- Critical (red) - urgent issues
+
+**Tool (Shape/Appearance):**
+- Circle - standard callout
+- Box - rectangular highlight
+- Triangle - directional pointer
+- Arrow - flow/sequence
+- Text - detailed notes
+
+**User selects both independently**
+
+**10. Debug Logging Enhanced**
+
+```typescript
+console.log('Canvas clicked', { 
+  x, 
+  y, 
+  mode,           // NEW
+  tool: selectedTool,   // NEW
+  type: selectedType    // NEW
+});
+```
+
+**User Workflow:**
+
+**Before Phase 23.3:**
+1. User opens markup tool
+2. Clicks on drawing
+3. Annotation created (always circle)
+4. Must click "Edit" to add description
+5. Only dimension/note/material types
+6. Markers fully opaque (obscure drawing)
+
+**After Phase 23.3:**
+1. User opens markup tool
+2. Selects **mode:** Navigate (inspect) or Markup (annotate) or Select (edit)
+3. Selects **tool:** Circle, Box, Triangle, Arrow, or Text
+4. Selects **type:** Dimension, Note, Material, or Critical
+5. **Banner shows:** "✏️ Markup Mode: Click to place annotation"
+6. Clicks on drawing
+7. **Annotation appears** with selected shape/color
+8. **Edit UI opens automatically**
+9. **Description field focused** - ready to type
+10. Types description
+11. Clicks Save
+12. **Annotation highlighted** on canvas and in panel
+13. Marker is translucent - drawing visible
+14. Professional engineering annotation
+
+**Benefits:**
+
+**Functionality:**
+- ✅ Three interaction modes (navigate, markup, select)
+- ✅ Five shape tools (circle, box, triangle, arrow, text)
+- ✅ Four annotation types including critical (red)
+- ✅ Translucent markers (25% opacity, outline focus)
+- ✅ Auto-open editing with focus
+- ✅ Selection highlighting (canvas + panel)
+- ✅ Mode-specific click behavior
+- ✅ Safe rendering (no React #418)
+
+**UX:**
+- ✅ Clear mode indication
+- ✅ Visual feedback for selection
+- ✅ Immediate editing workflow
+- ✅ Professional appearance
+- ✅ Drawing visibility maintained
+- ✅ Toolbar-based controls
+- ✅ Shape name in panel
+
+**Engineering:**
+- ✅ Critical type for safety issues
+- ✅ Text tool for detailed notes
+- ✅ Arrow tool for flow/sequence
+- ✅ Triangle for directional callouts
+- ✅ Tool/type separation
+- ✅ Structured annotation system
+
+**Technical Details:**
+
+**State Management:**
+- `mode: InteractionMode` - current interaction mode
+- `selectedTool: AnnotationShape` - current tool
+- `selectedType: AnnotationType` - current type
+- `selectedAnnotationId: string | null` - current selection
+- `descriptionInputRef` - textarea ref for auto-focus
+
+**Click Behavior:**
+- Navigate mode: No action
+- Markup mode: Create annotation
+- Select mode: (future - select/drag annotations)
+
+**Rendering Layers:**
+1. Document display (pointer-events-none)
+2. Click capture layer (handles mode-based clicks)
+3. Annotations overlay (pointer-events-none container)
+4. Individual markers (pointer-events-auto)
+
+**Shape Rendering:**
+- Circle: rounded-full
+- Box: square
+- Triangle: clip-path polygon
+- Arrow: → symbol in rectangle
+- Text: bubble with preview
+
+**Color Coding:**
+- Blue: Dimension
+- Yellow: Note
+- Green: Material
+- Red: Critical
+
+**Opacity:**
+- Unselected: 25%
+- Selected: 40%
+- Always shows label number clearly
+
+**Future Enhancements (Prepared):**
+
+**Zoom/Pan:**
+- Canvas structure ready for zoom controls
+- Percentage-based positioning maintained
+- Container can wrap transform layer
+
+**Drag Annotations:**
+- Select mode prepared for drag implementation
+- Pointer events structured correctly
+
+**Validation:**
+- ✅ Modes functional
+- ✅ All tools render correctly
+- ✅ Critical type displays (red)
+- ✅ Translucent markers visible
+- ✅ Auto-editing works
+- ✅ Selection highlighting works
+- ✅ Safe rendering (no errors)
+- ✅ Mode indicator updates
+- ✅ Empty save prevented
+
+- Commit: `feat: phase 23.3 advanced markup tool`
+
+---
+
 ## 2026-03-22 00:55 CT - [FIX] MarkupTool Interaction Layer and Annotation Creation
 - Summary: Fixed overlay blocking click events, enabled click-to-annotate functionality, and prevented empty saves.
 - Files changed:

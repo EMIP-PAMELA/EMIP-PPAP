@@ -10,8 +10,9 @@ interface MarkupToolProps {
   onClose: () => void;
 }
 
-type AnnotationType = 'dimension' | 'note' | 'material';
-type AnnotationShape = 'circle' | 'box';
+type InteractionMode = 'navigate' | 'markup' | 'select';
+type AnnotationType = 'dimension' | 'note' | 'material' | 'critical';
+type AnnotationShape = 'circle' | 'box' | 'triangle' | 'arrow' | 'text';
 
 interface Annotation {
   id: string;
@@ -24,9 +25,16 @@ interface Annotation {
 }
 
 const TYPE_COLORS: Record<AnnotationType, string> = {
-  dimension: 'bg-blue-500 border-blue-600',
-  note: 'bg-yellow-500 border-yellow-600',
-  material: 'bg-green-500 border-green-600',
+  dimension: 'border-blue-600 bg-blue-500',
+  note: 'border-yellow-600 bg-yellow-500',
+  material: 'border-green-600 bg-green-500',
+  critical: 'border-red-600 bg-red-500',
+};
+
+const MODE_INFO: Record<InteractionMode, { label: string; description: string; icon: string }> = {
+  navigate: { label: 'Navigate', description: 'Inspect drawing', icon: '🔍' },
+  markup: { label: 'Markup', description: 'Click to place annotation', icon: '✏️' },
+  select: { label: 'Select', description: 'Edit existing annotations', icon: '👆' },
 };
 
 interface UploadedFile {
@@ -36,8 +44,10 @@ interface UploadedFile {
 
 export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [mode, setMode] = useState<InteractionMode>('navigate');
+  const [selectedTool, setSelectedTool] = useState<AnnotationShape>('circle');
   const [selectedType, setSelectedType] = useState<AnnotationType>('dimension');
-  const [selectedShape, setSelectedShape] = useState<AnnotationShape>('circle');
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDescription, setEditDescription] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -45,6 +55,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Load uploaded files
   useEffect(() => {
@@ -147,13 +158,15 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   }, [ppapId, selectedFile]);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Only allow annotation placement in markup mode
+    if (mode !== 'markup') return;
     if (!containerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100; // Store as percentage
     const y = ((e.clientY - rect.top) / rect.height) * 100;
 
-    console.log('Canvas clicked', { x, y });
+    console.log('Canvas clicked', { x, y, mode, tool: selectedTool, type: selectedType });
 
     const newAnnotation: Annotation = {
       id: `annotation-${Date.now()}`,
@@ -161,11 +174,21 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       y,
       label_number: annotations.length + 1,
       type: selectedType,
-      shape: selectedShape,
+      shape: selectedTool,
       description: '',
     };
 
     setAnnotations([...annotations, newAnnotation]);
+    
+    // Auto-open editing for new annotation
+    setEditingId(newAnnotation.id);
+    setEditDescription('');
+    setSelectedAnnotationId(newAnnotation.id);
+    
+    // Auto-focus description input
+    setTimeout(() => {
+      descriptionInputRef.current?.focus();
+    }, 50);
   };
 
   const handleSaveAnnotations = async () => {
@@ -275,6 +298,25 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                   </select>
                 </div>
               </div>
+              
+              {/* Mode Controls */}
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700 mr-2">Mode:</label>
+                {(['navigate', 'markup', 'select'] as InteractionMode[]).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      mode === m
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {MODE_INFO[m].icon} {MODE_INFO[m].label}
+                  </button>
+                ))}
+              </div>
+              
               <div className="flex items-center gap-4">
                 <div>
                   <label className="text-sm font-medium text-gray-700 mr-2">Type:</label>
@@ -286,17 +328,21 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     <option value="dimension">Dimension (Blue)</option>
                     <option value="note">Note (Yellow)</option>
                     <option value="material">Material (Green)</option>
+                    <option value="critical">Critical (Red)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mr-2">Shape:</label>
+                  <label className="text-sm font-medium text-gray-700 mr-2">Tool:</label>
                   <select
-                    value={selectedShape}
-                    onChange={(e) => setSelectedShape(e.target.value as AnnotationShape)}
+                    value={selectedTool}
+                    onChange={(e) => setSelectedTool(e.target.value as AnnotationShape)}
                     className="px-3 py-1 border border-gray-300 rounded"
                   >
                     <option value="circle">Circle</option>
                     <option value="box">Box</option>
+                    <option value="triangle">Triangle</option>
+                    <option value="arrow">Arrow</option>
+                    <option value="text">Text</option>
                   </select>
                 </div>
                 <div className="flex-1"></div>
@@ -310,10 +356,14 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
               </div>
             </div>
 
-            {/* Markup Mode Indicator */}
+            {/* Mode Indicator */}
             {selectedFile && (
-              <div className="bg-blue-50 border border-blue-300 px-4 py-2 text-sm text-blue-800 font-semibold rounded-lg mb-2">
-                ✏️ Markup Mode: Click anywhere on the drawing to place annotation
+              <div className={`px-4 py-2 text-sm font-semibold rounded-lg mb-2 ${
+                mode === 'navigate' ? 'bg-gray-100 border border-gray-300 text-gray-800' :
+                mode === 'markup' ? 'bg-blue-50 border border-blue-300 text-blue-800' :
+                'bg-purple-50 border border-purple-300 text-purple-800'
+              }`}>
+                {MODE_INFO[mode].icon} {MODE_INFO[mode].label} Mode: {MODE_INFO[mode].description}
               </div>
             )}
 
@@ -364,39 +414,89 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
               {/* Annotations Overlay */}
               <div className="absolute inset-0 pointer-events-none">
-                {annotations.map((annotation) => (
-                <div
-                  key={annotation.id}
-                  className="absolute pointer-events-auto"
-                  style={{
-                    left: `${annotation.x}%`,
-                    top: `${annotation.y}%`,
-                    transform: 'translate(-50%, -50%)',
-                  }}
-                >
-                  {annotation.shape === 'circle' ? (
-                    <div
-                      className={`w-8 h-8 rounded-full border-2 ${TYPE_COLORS[annotation.type]} flex items-center justify-center text-white font-bold text-sm shadow-lg cursor-pointer hover:scale-110 transition-transform`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEditAnnotation(annotation.id);
-                      }}
-                    >
-                      {annotation.label_number}
-                    </div>
-                  ) : (
-                    <div
-                      className={`w-8 h-8 border-2 ${TYPE_COLORS[annotation.type]} flex items-center justify-center text-white font-bold text-sm shadow-lg cursor-pointer hover:scale-110 transition-transform`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEditAnnotation(annotation.id);
-                      }}
-                    >
-                      {annotation.label_number}
-                    </div>
-                  )}
-                </div>
-                ))}
+                {annotations.map((annotation) => {
+                  const isSelected = selectedAnnotationId === annotation.id;
+                  const baseClasses = `${TYPE_COLORS[annotation.type]} flex items-center justify-center font-bold text-sm shadow-lg cursor-pointer hover:scale-110 transition-transform`;
+                  const bgOpacity = isSelected ? 'bg-opacity-40' : 'bg-opacity-25';
+                  const borderWidth = isSelected ? 'border-3' : 'border-2';
+                  
+                  return (
+                  <div
+                    key={annotation.id}
+                    className="absolute pointer-events-auto"
+                    style={{
+                      left: `${annotation.x}%`,
+                      top: `${annotation.y}%`,
+                      transform: 'translate(-50%, -50%)',
+                    }}
+                  >
+                    {annotation.shape === 'circle' && (
+                      <div
+                        className={`w-10 h-10 rounded-full ${borderWidth} ${baseClasses} ${bgOpacity} text-gray-900`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedAnnotationId(annotation.id);
+                          handleEditAnnotation(annotation.id);
+                        }}
+                      >
+                        {annotation.label_number}
+                      </div>
+                    )}
+                    {annotation.shape === 'box' && (
+                      <div
+                        className={`w-10 h-10 ${borderWidth} ${baseClasses} ${bgOpacity} text-gray-900`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedAnnotationId(annotation.id);
+                          handleEditAnnotation(annotation.id);
+                        }}
+                      >
+                        {annotation.label_number}
+                      </div>
+                    )}
+                    {annotation.shape === 'triangle' && (
+                      <div
+                        className={`w-10 h-10 ${borderWidth} ${baseClasses} ${bgOpacity} text-gray-900`}
+                        style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedAnnotationId(annotation.id);
+                          handleEditAnnotation(annotation.id);
+                        }}
+                      >
+                        <span className="mt-3">{annotation.label_number}</span>
+                      </div>
+                    )}
+                    {annotation.shape === 'arrow' && (
+                      <div
+                        className={`relative w-12 h-8 ${borderWidth} ${baseClasses} ${bgOpacity} text-gray-900 rounded`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedAnnotationId(annotation.id);
+                          handleEditAnnotation(annotation.id);
+                        }}
+                      >
+                        <span className="absolute inset-0 flex items-center justify-center">→{annotation.label_number}</span>
+                      </div>
+                    )}
+                    {annotation.shape === 'text' && (
+                      <div
+                        className={`px-3 py-2 ${borderWidth} ${baseClasses} ${bgOpacity} text-gray-900 rounded-lg max-w-xs`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedAnnotationId(annotation.id);
+                          handleEditAnnotation(annotation.id);
+                        }}
+                      >
+                        <div className="font-bold text-xs mb-1">#{annotation.label_number}</div>
+                        {annotation.description && (
+                          <div className="text-xs leading-tight">{annotation.description.substring(0, 30)}{annotation.description.length > 30 ? '...' : ''}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -416,7 +516,11 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                 {annotations.map((annotation) => (
                   <div
                     key={annotation.id}
-                    className="p-4 bg-white border border-gray-200 rounded-lg"
+                    className={`p-4 bg-white rounded-lg transition-all ${
+                      selectedAnnotationId === annotation.id
+                        ? 'border-2 border-blue-500 shadow-md'
+                        : 'border border-gray-200'
+                    }`}
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
@@ -425,9 +529,14 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                         >
                           {annotation.label_number}
                         </span>
-                        <span className="text-sm font-medium capitalize text-gray-700">
-                          {annotation.type}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium capitalize text-gray-700">
+                            {annotation.type || 'dimension'}
+                          </span>
+                          <span className="text-xs text-gray-500 capitalize">
+                            {annotation.shape || 'circle'}
+                          </span>
+                        </div>
                       </div>
                       <button
                         onClick={() => handleDeleteAnnotation(annotation.id)}
@@ -440,6 +549,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     {editingId === annotation.id ? (
                       <div className="space-y-2">
                         <textarea
+                          ref={descriptionInputRef}
                           value={editDescription}
                           onChange={(e) => setEditDescription(e.target.value)}
                           placeholder="Add description..."
