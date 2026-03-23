@@ -4,6 +4,406 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 22:45 CT - [REFACTOR] Phase 24.6 - Navigation Restoration and Task Clutter Removal
+- Summary: Restored clear navigation back to PPAP Operations Dashboard and removed task orchestration UI from workflow screens.
+- Files changed:
+  - `app/ppap/new/page.tsx` - Added back navigation to dashboard
+  - `app/ppap/[id]/page.tsx` - Removed TaskList component and task fetching
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Removed task orchestration panel
+  - `src/features/ppap/components/PPAPHeader.tsx` - Removed task summary display
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Simplified PPAP workflow experience, clearer navigation, focus on ownership and workflow phases
+- No schema changes
+
+**Objective:**
+
+Restore dashboard navigation and simplify PPAP workflow UI:
+- Add consistent back navigation to PPAP Operations Dashboard
+- Remove task orchestration clutter from workflow screens
+- Focus experience on ownership, workflow phases, and management notes
+- Preserve high-value controls (phase progression, documentation, markup, event history)
+
+**Problem:**
+
+**Missing Back Navigation on Create PPAP Screen:**
+
+Create new PPAP screen had no way to return to dashboard:
+```tsx
+<div className="mb-6">
+  <h1>Create New PPAP</h1>
+  {/* No back link */}
+</div>
+```
+
+**Issues:**
+- Users trapped on create screen
+- Had to use browser back button
+- No consistent navigation pattern
+- Difficult to abandon PPAP creation
+
+**Task Orchestration Clutter:**
+
+PPAP workflow screens displayed extensive task management UI:
+- "Tasks for this Phase" panel with checklist
+- Task completion counts (3 of 5 completed)
+- Phase status badges (READY TO ADVANCE, IN PROGRESS)
+- Clickable task cards
+- Task summary in PPAPHeader (Total, Active, Completed, Overdue)
+- TaskList component showing all PPAP tasks
+
+**Issues:**
+- Task UI dominated workflow screens
+- Internal orchestration exposed to users
+- Distracted from core PPAP execution
+- Redundant with workflow phase progression
+- System should focus on PPAP delivery, not task tracking
+
+**Implementation:**
+
+**1. Added Back Navigation to Create PPAP Screen**
+
+**File:** `app/ppap/new/page.tsx`
+
+**Before:**
+```tsx
+<div className="mb-6">
+  <h1>Create New PPAP</h1>
+  <p>Enter the initial information...</p>
+</div>
+```
+
+**After:**
+```tsx
+import Link from 'next/link';
+
+<div className="mb-6">
+  <Link
+    href="/ppap"
+    className="inline-block text-blue-600 hover:text-blue-800 text-sm font-semibold transition-colors mb-4"
+  >
+    ← Back to PPAP Operations Dashboard
+  </Link>
+  <h1>Create New PPAP</h1>
+  <p>Enter the initial information...</p>
+</div>
+```
+
+**Benefits:**
+- Clear escape route
+- Consistent with PPAP detail screen
+- Top-left placement (standard location)
+- Visible without scrolling
+
+**2. Verified Back Navigation on PPAP Detail Screen**
+
+**File:** `src/features/ppap/components/PPAPHeader.tsx`
+
+Already present from Phase 24.4:
+```tsx
+<Link
+  href="/ppap"
+  className="text-blue-600 hover:text-blue-800 text-sm font-semibold transition-colors"
+>
+  ← Back to PPAP Dashboard
+</Link>
+```
+
+**3. Removed Task Orchestration Panel from Workflow**
+
+**File:** `src/features/ppap/components/PPAPWorkflowWrapper.tsx`
+
+**Removed:**
+- Import: `PPAPTask` type
+- Import: `getPhaseTasks` utility
+- Prop: `tasks: PPAPTask[]`
+- State/logic: `phaseTasksData`, `handleTaskClick`
+- Entire "Tasks for this Phase" panel (80+ lines)
+  - Task completion counts
+  - Phase status badges
+  - Task checklist with checkboxes
+  - "NEXT" task indicator
+  - Clickable task navigation
+
+**Preserved:**
+- Next Action panel
+- Phase indicator
+- Workflow forms (Initiation, Documentation, Sample, Review)
+- Phase progression logic
+- "Go to Section" button
+
+**Before:**
+```tsx
+export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
+  const phaseTasksData = getPhaseTasks(selectedPhase, {});
+  
+  return (
+    <div>
+      {/* Next Action Panel */}
+      {/* Phase Indicator */}
+      
+      {/* Tasks for this Phase - REMOVED */}
+      <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
+        <h3>Tasks for this Phase</h3>
+        {/* 80 lines of task UI */}
+      </div>
+      
+      {/* Workflow Forms */}
+    </div>
+  );
+}
+```
+
+**After:**
+```tsx
+export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
+  return (
+    <div>
+      {/* Next Action Panel */}
+      {/* Phase Indicator */}
+      {/* Workflow Forms */}
+    </div>
+  );
+}
+```
+
+**4. Removed TaskList from PPAP Detail Page**
+
+**File:** `app/ppap/[id]/page.tsx`
+
+**Removed:**
+- Import: `getTasksByPPAPId`
+- Import: `TaskList` component
+- Fetch: `tasks` from database
+- Prop: `tasks` passed to PPAPHeader
+- Prop: `tasks` passed to PPAPWorkflowWrapper
+- Component: `<TaskList ppapId={id} tasks={tasks || []} />`
+
+**Before:**
+```tsx
+try {
+  ppap = await getPPAPById(id);
+  [conversations, tasks, documents, events] = await Promise.all([
+    getConversationsByPPAPId(id),
+    getTasksByPPAPId(id),
+    getDocumentsByPPAPId(id),
+    getEventsByPPAPId(id),
+  ]);
+}
+
+<PPAPHeader ppap={ppap} tasks={tasks || []} />
+<PPAPWorkflowWrapper ppap={ppap} tasks={tasks || []} />
+
+<div className="lg:col-span-2">
+  <ConversationList />
+  <TaskList ppapId={id} tasks={tasks || []} />
+  <DocumentList />
+</div>
+```
+
+**After:**
+```tsx
+try {
+  ppap = await getPPAPById(id);
+  [conversations, documents, events] = await Promise.all([
+    getConversationsByPPAPId(id),
+    getDocumentsByPPAPId(id),
+    getEventsByPPAPId(id),
+  ]);
+}
+
+<PPAPHeader ppap={ppap} />
+<PPAPWorkflowWrapper ppap={ppap} />
+
+<div className="lg:col-span-2">
+  <ConversationList />
+  <DocumentList />
+</div>
+```
+
+**5. Removed Task Summary from PPAPHeader**
+
+**File:** `src/features/ppap/components/PPAPHeader.tsx`
+
+**Removed:**
+- Import: `PPAPTask` type
+- Import: `getTaskCounts` utility
+- Prop: `tasks?: PPAPTask[]`
+- Usage: `taskCounts = getTaskCounts(tasks)`
+- Task summary display section
+
+**Before:**
+```tsx
+import { getTaskCounts } from '@/src/features/tasks/utils/taskUtils';
+
+export function PPAPHeader({ ppap, tasks = [] }: PPAPHeaderProps) {
+  const taskCounts = getTaskCounts(tasks);
+  
+  return (
+    <div>
+      {/* PPAP Info */}
+      
+      {tasks.length > 0 && (
+        <div className="task-summary">
+          <span>Task Summary:</span>
+          <span>{taskCounts.total} Total</span>
+          <span>{taskCounts.active} Active</span>
+          <span>{taskCounts.completed} Completed</span>
+          {taskCounts.overdue > 0 && (
+            <span>🔴 {taskCounts.overdue} Overdue</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+**After:**
+```tsx
+export function PPAPHeader({ ppap }: PPAPHeaderProps) {
+  const nextActionData = getNextAction(ppap.workflow_phase, ppap.status);
+  
+  return (
+    <div>
+      {/* PPAP Info */}
+      {/* Task summary removed */}
+    </div>
+  );
+}
+```
+
+**Simplified PPAP Workflow Experience:**
+
+```
+PPAP Detail Screen (Before):
+├─ PPAPHeader
+│  ├─ PPAP number, status, part number
+│  ├─ Next action banner
+│  ├─ Ownership controls
+│  └─ Task Summary: 15 Total • 8 Active • 7 Completed • 2 Overdue
+├─ PPAPWorkflowWrapper
+│  ├─ Next Action Panel
+│  ├─ Phase Indicator
+│  ├─ Tasks for this Phase (REMOVED)
+│  │  ├─ Phase status badge
+│  │  ├─ 3 of 5 tasks completed
+│  │  └─ Task checklist with checkboxes
+│  └─ Workflow Forms
+├─ ConversationList
+├─ TaskList (REMOVED)
+├─ DocumentList
+└─ EventHistory
+
+PPAP Detail Screen (After):
+├─ PPAPHeader
+│  ├─ PPAP number, status, part number
+│  ├─ Next action banner
+│  └─ Ownership controls
+├─ PPAPWorkflowWrapper
+│  ├─ Next Action Panel
+│  ├─ Phase Indicator
+│  └─ Workflow Forms
+├─ ConversationList
+├─ DocumentList
+└─ EventHistory
+```
+
+**Navigation Flow:**
+
+```
+/ppap (Operations Dashboard)
+  ↓
+Click PPAP name or "Continue Work"
+  ↓
+/ppap/[id] (PPAP Detail/Workflow)
+  ├─ ← Back to PPAP Operations Dashboard (top-left)
+  ├─ Workflow phase progression
+  ├─ Forms and documentation
+  └─ Event history
+  ↓
+Click "← Back to PPAP Operations Dashboard"
+  ↓
+/ppap (Operations Dashboard)
+
+/ppap (Operations Dashboard)
+  ↓
+Click "Create New PPAP"
+  ↓
+/ppap/new (Create PPAP)
+  ├─ ← Back to PPAP Operations Dashboard (top-left)
+  ├─ PPAP creation form
+  └─ Initial document upload
+  ↓
+Click "← Back to PPAP Operations Dashboard" OR submit form
+  ↓
+/ppap (Operations Dashboard) OR /ppap/[new-id]
+```
+
+**Benefits:**
+
+**Clear Navigation:**
+- ✅ Consistent back link on all PPAP screens
+- ✅ Top-left placement (standard location)
+- ✅ Same label everywhere: "← Back to PPAP Operations Dashboard"
+- ✅ Easy return to dashboard
+- ✅ No dead ends
+
+**Simplified Workflow:**
+- ✅ Removed task orchestration clutter
+- ✅ Removed redundant task counts
+- ✅ Removed internal task tracking UI
+- ✅ Focus on PPAP execution
+- ✅ Cleaner, less overwhelming interface
+
+**Preserved High-Value Controls:**
+- ✅ Next action guidance
+- ✅ Workflow phase progression
+- ✅ Phase indicator with status
+- ✅ Documentation upload and management
+- ✅ Markup tool access
+- ✅ PPAP ownership/assignment
+- ✅ Management notes (ConversationList)
+- ✅ Event history
+- ✅ Status updates
+
+**User Experience:**
+- ✅ Less cognitive load
+- ✅ Clearer focus on deliverables
+- ✅ Easier navigation
+- ✅ Workflow-centric (not task-centric)
+- ✅ Management-friendly view
+
+**Code Quality:**
+- ✅ Removed unused imports
+- ✅ Removed unused state
+- ✅ Simplified component props
+- ✅ Reduced complexity
+- ✅ Cleaner component APIs
+
+**Validation:**
+- ✅ Back link added to Create PPAP screen
+- ✅ Back link verified on PPAP detail screen
+- ✅ Task orchestration panel removed from workflow
+- ✅ TaskList component removed from layout
+- ✅ Task summary removed from PPAPHeader
+- ✅ Task imports cleaned up
+- ✅ Navigation flow works both directions
+- ✅ High-value controls preserved
+- ✅ No schema changes
+
+**No Schema Changes:**
+- ✅ Database unchanged
+- ✅ Task table still exists
+- ✅ Task queries still available
+- ✅ Only UI/component changes
+
+**Note:**
+Task data and infrastructure remain intact. This change only removes task UI from the PPAP workflow experience. Tasks can be reintroduced later if needed, or managed in a separate admin/orchestration view.
+
+- Commit: `refactor: phase 24.6 restore dashboard navigation and remove task clutter`
+
+---
+
 ## 2026-03-22 22:30 CT - [FIX] Remove uuid Dependency from CreatePPAPForm
 - Summary: Replaced uuid import with native temp ID generation to fix Vercel build failure.
 - Files changed:

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { PPAPRecord, PPAPTask } from '@/src/types/database.types';
+import { PPAPRecord } from '@/src/types/database.types';
 import { PhaseIndicator } from './PhaseIndicator';
 import { InitiationForm } from './InitiationForm';
 import { DocumentationForm } from './DocumentationForm';
@@ -9,14 +9,12 @@ import { SampleForm } from './SampleForm';
 import { ReviewForm } from './ReviewForm';
 import { WorkflowPhase, isValidWorkflowPhase, WORKFLOW_PHASE_LABELS, WORKFLOW_PHASES } from '../constants/workflowPhases';
 import { getNextAction } from '../utils/getNextAction';
-import { getPhaseTasks } from '../utils/getPhaseTasks';
 
 interface PPAPWorkflowWrapperProps {
   ppap: PPAPRecord;
-  tasks: PPAPTask[];
 }
 
-export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
+export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   // Initialize phase from database, fallback to INITIATION if invalid
   const initialPhase = isValidWorkflowPhase(ppap.workflow_phase) 
     ? ppap.workflow_phase 
@@ -38,11 +36,6 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
 
   const nextActionData = getNextAction(ppap.workflow_phase, ppap.status);
   
-  // Get phase tasks with data-driven completion
-  // Note: Phase data is managed within child form components
-  // Tasks will show completion based on data passed here
-  const phaseTasksData = getPhaseTasks(selectedPhase, {});
-  
   const scrollToActivePhase = () => {
     if (activePhaseRef.current) {
       activePhaseRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -53,22 +46,6 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
     setSelectedPhase(phase);
     setDocumentationSection(undefined);
     scrollToActivePhase();
-  };
-
-  const handleTaskClick = (taskId: string) => {
-    // Map task IDs to documentation sections
-    const taskSectionMap: Record<string, 'checklist' | 'upload' | 'readiness'> = {
-      'prepare_documents': 'checklist',
-      'markup_drawing': 'checklist',
-      'dimensional_results': 'checklist',
-      'upload_documents': 'upload',
-    };
-
-    const targetSection = taskSectionMap[taskId];
-    if (targetSection && selectedPhase === 'DOCUMENTATION') {
-      setDocumentationSection(targetSection);
-      scrollToActivePhase();
-    }
   };
 
   // Calculate if selected phase is in the future (read-only)
@@ -98,86 +75,6 @@ export function PPAPWorkflowWrapper({ ppap, tasks }: PPAPWorkflowWrapperProps) {
       </div>
 
       <PhaseIndicator currentPhase={currentPhase} onPhaseClick={handlePhaseClick} />
-
-      {/* Phase Tasks Panel */}
-      <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-bold text-gray-900">Tasks for this Phase</h3>
-            <div className="mt-1">
-              {phaseTasksData.phaseStatus === 'READY_TO_ADVANCE' && (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-300">
-                  ✓ READY TO ADVANCE
-                </span>
-              )}
-              {phaseTasksData.phaseStatus === 'IN_PROGRESS' && (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">
-                  ⚡ IN PROGRESS
-                </span>
-              )}
-              {phaseTasksData.phaseStatus === 'COMPLETE' && (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
-                  ✓ COMPLETE
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="text-sm font-semibold text-gray-700">
-            <span className="text-blue-600">{phaseTasksData.completedCount || 0}</span> of{' '}
-            <span className="text-gray-900">{phaseTasksData.totalCount || 0}</span> tasks completed
-          </div>
-        </div>
-
-        {phaseTasksData.tasks.length > 0 ? (
-          <div className="space-y-3">
-            {phaseTasksData.tasks.map((task, index) => {
-              const isFirstIncomplete = !task.completed && phaseTasksData.tasks.slice(0, index).every(t => t.completed);
-              const isClickable = selectedPhase === 'DOCUMENTATION' && ['prepare_documents', 'markup_drawing', 'dimensional_results', 'upload_documents'].includes(task.id);
-              return (
-                <div
-                  key={task.id}
-                  onClick={() => isClickable && handleTaskClick(task.id)}
-                  className={`flex items-start p-4 rounded-lg border-2 transition-all ${
-                    task.completed
-                      ? 'bg-green-50 border-green-200'
-                      : isFirstIncomplete
-                      ? 'bg-blue-50 border-blue-400 shadow-md'
-                      : 'bg-gray-50 border-gray-200'
-                  } ${isClickable ? 'cursor-pointer hover:shadow-lg hover:border-blue-500' : ''}`}
-                >
-                  <div className="flex items-center h-6">
-                    <input
-                      type="checkbox"
-                      checked={!!task.completed}
-                      readOnly
-                      className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-default"
-                    />
-                  </div>
-                  <div className="ml-3 flex-1">
-                    <div className="flex items-center gap-2">
-                      <label className={`text-sm font-semibold ${
-                        task.completed ? 'text-green-800 line-through' : 'text-gray-900'
-                      }`}>
-                        {task.label || ''}
-                      </label>
-                      {isFirstIncomplete && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-blue-600 text-white">
-                          NEXT
-                        </span>
-                      )}
-                    </div>
-                    {task.description && (
-                      <p className="mt-1 text-xs text-gray-600">{task.description || ''}</p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500 italic">No tasks defined for this phase.</p>
-        )}
-      </div>
       
       {selectedPhase === 'INITIATION' && (
         <div ref={activePhaseRef}>

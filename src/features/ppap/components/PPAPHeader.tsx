@@ -1,11 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { PPAPRecord, PPAPTask } from '@/src/types/database.types';
+import { PPAPRecord } from '@/src/types/database.types';
 import { formatDate } from '@/src/lib/utils';
 import Link from 'next/link';
 import { StatusUpdateControl } from './StatusUpdateControl';
-import { getTaskCounts } from '@/src/features/tasks/utils/taskUtils';
 import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils/getNextAction';
 import { supabase } from '@/src/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
@@ -13,14 +12,12 @@ import { logEvent } from '@/src/features/events/mutations';
 
 interface PPAPHeaderProps {
   ppap: PPAPRecord;
-  tasks?: PPAPTask[];
 }
 
-export function PPAPHeader({ ppap, tasks = [] }: PPAPHeaderProps) {
+export function PPAPHeader({ ppap }: PPAPHeaderProps) {
   const router = useRouter();
   const [assignedTo, setAssignedTo] = useState(ppap.assigned_to || null);
   const [takingOwnership, setTakingOwnership] = useState(false);
-  const taskCounts = getTaskCounts(tasks);
   const nextActionData = getNextAction(ppap.workflow_phase, ppap.status);
   
   const handleTakeOwnership = async () => {
@@ -117,31 +114,6 @@ export function PPAPHeader({ ppap, tasks = [] }: PPAPHeaderProps) {
             ← Back to PPAP Dashboard
           </Link>
         </div>
-        
-        {tasks.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-4 text-sm">
-            <span className="font-medium text-gray-700">Task Summary:</span>
-            <span className="text-gray-700">
-              <span className="font-bold">{taskCounts.total}</span> Total
-            </span>
-            <span className="text-gray-400">•</span>
-            <span className="text-blue-700">
-              <span className="font-bold">{taskCounts.active}</span> Active
-            </span>
-            <span className="text-gray-400">•</span>
-            <span className="text-green-700">
-              <span className="font-bold">{taskCounts.completed}</span> Completed
-            </span>
-            {taskCounts.overdue > 0 && (
-              <>
-                <span className="text-gray-400">•</span>
-                <span className="text-red-700 font-bold">
-                  🔴 {taskCounts.overdue} Overdue
-                </span>
-              </>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="p-6 bg-gray-50">
