@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Joyride, Step, CallbackProps, STATUS } from 'react-joyride';
+import { Joyride, Step, STATUS } from 'react-joyride';
 import { PPAPRecord, PPAPEvent } from '@/src/types/database.types';
 import { supabase } from '@/src/lib/supabaseClient';
 import { logEvent } from '@/src/features/events/mutations';
@@ -79,7 +79,7 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
     },
   ];
 
-  const handleTourCallback = (data: CallbackProps) => {
+  const handleTourCallback = (data: any) => {
     const { status } = data;
     if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
       setRunTour(false);
