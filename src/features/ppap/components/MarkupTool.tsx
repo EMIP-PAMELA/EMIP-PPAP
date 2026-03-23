@@ -256,67 +256,53 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       const jsPdfAny = jsPdfModule as any;
       const jsPDF = jsPdfAny.jsPDF || jsPdfAny.default?.jsPDF || jsPdfAny.default;
 
-      // Hide UI panels before capture
-      const panels = document.querySelectorAll('.export-hide');
-      panels.forEach(el => {
-        if (el instanceof HTMLElement) {
-          el.style.display = 'none';
-        }
-      });
+      // Create clean export container off-screen
+      const exportContainer = document.createElement('div');
+      exportContainer.style.position = 'fixed';
+      exportContainer.style.top = '-10000px';
+      exportContainer.style.left = '0';
+      exportContainer.style.background = '#ffffff';
+      exportContainer.style.padding = '0';
+      exportContainer.style.margin = '0';
+      document.body.appendChild(exportContainer);
 
-      // Replace unsupported CSS color formats for html2canvas compatibility
-      const originalStyles: Array<{ el: HTMLElement; style: string }> = [];
-      const elements = document.querySelectorAll('*');
-      
-      elements.forEach((el) => {
+      // Clone drawing area
+      const cloned = exportRef.current.cloneNode(true) as HTMLElement;
+      exportContainer.appendChild(cloned);
+
+      // Strip all styles that can break html2canvas
+      const allElements = exportContainer.querySelectorAll('*');
+      allElements.forEach((el) => {
         if (!(el instanceof HTMLElement)) return;
-        
-        const computed = window.getComputedStyle(el);
-        
-        // Check for problematic color formats
-        if (
-          computed.color.includes('lab') ||
-          computed.backgroundColor.includes('lab') ||
-          computed.color.includes('lch') ||
-          computed.backgroundColor.includes('lch')
-        ) {
-          originalStyles.push({
-            el,
-            style: el.getAttribute('style') || ''
-          });
-          
-          // Force safe fallback colors
-          if (computed.color.includes('lab') || computed.color.includes('lch')) {
-            el.style.color = '#000000';
-          }
-          if (computed.backgroundColor.includes('lab') || computed.backgroundColor.includes('lch')) {
-            el.style.backgroundColor = '#ffffff';
-          }
+
+        // Remove ALL class-based styling influence
+        el.className = '';
+
+        // Force safe base styles
+        el.style.color = '#000000';
+        el.style.backgroundColor = 'transparent';
+        el.style.boxShadow = 'none';
+        el.style.filter = 'none';
+      });
+
+      // Force image + annotation visibility
+      const images = exportContainer.querySelectorAll('img');
+      images.forEach((img) => {
+        if (img instanceof HTMLImageElement) {
+          img.style.display = 'block';
+          img.style.maxWidth = '100%';
         }
       });
 
-      // Capture drawing with annotations
-      const canvas = await html2canvas(exportRef.current, {
+      // Capture clean DOM
+      const canvas = await html2canvas(exportContainer, {
         scale: 2,
         useCORS: true,
         backgroundColor: '#ffffff',
       });
 
-      // Restore original styles
-      originalStyles.forEach(({ el, style }) => {
-        if (style) {
-          el.setAttribute('style', style);
-        } else {
-          el.removeAttribute('style');
-        }
-      });
-
-      // Restore UI panels
-      panels.forEach(el => {
-        if (el instanceof HTMLElement) {
-          el.style.display = '';
-        }
-      });
+      // Clean up temp DOM
+      document.body.removeChild(exportContainer);
 
       const imgData = canvas.toDataURL('image/png');
 
