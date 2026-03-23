@@ -262,9 +262,23 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
         showSkipButton
         callback={handleTourCallback}
         styles={{
-          options: {
-            primaryColor: '#2563eb',
-            zIndex: 10000,
+          tooltip: {
+            borderRadius: '8px',
+            padding: '12px',
+          },
+          buttonNext: {
+            backgroundColor: '#2563eb',
+            color: '#fff',
+          },
+          buttonBack: {
+            color: '#374151',
+          },
+        }}
+        floaterProps={{
+          styles: {
+            floater: {
+              zIndex: 10000,
+            },
           },
         }}
       />
