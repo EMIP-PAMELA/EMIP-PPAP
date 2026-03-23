@@ -5,8 +5,6 @@ import { supabase } from '@/src/lib/supabaseClient';
 import { logEvent } from '@/src/features/events/mutations';
 import { getPPAPDocuments } from '@/src/features/ppap/utils/getPPAPDocuments';
 import { uploadPPAPDocument } from '@/src/features/ppap/utils/uploadFile';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 interface MarkupToolProps {
   ppapId: string;
@@ -228,6 +226,9 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   };
 
   const handleExportMarkup = async () => {
+    // Client-only execution guard
+    if (typeof window === 'undefined') return;
+
     if (!selectedFile) {
       alert('Please select a drawing first');
       return;
@@ -245,6 +246,15 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
     setExporting(true);
     try {
+      // Dynamic import of browser-safe PDF libraries
+      const [html2canvasModule, jsPdfModule] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf')
+      ]);
+
+      const html2canvas = html2canvasModule.default;
+      const jsPDF = jsPdfModule.jsPDF || jsPdfModule.default?.jsPDF || jsPdfModule.default;
+
       // Hide UI panels before capture
       const panels = document.querySelectorAll('.export-hide');
       panels.forEach(el => {

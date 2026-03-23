@@ -4,6 +4,187 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 00:20 CT - [FIX] Phase 23.14.1 - Browser-Safe PDF Export Import Fix
+- Summary: Fixed Vercel build failure by switching to dynamic client-only imports for PDF export libraries.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Dynamic imports for jsPDF and html2canvas
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Resolved Turbopack/Vercel SSR build failure, PDF export still fully functional
+- No schema changes
+
+**Problem:**
+
+**Vercel Build Failure:**
+
+Static jsPDF import triggered Node.js-only code during SSR build:
+```tsx
+// BEFORE: Module-level static import
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+```
+
+**Error:**
+```
+Turbopack/Next.js SSR build failure
+jspdf pulls in fflate node worker path
+Node-only imports evaluated during client build
+Build crashes on Vercel
+```
+
+**Root Cause:**
+- jsPDF has Node.js-specific code paths
+- Static imports evaluated during SSR build
+- Turbopack tries to bundle node-only modules
+- Build fails before runtime
+
+**Implementation:**
+
+**1. Removed Static Imports**
+
+```tsx
+// REMOVED:
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+```
+
+**Benefits:**
+- No module-level evaluation
+- No node-only code in SSR bundle
+- Libraries only loaded when needed
+
+**2. Added Dynamic Imports in Export Handler**
+
+```tsx
+const handleExportMarkup = async () => {
+  // Client-only execution guard
+  if (typeof window === 'undefined') return;
+
+  // Validation...
+
+  setExporting(true);
+  try {
+    // Dynamic import of browser-safe PDF libraries
+    const [html2canvasModule, jsPdfModule] = await Promise.all([
+      import('html2canvas'),
+      import('jspdf')
+    ]);
+
+    const html2canvas = html2canvasModule.default;
+    const jsPDF = jsPdfModule.jsPDF || jsPdfModule.default?.jsPDF || jsPdfModule.default;
+
+    // Continue with export logic...
+  }
+}
+```
+
+**Benefits:**
+- Libraries loaded only on user action
+- Client-side only (never during SSR)
+- Browser-safe module resolution
+- Parallel loading for performance
+
+**3. Client-Only Execution Guard**
+
+```tsx
+if (typeof window === 'undefined') return;
+```
+
+**Benefits:**
+- Prevents accidental SSR execution
+- Extra safety layer
+- Early exit if not in browser
+
+**4. Module Shape Compatibility**
+
+```tsx
+const jsPDF = jsPdfModule.jsPDF || jsPdfModule.default?.jsPDF || jsPdfModule.default;
+```
+
+**Handles:**
+- Named export: `jsPdfModule.jsPDF`
+- Default with named: `jsPdfModule.default?.jsPDF`
+- Pure default: `jsPdfModule.default`
+
+**5. Preserved Export Functionality**
+
+All Phase 23.14 features intact:
+- ✅ Hide UI panels during capture
+- ✅ Capture exportRef with html2canvas
+- ✅ Generate annotated drawing PDF
+- ✅ Add annotation sheet page
+- ✅ Save downloadable file
+- ✅ Error handling
+- ✅ User feedback
+
+**Before/After:**
+
+```tsx
+// BEFORE (Phase 23.14):
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+
+const handleExportMarkup = async () => {
+  // validation...
+  const canvas = await html2canvas(...);
+  const pdf = new jsPDF(...);
+  // export logic...
+}
+
+// AFTER (Phase 23.14.1):
+const handleExportMarkup = async () => {
+  if (typeof window === 'undefined') return;
+  
+  // validation...
+  
+  const [html2canvasModule, jsPdfModule] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf')
+  ]);
+
+  const html2canvas = html2canvasModule.default;
+  const jsPDF = jsPdfModule.jsPDF || jsPdfModule.default?.jsPDF || jsPdfModule.default;
+
+  const canvas = await html2canvas(...);
+  const pdf = new jsPDF(...);
+  // export logic...
+}
+```
+
+**Benefits:**
+
+**Build Stability:**
+- ✅ Vercel builds succeed
+- ✅ No node-only code in client bundle
+- ✅ Turbopack/Next.js SSR compatible
+- ✅ No runtime errors
+
+**Export Functionality:**
+- ✅ PDF export still works
+- ✅ No behavior changes
+- ✅ Same user experience
+- ✅ No performance regression
+
+**Code Quality:**
+- ✅ Client-only guard
+- ✅ Module shape compatibility
+- ✅ Parallel dynamic loading
+- ✅ Error handling preserved
+
+**Validation:**
+- ✅ Static imports removed
+- ✅ Dynamic imports in handler only
+- ✅ Client-only execution guard
+- ✅ Export workflow preserved
+- ✅ No schema changes
+- ✅ No feature regression
+
+**Note:**
+Simple import strategy change fixes Vercel build while preserving all PDF export functionality. Libraries now loaded dynamically only when user clicks export, preventing node-only code from entering SSR bundle.
+
+- Commit: `fix: phase 23.14.1 use browser-safe dynamic imports for PDF export`
+
+---
+
 ## 2026-03-23 00:15 CT - [FEAT] Phase 23.14 - PDF Export and Annotation Sheet Generation
 - Summary: Implemented PDF export system with annotated drawing capture and structured annotation sheet.
 - Files changed:
