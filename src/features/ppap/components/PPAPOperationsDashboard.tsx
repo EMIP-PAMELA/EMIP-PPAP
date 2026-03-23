@@ -266,13 +266,6 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
             borderRadius: '8px',
             padding: '12px',
           },
-          buttonNext: {
-            backgroundColor: '#2563eb',
-            color: '#fff',
-          },
-          buttonBack: {
-            color: '#374151',
-          },
         }}
         floaterProps={{
           styles: {
