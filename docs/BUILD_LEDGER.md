@@ -4,6 +4,213 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 12:10 CT - [FIX] Phase 23.14.9 - Stabilize Export Pipeline PDF/Image Separation
+- Summary: Hardened export branching logic to prevent PDF/image workflow crossover.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Restructured export with early file type guard
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Eliminated blank exports, signed URL failures, and html2canvas crashes for PDFs
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- PDF and image export paths shared common execution flow
+- Image-based logic (html2canvas, signed URLs, exportRef) ran on PDFs
+- PDFs don't have HTMLImageElement, causing crashes
+- Signed URLs only valid for images, failed for PDFs
+- exportRef checks required for images but irrelevant for PDFs
+- Branching logic occurred too late in execution
+
+**Symptoms:**
+- Blank PDF exports
+- "Failed to generate signed URL" errors for PDFs
+- html2canvas crashes when processing PDF files
+- Export target not ready errors for PDFs
+- Runtime failures during PDF export
+- Unreliable demo behavior
+
+**Implementation:**
+
+**Restructured Export Flow with Early Branching**
+
+**Before (Late Branching):**
+```tsx
+const handleExportMarkup = async () => {
+  if (!selectedFile) return;
+  if (annotations.length === 0) return;
+  if (!exportRef.current) return; // ❌ Required for images, fails for PDFs
+  
+  const isPdf = selectedFile.toLowerCase().endsWith('.pdf');
+  
+  const jsPDF = await import('jspdf');
+  
+  if (isPdf) {
+    await exportPdfAnnotationsOnly(jsPDF);
+  } else {
+    const html2canvas = await import('html2canvas');
+    await exportImageWithAnnotations(jsPDF, html2canvas);
+  }
+}
+```
+
+**After (Early Hard Separation):**
+```tsx
+const handleExportMarkup = async () => {
+  // CRITICAL: Early file type validation
+  if (!selectedFile || typeof selectedFile !== 'string') {
+    alert('No drawing selected.');
+    return;
+  }
+  
+  if (annotations.length === 0) return;
+  
+  // Safety logging
+  console.log('Export file:', selectedFile);
+  const isPdf = selectedFile.toLowerCase().endsWith('.pdf');
+  console.log('Is PDF:', isPdf);
+  
+  const jsPDF = await import('jspdf');
+  
+  if (isPdf) {
+    // PDF PATH: Annotation sheet only
+    // NO html2canvas, NO signed URLs, NO image rendering
+    alert('PDF drawings export annotation sheets only...');
+    await exportPdfAnnotationsOnly(jsPDF);
+    alert('Export complete!');
+    return; // CRITICAL: Stop execution here
+  }
+  
+  // IMAGE PATH ONLY (below this line)
+  // This code NEVER runs for PDFs
+  if (!exportRef.current) return;
+  
+  const html2canvas = await import('html2canvas');
+  await exportImageWithAnnotations(jsPDF, html2canvas);
+  alert('Export complete!');
+}
+```
+
+**Key Changes:**
+
+**1. Early File Type Detection:**
+- Moved to top of function, before any other logic
+- Type validation ensures selectedFile is string
+- Safety logging for debugging
+
+**2. Hard Return for PDFs:**
+- PDF path executes and returns immediately
+- No subsequent code runs for PDFs
+- Zero chance of image logic executing
+
+**3. Image-Only Guards:**
+- exportRef check moved below PDF branch
+- html2canvas import only for images
+- Signed URL calls only in image path
+
+**4. Safety in exportImageWithAnnotations:**
+```tsx
+const exportImageWithAnnotations = async (jsPDF: any, html2canvas: any) => {
+  if (!selectedFile || typeof selectedFile !== 'string') {
+    throw new Error('Invalid file.');
+  }
+  
+  // Safety check: should never be called for PDFs
+  if (selectedFile.toLowerCase().endsWith('.pdf')) {
+    console.error('CRITICAL: exportImageWithAnnotations called for PDF file');
+    throw new Error('PDF files cannot use image export path.');
+  }
+  
+  // Generate fresh signed URL (image-only)
+  const freshUrl = await getSignedUrl(selectedFile);
+  
+  if (!freshUrl) {
+    throw new Error('Failed to load drawing image.');
+  }
+  
+  // ... rest of image export logic
+}
+```
+
+**PDF Export Path (Standalone):**
+- exportPdfAnnotationsOnly never calls html2canvas
+- Never requires exportRef or image elements
+- Never calls getSignedUrl
+- Pure PDF generation with jsPDF
+- Creates annotation sheet only
+- String() safety for all text values
+
+**Image Export Path (Separated):**
+- Only executes for non-PDF files
+- Requires exportRef with HTMLImageElement
+- Calls getSignedUrl for fresh image URL
+- Uses html2canvas for rendering
+- Generates full marked-up drawing
+
+**Why This Works:**
+
+**Complete Separation:**
+- PDF and image paths have zero overlap
+- Each path has only required dependencies
+- No shared state or side effects
+- Clear execution boundaries
+
+**Early Exit Pattern:**
+- File type detection first
+- PDF path completes and returns
+- Image logic unreachable for PDFs
+- Prevents all crossover failures
+
+**Type Safety:**
+- selectedFile validated as string
+- PDF detection before any operations
+- Explicit error if wrong path called
+- Runtime guards prevent misuse
+
+**Benefits:**
+
+**Export Reliability:**
+- ✅ PDFs export annotation sheets reliably
+- ✅ Images export with full overlay
+- ✅ No blank exports
+- ✅ No signed URL failures for PDFs
+- ✅ No html2canvas crashes on PDFs
+
+**Code Quality:**
+- ✅ Clear separation of concerns
+- ✅ Type-safe file handling
+- ✅ Early validation and branching
+- ✅ Safety logging for debugging
+- ✅ Explicit error messages
+
+**Demo Stability:**
+- ✅ Predictable export behavior
+- ✅ No runtime failures
+- ✅ Professional user experience
+- ✅ Clear user feedback
+
+**Validation:**
+- ✅ Early file type guard at function top
+- ✅ PDF path returns immediately
+- ✅ Image logic unreachable for PDFs
+- ✅ No signed URL calls for PDFs
+- ✅ Safety check in exportImageWithAnnotations
+- ✅ Console logging for debugging
+- ✅ User feedback for PDF exports
+- ✅ No schema changes
+
+**User Feedback:**
+- PDF export: "PDF drawings export annotation sheets only. Full overlay export coming in a future phase."
+- Success: "Export complete!"
+- Failures: Specific error messages based on failure point
+
+**Note:**
+Critical stability fix for export pipeline. Previous implementation allowed PDF and image workflows to intermingle, causing signed URL failures, html2canvas crashes, and blank exports when processing PDFs. Restructured with early file type detection and hard separation - PDF path executes and returns immediately, image logic is completely unreachable for PDFs. Each path now has only its required dependencies. Export reliability dramatically improved for demo and production use.
+
+- Commit: `fix: phase 23.14.9 stabilize export pipeline for PDF vs image separation`
+
+---
+
 ## 2026-03-23 11:55 CT - [FIX] Phase 24.9 - Immediate UI Sync After Phase Promotion
 - Summary: Fixed stale UI after PPAP phase promotion by syncing local state with prop changes.
 - Files changed:

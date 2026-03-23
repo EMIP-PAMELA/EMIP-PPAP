@@ -308,8 +308,9 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     // Client-only execution guard
     if (typeof window === 'undefined') return;
 
-    if (!selectedFile) {
-      alert('Please select a drawing first');
+    // CRITICAL: Early file type validation and branching
+    if (!selectedFile || typeof selectedFile !== 'string') {
+      alert('No drawing selected.');
       return;
     }
 
@@ -318,13 +319,10 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       return;
     }
 
-    if (!exportRef.current) {
-      alert('Export target not ready');
-      return;
-    }
-
-    // Detect file type
+    // Safety logging
+    console.log('Export file:', selectedFile);
     const isPdf = selectedFile.toLowerCase().endsWith('.pdf');
+    console.log('Is PDF:', isPdf);
 
     setExporting(true);
     try {
@@ -333,20 +331,28 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       const jsPdfAny = jsPdfModule as any;
       const jsPDF = jsPdfAny.jsPDF || jsPdfAny.default?.jsPDF || jsPdfAny.default;
 
-      // SPLIT EXPORT LOGIC: PDF vs Image
+      // HARD SEPARATION: PDF path vs Image path
       if (isPdf) {
         // PDF EXPORT PATH: Annotation sheet only
-        alert('PDF export currently includes annotation sheet only. Drawing overlay coming next phase.');
+        // NO html2canvas, NO signed URLs, NO image rendering
+        alert('PDF drawings export annotation sheets only. Full overlay export coming in a future phase.');
         
         await exportPdfAnnotationsOnly(jsPDF);
-      } else {
-        // IMAGE EXPORT PATH: Full drawing with annotations
-        const html2canvasModule = await import('html2canvas');
-        const html2canvas = html2canvasModule.default;
-        
-        await exportImageWithAnnotations(jsPDF, html2canvas);
+        alert('Export complete!');
+        return; // CRITICAL: Stop execution here for PDFs
       }
 
+      // IMAGE EXPORT PATH ONLY (below this line)
+      // This code NEVER runs for PDFs
+      if (!exportRef.current) {
+        alert('Export target not ready');
+        return;
+      }
+
+      const html2canvasModule = await import('html2canvas');
+      const html2canvas = html2canvasModule.default;
+      
+      await exportImageWithAnnotations(jsPDF, html2canvas);
       alert('Export complete!');
     } catch (error) {
       console.error('Export failed:', error);
@@ -354,7 +360,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       // Provide specific error message based on failure point
       let errorMessage = 'Export failed. Please try again.';
       if (error instanceof Error) {
-        if (error.message.includes('Image')) {
+        if (error.message.includes('Image') || error.message.includes('drawing')) {
           errorMessage = 'Export failed while rendering drawing page. Please ensure the drawing is fully loaded.';
         } else if (error.message.includes('annotation')) {
           errorMessage = 'Export failed while generating annotation sheet.';
@@ -426,7 +432,13 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     // Type-safe guard: ensure selectedFile is valid string
     if (!selectedFile || typeof selectedFile !== 'string') {
       console.error('Export blocked: invalid selectedFile', selectedFile);
-      throw new Error('No drawing selected. Please select a drawing before exporting.');
+      throw new Error('Invalid file.');
+    }
+
+    // Safety check: should never be called for PDFs
+    if (selectedFile.toLowerCase().endsWith('.pdf')) {
+      console.error('CRITICAL: exportImageWithAnnotations called for PDF file');
+      throw new Error('PDF files cannot use image export path.');
     }
 
     // Find image element
