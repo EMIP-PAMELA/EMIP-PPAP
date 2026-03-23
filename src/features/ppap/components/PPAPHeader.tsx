@@ -114,7 +114,7 @@ export function PPAPHeader({ ppap, tasks = [] }: PPAPHeaderProps) {
             href="/ppap"
             className="text-blue-600 hover:text-blue-800 text-sm font-semibold transition-colors"
           >
-            ← Back to List
+            ← Back to PPAP Dashboard
           </Link>
         </div>
         

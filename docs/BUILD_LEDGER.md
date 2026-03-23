@@ -4,6 +4,340 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 21:15 CT - [FIX] Phase 24.4 - Dashboard Entry and Navigation
+- Summary: Fixed homepage routing and navigation to unify entry point to PPAP Operations Dashboard.
+- Files changed:
+  - `app/page.tsx` - Replaced legacy dashboard with redirect to /ppap
+  - `src/features/ppap/components/PPAPHeader.tsx` - Updated back navigation text
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: System now has single unified entry point at /ppap route
+- No schema changes
+
+**Objective:**
+
+Fix dashboard visibility and navigation:
+- Ensure PPAP Operations Dashboard is the true entry experience
+- Remove legacy dashboard rendering
+- Add clear global navigation back to dashboard from PPAP detail pages
+- Unify system entry into single operational command center
+
+**Problem:**
+
+**Legacy Dashboard on Homepage:**
+
+`/app/page.tsx` contained old simple table dashboard:
+
+```tsx
+<h1>EMIP-PPAP Dashboard</h1>
+<p>Recent PPAP Records</p>
+
+<table>
+  <!-- Simple 10-record table -->
+  <thead>
+    <th>PPAP Number</th>
+    <th>Part Number</th>
+    <th>Customer Name</th>
+    <th>Plant</th>
+    <th>Status</th>
+    <th>Request Date</th>
+  </thead>
+  <tbody>
+    {data.map(ppap => (...))}
+  </tbody>
+</table>
+
+<Link href="/ppap">View All PPAP Records →</Link>
+```
+
+**Issues:**
+- Two separate dashboards in system
+- Homepage showed limited/outdated view (10 records max)
+- No intelligence features (next action, phase progress, etc.)
+- Confusing entry point (homepage vs /ppap)
+- Users had to click "View All PPAP Records" to reach full dashboard
+
+**Navigation Clarity:**
+
+PPAPHeader had generic back navigation:
+```tsx
+<Link href="/ppap">← Back to List</Link>
+```
+
+**Issues:**
+- "List" doesn't convey destination clearly
+- Should indicate going back to "Dashboard"
+- Not consistent with unified branding
+
+**Implementation:**
+
+**1. Replaced Homepage with Redirect**
+
+Removed legacy dashboard, added redirect to PPAP Operations Dashboard:
+
+**Before (`/app/page.tsx`):**
+```tsx
+import { supabase } from "@/src/lib/supabaseClient";
+import Link from "next/link";
+
+export default async function Home() {
+  const { data, error } = await supabase
+    .from("ppap_records")
+    .select("*")
+    .limit(10);
+
+  return (
+    <main className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        <h1>EMIP-PPAP Dashboard</h1>
+        <p>Recent PPAP Records</p>
+        {/* Legacy table rendering */}
+      </div>
+    </main>
+  );
+}
+```
+
+**After (`/app/page.tsx`):**
+```tsx
+import { redirect } from 'next/navigation';
+
+export default function Home() {
+  redirect('/ppap');
+}
+```
+
+**Benefits:**
+- Clean redirect (no legacy rendering)
+- Instant route to full dashboard
+- No duplicate dashboards
+- Minimal code footprint
+- Uses Next.js redirect (proper server-side redirect)
+
+**2. Updated Back Navigation**
+
+Changed PPAPHeader back link text:
+
+**Before:**
+```tsx
+<Link href="/ppap">← Back to List</Link>
+```
+
+**After:**
+```tsx
+<Link href="/ppap">← Back to PPAP Dashboard</Link>
+```
+
+**Benefits:**
+- Clear destination
+- Aligns with "PPAP Operations Dashboard" branding
+- Consistent terminology
+- Better user orientation
+
+**3. Verified Routing Structure**
+
+**Final Route Map:**
+
+```
+/ (root)
+  └─→ redirects to /ppap
+
+/ppap
+  └─→ PPAPOperationsDashboard (primary entry)
+
+/ppap/new
+  └─→ Create new PPAP form
+
+/ppap/[id]
+  └─→ PPAP detail workflow view
+  └─→ Back navigation: "← Back to PPAP Dashboard"
+
+/ppap/[id]/phases/[phase]
+  └─→ Specific phase workflow steps
+  └─→ Inherits PPAPHeader navigation
+
+REMOVED:
+/app/admin/ppap (deprecated in Phase 24.2)
+```
+
+**Entry Flow:**
+
+```
+User → visits root (/)
+  ↓
+Redirects to /ppap
+  ↓
+Sees: PPAP Operations Dashboard
+  ├─ Summary Metrics (4 cards)
+  ├─ Filters + Bottleneck View
+  ├─ Active PPAPs (full intelligence)
+  │   ├─ Next Action
+  │   ├─ Phase Progress
+  │   ├─ Owner + Stagnation
+  │   └─ Management Controls
+  └─ Completed PPAPs
+
+User → clicks PPAP number
+  ↓
+Goes to /ppap/[id]
+  ├─ PPAPHeader with "← Back to PPAP Dashboard"
+  ├─ Phase workflow tabs
+  └─ Task management
+
+User → clicks "← Back to PPAP Dashboard"
+  ↓
+Returns to /ppap (Operations Dashboard)
+```
+
+**4. Removed Legacy Dashboard Rendering**
+
+**What was removed:**
+- Supabase query for 10 records
+- Simple table with 6 columns
+- Limited view with no intelligence
+- "View All PPAP Records →" link
+- Error/empty states for legacy view
+
+**What was preserved:**
+- PPAPOperationsDashboard (full intelligence)
+- All routing to /ppap continues to work
+- PPAP detail pages unchanged
+- No data loss or functionality regression
+
+**5. Unified Entry Point**
+
+**Before:**
+- / (root): Legacy simple dashboard
+- /ppap: Full Operations Dashboard
+- Confusing dual entry points
+
+**After:**
+- / (root): Redirect to /ppap
+- /ppap: PPAP Operations Dashboard (ONLY entry)
+- Single unified entry point
+
+**Benefits:**
+
+**Single Dashboard:**
+- ✅ No duplicate dashboards
+- ✅ All users see same view
+- ✅ Consistent experience
+- ✅ Easier to maintain
+
+**Clear Navigation:**
+- ✅ Root redirects to dashboard
+- ✅ Back navigation clearly labeled
+- ✅ Consistent terminology
+- ✅ Better user orientation
+
+**Full Intelligence:**
+- ✅ Summary metrics visible
+- ✅ Next action intelligence
+- ✅ Phase progress visual
+- ✅ Owner + stagnation alerts
+- ✅ Bottleneck view
+- ✅ Filters
+
+**Simplified Codebase:**
+- ✅ Removed 111 lines of legacy code
+- ✅ Replaced with 3-line redirect
+- ✅ One source of truth
+- ✅ Reduced maintenance burden
+
+**Before/After Comparison:**
+
+**Homepage (`/`):**
+- Before: Legacy table (10 records, 6 columns, no intelligence)
+- After: Redirect to /ppap (PPAP Operations Dashboard)
+
+**Dashboard Location:**
+- Before: /ppap (but also legacy view at /)
+- After: /ppap ONLY
+
+**Back Navigation:**
+- Before: "← Back to List"
+- After: "← Back to PPAP Dashboard"
+
+**Entry Points:**
+- Before: 2 (root + /ppap)
+- After: 1 (/ppap via redirect)
+
+**Intelligence Features:**
+- Before: Only at /ppap, not at /
+- After: Always at /ppap (single entry)
+
+**Validation:**
+- ✅ Root (/) redirects to /ppap
+- ✅ /ppap shows full Operations Dashboard
+- ✅ Summary metrics render
+- ✅ Next action shows for each PPAP
+- ✅ Phase progress visual displays
+- ✅ Owner and stagnation alerts work
+- ✅ Filters functional
+- ✅ Bottleneck view toggles
+- ✅ Back navigation says "← Back to PPAP Dashboard"
+- ✅ Detail pages navigate back correctly
+- ✅ No legacy dashboard remnants
+
+**Technical Details:**
+
+**Redirect Implementation:**
+```tsx
+import { redirect } from 'next/navigation';
+
+export default function Home() {
+  redirect('/ppap');
+}
+```
+
+**Redirect Behavior:**
+- Server-side redirect (Next.js)
+- 307 Temporary Redirect (default)
+- No client-side flash
+- Clean browser history
+- Works with SSR
+
+**Navigation Update:**
+```tsx
+<Link
+  href="/ppap"
+  className="text-blue-600 hover:text-blue-800 text-sm font-semibold transition-colors"
+>
+  ← Back to PPAP Dashboard
+</Link>
+```
+
+**Preserved Functionality:**
+- ✅ All PPAP data queries working
+- ✅ Summary metrics calculation
+- ✅ Filtering and sorting
+- ✅ Bottleneck view
+- ✅ Management controls
+- ✅ Event history
+- ✅ Detail page navigation
+- ✅ Workflow phases
+- ✅ Task management
+- ✅ Markup tool (no changes)
+- ✅ Database schema (no changes)
+
+**Code Reduction:**
+
+**Before (app/page.tsx):** 111 lines
+- Supabase query
+- Error handling
+- Empty state
+- Table rendering
+- Data mapping
+
+**After (app/page.tsx):** 3 lines
+- Import redirect
+- Call redirect
+
+**Savings:** 108 lines removed
+
+- Commit: `fix: phase 24.4 dashboard entry and navigation`
+
+---
+
 ## 2026-03-22 21:00 CT - [FEAT] Phase 24.3 - Dashboard Rendering Recovery
 - Summary: Ensured PPAP Operations Dashboard displays full intelligence UI even with 0 or 1 records.
 - Files changed:
