@@ -4,6 +4,231 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 09:15 CT - [FIX] Phase 23.14.5 - PDF Export Correctness Fix
+- Summary: Fixed blank first page and corrupted Unicode symbols in PDF export.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Image load wait, src preservation, ASCII labels, error handling
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: PDF exports now render correctly with readable annotation labels
+- No schema changes
+
+**Problem:**
+
+**Page 1 Blank:**
+- Cloned DOM lost image src during deep clone
+- html2canvas captured empty container
+- No image load verification before capture
+
+**Page 2 Corrupted Symbols:**
+- Unicode symbols (●, ■, ▲, →) corrupted in jsPDF text output
+- PDF encoding issues with special characters
+- Annotation sheet unreadable
+
+**Implementation:**
+
+**1. Fixed Blank Page 1**
+
+**Added Image Load Wait:**
+```tsx
+// Wait for drawing image to load before export
+const drawingImg = exportRef.current?.querySelector('img');
+if (drawingImg && drawingImg instanceof HTMLImageElement && !drawingImg.complete) {
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('Image load timeout'));
+    }, 10000);
+    
+    drawingImg.onload = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    drawingImg.onerror = () => {
+      clearTimeout(timeout);
+      reject(new Error('Image failed to load'));
+    };
+  });
+}
+```
+
+**Preserved Image Source in Clone:**
+```tsx
+// Preserve drawing image source and force visibility
+const sourceImg = exportRef.current.querySelector('img');
+const clonedImg = cloned.querySelector('img');
+if (sourceImg && clonedImg && sourceImg instanceof HTMLImageElement && clonedImg instanceof HTMLImageElement) {
+  clonedImg.src = sourceImg.src;
+  clonedImg.style.display = 'block';
+  clonedImg.style.maxWidth = '100%';
+  clonedImg.style.width = sourceImg.width + 'px';
+  clonedImg.style.height = sourceImg.height + 'px';
+}
+```
+
+**Protected Image Styles:**
+```tsx
+allElements.forEach((el) => {
+  if (!(el instanceof HTMLElement)) return;
+  
+  // Skip images - preserve their styles
+  if (el.tagName === 'IMG') return;
+  
+  // Strip classes from other elements...
+});
+```
+
+**Benefits:**
+- Image fully loaded before capture
+- Image src preserved in cloned DOM
+- Image dimensions and visibility forced
+- Drawing renders on page 1
+
+**2. Replaced Unicode Symbols with ASCII Labels**
+
+**Before:**
+```tsx
+const getMarkerSymbol = (shape: AnnotationShape): string => {
+  switch (shape) {
+    case 'circle': return '●';
+    case 'box': return '■';
+    case 'triangle': return '▲';
+    case 'arrow': return '→';
+    case 'text': return 'T';
+  }
+};
+
+// Output: "17 ▲ [MAT] Copper terminal callout" (corrupted in PDF)
+```
+
+**After:**
+```tsx
+const getMarkerLabel = (shape: AnnotationShape): string => {
+  switch (shape) {
+    case 'circle': return 'CIRCLE';
+    case 'box': return 'BOX';
+    case 'triangle': return 'TRIANGLE';
+    case 'arrow': return 'ARROW';
+    case 'text': return 'TEXT';
+  }
+};
+
+// Output: "17. TRIANGLE [MAT] Copper terminal callout" (readable in PDF)
+```
+
+**Annotation Sheet Format:**
+```
+PPAP Markup - Annotation Sheet
+
+Drawing: part-drawing.pdf
+Part Number: ABC-123
+Date: 3/23/2026
+Total Annotations: 5
+
+1. CIRCLE [DIM] Hole center reference
+2. TRIANGLE [MAT] Copper terminal callout
+3. BOX [CRIT] Surface finish requirement
+4. ARROW [NOTE] Assembly direction
+5. TEXT [DIM] Tolerance callout
+```
+
+**Benefits:**
+- ASCII-safe labels
+- No encoding issues
+- Readable in all PDF viewers
+- Professional appearance
+- Type tags preserved ([DIM], [NOTE], [MAT], [CRIT])
+
+**3. Improved Error Handling**
+
+```tsx
+catch (error) {
+  console.error('Export failed:', error);
+  
+  let errorMessage = 'Export failed. Please try again.';
+  if (error instanceof Error) {
+    if (error.message.includes('Image')) {
+      errorMessage = 'Export failed while rendering drawing page. Please ensure the drawing is fully loaded.';
+    } else if (error.message.includes('annotation')) {
+      errorMessage = 'Export failed while generating annotation sheet.';
+    } else {
+      errorMessage = `Export failed: ${error.message}`;
+    }
+  }
+  
+  alert(errorMessage);
+}
+```
+
+**Benefits:**
+- Specific error messages
+- Clear user feedback
+- Easier debugging
+- Better UX
+
+**Export Workflow Fixed:**
+
+```
+1. Validate image load state (wait if needed)
+2. Create isolated export container
+3. Clone drawing with annotations
+4. Preserve image src and dimensions
+5. Skip image style stripping
+6. Strip classes from other elements
+7. Capture with html2canvas (drawing renders)
+8. Remove temp container
+9. Create PDF with standard letter page
+10. Add drawing to page 1 (now visible)
+11. Add annotation sheet to page 2 (ASCII labels)
+12. Save PDF with timestamp
+
+Result: Correct PDF with visible drawing and readable labels
+```
+
+**Before/After:**
+
+**Page 1:**
+- Before: Blank white page
+- After: Rendered drawing with annotations
+
+**Page 2:**
+- Before: `17 ▲ [MAT] Copper terminal callout` (▲ corrupted)
+- After: `17. TRIANGLE [MAT] Copper terminal callout` (readable)
+
+**Benefits:**
+
+**Export Correctness:**
+- ✅ Page 1 renders drawing
+- ✅ Image load verified
+- ✅ Image src preserved
+- ✅ Dimensions maintained
+
+**Annotation Sheet:**
+- ✅ ASCII-safe labels
+- ✅ No corruption
+- ✅ Readable in all viewers
+- ✅ Compact format preserved
+
+**Error Handling:**
+- ✅ Specific error messages
+- ✅ Clear user guidance
+- ✅ Better debugging
+- ✅ Professional UX
+
+**Validation:**
+- ✅ Image load wait implemented
+- ✅ Image src preservation added
+- ✅ Unicode symbols replaced
+- ✅ ASCII labels functional
+- ✅ Error handling improved
+- ✅ No schema changes
+- ✅ Export functionality preserved
+
+**Note:**
+Critical correctness fix for PDF export. Drawing now renders on page 1 by ensuring image load state and preserving src during clone. Annotation labels now ASCII-safe and readable in all PDF viewers. Export packages now deliverable and professional.
+
+- Commit: `fix: phase 23.14.5 correct PDF export drawing page and annotation sheet labels`
+
+---
+
 ## 2026-03-23 00:45 CT - [FEAT] Phase 23.15 - Export Readability and Draggable Annotation Refinement
 - Summary: Improved PDF export quality and added drag-to-reposition for annotations with enhanced marker visibility.
 - Files changed:

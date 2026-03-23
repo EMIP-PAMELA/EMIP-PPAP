@@ -157,15 +157,15 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     fetchAnnotations();
   }, [ppapId, selectedFile]);
 
-  // Helper for visual marker shorthand
-  const getMarkerSymbol = (shape: AnnotationShape): string => {
+  // Helper for visual marker shorthand (ASCII-safe for PDF export)
+  const getMarkerLabel = (shape: AnnotationShape): string => {
     switch (shape) {
-      case 'circle': return '●';
-      case 'box': return '■';
-      case 'triangle': return '▲';
-      case 'arrow': return '→';
-      case 'text': return 'T';
-      default: return '●';
+      case 'circle': return 'CIRCLE';
+      case 'box': return 'BOX';
+      case 'triangle': return 'TRIANGLE';
+      case 'arrow': return 'ARROW';
+      case 'text': return 'TEXT';
+      default: return 'CIRCLE';
     }
   };
 
@@ -305,6 +305,25 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       const jsPdfAny = jsPdfModule as any;
       const jsPDF = jsPdfAny.jsPDF || jsPdfAny.default?.jsPDF || jsPdfAny.default;
 
+      // Wait for drawing image to load before export
+      const drawingImg = exportRef.current?.querySelector('img');
+      if (drawingImg && drawingImg instanceof HTMLImageElement && !drawingImg.complete) {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Image load timeout'));
+          }, 10000);
+          
+          drawingImg.onload = () => {
+            clearTimeout(timeout);
+            resolve();
+          };
+          drawingImg.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error('Image failed to load'));
+          };
+        });
+      }
+
       // Create clean export container off-screen
       const exportContainer = document.createElement('div');
       exportContainer.style.position = 'fixed';
@@ -313,16 +332,32 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       exportContainer.style.background = '#ffffff';
       exportContainer.style.padding = '0';
       exportContainer.style.margin = '0';
+      exportContainer.style.width = exportRef.current.offsetWidth + 'px';
+      exportContainer.style.height = exportRef.current.offsetHeight + 'px';
       document.body.appendChild(exportContainer);
 
       // Clone drawing area
       const cloned = exportRef.current.cloneNode(true) as HTMLElement;
       exportContainer.appendChild(cloned);
 
+      // Preserve drawing image source and force visibility
+      const sourceImg = exportRef.current.querySelector('img');
+      const clonedImg = cloned.querySelector('img');
+      if (sourceImg && clonedImg && sourceImg instanceof HTMLImageElement && clonedImg instanceof HTMLImageElement) {
+        clonedImg.src = sourceImg.src;
+        clonedImg.style.display = 'block';
+        clonedImg.style.maxWidth = '100%';
+        clonedImg.style.width = sourceImg.width + 'px';
+        clonedImg.style.height = sourceImg.height + 'px';
+      }
+
       // Strip all styles that can break html2canvas
       const allElements = exportContainer.querySelectorAll('*');
       allElements.forEach((el) => {
         if (!(el instanceof HTMLElement)) return;
+
+        // Skip images - preserve their styles
+        if (el.tagName === 'IMG') return;
 
         // Remove ALL class-based styling influence
         el.className = '';
@@ -334,20 +369,12 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
         el.style.filter = 'none';
       });
 
-      // Force image + annotation visibility
-      const images = exportContainer.querySelectorAll('img');
-      images.forEach((img) => {
-        if (img instanceof HTMLImageElement) {
-          img.style.display = 'block';
-          img.style.maxWidth = '100%';
-        }
-      });
-
       // Capture clean DOM
       const canvas = await html2canvas(exportContainer, {
         scale: 2,
         useCORS: true,
         backgroundColor: '#ffffff',
+        logging: false,
       });
 
       // Clean up temp DOM
@@ -418,17 +445,16 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
       y += 25;
 
-      // Add annotations with compact visual shorthand
+      // Add annotations with ASCII-safe labels
       sortedAnnotations.forEach((ann, index) => {
-        const markerSymbol = getMarkerSymbol(ann.shape);
+        const markerLabel = getMarkerLabel(ann.shape);
         const typeShorthand = getTypeShorthand(ann.type);
         const description = String(ann.description || 'No description');
         
         pdf.setFontSize(10);
-        pdf.setFont(undefined, 'bold');
-        // Compact format: "17 ▲ [MAT] Copper terminal callout"
-        const annotationLine = `${ann.label_number} ${markerSymbol} ${typeShorthand} ${description}`;
         pdf.setFont(undefined, 'normal');
+        // Compact format: "1. CIRCLE [DIM] Hole center reference"
+        const annotationLine = `${ann.label_number}. ${markerLabel} ${typeShorthand} ${description}`;
         pdf.text(annotationLine, 40, y);
 
         y += 16;
@@ -446,7 +472,20 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       alert('Export complete!');
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export failed. Please try again.');
+      
+      // Provide specific error message based on failure point
+      let errorMessage = 'Export failed. Please try again.';
+      if (error instanceof Error) {
+        if (error.message.includes('Image')) {
+          errorMessage = 'Export failed while rendering drawing page. Please ensure the drawing is fully loaded.';
+        } else if (error.message.includes('annotation')) {
+          errorMessage = 'Export failed while generating annotation sheet.';
+        } else {
+          errorMessage = `Export failed: ${error.message}`;
+        }
+      }
+      
+      alert(errorMessage);
     } finally {
       setExporting(false);
     }
