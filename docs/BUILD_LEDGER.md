@@ -4,6 +4,447 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-22 20:00 CT - [FEAT] Phase 23.5 - Markup Workspace Layout Refactor
+- Summary: Refactored markup tool into true 3-pane engineering workspace with collapsible left-side tool rail.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Layout restructure with tool rail
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Professional workspace layout with persistent tool access, collapsible controls, and improved ergonomics
+- No schema changes
+
+**Objective:**
+
+Transform MarkupTool from top-heavy stacked layout into professional 3-pane workspace:
+- Move controls from top strip into left-side tool rail
+- Make tools persistently accessible (sticky/scrollable)
+- Add collapse/expand functionality
+- Keep drawing canvas centered and dominant
+- Preserve all existing markup functionality
+
+**Implementation:**
+
+**1. Restructured Layout**
+
+Converted from stacked layout to 3-pane workspace:
+
+**Before (stacked):**
+```
+┌─────────────────────────────────────┐
+│ Header (title, part, close)         │
+├─────────────────────────────────────┤
+│ ┌─────────────────────────────────┐ │
+│ │ Toolbar (drawing, mode, type,   │ │
+│ │         tool, save)             │ │
+│ └─────────────────────────────────┘ │
+│ ┌─────────────┬───────────────────┐ │
+│ │             │ Annotations       │ │
+│ │   Canvas    │ Panel             │ │
+│ │             │                   │ │
+│ └─────────────┴───────────────────┘ │
+└─────────────────────────────────────┘
+```
+
+**After (3-pane workspace):**
+```
+┌────────────────────────────────────────┐
+│ Header (title, part, drawing, close)   │
+├────┬──────────────────────┬────────────┤
+│Tool│                      │Annotations │
+│Rail│      Canvas          │   Panel    │
+│    │                      │            │
+│Mode│                      │            │
+│Type│                      │            │
+│Tool│                      │            │
+│Save│                      │            │
+└────┴──────────────────────┴────────────┘
+```
+
+**Benefits:**
+- Tools always visible while working
+- No scrolling back to top to change mode
+- Canvas gets maximum width
+- Professional engineering workspace layout
+
+**2. Moved Toolbar into Left Rail**
+
+Relocated all markup controls from top strip to left rail:
+
+**Controls Moved:**
+- Mode selector (Navigate / Markup / Select)
+- Type selector (Dimension / Note / Material / Critical)
+- Tool selector (Circle / Box / Triangle / Arrow / Text)
+- Save Annotations button
+
+**Layout:**
+```tsx
+<div className={`border-r border-gray-200 bg-gray-50 transition-all ${
+  isRailCollapsed ? 'w-12' : 'w-64'
+}`}>
+  <div className="h-full flex flex-col">
+    {/* Toggle Button */}
+    <div className="p-2 border-b border-gray-200">
+      <button onClick={() => setIsRailCollapsed(!isRailCollapsed)}>
+        {isRailCollapsed ? '☰' : '◀'}
+      </button>
+    </div>
+
+    {/* Tools Content */}
+    {!isRailCollapsed && (
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Mode, Type, Tool, Save */}
+      </div>
+    )}
+  </div>
+</div>
+```
+
+**3. Made Rail Sticky/Scrollable**
+
+Rail behavior:
+- **Fixed height:** Full viewport height
+- **Sticky positioning:** Always visible
+- **Scrollable content:** Tools overflow if needed
+- **No re-scrolling:** User doesn't lose tool access
+
+**Structure:**
+```tsx
+<div className="h-full flex flex-col">
+  {/* Fixed toggle at top */}
+  <div className="p-2 border-b">...</div>
+  
+  {/* Scrollable tools */}
+  <div className="flex-1 overflow-y-auto p-4">...</div>
+</div>
+```
+
+**4. Added Collapsible Rail**
+
+Toggle button collapses/expands rail:
+
+**Expanded (w-64 / 256px):**
+- Full controls visible
+- Labels and buttons readable
+- Vertical stack of tools
+
+**Collapsed (w-12 / 48px):**
+- Narrow icon bar
+- Only toggle button visible
+- Quickly reopen with click
+
+**State Management:**
+```tsx
+const [isRailCollapsed, setIsRailCollapsed] = useState(false);
+```
+
+**Animation:**
+```tsx
+className={`transition-all duration-300 ${
+  isRailCollapsed ? 'w-12' : 'w-64'
+}`}
+```
+
+**Benefits:**
+- Maximize canvas space when needed
+- Quick access to tools when needed
+- Smooth animation
+- User preference retained during session
+
+**5. Mode Controls - Vertical Stack**
+
+Converted horizontal mode buttons to vertical stack:
+
+**Before (horizontal):**
+```tsx
+<div className="flex items-center gap-2">
+  {modes.map(m => <button>{m}</button>)}
+</div>
+```
+
+**After (vertical):**
+```tsx
+<div className="space-y-1">
+  {modes.map(m => (
+    <button className="w-full px-3 py-2 text-left">
+      {MODE_INFO[m].icon} {MODE_INFO[m].label}
+    </button>
+  ))}
+</div>
+```
+
+**Styling:**
+- Full width buttons
+- Left-aligned text
+- Clear active state (blue bg)
+- Stack spacing
+
+**6. Type and Tool Selectors**
+
+Dropdowns now full-width with icons:
+
+```tsx
+<select className="w-full px-3 py-2 text-sm">
+  <option value="dimension">🔵 Dimension</option>
+  <option value="note">🟡 Note</option>
+  <option value="material">🟢 Material</option>
+  <option value="critical">🔴 Critical</option>
+</select>
+```
+
+**Icons:**
+- 🔵 Dimension (Blue)
+- 🟡 Note (Yellow)
+- 🟢 Material (Green)
+- 🔴 Critical (Red)
+- ⭕ Circle
+- ⬜ Box
+- 🔺 Triangle
+- ➡️ Arrow
+- 📝 Text
+
+**7. Save Button**
+
+Full-width button at bottom of rail:
+
+```tsx
+<button className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg">
+  {loading ? 'Saving...' : '💾 Save'}
+</button>
+```
+
+**8. Moved Drawing Selector to Header**
+
+Drawing selector moved from toolbar to header:
+
+**Before:**
+- In toolbar with other controls
+- Part of stacked layout
+
+**After:**
+- In header next to close button
+- Compact inline selector
+- Always visible
+
+**Layout:**
+```tsx
+<div className="flex items-center gap-4">
+  <div className="flex items-center gap-2">
+    <label>Drawing:</label>
+    <select className="px-3 py-1.5 text-sm">...</select>
+  </div>
+  <button onClick={onClose}>✕ Close</button>
+</div>
+```
+
+**9. Canvas Gets Primary Width**
+
+Width distribution:
+- **Left rail:** 256px (expanded) or 48px (collapsed)
+- **Canvas:** `flex-1` (remaining space)
+- **Right panel:** 384px (fixed)
+
+**Example (1920px wide):**
+- Rail expanded: 256px + ~1280px + 384px
+- Rail collapsed: 48px + ~1488px + 384px
+
+**Canvas dominates:** Always gets majority of width
+
+**10. Preserved Right Panel**
+
+Annotation panel unchanged:
+- Same width (w-96 / 384px)
+- Same scrolling behavior
+- Same editing UI
+- Same highlighting
+
+**No Changes:**
+- Annotation list
+- Edit mode
+- Description input
+- Delete button
+- Selection highlighting
+
+**11. Preserved All Functionality**
+
+**No behavior changes:**
+- ✅ Navigate mode works
+- ✅ Markup mode works
+- ✅ Select mode works
+- ✅ Annotation placement works
+- ✅ Auto-editing works
+- ✅ Auto-focus works
+- ✅ Selection highlighting works
+- ✅ Save behavior works
+- ✅ Mode indicator works
+- ✅ Cursor feedback works
+- ✅ React #418 safety intact
+
+**This is layout refactor only, not behavior redesign.**
+
+**12. Section Labels**
+
+Added uppercase labels to rail sections:
+
+```tsx
+<label className="block text-xs font-semibold text-gray-700 mb-2 
+                  uppercase tracking-wide">
+  Mode
+</label>
+```
+
+**Sections:**
+- MODE
+- TYPE
+- TOOL
+- (Save button)
+
+**Benefits:**
+- Clear organization
+- Professional appearance
+- Easy scanning
+
+**User Experience:**
+
+**Opening Markup Tool:**
+1. User opens markup tool
+2. 3-pane layout appears
+3. Left rail shows all controls
+4. Canvas centered and large
+5. Right panel shows annotations
+
+**Using Rail:**
+1. User sees mode/type/tool controls on left
+2. No scrolling needed to access tools
+3. Click mode button to switch
+4. Select type/tool from dropdowns
+5. Save button always visible
+
+**Collapsing Rail:**
+1. User clicks ◀ toggle button
+2. Rail animates to 48px width
+3. Canvas expands to fill space
+4. Toggle shows ☰ hamburger icon
+5. Click again to expand
+
+**Workflow:**
+1. Select drawing (header)
+2. Choose mode (left rail)
+3. Choose type/tool (left rail)
+4. Click canvas to annotate
+5. Edit in right panel
+6. Save from left rail
+7. Never lose tool access
+
+**Before/After Comparison:**
+
+**Toolbar Location:**
+- Before: Horizontal strip at top, scrolls away
+- After: Vertical rail on left, always visible
+
+**Drawing Selector:**
+- Before: In toolbar with mode/type/tool
+- After: In header, compact
+
+**Canvas Space:**
+- Before: Fixed after toolbar
+- After: Expands when rail collapsed
+
+**Tool Access:**
+- Before: Scroll to top to change mode
+- After: Always visible on left
+
+**Layout Style:**
+- Before: Stacked modal
+- After: Professional 3-pane workspace
+
+**Benefits:**
+
+**Ergonomics:**
+- ✅ Tools persistently accessible
+- ✅ No scrolling to change mode
+- ✅ One-click rail collapse
+- ✅ Canvas gets maximum space
+- ✅ Professional workspace feel
+
+**Organization:**
+- ✅ Clear 3-pane structure
+- ✅ Labeled sections in rail
+- ✅ Logical control grouping
+- ✅ Header for metadata
+- ✅ Left for tools
+- ✅ Center for canvas
+- ✅ Right for annotations
+
+**Flexibility:**
+- ✅ Collapsible rail
+- ✅ Scrollable tools
+- ✅ Responsive to content
+- ✅ User-controlled layout
+
+**Preserved:**
+- ✅ All existing functionality
+- ✅ Mode behavior intact
+- ✅ Annotation placement
+- ✅ Auto-editing
+- ✅ Selection highlighting
+- ✅ React #418 safety
+
+**Technical Details:**
+
+**State:**
+- `isRailCollapsed: boolean` - rail expanded/collapsed
+
+**Rail Width:**
+- Expanded: `w-64` (256px)
+- Collapsed: `w-12` (48px)
+- Transition: `transition-all duration-300`
+
+**Rail Structure:**
+```tsx
+<div className="h-full flex flex-col">
+  <div className="p-2 border-b">Toggle</div>
+  <div className="flex-1 overflow-y-auto p-4">Tools</div>
+</div>
+```
+
+**Canvas Structure:**
+```tsx
+<div className="flex-1 p-6 overflow-auto">
+  <div>Mode Indicator</div>
+  <div>Canvas</div>
+</div>
+```
+
+**Panel Structure:**
+```tsx
+<div className="w-96 border-l overflow-auto">
+  <div className="p-6">Annotations</div>
+</div>
+```
+
+**Layout Flex:**
+```tsx
+<div className="flex flex-1 overflow-hidden">
+  <div>Rail</div>
+  <div className="flex-1">Canvas</div>
+  <div className="w-96">Panel</div>
+</div>
+```
+
+**Validation:**
+- ✅ 3-pane layout working
+- ✅ Left rail sticky/scrollable
+- ✅ Collapsible rail functioning
+- ✅ Canvas gets primary width
+- ✅ Right panel preserved
+- ✅ All modes working
+- ✅ Annotation placement working
+- ✅ Save functionality working
+- ✅ React #418 safety maintained
+
+- Commit: `feat: phase 23.5 markup workspace layout refactor`
+
+---
+
 ## 2026-03-22 19:40 CT - [FEAT] Phase 23.4 - Markup Tool Visual and Interaction Refinement
 - Summary: Refined markup tool to behave like a real engineering annotation system with smaller, outline-based markers and mode-based interaction.
 - Files changed:

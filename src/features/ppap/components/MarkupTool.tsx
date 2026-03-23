@@ -54,6 +54,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isRailCollapsed, setIsRailCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -260,101 +261,122 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Drawing Markup Tool</h2>
             <p className="text-sm text-gray-600">Part: {partNumber || ''}</p>
-            {selectedFile && (
-              <p className="text-sm font-medium text-blue-600 mt-1">
-                Marking up: {uploadedFiles.find(f => f.file_path === selectedFile)?.file_name || 'Unknown file'}
-              </p>
-            )}
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            ✕ Close
-          </button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Drawing:</label>
+              <select
+                value={selectedFile || ''}
+                onChange={(e) => setSelectedFile(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded"
+              >
+                {uploadedFiles.length === 0 && (
+                  <option value="">No drawings uploaded yet</option>
+                )}
+                {uploadedFiles.map(file => (
+                  <option key={file.file_path} value={file.file_path}>
+                    {file.file_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              ✕ Close
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          {/* Main Canvas Area */}
-          <div className="flex-1 p-6 overflow-auto">
-            {/* Toolbar */}
-            <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <label className="text-sm font-medium text-gray-700 mr-2">Select Drawing:</label>
-                  <select
-                    value={selectedFile || ''}
-                    onChange={(e) => setSelectedFile(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded w-full max-w-md"
-                  >
-                    {uploadedFiles.length === 0 && (
-                      <option value="">No drawings uploaded yet</option>
-                    )}
-                    {uploadedFiles.map(file => (
-                      <option key={file.file_path} value={file.file_path}>
-                        {file.file_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              
-              {/* Mode Controls */}
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700 mr-2">Mode:</label>
-                {(['navigate', 'markup', 'select'] as InteractionMode[]).map(m => (
-                  <button
-                    key={m}
-                    onClick={() => setMode(m)}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      mode === m
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    {MODE_INFO[m].icon} {MODE_INFO[m].label}
-                  </button>
-                ))}
-              </div>
-              
-              <div className="flex items-center gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mr-2">Type:</label>
-                  <select
-                    value={selectedType}
-                    onChange={(e) => setSelectedType(e.target.value as AnnotationType)}
-                    className="px-3 py-1 border border-gray-300 rounded"
-                  >
-                    <option value="dimension">Dimension (Blue)</option>
-                    <option value="note">Note (Yellow)</option>
-                    <option value="material">Material (Green)</option>
-                    <option value="critical">Critical (Red)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mr-2">Tool:</label>
-                  <select
-                    value={selectedTool}
-                    onChange={(e) => setSelectedTool(e.target.value as AnnotationShape)}
-                    className="px-3 py-1 border border-gray-300 rounded"
-                  >
-                    <option value="circle">Circle</option>
-                    <option value="box">Box</option>
-                    <option value="triangle">Triangle</option>
-                    <option value="arrow">Arrow</option>
-                    <option value="text">Text</option>
-                  </select>
-                </div>
-                <div className="flex-1"></div>
+          {/* Left Tool Rail */}
+          <div className={`border-r border-gray-200 bg-gray-50 transition-all duration-300 flex-shrink-0 ${
+            isRailCollapsed ? 'w-12' : 'w-64'
+          }`}>
+            <div className="h-full flex flex-col">
+              {/* Rail Toggle */}
+              <div className="p-2 border-b border-gray-200">
                 <button
-                  onClick={handleSaveAnnotations}
-                  disabled={loading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+                  onClick={() => setIsRailCollapsed(!isRailCollapsed)}
+                  className="w-full p-2 hover:bg-gray-200 rounded transition-colors text-gray-700"
+                  title={isRailCollapsed ? 'Expand tools' : 'Collapse tools'}
                 >
-                  {loading ? 'Saving...' : '💾 Save Annotations'}
+                  {isRailCollapsed ? '☰' : '◀'}
                 </button>
               </div>
+
+              {/* Tools Content */}
+              {!isRailCollapsed && (
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {/* Mode Controls */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Mode</label>
+                    <div className="space-y-1">
+                      {(['navigate', 'markup', 'select'] as InteractionMode[]).map(m => (
+                        <button
+                          key={m}
+                          onClick={() => setMode(m)}
+                          className={`w-full px-3 py-2 rounded text-sm font-medium transition-colors text-left ${
+                            mode === m
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {MODE_INFO[m].icon} {MODE_INFO[m].label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Type Selector */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Type</label>
+                    <select
+                      value={selectedType}
+                      onChange={(e) => setSelectedType(e.target.value as AnnotationType)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded"
+                    >
+                      <option value="dimension">🔵 Dimension</option>
+                      <option value="note">🟡 Note</option>
+                      <option value="material">🟢 Material</option>
+                      <option value="critical">🔴 Critical</option>
+                    </select>
+                  </div>
+
+                  {/* Tool Selector */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Tool</label>
+                    <select
+                      value={selectedTool}
+                      onChange={(e) => setSelectedTool(e.target.value as AnnotationShape)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded"
+                    >
+                      <option value="circle">⭕ Circle</option>
+                      <option value="box">⬜ Box</option>
+                      <option value="triangle">🔺 Triangle</option>
+                      <option value="arrow">➡️ Arrow</option>
+                      <option value="text">📝 Text</option>
+                    </select>
+                  </div>
+
+                  {/* Save Button */}
+                  <div className="pt-2">
+                    <button
+                      onClick={handleSaveAnnotations}
+                      disabled={loading}
+                      className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors font-medium"
+                    >
+                      {loading ? 'Saving...' : '💾 Save'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+          </div>
+
+          {/* Center Canvas Area */}
+          <div className="flex-1 p-6 overflow-auto">
 
             {/* Mode Indicator */}
             {selectedFile && (
