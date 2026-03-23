@@ -47,7 +47,6 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
     {
       target: '[data-tour="dashboard-summary"]',
       content: 'This is your PPAP command center. Track active workload, completed PPAPs, and items needing immediate attention—all in one view.',
-      disableBeacon: true,
     },
     {
       target: '[data-tour="dashboard-filters"]',
