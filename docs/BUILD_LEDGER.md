@@ -4,6 +4,117 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 10:42 CT - [FIX] Phase 24.8.1 - react-joyride Import Compatibility Fix
+- Summary: Resolved missing default export issue for react-joyride under Next.js 16 + Turbopack.
+- Files changed:
+  - `src/features/ppap/components/PPAPOperationsDashboard.tsx` - Changed to named import
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Restored build stability for guided walkthrough feature
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- Next.js 16 with Turbopack has stricter ES module handling
+- react-joyride library exports changed in recent versions
+- Default import pattern no longer works: `import Joyride from 'react-joyride'`
+- Error: "Export default doesn't exist in target module 'react-joyride'"
+
+**Symptoms:**
+- Build failure after Phase 24.8
+- Import error in PPAPOperationsDashboard
+- Guided walkthrough feature broken
+- Turbopack module resolution failing
+
+**Implementation:**
+
+**Fixed Import Pattern**
+
+**Before (Broken):**
+```tsx
+import Joyride, { Step, CallBackProps, STATUS } from 'react-joyride';
+```
+
+**After (Fixed):**
+```tsx
+import { Joyride, Step, CallBackProps, STATUS } from 'react-joyride';
+```
+
+**Benefits:**
+- Compatible with Turbopack module resolution
+- Matches library's actual export pattern
+- No fallback logic needed
+- Clean, standard ES6 named import
+
+**Verified Client Component:**
+```tsx
+'use client';  // Already present, required for browser APIs
+```
+
+**Component Usage (Unchanged):**
+```tsx
+<Joyride
+  steps={tourSteps}
+  run={runTour}
+  continuous
+  showProgress
+  showSkipButton
+  callback={handleTourCallback}
+  styles={{...}}
+/>
+```
+
+**No changes needed** - Component usage works identically with named import.
+
+**Why This Works:**
+
+**Module Export Pattern:**
+- Modern ES6 libraries export named exports
+- react-joyride exports `{ Joyride }` as named export
+- Default export may not exist or is not reliably exposed
+- Turbopack strictly enforces correct import patterns
+
+**Next.js 16 + Turbopack:**
+- Stricter module resolution than Webpack
+- Better ES6 module compliance
+- Catches incorrect import patterns at build time
+- Named imports more reliable than default imports
+
+**Benefits:**
+
+**Build Stability:**
+- ✅ No more import errors
+- ✅ Turbopack build passes
+- ✅ Guided walkthrough works
+- ✅ Clean module resolution
+
+**Code Quality:**
+- ✅ Follows ES6 best practices
+- ✅ Matches library's export pattern
+- ✅ No hacky fallback logic
+- ✅ Maintainable solution
+
+**Compatibility:**
+- ✅ Works with Next.js 16
+- ✅ Works with Turbopack
+- ✅ Works with react-joyride current version
+- ✅ Future-proof import pattern
+
+**Validation:**
+- ✅ Import changed to named pattern
+- ✅ 'use client' directive confirmed
+- ✅ Component usage unchanged
+- ✅ Build stability restored
+- ✅ No schema changes
+- ✅ No UI changes
+
+**Note:**
+Quick fix for ES module compatibility. Turbopack's stricter module resolution caught the incorrect import pattern. Named import is the correct pattern for react-joyride's export structure. No fallback logic needed - clean, standard solution.
+
+- Commit: `fix: phase 24.8.1 resolve react-joyride import for turbopack compatibility`
+
+---
+
 ## 2026-03-23 10:35 CT - [FEAT] Phase 24.8 - Guided Walkthrough / Product Tour
 - Summary: Added self-guided product tour to PPAP Operations Dashboard using react-joyride.
 - Files changed:

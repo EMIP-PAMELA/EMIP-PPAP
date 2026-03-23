@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Joyride, { Step, CallBackProps, STATUS } from 'react-joyride';
+import { Joyride, Step, CallBackProps, STATUS } from 'react-joyride';
 import { PPAPRecord, PPAPEvent } from '@/src/types/database.types';
 import { supabase } from '@/src/lib/supabaseClient';
 import { logEvent } from '@/src/features/events/mutations';
