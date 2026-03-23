@@ -126,9 +126,20 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
     setErrors({});
 
     try {
+      // Guard: ensure ppapId is valid before event logging
+      if (!ppapId || typeof ppapId !== 'string') {
+        throw new Error('Cannot log document event without valid PPAP id');
+      }
+
       for (const file of Array.from(files)) {
         // Upload file to Supabase Storage
         const filePath = await uploadPPAPDocument(file, ppapId);
+
+        console.log('DOCUMENT_ADDED write', {
+          ppapId,
+          fileName: file.name,
+          filePath,
+        });
 
         // Log upload event
         await logEvent({

@@ -271,6 +271,17 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
     setLoading(true);
     try {
+      // Guard: ensure ppapId is valid before event logging
+      if (!ppapId || typeof ppapId !== 'string') {
+        throw new Error('Cannot log document event without valid PPAP id');
+      }
+
+      console.log('DOCUMENT_ADDED write', {
+        ppapId,
+        fileName: selectedFile,
+        filePath: selectedFile,
+      });
+
       await logEvent({
         ppap_id: ppapId,
         event_type: 'DOCUMENT_ADDED',
@@ -585,7 +596,18 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
     setUploading(true);
     try {
+      // Guard: ensure ppapId is valid before event logging
+      if (!ppapId || typeof ppapId !== 'string') {
+        throw new Error('Cannot log document event without valid PPAP id');
+      }
+
       const path = await uploadPPAPDocument(file, ppapId);
+
+      console.log('DOCUMENT_ADDED write', {
+        ppapId,
+        fileName: file.name,
+        filePath: path,
+      });
 
       await logEvent({
         ppap_id: ppapId,

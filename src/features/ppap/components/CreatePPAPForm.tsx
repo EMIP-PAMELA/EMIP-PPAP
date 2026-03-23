@@ -42,11 +42,22 @@ export function CreatePPAPForm() {
 
       const ppap = await createPPAP(formData as CreatePPAPInput);
 
-      // CRITICAL: Migrate temp uploads to real ppapId
+      // CRITICAL: Log DOCUMENT_ADDED events with real PPAP ID only
       if (uploadedFiles.length > 0) {
-        console.log('Migrating temp uploads from', tempPpapId.current, 'to', ppap.id);
+        // Guard: ensure ppap.id is valid before event logging
+        if (!ppap.id || typeof ppap.id !== 'string') {
+          throw new Error('Cannot log document events without valid PPAP id');
+        }
+
+        console.log('Logging document events for uploaded files. PPAP ID:', ppap.id);
         
         for (const file of uploadedFiles) {
+          console.log('DOCUMENT_ADDED write', {
+            ppapId: ppap.id,
+            fileName: file.file_name,
+            filePath: file.file_path,
+          });
+
           await logEvent({
             ppap_id: ppap.id,
             event_type: 'DOCUMENT_ADDED',
@@ -60,7 +71,7 @@ export function CreatePPAPForm() {
           });
         }
         
-        console.log('Migration complete. Files now visible under ppapId:', ppap.id);
+        console.log('Document event logging complete. Files now visible under ppapId:', ppap.id);
       }
 
       router.push(`/ppap/${ppap.id}`);
@@ -83,19 +94,11 @@ export function CreatePPAPForm() {
 
     for (const file of files) {
       try {
+        // Upload to storage (organized by temp folder for now)
         const path = await uploadPPAPDocument(file, tempPpapId.current);
 
-        await logEvent({
-          ppap_id: tempPpapId.current,
-          event_type: 'DOCUMENT_ADDED',
-          event_data: {
-            file_name: file.name,
-            file_path: path,
-            document_type: 'initial',
-          },
-          actor: 'System User',
-          actor_role: 'Engineer',
-        });
+        // DO NOT log event yet - no real PPAP id exists
+        // Event logging deferred until handleSubmit with real ppap.id
 
         uploadedList.push({
           file_name: file.name,

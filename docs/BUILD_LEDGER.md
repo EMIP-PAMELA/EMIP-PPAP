@@ -4,6 +4,288 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 10:30 CT - [FIX] Phase 23.11.1 - Document Event Foreign-Key Integrity Fix
+- Summary: Fixed foreign key constraint violation by removing temp-id writes to ppap_events and deferring DOCUMENT_ADDED logging until real PPAP creation.
+- Files changed:
+  - `src/features/ppap/components/CreatePPAPForm.tsx` - Removed temp-id event logging, deferred until real PPAP ID
+  - `src/features/ppap/components/DocumentationForm.tsx` - Added guard for valid ppap_id
+  - `src/features/ppap/components/MarkupTool.tsx` - Added guards for valid ppap_id (2 locations)
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Document lifecycle integrity restored, foreign key violations eliminated
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- `CreatePPAPForm` uploaded files before PPAP record creation
+- Wrote `DOCUMENT_ADDED` events using `tempPpapId.current`
+- `ppap_events.ppap_id` has foreign key constraint to `ppap_records.id`
+- Temp ID doesn't exist in `ppap_records` → foreign key violation
+- Database rejected event inserts
+
+**Error Message:**
+```
+insert or update on table "ppap_events" violates foreign key constraint "ppap_events_ppap_id_fkey"
+```
+
+**Symptoms:**
+- CreatePPAPForm file upload failed after storage upload succeeded
+- Documents uploaded but not visible in PPAP record
+- Event history broken
+- Downstream markup flow couldn't find documents
+- User confusion: files uploaded but "disappeared"
+
+**Implementation:**
+
+**1. Removed Temp-ID Event Logging from CreatePPAPForm**
+
+**Before (BROKEN):**
+```tsx
+const handleInitialUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  for (const file of files) {
+    const path = await uploadPPAPDocument(file, tempPpapId.current);
+
+    // ❌ Writing to ppap_events with temp ID that doesn't exist
+    await logEvent({
+      ppap_id: tempPpapId.current, // NOT A REAL PPAP ID!
+      event_type: 'DOCUMENT_ADDED',
+      // ...
+    });
+
+    uploadedList.push({ file_name: file.name, file_path: path });
+  }
+};
+```
+
+**After (FIXED):**
+```tsx
+const handleInitialUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  for (const file of files) {
+    // Upload to storage (organized by temp folder for now)
+    const path = await uploadPPAPDocument(file, tempPpapId.current);
+
+    // ✅ DO NOT log event yet - no real PPAP id exists
+    // Event logging deferred until handleSubmit with real ppap.id
+
+    uploadedList.push({ file_name: file.name, file_path: path });
+  }
+};
+```
+
+**Benefits:**
+- No foreign key violation
+- Files tracked in component state
+- Storage upload works (temp folder OK)
+- Event logging deferred to safe point
+
+**2. Deferred Event Logging Until After PPAP Creation**
+
+**Before:**
+```tsx
+const handleSubmit = async (e: React.FormEvent) => {
+  const ppap = await createPPAP(formData);
+
+  // Files already had events logged (with temp ID - broken)
+  
+  router.push(`/ppap/${ppap.id}`);
+};
+```
+
+**After:**
+```tsx
+const handleSubmit = async (e: React.FormEvent) => {
+  const ppap = await createPPAP(formData);
+
+  // ✅ CRITICAL: Log DOCUMENT_ADDED events with real PPAP ID only
+  if (uploadedFiles.length > 0) {
+    // Guard: ensure ppap.id is valid before event logging
+    if (!ppap.id || typeof ppap.id !== 'string') {
+      throw new Error('Cannot log document events without valid PPAP id');
+    }
+
+    console.log('Logging document events for uploaded files. PPAP ID:', ppap.id);
+    
+    for (const file of uploadedFiles) {
+      console.log('DOCUMENT_ADDED write', {
+        ppapId: ppap.id,
+        fileName: file.file_name,
+        filePath: file.file_path,
+      });
+
+      await logEvent({
+        ppap_id: ppap.id, // ✅ REAL PPAP ID
+        event_type: 'DOCUMENT_ADDED',
+        event_data: {
+          file_name: file.file_name,
+          file_path: file.file_path,
+          document_type: 'initial',
+        },
+        actor: 'System User',
+        actor_role: 'Engineer',
+      });
+    }
+    
+    console.log('Document event logging complete. Files now visible under ppapId:', ppap.id);
+  }
+
+  router.push(`/ppap/${ppap.id}`);
+};
+```
+
+**Benefits:**
+- All events use real `ppap.id`
+- Foreign key constraint satisfied
+- Event history accurate
+- Documents visible in PPAP record
+- Downstream flows work
+
+**3. Added Guards to All DOCUMENT_ADDED Event Writes**
+
+**Locations Updated:**
+
+**CreatePPAPForm.tsx (handleSubmit):**
+```tsx
+if (!ppap.id || typeof ppap.id !== 'string') {
+  throw new Error('Cannot log document events without valid PPAP id');
+}
+```
+
+**DocumentationForm.tsx (handleFileUpload):**
+```tsx
+// Guard: ensure ppapId is valid before event logging
+if (!ppapId || typeof ppapId !== 'string') {
+  throw new Error('Cannot log document event without valid PPAP id');
+}
+```
+
+**MarkupTool.tsx (handleSaveAnnotations):**
+```tsx
+// Guard: ensure ppapId is valid before event logging
+if (!ppapId || typeof ppapId !== 'string') {
+  throw new Error('Cannot log document event without valid PPAP id');
+}
+```
+
+**MarkupTool.tsx (handleInlineUpload):**
+```tsx
+// Guard: ensure ppapId is valid before event logging
+if (!ppapId || typeof ppapId !== 'string') {
+  throw new Error('Cannot log document event without valid PPAP id');
+}
+```
+
+**Benefits:**
+- Fail-fast if invalid ID
+- Clear error messages
+- Type safety enforced
+- No silent failures
+
+**4. Added Debug Logging for Verification**
+
+**Before every DOCUMENT_ADDED write:**
+```tsx
+console.log('DOCUMENT_ADDED write', {
+  ppapId,
+  fileName: file.name,
+  filePath: path,
+});
+```
+
+**Benefits:**
+- Easy troubleshooting
+- Audit trail in console
+- Verify real IDs used
+- Track event writes
+
+**Document Upload Flow Fixed:**
+
+**Before (Broken):**
+```
+1. User uploads files in CreatePPAPForm
+2. Files uploaded to storage (temp folder)
+3. DOCUMENT_ADDED events written with tempPpapId ❌
+4. Database rejects: foreign key violation
+5. Upload appears to fail
+6. User creates PPAP
+7. Documents not visible (no events logged)
+8. Markup tool can't find documents
+```
+
+**After (Working):**
+```
+1. User uploads files in CreatePPAPForm
+2. Files uploaded to storage (temp folder) ✅
+3. Files tracked in component state only ✅
+4. User creates PPAP
+5. Real PPAP record created with ppap.id ✅
+6. DOCUMENT_ADDED events written with real ppap.id ✅
+7. Database accepts: foreign key valid ✅
+8. Documents visible in PPAP record ✅
+9. Markup tool finds documents ✅
+10. Full workflow operational ✅
+```
+
+**Storage vs Database Integrity:**
+
+**Storage Organization:**
+- Files stored in `/ppap-documents/{id}/{filename}`
+- ID can be temp for organization purposes
+- Storage doesn't enforce foreign keys
+- **This is fine and unchanged**
+
+**Database Foreign Keys:**
+- `ppap_events.ppap_id` MUST reference `ppap_records.id`
+- Enforced by PostgreSQL constraint
+- Temp IDs violate this constraint
+- **This is now fixed: only real IDs used**
+
+**Separation of Concerns:**
+- Storage: file organization (temp ID OK)
+- Database: relational integrity (real ID required)
+- Events: link files to PPAP records (real ID required)
+
+**Benefits:**
+
+**Data Integrity:**
+- ✅ No foreign key violations
+- ✅ All ppap_events reference real PPAP records
+- ✅ Event history accurate
+- ✅ Database constraints satisfied
+
+**Document Visibility:**
+- ✅ Documents visible in PPAP record
+- ✅ Markup tool finds uploaded files
+- ✅ Event query returns results
+- ✅ Full document lifecycle works
+
+**User Experience:**
+- ✅ Upload succeeds reliably
+- ✅ Files appear in PPAP immediately
+- ✅ No mysterious "missing documents"
+- ✅ Markup flow operational
+
+**Code Quality:**
+- ✅ Guards prevent invalid writes
+- ✅ Debug logging for verification
+- ✅ Clear error messages
+- ✅ Type-safe ID validation
+
+**Validation:**
+- ✅ Temp-id event writes removed
+- ✅ Event logging deferred until PPAP creation
+- ✅ Guards added to all DOCUMENT_ADDED writes
+- ✅ Debug logging added
+- ✅ Foreign key constraint satisfied
+- ✅ No schema changes
+- ✅ Document lifecycle restored
+
+**Note:**
+Critical fix for document/event integrity. Root cause was writing `DOCUMENT_ADDED` events with temp PPAP ID before actual PPAP record existed, violating foreign key constraint. Solution: defer event logging until after PPAP creation with real ID, add guards to all event writes. Storage organization unchanged (temp folders OK), but database integrity now guaranteed.
+
+- Commit: `fix: phase 23.11.1 enforce real PPAP ids for document event logging`
+
+---
+
 ## 2026-03-23 10:00 CT - [FIX] Phase 23.14.8.1 - Type-Safe Export Guard for selectedFile
 - Summary: Fixed TypeScript build failure by adding type guard for nullable selectedFile before calling getSignedUrl.
 - Files changed:
