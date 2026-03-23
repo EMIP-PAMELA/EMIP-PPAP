@@ -4,6 +4,116 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 10:46 CT - [FIX] Phase 24.8.2 - react-joyride Type Import Correction
+- Summary: Fixed incorrect type name CallBackProps → CallbackProps for react-joyride callback.
+- Files changed:
+  - `src/features/ppap/components/PPAPOperationsDashboard.tsx` - Corrected type name in import and usage
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Resolved TypeScript build failure, ensured type compatibility
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- TypeScript import used incorrect type name: `CallBackProps`
+- react-joyride exports correct type as: `CallbackProps` (lowercase 'b')
+- TypeScript error: "Module 'react-joyride' has no exported member 'CallBackProps'"
+- Simple typo in type name
+
+**Symptoms:**
+- TypeScript compilation failure
+- Type import error
+- Build broken after Phase 24.8.1
+- IDE showing type errors
+
+**Implementation:**
+
+**Fixed Type Import**
+
+**Before (Broken):**
+```tsx
+import { Joyride, Step, CallBackProps, STATUS } from 'react-joyride';
+
+const handleTourCallback = (data: CallBackProps) => {
+  // ...
+};
+```
+
+**After (Fixed):**
+```tsx
+import { Joyride, Step, CallbackProps, STATUS } from 'react-joyride';
+
+const handleTourCallback = (data: CallbackProps) => {
+  // ...
+};
+```
+
+**Benefits:**
+- Matches library's actual type export name
+- TypeScript compilation passes
+- Proper type checking restored
+- Standard naming convention (lowercase 'b')
+
+**Type Definition:**
+```typescript
+// react-joyride exports:
+export interface CallbackProps {
+  status: string;
+  type: string;
+  index: number;
+  // ... other properties
+}
+```
+
+**Why This Matters:**
+
+**TypeScript Type Safety:**
+- Types must match library exports exactly
+- Case-sensitive type names
+- No fallback or automatic correction
+- Compile-time error prevents runtime issues
+
+**Naming Convention:**
+- `CallbackProps` is standard TypeScript naming
+- Follows React ecosystem conventions
+- Matches library's type definitions
+- Lowercase 'b' in "callback" is correct
+
+**Benefits:**
+
+**Build Stability:**
+- ✅ TypeScript compilation passes
+- ✅ Type imports resolve correctly
+- ✅ No type errors in IDE
+- ✅ Clean build process
+
+**Type Safety:**
+- ✅ Proper callback typing
+- ✅ IntelliSense works correctly
+- ✅ Type checking enforced
+- ✅ Prevents runtime errors
+
+**Code Quality:**
+- ✅ Follows library conventions
+- ✅ Correct type naming
+- ✅ Maintainable solution
+- ✅ Standard TypeScript practices
+
+**Validation:**
+- ✅ Type name corrected to CallbackProps
+- ✅ Import statement fixed
+- ✅ Function parameter type fixed
+- ✅ No remaining CallBackProps references
+- ✅ TypeScript build passes
+- ✅ No schema changes
+
+**Note:**
+Simple typo fix. Type name was `CallBackProps` (uppercase 'B') but should be `CallbackProps` (lowercase 'b') to match react-joyride's exported type definitions. Two-character fix that resolves TypeScript compilation error.
+
+- Commit: `fix: phase 24.8.2 correct react-joyride CallbackProps type import`
+
+---
+
 ## 2026-03-23 10:42 CT - [FIX] Phase 24.8.1 - react-joyride Import Compatibility Fix
 - Summary: Resolved missing default export issue for react-joyride under Next.js 16 + Turbopack.
 - Files changed:
