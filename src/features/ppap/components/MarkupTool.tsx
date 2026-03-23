@@ -107,15 +107,18 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
         .from('ppap-documents')
         .createSignedUrl(selectedFile, 3600);
 
-      console.log('Signed URL:', data, error);
+      console.log('Signed URL response:', data, error);
 
       if (error) {
-        console.error(error);
+        console.error('Signed URL error:', error);
         setFileUrl(null);
         return;
       }
 
-      setFileUrl(data?.signedUrl || null);
+      // Safe extraction: ensure we only store strings
+      const extractedUrl = typeof data?.signedUrl === 'string' ? data.signedUrl : null;
+      console.log('Resolved fileUrl:', extractedUrl);
+      setFileUrl(extractedUrl);
     };
 
     loadUrl();
@@ -191,7 +194,10 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
         return null;
       }
 
-      return data?.signedUrl || null;
+      // Safe extraction: ensure we only return strings
+      const extractedUrl = typeof data?.signedUrl === 'string' ? data.signedUrl : null;
+      console.log('Resolved fileUrl for export:', extractedUrl);
+      return extractedUrl;
     } catch (error) {
       console.error('Exception generating signed URL:', error);
       return null;
@@ -455,8 +461,10 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     // Generate FRESH signed URL for export (selectedFile is now narrowed to string)
     const freshUrl = await getSignedUrl(selectedFile);
 
-    if (!freshUrl) {
-      throw new Error('Failed to generate fresh signed URL');
+    // Safety validation: ensure we have a valid string URL
+    if (!freshUrl || typeof freshUrl !== 'string') {
+      console.warn('Invalid fileUrl for image render:', freshUrl);
+      throw new Error('Failed to load drawing image.');
     }
 
     // Update image with fresh URL
@@ -654,7 +662,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     const annotation = annotations.find(a => a.id === id);
     if (annotation) {
       setEditingId(id);
-      setEditDescription(annotation.description);
+      // Safe string conversion to prevent object rendering
+      setEditDescription(String(annotation.description || ''));
     }
   };
 
@@ -870,8 +879,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                         )}
                       </div>
                     </div>
-                  ) : fileUrl ? (
-                    selectedFile.endsWith('.pdf') ? (
+                  ) : fileUrl && typeof fileUrl === 'string' ? (
+                    selectedFile && typeof selectedFile === 'string' && selectedFile.endsWith('.pdf') ? (
                       <iframe
                         src={fileUrl}
                         className="w-full h-full"
@@ -1117,7 +1126,11 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     ) : (
                       <div>
                         <p className="text-sm text-gray-600">
-                          {String(annotation.description || '') || <em className="text-gray-400">No description</em>}
+                          {annotation.description && String(annotation.description).trim() ? (
+                            String(annotation.description)
+                          ) : (
+                            <em className="text-gray-400">No description</em>
+                          )}
                         </p>
                         <button
                           onClick={() => handleEditAnnotation(annotation.id)}

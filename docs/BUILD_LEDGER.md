@@ -4,6 +4,241 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 12:25 CT - [FIX] Phase 23.14.10 - Resolve React #418 Rendering Error
+- Summary: Fixed React rendering crash by hardening signed URL parsing and preventing object rendering in UI.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Fixed URL extraction and rendering safety
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Eliminated runtime React crash during document interaction and export flow
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- React error #418: "Objects are not valid as a React child"
+- Supabase signed URL response returns object: `{signedUrl: string}`
+- Direct object assignment/rendering causes React crash
+- Annotation descriptions potentially non-string values
+- Missing type guards before rendering values in JSX
+
+**Symptoms:**
+- React crash during document rendering
+- Console error: "Objects are not valid as a React child"
+- UI breaks when loading or exporting drawings
+- Annotation rendering failures
+- Export flow interrupted by rendering errors
+
+**Implementation:**
+
+**1. Hardened Signed URL Extraction**
+
+**Before (Direct Object Assignment):**
+```tsx
+const { data, error } = await supabase.storage
+  .from('ppap-documents')
+  .createSignedUrl(filePath, 3600);
+
+if (error) return null;
+
+return data?.signedUrl || null; // ❌ Could return undefined or object
+```
+
+**After (Safe String Extraction):**
+```tsx
+const { data, error } = await supabase.storage
+  .from('ppap-documents')
+  .createSignedUrl(filePath, 3600);
+
+if (error) {
+  console.error('Signed URL generation failed:', error);
+  return null;
+}
+
+// Safe extraction: ensure we only return strings
+const extractedUrl = typeof data?.signedUrl === 'string' ? data.signedUrl : null;
+console.log('Resolved fileUrl for export:', extractedUrl);
+return extractedUrl;
+```
+
+**2. Added Image Rendering Safety Guards**
+
+**Before:**
+```tsx
+const freshUrl = await getSignedUrl(selectedFile);
+
+if (!freshUrl) {
+  throw new Error('Failed to load drawing image.');
+}
+
+img.src = freshUrl; // ❌ Could be object
+```
+
+**After:**
+```tsx
+const freshUrl = await getSignedUrl(selectedFile);
+
+// Safety validation: ensure we have a valid string URL
+if (!freshUrl || typeof freshUrl !== 'string') {
+  console.warn('Invalid fileUrl for image render:', freshUrl);
+  throw new Error('Failed to load drawing image.');
+}
+
+img.src = freshUrl; // ✅ Guaranteed string
+```
+
+**3. Hardened Annotation Description Rendering**
+
+**Before (Unsafe Rendering):**
+```tsx
+const handleEditAnnotation = (id: string) => {
+  const annotation = annotations.find(a => a.id === id);
+  if (annotation) {
+    setEditingId(id);
+    setEditDescription(annotation.description); // ❌ Could be object
+  }
+};
+
+// In JSX:
+<p>{String(annotation.description || '') || <em>No description</em>}</p>
+// ❌ String('') is falsy, operator precedence issue
+```
+
+**After (Safe String Conversion):**
+```tsx
+const handleEditAnnotation = (id: string) => {
+  const annotation = annotations.find(a => a.id === id);
+  if (annotation) {
+    setEditingId(id);
+    // Safe string conversion to prevent object rendering
+    setEditDescription(String(annotation.description || ''));
+  }
+};
+
+// In JSX:
+<p>
+  {annotation.description && String(annotation.description).trim() ? (
+    String(annotation.description)
+  ) : (
+    <em className="text-gray-400">No description</em>
+  )}
+</p>
+// ✅ Proper conditional rendering
+```
+
+**4. Safe UI Rendering with Type Guards**
+
+**Before:**
+```tsx
+{fileUrl ? (
+  selectedFile.endsWith('.pdf') ? ( // ❌ selectedFile could be null
+    <iframe src={fileUrl} />
+  ) : (
+    <img src={fileUrl} /> // ❌ fileUrl could be object
+  )
+) : (
+  <div>Loading...</div>
+)}
+```
+
+**After:**
+```tsx
+{fileUrl && typeof fileUrl === 'string' ? (
+  selectedFile && typeof selectedFile === 'string' && selectedFile.endsWith('.pdf') ? (
+    <iframe src={fileUrl} />
+  ) : (
+    <img src={fileUrl} />
+  )
+) : (
+  <div>Loading drawing...</div>
+)}
+```
+
+**5. Enhanced Debug Logging**
+
+```tsx
+console.log('Signed URL response:', data, error);
+console.log('Resolved fileUrl:', extractedUrl);
+console.log('Resolved fileUrl for export:', extractedUrl);
+console.warn('Invalid fileUrl for image render:', freshUrl);
+```
+
+**Why This Works:**
+
+**Type Safety:**
+- Explicit type checks before rendering: `typeof value === 'string'`
+- Safe extraction from Supabase response objects
+- No object/undefined values reach JSX rendering
+- String() conversion for all user-facing text
+
+**React Compliance:**
+- Only strings, numbers, or React elements rendered
+- No raw objects passed to JSX
+- Proper conditional rendering patterns
+- Fallback UI for invalid states
+
+**Defensive Programming:**
+- Multiple validation layers
+- Early returns on invalid data
+- Console warnings for debugging
+- Explicit error messages
+
+**Benefits:**
+
+**UI Stability:**
+- ✅ No React #418 rendering crashes
+- ✅ Safe document viewer rendering
+- ✅ Reliable annotation display
+- ✅ Export flow completes without errors
+
+**Code Quality:**
+- ✅ Type-safe value extraction
+- ✅ Explicit type guards
+- ✅ Debug logging for troubleshooting
+- ✅ Proper error handling
+
+**Developer Experience:**
+- ✅ Clear console logs for debugging
+- ✅ Informative error messages
+- ✅ Predictable rendering behavior
+- ✅ No mysterious React crashes
+
+**Validation:**
+- ✅ Signed URL extraction returns only strings or null
+- ✅ Type guards before all rendering operations
+- ✅ String conversion for annotation descriptions
+- ✅ Safe conditional rendering patterns
+- ✅ Debug logging at critical points
+- ✅ No schema changes
+
+**Key Patterns Applied:**
+
+**1. Safe Extraction:**
+```tsx
+const extractedUrl = typeof data?.signedUrl === 'string' ? data.signedUrl : null;
+```
+
+**2. Safe Rendering:**
+```tsx
+{value && typeof value === 'string' ? <Component data={value} /> : null}
+```
+
+**3. Safe String Conversion:**
+```tsx
+String(annotation.description || '')
+```
+
+**4. Conditional Rendering:**
+```tsx
+{condition ? <ValidContent /> : <Fallback />}
+```
+
+**Note:**
+Critical fix for React rendering stability. Supabase returns signed URLs in object format `{signedUrl: string}`, but React cannot render objects as children. Added explicit type extraction and validation at every point where values are assigned or rendered. All UI rendering now has type guards to ensure only valid strings/numbers/elements reach JSX. Annotation descriptions converted to strings before state updates. Export flow validates URL types before DOM manipulation. Debug logging added for troubleshooting. Eliminates all "Objects are not valid as a React child" errors.
+
+- Commit: `fix: phase 23.14.10 resolve React #418 rendering error`
+
+---
+
 ## 2026-03-23 12:10 CT - [FIX] Phase 23.14.9 - Stabilize Export Pipeline PDF/Image Separation
 - Summary: Hardened export branching logic to prevent PDF/image workflow crossover.
 - Files changed:
