@@ -313,6 +313,27 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
         <h2 className="text-lg font-bold text-gray-900 mb-4">
           Active PPAPs ({activePpaps.length})
         </h2>
+        
+        {ppaps.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="text-6xl mb-4">📋</div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              No PPAPs yet
+            </h3>
+            <p className="text-gray-600 mb-6">
+              Create your first PPAP to begin tracking your production part approval process
+            </p>
+            <a
+              href="/ppap/new"
+              className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              + Create New PPAP
+            </a>
+          </div>
+        ) : activePpaps.length === 0 ? (
+          <p className="text-gray-500 text-center py-8 italic">No active PPAPs found</p>
+        ) : null}
+        
         <div className="space-y-3">
           {activePpaps.map(ppap => {
             const nextAction = getNextAction(ppap.workflow_phase, ppap.status);
@@ -520,9 +541,6 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
             </div>
           );
           })}
-          {activePpaps.length === 0 && (
-            <p className="text-gray-500 text-center py-8 italic">No active PPAPs found</p>
-          )}
         </div>
       </div>
 

@@ -42,27 +42,7 @@ export default async function PPAPOperationsPage() {
           </div>
         )}
 
-        {!error && ppapsSafe.length === 0 && (
-          <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-16 text-center">
-            <div className="max-w-md mx-auto">
-              <div className="text-6xl mb-4">📋</div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-3">
-                No PPAPs yet
-              </h2>
-              <p className="text-gray-600 mb-8 text-lg">
-                Create your first PPAP to begin tracking your production part approval process
-              </p>
-              <Link
-                href="/ppap/new"
-                className="inline-block bg-blue-600 text-white px-8 py-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm text-lg"
-              >
-                Create New PPAP
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {!error && ppapsSafe.length > 0 && (
+        {!error && (
           <PPAPOperationsDashboard ppaps={ppapsSafe} />
         )}
       </div>
