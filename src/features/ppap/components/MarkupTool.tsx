@@ -5,6 +5,8 @@ import { supabase } from '@/src/lib/supabaseClient';
 import { logEvent } from '@/src/features/events/mutations';
 import { getPPAPDocuments } from '@/src/features/ppap/utils/getPPAPDocuments';
 import { uploadPPAPDocument } from '@/src/features/ppap/utils/uploadFile';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface MarkupToolProps {
   ppapId: string;
@@ -62,6 +64,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
@@ -235,208 +238,100 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       return;
     }
 
+    if (!exportRef.current) {
+      alert('Export target not ready');
+      return;
+    }
+
     setExporting(true);
     try {
-      // Create a new window for the export
-      const exportWindow = window.open('', '_blank');
-      if (!exportWindow) {
-        alert('Please allow popups to export markup');
-        return;
-      }
+      // Hide UI panels before capture
+      const panels = document.querySelectorAll('.export-hide');
+      panels.forEach(el => {
+        if (el instanceof HTMLElement) {
+          el.style.display = 'none';
+        }
+      });
 
-      // Generate markup export HTML
+      // Capture drawing with annotations
+      const canvas = await html2canvas(exportRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+      });
+
+      // Restore UI panels
+      panels.forEach(el => {
+        if (el instanceof HTMLElement) {
+          el.style.display = '';
+        }
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+
+      // Create PDF
+      const pdf = new jsPDF({
+        orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
+        unit: 'px',
+        format: [canvas.width, canvas.height],
+      });
+
+      // Add annotated drawing
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+
+      // Add annotation sheet page
+      pdf.addPage('letter', 'portrait');
+
       const fileName = uploadedFiles.find(f => f.file_path === selectedFile)?.file_name || 'Drawing';
       const sortedAnnotations = [...annotations].sort((a, b) => a.label_number - b.label_number);
 
-      const exportHTML = `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Markup Export - ${fileName}</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 20px;
-      background: #f5f5f5;
-    }
-    .page {
-      background: white;
-      max-width: 1200px;
-      margin: 0 auto 20px;
-      padding: 40px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    h1 {
-      margin: 0 0 10px;
-      font-size: 24px;
-      color: #1f2937;
-    }
-    .metadata {
-      color: #6b7280;
-      font-size: 14px;
-      margin-bottom: 20px;
-      padding-bottom: 20px;
-      border-bottom: 2px solid #e5e7eb;
-    }
-    .drawing-container {
-      position: relative;
-      width: 100%;
-      margin-bottom: 40px;
-      border: 2px solid #d1d5db;
-      background: #f9fafb;
-    }
-    .drawing-img {
-      width: 100%;
-      height: auto;
-      display: block;
-    }
-    .annotation-overlay {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-    }
-    .annotation-marker {
-      position: absolute;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-    }
-    .marker-circle, .marker-box, .marker-triangle {
-      width: 20px;
-      height: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: 11px;
-      background: rgba(255, 255, 255, 0.75);
-      border-width: 1.5px;
-      border-style: solid;
-    }
-    .marker-circle { border-radius: 50%; }
-    .marker-triangle {
-      clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
-      padding-top: 4px;
-    }
-    .type-dimension { border-color: #2563eb; color: #1e40af; }
-    .type-note { border-color: #ca8a04; color: #a16207; }
-    .type-material { border-color: #16a34a; color: #15803d; }
-    .type-critical { border-color: #dc2626; color: #b91c1c; }
-    .annotation-list {
-      page-break-before: always;
-    }
-    h2 {
-      font-size: 20px;
-      color: #1f2937;
-      margin: 0 0 20px;
-      padding-bottom: 10px;
-      border-bottom: 2px solid #e5e7eb;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 10px;
-    }
-    th, td {
-      padding: 12px;
-      text-align: left;
-      border-bottom: 1px solid #e5e7eb;
-    }
-    th {
-      background: #f9fafb;
-      font-weight: 600;
-      color: #374151;
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    td {
-      color: #1f2937;
-      font-size: 14px;
-    }
-    .type-badge {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-    .badge-dimension { background: #dbeafe; color: #1e40af; }
-    .badge-note { background: #fef3c7; color: #a16207; }
-    .badge-material { background: #dcfce7; color: #15803d; }
-    .badge-critical { background: #fee2e2; color: #b91c1c; }
-    @media print {
-      body { background: white; padding: 0; }
-      .page { box-shadow: none; max-width: none; }
-      .no-print { display: none; }
-    }
-  </style>
-</head>
-<body>
-  <div class="page">
-    <h1>PPAP Markup - ${fileName}</h1>
-    <div class="metadata">
-      <div><strong>Part Number:</strong> ${partNumber || 'N/A'}</div>
-      <div><strong>PPAP ID:</strong> ${ppapId || 'N/A'}</div>
-      <div><strong>Date:</strong> ${new Date().toLocaleDateString()}</div>
-      <div><strong>Total Annotations:</strong> ${annotations.length}</div>
-    </div>
+      // Generate annotation sheet
+      let y = 40;
 
-    <div class="drawing-container">
-      <img src="${fileUrl}" alt="Drawing" class="drawing-img" />
-      <div class="annotation-overlay">
-        ${sortedAnnotations.map(ann => {
-          const shapeClass = ann.shape === 'circle' ? 'marker-circle' : ann.shape === 'box' ? 'marker-box' : ann.shape === 'triangle' ? 'marker-triangle' : '';
-          if (ann.shape === 'text' || ann.shape === 'arrow') return ''; // Skip text and arrow for now
-          return `
-            <div class="annotation-marker" style="left: ${ann.x}%; top: ${ann.y}%;">
-              <div class="${shapeClass} type-${ann.type}">
-                ${ann.label_number}
-              </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    </div>
-  </div>
+      pdf.setFontSize(18);
+      pdf.text('PPAP Markup - Annotation Sheet', 40, y);
 
-  <div class="page annotation-list">
-    <h2>Annotation Legend</h2>
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 60px;">#</th>
-          <th style="width: 120px;">Type</th>
-          <th style="width: 100px;">Shape</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${sortedAnnotations.map(ann => `
-          <tr>
-            <td><strong>${ann.label_number}</strong></td>
-            <td><span class="type-badge badge-${ann.type}">${ann.type.toUpperCase()}</span></td>
-            <td>${ann.shape}</td>
-            <td>${ann.description || '<em>No description</em>'}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  </div>
+      y += 20;
+      pdf.setFontSize(12);
+      pdf.text(`Drawing: ${fileName}`, 40, y);
+      y += 15;
+      pdf.text(`Part Number: ${partNumber || 'N/A'}`, 40, y);
+      y += 15;
+      pdf.text(`Date: ${new Date().toLocaleDateString()}`, 40, y);
+      y += 15;
+      pdf.text(`Total Annotations: ${annotations.length}`, 40, y);
 
-  <div class="no-print" style="position: fixed; bottom: 20px; right: 20px; background: white; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 8px;">
-    <button onclick="window.print()" style="background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; cursor: pointer; margin-right: 10px;">Print</button>
-    <button onclick="window.close()" style="background: #6b7280; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; cursor: pointer;">Close</button>
-  </div>
-</body>
-</html>
-      `;
+      y += 30;
 
-      exportWindow.document.write(exportHTML);
-      exportWindow.document.close();
+      // Add annotations
+      sortedAnnotations.forEach((ann, index) => {
+        pdf.setFontSize(11);
+        pdf.setFont(undefined, 'bold');
+        pdf.text(`#${ann.label_number}`, 40, y);
+
+        pdf.setFont(undefined, 'normal');
+        pdf.text(`Type: ${ann.type}`, 80, y);
+        y += 15;
+        pdf.text(`Shape: ${ann.shape}`, 80, y);
+        y += 15;
+        pdf.text(`Note: ${ann.description || 'No description'}`, 80, y);
+
+        y += 25;
+
+        // Add new page if needed
+        if (y > 700 && index < sortedAnnotations.length - 1) {
+          pdf.addPage();
+          y = 40;
+        }
+      });
+
+      // Save PDF
+      pdf.save(`ppap-markup-${partNumber || 'drawing'}-${Date.now()}.pdf`);
+
+      alert('Export complete!');
     } catch (error) {
-      console.error('Failed to export markup:', error);
-      alert('Failed to export markup');
+      console.error('Export failed:', error);
+      alert('Export failed. Please try again.');
     } finally {
       setExporting(false);
     }
@@ -548,7 +443,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
         <div className="flex-1 relative overflow-hidden">
           {/* Floating Left Tool Panel */}
           {leftPanelOpen ? (
-            <div className="absolute top-4 left-4 z-40 bg-white/95 backdrop-blur border rounded-lg shadow-lg w-56 max-h-[calc(100vh-200px)] overflow-y-auto pointer-events-auto">
+            <div className="absolute top-4 left-4 z-40 bg-white/95 backdrop-blur border rounded-lg shadow-lg w-56 max-h-[calc(100vh-200px)] overflow-y-auto pointer-events-auto export-hide">
               <div className="flex justify-between items-center px-3 py-2 border-b">
                 <span className="text-sm font-semibold text-gray-900">Tools</span>
                 <button
@@ -634,7 +529,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
           ) : (
             <button
               onClick={() => setLeftPanelOpen(true)}
-              className="absolute top-4 left-4 z-40 bg-blue-600 text-white px-3 py-2 rounded shadow-lg hover:bg-blue-700 transition-colors pointer-events-auto"
+              className="absolute top-4 left-4 z-40 bg-blue-600 text-white px-3 py-2 rounded shadow-lg hover:bg-blue-700 transition-colors pointer-events-auto export-hide"
               title="Open tools panel"
             >
               ▶ Tools
@@ -646,7 +541,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
             <div className="absolute inset-0 overflow-auto p-6">
               {/* Mode Indicator */}
               {selectedFile && (
-                <div className={`px-4 py-2 text-sm font-semibold rounded-lg mb-2 ${
+                <div className={`px-4 py-2 text-sm font-semibold rounded-lg mb-2 export-hide ${
                   mode === 'navigate' ? 'bg-gray-100 border border-gray-300 text-gray-800' :
                   mode === 'markup' ? 'bg-blue-50 border border-blue-300 text-blue-800' :
                   'bg-purple-50 border border-purple-300 text-purple-800'
@@ -664,7 +559,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                   'cursor-pointer'
                 }`}
               >
-                <div className="relative w-full max-w-[1200px]">
+                <div ref={exportRef} className="relative w-full max-w-[1200px]">
                 {/* Document Display */}
                 <div className={`w-full h-full ${
                   mode === 'navigate' ? 'pointer-events-auto' : 'pointer-events-none'
@@ -849,7 +744,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
           {/* Floating Right Annotation Panel */}
           {rightPanelOpen ? (
-            <div className="absolute top-4 right-4 z-40 w-80 max-h-[80vh] overflow-auto bg-white border rounded-lg shadow-lg pointer-events-auto">
+            <div className="absolute top-4 right-4 z-40 w-80 max-h-[80vh] overflow-auto bg-white border rounded-lg shadow-lg pointer-events-auto export-hide">
               <div className="flex justify-between items-center px-4 py-3 border-b">
                 <h3 className="text-base font-bold text-gray-900">
                   Annotations ({annotations.length})
@@ -951,7 +846,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
           ) : (
             <button
               onClick={() => setRightPanelOpen(true)}
-              className="absolute top-4 right-4 z-40 bg-gray-700 text-white px-3 py-2 rounded shadow-lg hover:bg-gray-800 transition-colors pointer-events-auto"
+              className="absolute top-4 right-4 z-40 bg-gray-700 text-white px-3 py-2 rounded shadow-lg hover:bg-gray-800 transition-colors pointer-events-auto export-hide"
               title="Open annotations panel"
             >
               Annotations ◀

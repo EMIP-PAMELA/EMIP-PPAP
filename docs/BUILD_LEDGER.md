@@ -4,6 +4,331 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 00:15 CT - [FEAT] Phase 23.14 - PDF Export and Annotation Sheet Generation
+- Summary: Implemented PDF export system with annotated drawing capture and structured annotation sheet.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Added PDF export with html2canvas and jsPDF
+  - `package.json` - Added jspdf and html2canvas dependencies
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Engineering markup deliverables now exportable as PPAP-ready PDF documents
+- No schema changes
+
+**Problem:**
+
+**No Export Capability:**
+
+Markup tool lacked PDF export:
+```tsx
+// Previous: HTML popup window only
+const exportWindow = window.open('', '_blank');
+exportWindow.document.write(exportHTML);
+```
+
+**Issues:**
+- No downloadable PDF output
+- Print-only workflow
+- No structured deliverable
+- Manual screenshot required
+- Not PPAP-submission ready
+
+**Implementation:**
+
+**1. Installed PDF Libraries**
+
+```bash
+npm install jspdf html2canvas
+```
+
+**Dependencies:**
+- `jspdf` - PDF document generation
+- `html2canvas` - Canvas capture from DOM
+
+**2. Added Export Reference**
+
+```tsx
+const exportRef = useRef<HTMLDivElement>(null);
+
+// Wrap drawing area
+<div ref={exportRef} className="relative w-full max-w-[1200px]">
+  {/* Drawing + annotations */}
+</div>
+```
+
+**Benefits:**
+- Target specific DOM element
+- Capture drawing with annotations
+- Exclude UI panels
+
+**3. Hide UI Panels During Capture**
+
+**Added Class:**
+```tsx
+className="export-hide"
+```
+
+**Applied To:**
+- Left tool panel
+- Right annotation panel
+- Toggle buttons
+- Mode indicator
+
+**Capture Logic:**
+```tsx
+// Hide UI panels before capture
+const panels = document.querySelectorAll('.export-hide');
+panels.forEach(el => {
+  if (el instanceof HTMLElement) {
+    el.style.display = 'none';
+  }
+});
+
+// Capture drawing with annotations
+const canvas = await html2canvas(exportRef.current, {
+  scale: 2,
+  useCORS: true,
+  backgroundColor: '#ffffff',
+});
+
+// Restore UI panels
+panels.forEach(el => {
+  if (el instanceof HTMLElement) {
+    el.style.display = '';
+  }
+});
+```
+
+**Benefits:**
+- Clean export without UI
+- Only drawing and annotations
+- Automatic panel restoration
+- No manual cleanup needed
+
+**4. PDF Generation**
+
+**Page 1: Annotated Drawing**
+
+```tsx
+const imgData = canvas.toDataURL('image/png');
+
+const pdf = new jsPDF({
+  orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
+  unit: 'px',
+  format: [canvas.width, canvas.height],
+});
+
+pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+```
+
+**Features:**
+- Auto-detect orientation
+- Full-resolution capture (scale: 2)
+- Exact canvas dimensions
+- High-quality PNG embedding
+
+**Page 2: Annotation Sheet**
+
+```tsx
+pdf.addPage('letter', 'portrait');
+
+let y = 40;
+
+pdf.setFontSize(18);
+pdf.text('PPAP Markup - Annotation Sheet', 40, y);
+
+y += 20;
+pdf.setFontSize(12);
+pdf.text(`Drawing: ${fileName}`, 40, y);
+y += 15;
+pdf.text(`Part Number: ${partNumber || 'N/A'}`, 40, y);
+y += 15;
+pdf.text(`Date: ${new Date().toLocaleDateString()}`, 40, y);
+y += 15;
+pdf.text(`Total Annotations: ${annotations.length}`, 40, y);
+
+y += 30;
+
+// Add annotations
+sortedAnnotations.forEach((ann, index) => {
+  pdf.setFontSize(11);
+  pdf.setFont(undefined, 'bold');
+  pdf.text(`#${ann.label_number}`, 40, y);
+
+  pdf.setFont(undefined, 'normal');
+  pdf.text(`Type: ${ann.type}`, 80, y);
+  y += 15;
+  pdf.text(`Shape: ${ann.shape}`, 80, y);
+  y += 15;
+  pdf.text(`Note: ${ann.description || 'No description'}`, 80, y);
+
+  y += 25;
+
+  // Add new page if needed
+  if (y > 700 && index < sortedAnnotations.length - 1) {
+    pdf.addPage();
+    y = 40;
+  }
+});
+```
+
+**Features:**
+- Structured annotation list
+- Part number and date metadata
+- Type, shape, description for each
+- Auto-pagination when needed
+- Professional formatting
+
+**5. Save PDF**
+
+```tsx
+pdf.save(`ppap-markup-${partNumber || 'drawing'}-${Date.now()}.pdf`);
+
+alert('Export complete!');
+```
+
+**Filename Format:**
+```
+ppap-markup-{partNumber}-{timestamp}.pdf
+
+Examples:
+  ppap-markup-ABC123-1711234567890.pdf
+  ppap-markup-drawing-1711234567890.pdf
+```
+
+**Benefits:**
+- Unique filenames prevent overwrite
+- Part number identification
+- Timestamp for version control
+- Auto-download to user's system
+
+**6. Error Handling**
+
+```tsx
+try {
+  // Export logic
+} catch (error) {
+  console.error('Export failed:', error);
+  alert('Export failed. Please try again.');
+} finally {
+  setExporting(false);
+}
+```
+
+**Benefits:**
+- Graceful failure handling
+- User notification
+- State cleanup guaranteed
+- Debug info logged
+
+**Export Workflow:**
+
+```
+User Action: Click "📦 Export Package"
+
+1. Validation:
+   - Check selectedFile exists
+   - Check annotations.length > 0
+   - Check exportRef.current ready
+
+2. Hide UI:
+   - Query .export-hide elements
+   - Set display: none
+
+3. Capture:
+   - html2canvas(exportRef.current, scale: 2)
+   - Generate high-res PNG
+
+4. Restore UI:
+   - Reset display style
+
+5. Create PDF:
+   - Page 1: Annotated drawing (landscape/portrait auto)
+   - Page 2: Annotation sheet (letter portrait)
+
+6. Save:
+   - Download PDF to user's system
+   - Alert success
+
+Result: Complete PPAP-ready markup package
+```
+
+**PDF Structure:**
+
+```
+Page 1: Annotated Drawing
+┌─────────────────────────────────┐
+│                                 │
+│   [Drawing Image with Markers]  │
+│                                 │
+│   ① ② ③ ④ ⑤ ...                │
+│                                 │
+└─────────────────────────────────┘
+
+Page 2: Annotation Sheet
+┌─────────────────────────────────┐
+│ PPAP Markup - Annotation Sheet  │
+│                                 │
+│ Drawing: part-drawing.pdf       │
+│ Part Number: ABC-123            │
+│ Date: 3/23/2026                 │
+│ Total Annotations: 5            │
+│                                 │
+│ #1                              │
+│ Type: dimension                 │
+│ Shape: circle                   │
+│ Note: Critical tolerance        │
+│                                 │
+│ #2                              │
+│ Type: note                      │
+│ Shape: box                      │
+│ Note: Material callout          │
+│                                 │
+│ ...                             │
+└─────────────────────────────────┘
+```
+
+**Benefits:**
+
+**Export Capability:**
+- ✅ PDF download
+- ✅ Two-page package
+- ✅ Visual + data combined
+- ✅ PPAP-submission ready
+
+**Quality:**
+- ✅ High resolution (2x scale)
+- ✅ Clean capture (UI hidden)
+- ✅ Professional formatting
+- ✅ Structured annotation data
+
+**Workflow:**
+- ✅ One-click export
+- ✅ Auto-download
+- ✅ Unique filenames
+- ✅ Error handling
+
+**Engineering Value:**
+- ✅ Deliverable markup packages
+- ✅ Document + notes combined
+- ✅ Ready for quality review
+- ✅ Archive-friendly format
+
+**Validation:**
+- ✅ jspdf and html2canvas installed
+- ✅ Export handler implemented
+- ✅ Drawing capture with annotations
+- ✅ Annotation sheet generation
+- ✅ UI panels hidden during export
+- ✅ PDF saved with metadata
+- ✅ No schema changes
+- ✅ No regression to markup tool
+
+**Note:**
+Markup tool now exports complete PPAP-ready PDF packages combining visual annotated drawings with structured annotation sheets. Engineers can download deliverables for quality review and submission. Export workflow handles high-resolution capture, automatic pagination, and professional formatting.
+
+- Commit: `feat: phase 23.14 PDF export and annotation sheet generation`
+
+---
+
 ## 2026-03-23 00:10 CT - [FIX] Phase 23.13.1 - JSX Structure Stabilization
 - Summary: Fixed unmatched JSX elements causing build failure in MarkupTool.
 - Files changed:
