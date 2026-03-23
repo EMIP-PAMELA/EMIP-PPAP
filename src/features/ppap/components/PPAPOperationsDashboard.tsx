@@ -258,7 +258,6 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
         steps={tourSteps}
         run={runTour}
         continuous
-        showProgress
         showSkipButton
         callback={handleTourCallback}
         styles={{
