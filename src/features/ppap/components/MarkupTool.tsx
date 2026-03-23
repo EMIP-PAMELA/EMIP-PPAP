@@ -312,171 +312,29 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
       return;
     }
 
+    // Detect file type
+    const isPdf = selectedFile.toLowerCase().endsWith('.pdf');
+
     setExporting(true);
     try {
-      // Dynamic import of browser-safe PDF libraries
-      const [html2canvasModule, jsPdfModule] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf')
-      ]);
-
-      const html2canvas = html2canvasModule.default;
+      // Dynamic import of jsPDF (always needed)
+      const jsPdfModule = await import('jspdf');
       const jsPdfAny = jsPdfModule as any;
       const jsPDF = jsPdfAny.jsPDF || jsPdfAny.default?.jsPDF || jsPdfAny.default;
 
-      // Find image element
-      const img = exportRef.current?.querySelector('img');
-      
-      if (!img) {
-        throw new Error('Export failed: no image element found');
-      }
-
-      if (!(img instanceof HTMLImageElement)) {
-        throw new Error('Image element is not valid');
-      }
-
-      // Generate FRESH signed URL for export (no stale state dependency)
-      const freshUrl = await getSignedUrl(selectedFile);
-
-      if (!freshUrl) {
-        throw new Error('Failed to generate fresh signed URL');
-      }
-
-      // Update image with fresh URL
-      img.src = freshUrl;
-
-      // Wait for image to load with fresh URL
-      await new Promise<void>((resolve, reject) => {
-        if (img.complete && img.naturalWidth > 0) {
-          return resolve();
-        }
-
-        const timeout = setTimeout(() => {
-          reject(new Error('Image failed to load before export'));
-        }, 5000);
-
-        img.onload = () => {
-          clearTimeout(timeout);
-          resolve();
-        };
-
-        img.onerror = () => {
-          clearTimeout(timeout);
-          reject(new Error('Image load error'));
-        };
-      });
-
-      // Validate image has actual dimensions
-      if (img.naturalWidth === 0 || img.naturalHeight === 0) {
-        throw new Error('Image loaded but has no dimensions - CORS or load failure');
-      }
-
-      // Debug logging
-      console.log({
-        selectedFile,
-        freshUrl,
-        imgSrc: img.src,
-        loaded: img.complete,
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-        crossOrigin: img.crossOrigin,
-      });
-
-      // Capture exportRef directly (no cloning, no manipulation)
-      const canvas = await html2canvas(exportRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-
-      // Create PDF with standard page size
-      const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
-      const pdf = new jsPDF({
-        orientation,
-        unit: 'pt',
-        format: 'letter',
-      });
-
-      // Get page dimensions
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      
-      // Calculate margins and available space
-      const margin = 40;
-      const availableWidth = pageWidth - (margin * 2);
-      const availableHeight = pageHeight - (margin * 2);
-      
-      // Calculate fitted dimensions preserving aspect ratio
-      const imgAspect = canvas.width / canvas.height;
-      const availableAspect = availableWidth / availableHeight;
-      
-      let imgWidth, imgHeight;
-      if (imgAspect > availableAspect) {
-        // Image is wider - fit to width
-        imgWidth = availableWidth;
-        imgHeight = availableWidth / imgAspect;
-      } else {
-        // Image is taller - fit to height
-        imgHeight = availableHeight;
-        imgWidth = availableHeight * imgAspect;
-      }
-      
-      // Center the image
-      const xOffset = (pageWidth - imgWidth) / 2;
-      const yOffset = (pageHeight - imgHeight) / 2;
-
-      // Add annotated drawing
-      pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
-
-      // Add annotation sheet page
-      pdf.addPage('letter', 'portrait');
-
-      const fileName = uploadedFiles.find(f => f.file_path === selectedFile)?.file_name || 'Drawing';
-      const sortedAnnotations = [...annotations].sort((a, b) => a.label_number - b.label_number);
-
-      // Generate annotation sheet
-      let y = 50;
-
-      pdf.setFontSize(16);
-      pdf.text('PPAP Markup - Annotation Sheet', 40, y);
-
-      y += 25;
-      pdf.setFontSize(10);
-      pdf.text(`Drawing: ${String(fileName)}`, 40, y);
-      y += 14;
-      pdf.text(`Part Number: ${String(partNumber || 'N/A')}`, 40, y);
-      y += 14;
-      pdf.text(`Date: ${new Date().toLocaleDateString()}`, 40, y);
-      y += 14;
-      pdf.text(`Total Annotations: ${annotations.length}`, 40, y);
-
-      y += 25;
-
-      // Add annotations with ASCII-safe labels
-      sortedAnnotations.forEach((ann, index) => {
-        const markerLabel = getMarkerLabel(ann.shape);
-        const typeShorthand = getTypeShorthand(ann.type);
-        const description = String(ann.description || 'No description');
+      // SPLIT EXPORT LOGIC: PDF vs Image
+      if (isPdf) {
+        // PDF EXPORT PATH: Annotation sheet only
+        alert('PDF export currently includes annotation sheet only. Drawing overlay coming next phase.');
         
-        pdf.setFontSize(10);
-        pdf.setFont(undefined, 'normal');
-        // Compact format: "1. CIRCLE [DIM] Hole center reference"
-        const annotationLine = `${ann.label_number}. ${markerLabel} ${typeShorthand} ${description}`;
-        pdf.text(annotationLine, 40, y);
-
-        y += 16;
-
-        // Add new page if needed
-        if (y > 720 && index < sortedAnnotations.length - 1) {
-          pdf.addPage();
-          y = 50;
-        }
-      });
-
-      // Save PDF
-      pdf.save(`ppap-markup-${partNumber || 'drawing'}-${Date.now()}.pdf`);
+        await exportPdfAnnotationsOnly(jsPDF);
+      } else {
+        // IMAGE EXPORT PATH: Full drawing with annotations
+        const html2canvasModule = await import('html2canvas');
+        const html2canvas = html2canvasModule.default;
+        
+        await exportImageWithAnnotations(jsPDF, html2canvas);
+      }
 
       alert('Export complete!');
     } catch (error) {
@@ -498,6 +356,214 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     } finally {
       setExporting(false);
     }
+  };
+
+  const exportPdfAnnotationsOnly = async (jsPDF: any) => {
+    const fileName = uploadedFiles.find(f => f.file_path === selectedFile)?.file_name || 'Drawing';
+    const sortedAnnotations = [...annotations].sort((a, b) => a.label_number - b.label_number);
+
+    // Create PDF with annotation sheet only
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'pt',
+      format: 'letter',
+    });
+
+    // Generate annotation sheet
+    let y = 50;
+
+    pdf.setFontSize(16);
+    pdf.text('PPAP Markup - Annotation Sheet', 40, y);
+
+    y += 25;
+    pdf.setFontSize(10);
+    pdf.text(`Drawing: ${String(fileName)}`, 40, y);
+    y += 14;
+    pdf.text(`Part Number: ${String(partNumber || 'N/A')}`, 40, y);
+    y += 14;
+    pdf.text(`Date: ${new Date().toLocaleDateString()}`, 40, y);
+    y += 14;
+    pdf.text(`Total Annotations: ${annotations.length}`, 40, y);
+
+    y += 25;
+
+    // Add annotations with ASCII-safe labels
+    sortedAnnotations.forEach((ann, index) => {
+      const markerLabel = getMarkerLabel(ann.shape);
+      const typeShorthand = getTypeShorthand(ann.type);
+      const description = String(ann.description || 'No description');
+      
+      pdf.setFontSize(10);
+      pdf.setFont(undefined, 'normal');
+      const annotationLine = `${ann.label_number}. ${markerLabel} ${typeShorthand} ${description}`;
+      pdf.text(annotationLine, 40, y);
+
+      y += 16;
+
+      // Add new page if needed
+      if (y > 720 && index < sortedAnnotations.length - 1) {
+        pdf.addPage();
+        y = 50;
+      }
+    });
+
+    // Save PDF
+    pdf.save(`ppap-markup-${partNumber || 'drawing'}-${Date.now()}.pdf`);
+  };
+
+  const exportImageWithAnnotations = async (jsPDF: any, html2canvas: any) => {
+    // Find image element
+    const img = exportRef.current?.querySelector('img');
+    
+    if (!img) {
+      throw new Error('Export failed: no image element found');
+    }
+
+    if (!(img instanceof HTMLImageElement)) {
+      throw new Error('Image element is not valid');
+    }
+
+    // Generate FRESH signed URL for export (no stale state dependency)
+    const freshUrl = await getSignedUrl(selectedFile);
+
+    if (!freshUrl) {
+      throw new Error('Failed to generate fresh signed URL');
+    }
+
+    // Update image with fresh URL
+    img.src = freshUrl;
+
+    // Wait for image to load with fresh URL
+    await new Promise<void>((resolve, reject) => {
+      if (img.complete && img.naturalWidth > 0) {
+        return resolve();
+      }
+
+      const timeout = setTimeout(() => {
+        reject(new Error('Image failed to load before export'));
+      }, 5000);
+
+      img.onload = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+
+      img.onerror = () => {
+        clearTimeout(timeout);
+        reject(new Error('Image load error'));
+      };
+    });
+
+    // Validate image has actual dimensions
+    if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+      throw new Error('Image loaded but has no dimensions - CORS or load failure');
+    }
+
+    // Debug logging
+    console.log({
+      selectedFile,
+      freshUrl,
+      imgSrc: img.src,
+      loaded: img.complete,
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+      crossOrigin: img.crossOrigin,
+    });
+
+    // Capture exportRef directly (no cloning, no manipulation)
+    const canvas = await html2canvas(exportRef.current, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+
+    // Create PDF with standard page size
+    const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
+    const pdf = new jsPDF({
+      orientation,
+      unit: 'pt',
+      format: 'letter',
+    });
+
+    // Get page dimensions
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    
+    // Calculate margins and available space
+    const margin = 40;
+    const availableWidth = pageWidth - (margin * 2);
+    const availableHeight = pageHeight - (margin * 2);
+    
+    // Calculate fitted dimensions preserving aspect ratio
+    const imgAspect = canvas.width / canvas.height;
+    const availableAspect = availableWidth / availableHeight;
+    
+    let imgWidth, imgHeight;
+    if (imgAspect > availableAspect) {
+      // Image is wider - fit to width
+      imgWidth = availableWidth;
+      imgHeight = availableWidth / imgAspect;
+    } else {
+      // Image is taller - fit to height
+      imgHeight = availableHeight;
+      imgWidth = availableHeight * imgAspect;
+    }
+    
+    // Center the image
+    const xOffset = (pageWidth - imgWidth) / 2;
+    const yOffset = (pageHeight - imgHeight) / 2;
+
+    // Add annotated drawing
+    pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
+
+    // Add annotation sheet page
+    pdf.addPage('letter', 'portrait');
+
+    const fileName = uploadedFiles.find(f => f.file_path === selectedFile)?.file_name || 'Drawing';
+    const sortedAnnotations = [...annotations].sort((a, b) => a.label_number - b.label_number);
+
+    // Generate annotation sheet
+    let y = 50;
+
+    pdf.setFontSize(16);
+    pdf.text('PPAP Markup - Annotation Sheet', 40, y);
+
+    y += 25;
+    pdf.setFontSize(10);
+    pdf.text(`Drawing: ${String(fileName)}`, 40, y);
+    y += 14;
+    pdf.text(`Part Number: ${String(partNumber || 'N/A')}`, 40, y);
+    y += 14;
+    pdf.text(`Date: ${new Date().toLocaleDateString()}`, 40, y);
+    y += 14;
+    pdf.text(`Total Annotations: ${annotations.length}`, 40, y);
+
+    y += 25;
+
+    // Add annotations with ASCII-safe labels
+    sortedAnnotations.forEach((ann, index) => {
+      const markerLabel = getMarkerLabel(ann.shape);
+      const typeShorthand = getTypeShorthand(ann.type);
+      const description = String(ann.description || 'No description');
+      
+      pdf.setFontSize(10);
+      pdf.setFont(undefined, 'normal');
+      const annotationLine = `${ann.label_number}. ${markerLabel} ${typeShorthand} ${description}`;
+      pdf.text(annotationLine, 40, y);
+
+      y += 16;
+
+      // Add new page if needed
+      if (y > 720 && index < sortedAnnotations.length - 1) {
+        pdf.addPage();
+        y = 50;
+      }
+    });
+
+    // Save PDF
+    pdf.save(`ppap-markup-${partNumber || 'drawing'}-${Date.now()}.pdf`);
   };
 
   const handleDeleteAnnotation = (id: string) => {

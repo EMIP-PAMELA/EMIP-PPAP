@@ -4,6 +4,289 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 09:50 CT - [FIX] Phase 23.14.8 - Split Export Pipeline for PDF vs Image Rendering
+- Summary: Fixed export failure when drawing is a PDF by detecting file type and using separate export paths.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - PDF detection, split export logic, annotation-only PDF export
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: PDF drawings now export successfully with annotation sheet (full overlay coming in Phase 23.16)
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- PDF drawings render via `<iframe>` viewer, not `<img>` element
+- Export pipeline used `querySelector('img')` unconditionally
+- html2canvas cannot capture iframe content
+- Export crashed when no img element found
+
+**Symptoms:**
+- Export failed on PDF drawings
+- Error: "Export failed: no image element found"
+- Image drawings worked, PDF drawings failed
+- No fallback for PDF file types
+
+**Implementation:**
+
+**1. Added PDF File Type Detection**
+
+```tsx
+const handleExportMarkup = async () => {
+  // ... validation ...
+  
+  // Detect file type
+  const isPdf = selectedFile.toLowerCase().endsWith('.pdf');
+  
+  // ... continue with type-specific logic
+};
+```
+
+**Benefits:**
+- Simple, reliable detection
+- No additional dependencies
+- Works for .pdf and .PDF
+- Easy to extend for other formats
+
+**2. Split Export Logic: PDF vs Image**
+
+**Before (Single Path):**
+```tsx
+// Always tried to find img element
+const img = exportRef.current?.querySelector('img');
+if (!img) throw new Error('Export failed: no image element found');
+
+// Used html2canvas for all files
+const canvas = await html2canvas(exportRef.current, {...});
+```
+
+**After (Split Paths):**
+```tsx
+// SPLIT EXPORT LOGIC: PDF vs Image
+if (isPdf) {
+  // PDF EXPORT PATH: Annotation sheet only
+  alert('PDF export currently includes annotation sheet only. Drawing overlay coming next phase.');
+  await exportPdfAnnotationsOnly(jsPDF);
+} else {
+  // IMAGE EXPORT PATH: Full drawing with annotations
+  const html2canvasModule = await import('html2canvas');
+  const html2canvas = html2canvasModule.default;
+  await exportImageWithAnnotations(jsPDF, html2canvas);
+}
+```
+
+**Benefits:**
+- Clear separation of concerns
+- No img requirement for PDFs
+- html2canvas only loaded for images
+- Easy to add PDF overlay rendering later
+
+**3. Implemented Annotation-Only Export for PDFs**
+
+```tsx
+const exportPdfAnnotationsOnly = async (jsPDF: any) => {
+  const fileName = uploadedFiles.find(f => f.file_path === selectedFile)?.file_name || 'Drawing';
+  const sortedAnnotations = [...annotations].sort((a, b) => a.label_number - b.label_number);
+
+  // Create PDF with annotation sheet only
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'pt',
+    format: 'letter',
+  });
+
+  // Generate annotation sheet
+  let y = 50;
+  pdf.setFontSize(16);
+  pdf.text('PPAP Markup - Annotation Sheet', 40, y);
+
+  y += 25;
+  pdf.setFontSize(10);
+  pdf.text(`Drawing: ${String(fileName)}`, 40, y);
+  y += 14;
+  pdf.text(`Part Number: ${String(partNumber || 'N/A')}`, 40, y);
+  y += 14;
+  pdf.text(`Date: ${new Date().toLocaleDateString()}`, 40, y);
+  y += 14;
+  pdf.text(`Total Annotations: ${annotations.length}`, 40, y);
+
+  y += 25;
+
+  // Add annotations with ASCII-safe labels
+  sortedAnnotations.forEach((ann, index) => {
+    const markerLabel = getMarkerLabel(ann.shape);
+    const typeShorthand = getTypeShorthand(ann.type);
+    const description = String(ann.description || 'No description');
+    
+    pdf.setFontSize(10);
+    pdf.setFont(undefined, 'normal');
+    const annotationLine = `${ann.label_number}. ${markerLabel} ${typeShorthand} ${description}`;
+    pdf.text(annotationLine, 40, y);
+
+    y += 16;
+
+    // Add new page if needed
+    if (y > 720 && index < sortedAnnotations.length - 1) {
+      pdf.addPage();
+      y = 50;
+    }
+  });
+
+  // Save PDF
+  pdf.save(`ppap-markup-${partNumber || 'drawing'}-${Date.now()}.pdf`);
+};
+```
+
+**Benefits:**
+- No html2canvas dependency
+- Fast export for PDFs
+- Annotation sheet still useful
+- Prepares for Phase 23.16 (full overlay)
+
+**4. Refactored Image Export to Separate Function**
+
+```tsx
+const exportImageWithAnnotations = async (jsPDF: any, html2canvas: any) => {
+  // Find image element (only for images)
+  const img = exportRef.current?.querySelector('img');
+  
+  if (!img) {
+    throw new Error('Export failed: no image element found');
+  }
+
+  // ... fresh URL generation ...
+  // ... image load validation ...
+  // ... html2canvas capture ...
+  // ... PDF generation with drawing + annotation sheet ...
+};
+```
+
+**Benefits:**
+- Image-specific logic isolated
+- img requirement only enforced for images
+- Existing functionality preserved
+- Cleaner code organization
+
+**5. Added User Feedback for PDF Limitations**
+
+```tsx
+if (isPdf) {
+  alert('PDF export currently includes annotation sheet only. Drawing overlay coming next phase.');
+  await exportPdfAnnotationsOnly(jsPDF);
+}
+```
+
+**Benefits:**
+- Clear user expectation
+- Explains current limitation
+- Promises future improvement
+- Professional communication
+
+**Export Workflow Split:**
+
+**PDF Path:**
+```
+1. Validate selectedFile exists
+2. Validate annotations exist
+3. Detect isPdf = true
+4. Show limitation message
+5. Generate annotation sheet only
+6. Save PDF
+7. Complete
+
+Result: Annotation sheet exported successfully
+```
+
+**Image Path:**
+```
+1. Validate selectedFile exists
+2. Validate annotations exist
+3. Detect isPdf = false
+4. Find img element
+5. Generate fresh signed URL
+6. Update img.src and wait for load
+7. Validate dimensions
+8. Capture with html2canvas
+9. Generate PDF with drawing + annotation sheet
+10. Save PDF
+11. Complete
+
+Result: Full drawing with annotations exported
+```
+
+**Future: Phase 23.16 (PDF Overlay)**
+
+**Planned Approach:**
+```tsx
+// Use pdfjs-dist to render PDF to canvas
+import { getDocument } from 'pdfjs-dist';
+
+const exportPdfWithAnnotations = async (jsPDF: any) => {
+  // Load PDF with pdfjs
+  const loadingTask = getDocument(fileUrl);
+  const pdf = await loadingTask.promise;
+  const page = await pdf.getPage(1);
+  
+  // Render to canvas
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  await page.render({ canvasContext: context, viewport }).promise;
+  
+  // Overlay annotations on canvas
+  // ... draw annotation markers ...
+  
+  // Export canvas to PDF
+  // ... same as image export ...
+};
+```
+
+**Not Implemented Yet:**
+- Requires pdfjs-dist dependency
+- Canvas rendering complexity
+- Multi-page PDF handling
+- Marked for Phase 23.16
+
+**Benefits:**
+
+**Export Reliability:**
+- ✅ PDF drawings export successfully
+- ✅ No img element requirement for PDFs
+- ✅ Clear error messages
+- ✅ Type-specific handling
+
+**Code Organization:**
+- ✅ Split export logic
+- ✅ Separate functions for PDF/image
+- ✅ Cleaner code structure
+- ✅ Easy to extend
+
+**User Experience:**
+- ✅ Clear limitation messaging
+- ✅ Annotation sheet still useful
+- ✅ No crash on PDF export
+- ✅ Professional communication
+
+**Future Ready:**
+- ✅ Prepared for Phase 23.16
+- ✅ pdfjs integration path clear
+- ✅ Minimal changes needed
+- ✅ Incremental improvement
+
+**Validation:**
+- ✅ PDF file type detection added
+- ✅ Export logic split implemented
+- ✅ Annotation-only PDF export working
+- ✅ Image export preserved
+- ✅ User feedback added
+- ✅ No schema changes
+- ✅ Export functionality enhanced
+
+**Note:**
+Critical fix for PDF drawing export. Root cause was unconditional img element requirement, which fails for PDF viewers. Solution: detect file type and use separate export paths - annotation-only for PDFs (fast), full rendering for images (existing). Prepares system for full PDF overlay rendering in Phase 23.16 using pdfjs-dist.
+
+- Commit: `fix: phase 23.14.8 support PDF drawings in export pipeline`
+
+---
+
 ## 2026-03-23 09:40 CT - [FIX] Phase 23.14.7 - Fix Export Race Condition and Stale Signed URL Issue
 - Summary: Resolved persistent blank PDF by regenerating signed URL at export time and enforcing valid image state.
 - Files changed:
