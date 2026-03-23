@@ -55,8 +55,10 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
 
   // Load uploaded files
   useEffect(() => {
@@ -227,6 +229,224 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     }
   };
 
+  const handleExportMarkup = async () => {
+    if (!selectedFile) {
+      alert('Please select a drawing first');
+      return;
+    }
+
+    if (annotations.length === 0) {
+      alert('No annotations to export');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      // Create a new window for the export
+      const exportWindow = window.open('', '_blank');
+      if (!exportWindow) {
+        alert('Please allow popups to export markup');
+        return;
+      }
+
+      // Generate markup export HTML
+      const fileName = uploadedFiles.find(f => f.file_path === selectedFile)?.file_name || 'Drawing';
+      const sortedAnnotations = [...annotations].sort((a, b) => a.label_number - b.label_number);
+
+      const exportHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Markup Export - ${fileName}</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .page {
+      background: white;
+      max-width: 1200px;
+      margin: 0 auto 20px;
+      padding: 40px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+      color: #1f2937;
+    }
+    .metadata {
+      color: #6b7280;
+      font-size: 14px;
+      margin-bottom: 20px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+    .drawing-container {
+      position: relative;
+      width: 100%;
+      margin-bottom: 40px;
+      border: 2px solid #d1d5db;
+      background: #f9fafb;
+    }
+    .drawing-img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .annotation-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .annotation-marker {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    .marker-circle, .marker-box, .marker-triangle {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.75);
+      border-width: 1.5px;
+      border-style: solid;
+    }
+    .marker-circle { border-radius: 50%; }
+    .marker-triangle {
+      clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+      padding-top: 4px;
+    }
+    .type-dimension { border-color: #2563eb; color: #1e40af; }
+    .type-note { border-color: #ca8a04; color: #a16207; }
+    .type-material { border-color: #16a34a; color: #15803d; }
+    .type-critical { border-color: #dc2626; color: #b91c1c; }
+    .annotation-list {
+      page-break-before: always;
+    }
+    h2 {
+      font-size: 20px;
+      color: #1f2937;
+      margin: 0 0 20px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: #374151;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    td {
+      color: #1f2937;
+      font-size: 14px;
+    }
+    .type-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-dimension { background: #dbeafe; color: #1e40af; }
+    .badge-note { background: #fef3c7; color: #a16207; }
+    .badge-material { background: #dcfce7; color: #15803d; }
+    .badge-critical { background: #fee2e2; color: #b91c1c; }
+    @media print {
+      body { background: white; padding: 0; }
+      .page { box-shadow: none; max-width: none; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>PPAP Markup - ${fileName}</h1>
+    <div class="metadata">
+      <div><strong>Part Number:</strong> ${partNumber || 'N/A'}</div>
+      <div><strong>PPAP ID:</strong> ${ppapId || 'N/A'}</div>
+      <div><strong>Date:</strong> ${new Date().toLocaleDateString()}</div>
+      <div><strong>Total Annotations:</strong> ${annotations.length}</div>
+    </div>
+
+    <div class="drawing-container">
+      <img src="${fileUrl}" alt="Drawing" class="drawing-img" />
+      <div class="annotation-overlay">
+        ${sortedAnnotations.map(ann => {
+          const shapeClass = ann.shape === 'circle' ? 'marker-circle' : ann.shape === 'box' ? 'marker-box' : ann.shape === 'triangle' ? 'marker-triangle' : '';
+          if (ann.shape === 'text' || ann.shape === 'arrow') return ''; // Skip text and arrow for now
+          return `
+            <div class="annotation-marker" style="left: ${ann.x}%; top: ${ann.y}%;">
+              <div class="${shapeClass} type-${ann.type}">
+                ${ann.label_number}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  </div>
+
+  <div class="page annotation-list">
+    <h2>Annotation Legend</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 60px;">#</th>
+          <th style="width: 120px;">Type</th>
+          <th style="width: 100px;">Shape</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sortedAnnotations.map(ann => `
+          <tr>
+            <td><strong>${ann.label_number}</strong></td>
+            <td><span class="type-badge badge-${ann.type}">${ann.type.toUpperCase()}</span></td>
+            <td>${ann.shape}</td>
+            <td>${ann.description || '<em>No description</em>'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="no-print" style="position: fixed; bottom: 20px; right: 20px; background: white; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 8px;">
+    <button onclick="window.print()" style="background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; cursor: pointer; margin-right: 10px;">Print</button>
+    <button onclick="window.close()" style="background: #6b7280; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; cursor: pointer;">Close</button>
+  </div>
+</body>
+</html>
+      `;
+
+      exportWindow.document.write(exportHTML);
+      exportWindow.document.close();
+    } catch (error) {
+      console.error('Failed to export markup:', error);
+      alert('Failed to export markup');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleDeleteAnnotation = (id: string) => {
     setAnnotations(annotations.filter(a => a.id !== id));
     if (editingId === id) {
@@ -360,14 +580,22 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     </select>
                   </div>
 
-                  {/* Save Button */}
-                  <div className="pt-2">
+                  {/* Action Buttons */}
+                  <div className="pt-2 space-y-2">
                     <button
                       onClick={handleSaveAnnotations}
                       disabled={loading}
-                      className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors font-medium"
+                      className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors font-medium text-sm"
                     >
-                      {loading ? 'Saving...' : '💾 Save'}
+                      {loading ? 'Saving...' : '💾 Save Annotations'}
+                    </button>
+                    <button
+                      onClick={handleExportMarkup}
+                      disabled={exporting || !selectedFile || annotations.length === 0}
+                      className="w-full px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 transition-colors font-medium text-sm"
+                      title="Export marked-up drawing and annotation sheet"
+                    >
+                      {exporting ? 'Exporting...' : '📦 Export Package'}
                     </button>
                   </div>
                 </div>
@@ -412,6 +640,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                     />
                   ) : (
                     <img
+                      ref={imageRef}
                       src={fileUrl}
                       alt="Drawing"
                       className="w-full h-full object-contain"
