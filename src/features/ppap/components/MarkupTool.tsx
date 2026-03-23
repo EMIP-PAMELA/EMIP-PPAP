@@ -59,6 +59,8 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -545,8 +547,19 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
         <div className="flex-1 relative overflow-hidden">
           {/* Floating Left Tool Panel */}
-          <div className="absolute top-4 left-4 z-40 bg-white/95 backdrop-blur border rounded-lg shadow-lg w-56 max-h-[calc(100vh-200px)] overflow-y-auto">
-            <div className="p-3 space-y-3">
+          {leftPanelOpen ? (
+            <div className="absolute top-4 left-4 z-40 bg-white/95 backdrop-blur border rounded-lg shadow-lg w-56 max-h-[calc(100vh-200px)] overflow-y-auto pointer-events-auto">
+              <div className="flex justify-between items-center px-3 py-2 border-b">
+                <span className="text-sm font-semibold text-gray-900">Tools</span>
+                <button
+                  onClick={() => setLeftPanelOpen(false)}
+                  className="text-gray-500 hover:text-gray-700 text-lg leading-none"
+                  title="Close panel"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-3 space-y-3">
                   {/* Mode Controls */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Mode</label>
@@ -616,33 +629,42 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                       {exporting ? 'Exporting...' : '📦 Export Package'}
                     </button>
                   </div>
-            </div>
-          </div>
-
-          {/* Center Canvas Area - Full Viewport */}
-          <div className="w-full h-[calc(100vh-80px)] p-6 overflow-auto">
-
-            {/* Mode Indicator */}
-            {selectedFile && (
-              <div className={`px-4 py-2 text-sm font-semibold rounded-lg mb-2 ${
-                mode === 'navigate' ? 'bg-gray-100 border border-gray-300 text-gray-800' :
-                mode === 'markup' ? 'bg-blue-50 border border-blue-300 text-blue-800' :
-                'bg-purple-50 border border-purple-300 text-purple-800'
-              }`}>
-                {MODE_INFO[mode].icon} {MODE_INFO[mode].label} Mode: {MODE_INFO[mode].description}
               </div>
-            )}
-
-            {/* Drawing Canvas */}
-            <div
-              ref={containerRef}
-              className={`relative w-full h-full overflow-auto bg-gray-100 ${
-                mode === 'navigate' ? 'cursor-default' :
-                mode === 'markup' ? 'cursor-crosshair' :
-                'cursor-pointer'
-              }`}
+            </div>
+          ) : (
+            <button
+              onClick={() => setLeftPanelOpen(true)}
+              className="absolute top-4 left-4 z-40 bg-blue-600 text-white px-3 py-2 rounded shadow-lg hover:bg-blue-700 transition-colors pointer-events-auto"
+              title="Open tools panel"
             >
-              <div className="relative mx-auto">
+              ▶ Tools
+            </button>
+          )}
+
+          {/* Full-Height Canvas Area */}
+          <div className="relative w-full h-screen overflow-hidden bg-gray-100">
+            <div className="absolute inset-0 overflow-auto p-6">
+              {/* Mode Indicator */}
+              {selectedFile && (
+                <div className={`px-4 py-2 text-sm font-semibold rounded-lg mb-2 ${
+                  mode === 'navigate' ? 'bg-gray-100 border border-gray-300 text-gray-800' :
+                  mode === 'markup' ? 'bg-blue-50 border border-blue-300 text-blue-800' :
+                  'bg-purple-50 border border-purple-300 text-purple-800'
+                }`}>
+                  {MODE_INFO[mode].icon} {MODE_INFO[mode].label} Mode: {MODE_INFO[mode].description}
+                </div>
+              )}
+
+              {/* Drawing Canvas */}
+              <div
+                ref={containerRef}
+                className={`relative mx-auto min-h-full flex justify-center ${
+                  mode === 'navigate' ? 'cursor-default' :
+                  mode === 'markup' ? 'cursor-crosshair' :
+                  'cursor-pointer'
+                }`}
+              >
+                <div className="relative w-full max-w-[1200px]">
                 {/* Document Display */}
                 <div className={`w-full h-full ${
                   mode === 'navigate' ? 'pointer-events-auto' : 'pointer-events-none'
@@ -693,7 +715,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                         ref={imageRef}
                         src={fileUrl}
                         alt="Drawing"
-                        className="w-full h-full object-contain"
+                        className="max-w-[1200px] w-full h-auto object-contain"
                       />
                     )
                   ) : (
@@ -825,11 +847,21 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
           </div>
 
           {/* Floating Right Annotation Panel */}
-          <div className="absolute top-4 right-4 z-40 w-80 max-h-[80vh] overflow-auto bg-white border rounded-lg shadow-lg">
-            <div className="p-4">
-              <h3 className="text-base font-bold text-gray-900 mb-3">
-                Annotations ({annotations.length})
-              </h3>
+          {rightPanelOpen ? (
+            <div className="absolute top-4 right-4 z-40 w-80 max-h-[80vh] overflow-auto bg-white border rounded-lg shadow-lg pointer-events-auto">
+              <div className="flex justify-between items-center px-4 py-3 border-b">
+                <h3 className="text-base font-bold text-gray-900">
+                  Annotations ({annotations.length})
+                </h3>
+                <button
+                  onClick={() => setRightPanelOpen(false)}
+                  className="text-gray-500 hover:text-gray-700 text-lg leading-none"
+                  title="Close panel"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-4">
 
               {annotations.length === 0 && (
                 <p className="text-sm text-gray-500 italic">No annotations yet. Click on the drawing to add one.</p>
@@ -913,8 +945,17 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
                   </div>
                 ))}
               </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <button
+              onClick={() => setRightPanelOpen(true)}
+              className="absolute top-4 right-4 z-40 bg-gray-700 text-white px-3 py-2 rounded shadow-lg hover:bg-gray-800 transition-colors pointer-events-auto"
+              title="Open annotations panel"
+            >
+              Annotations ◀
+            </button>
+          )}
         </div>
       </div>
     </div>
