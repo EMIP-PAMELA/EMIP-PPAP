@@ -25,6 +25,18 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   const [documentationSection, setDocumentationSection] = useState<'checklist' | 'upload' | 'readiness' | 'confirmation' | undefined>(undefined);
   const activePhaseRef = useRef<HTMLDivElement>(null);
 
+  // Sync local state when ppap.workflow_phase prop changes (e.g., after router.refresh())
+  useEffect(() => {
+    const newPhase = isValidWorkflowPhase(ppap.workflow_phase) 
+      ? ppap.workflow_phase 
+      : 'INITIATION';
+    
+    if (newPhase !== currentPhase) {
+      setCurrentPhase(newPhase);
+      setSelectedPhase(newPhase);
+    }
+  }, [ppap.workflow_phase, currentPhase]);
+
   // Auto-scroll to active phase on mount
   useEffect(() => {
     if (activePhaseRef.current) {

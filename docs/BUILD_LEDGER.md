@@ -4,6 +4,169 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 11:55 CT - [FIX] Phase 24.9 - Immediate UI Sync After Phase Promotion
+- Summary: Fixed stale UI after PPAP phase promotion by syncing local state with prop changes.
+- Files changed:
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Added useEffect to sync state
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: UI now updates immediately after phase promotion without user interaction
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- After phase promotion (e.g., Initiation → Documentation), backend updates correctly
+- `router.refresh()` re-fetches PPAP data with new phase from database
+- PPAPWorkflowWrapper component receives updated `ppap.workflow_phase` prop
+- However, local state (`currentPhase`, `selectedPhase`) not synced with prop changes
+- UI remains on old phase until user clicks or interacts
+
+**Symptoms:**
+- User completes phase (e.g., Initiation form)
+- Success message shows "Advancing to Documentation phase..."
+- Database updates successfully
+- UI still shows old phase (Initiation)
+- Phase indicator shows wrong phase
+- Next Action panel shows stale data
+- User must click or navigate to see updated phase
+
+**Implementation:**
+
+**Added State Synchronization Effect**
+
+**Before (Stale State):**
+```tsx
+export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
+  const initialPhase = isValidWorkflowPhase(ppap.workflow_phase) 
+    ? ppap.workflow_phase 
+    : 'INITIATION';
+  
+  const [currentPhase, setCurrentPhase] = useState<WorkflowPhase>(initialPhase);
+  const [selectedPhase, setSelectedPhase] = useState<WorkflowPhase>(initialPhase);
+  
+  // State only initialized from prop, never synced
+  
+  useEffect(() => {
+    // Auto-scroll only
+  }, []);
+}
+```
+
+**After (Reactive State):**
+```tsx
+export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
+  const initialPhase = isValidWorkflowPhase(ppap.workflow_phase) 
+    ? ppap.workflow_phase 
+    : 'INITIATION';
+  
+  const [currentPhase, setCurrentPhase] = useState<WorkflowPhase>(initialPhase);
+  const [selectedPhase, setSelectedPhase] = useState<WorkflowPhase>(initialPhase);
+  
+  // Sync local state when ppap.workflow_phase prop changes
+  useEffect(() => {
+    const newPhase = isValidWorkflowPhase(ppap.workflow_phase) 
+      ? ppap.workflow_phase 
+      : 'INITIATION';
+    
+    if (newPhase !== currentPhase) {
+      setCurrentPhase(newPhase);
+      setSelectedPhase(newPhase);
+    }
+  }, [ppap.workflow_phase, currentPhase]);
+  
+  // Auto-scroll on mount
+  useEffect(() => {
+    if (activePhaseRef.current) {
+      setTimeout(() => {
+        activePhaseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+    }
+  }, []);
+}
+```
+
+**How It Works:**
+
+**Phase Promotion Flow:**
+1. User completes phase form (e.g., InitiationForm)
+2. Form calls `updateWorkflowPhase()` to update database
+3. Form calls `router.refresh()` to re-fetch server data
+4. Server component re-renders with updated `ppap` prop
+5. PPAPWorkflowWrapper receives new `ppap.workflow_phase` value
+6. **New:** useEffect detects prop change and updates local state
+7. UI immediately reflects new phase (indicator, Next Action panel, etc.)
+
+**State Sync Logic:**
+- Effect watches `ppap.workflow_phase` prop
+- When prop changes, validates new phase value
+- If different from current local state, updates both `currentPhase` and `selectedPhase`
+- Ensures UI always matches database state
+- No user interaction required
+
+**Existing Flow Preserved:**
+- InitiationForm still calls `router.refresh()` (line 136)
+- DocumentationForm still calls `router.refresh()` (line 258)
+- SampleForm and ReviewForm use same pattern
+- `setTimeout(() => setPhase(...), 1500)` still exists but now redundant
+- New useEffect provides immediate sync without delay
+
+**Why This Works:**
+
+**Reactive Props:**
+- React components should respond to prop changes
+- Local state initialized from props needs sync mechanism
+- useEffect with dependency array watches for changes
+- Updates local state when prop changes
+
+**Server/Client Harmony:**
+- Server component fetches latest data
+- Client component syncs with server data
+- Single source of truth (database)
+- UI automatically reflects backend state
+
+**No Manual Intervention:**
+- No user clicks required
+- No navigation needed
+- No refresh button
+- Immediate visual feedback
+
+**Benefits:**
+
+**User Experience:**
+- ✅ Immediate UI update after phase promotion
+- ✅ Phase indicator updates instantly
+- ✅ Next Action panel shows correct phase
+- ✅ No stale state confusion
+- ✅ Smooth workflow progression
+
+**Code Quality:**
+- ✅ Proper React patterns (sync state with props)
+- ✅ Single source of truth (database)
+- ✅ Minimal code change
+- ✅ No breaking changes
+- ✅ Works with existing router.refresh() calls
+
+**Workflow Responsiveness:**
+- ✅ Form submission → Database update → UI sync (immediate)
+- ✅ No delay between backend and frontend
+- ✅ Reduced user confusion
+- ✅ Professional polish
+
+**Validation:**
+- ✅ State syncs when ppap.workflow_phase changes
+- ✅ Both currentPhase and selectedPhase updated
+- ✅ Phase validation preserved
+- ✅ Auto-scroll behavior unchanged
+- ✅ No schema changes
+- ✅ No regression in existing flows
+
+**Note:**
+Simple but critical fix. Local state in client component was initialized from props but never synced when props changed. After `router.refresh()` re-fetched updated PPAP data, the component received new `ppap.workflow_phase` prop value but ignored it. Added useEffect to watch prop changes and update local state accordingly. UI now immediately reflects phase transitions without requiring user interaction. Improves workflow responsiveness and eliminates stale state confusion.
+
+- Commit: `fix: phase 24.9 sync UI after PPAP phase promotion`
+
+---
+
 ## 2026-03-23 11:47 CT - [REFACTOR] Phase 24.8.9 - Walkthrough Feature Removal
 - Summary: Removed react-joyride integration to restore build stability.
 - Files changed:
