@@ -78,6 +78,10 @@ export async function updateWorkflowPhase({
   const oldStatus = currentRecord?.status || 'NEW';
   const newStatus = overrideStatus || getStatusForPhase(toPhase);
 
+  // TODO Phase 3D: Replace direct status updates with executeTransition()
+  // This will enforce both state machine validation and role permissions
+  // Example: const newStatus = executeTransition(role, oldStatus, targetStatus);
+
   // Update workflow_phase AND status in database
   const { data, error } = await supabase
     .from('ppap_records')

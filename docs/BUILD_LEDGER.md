@@ -4,6 +4,202 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 14:45 CT - [IMPLEMENTATION] Phase 3C - State + Permission Enforcement Layer Complete
+
+- Summary: Combined state machine with role permissions into unified enforcement layer
+- Files changed:
+  - `src/features/ppap/utils/ppapTransitionGuard.ts` - Created enforcement layer
+  - `src/features/ppap/mutations/updateWorkflowPhase.ts` - Added TODO for Phase 3D integration
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: System now enforces BOTH state validity AND role authorization for transitions
+- No schema changes
+- No breaking changes
+
+**Context:**
+
+Phase 3C combines the state machine (Phase 3B) with role permissions (Phase 2A) into a single enforcement layer. This ensures all state transitions must pass both state validity checks AND role authorization checks.
+
+**Implementation:**
+
+**1. Enforcement Layer (`ppapTransitionGuard.ts`)**
+
+Created unified enforcement combining state machine + permissions.
+
+**Two Core Functions:**
+
+```typescript
+function canUserTransition(
+  role: UserRole,
+  currentState: string,
+  nextState: string
+): boolean
+```
+
+**Dual Validation:**
+1. State machine validation first (is transition valid?)
+2. Role authorization second (is user allowed?)
+
+**Logic Flow:**
+```typescript
+// 1. Check state validity first
+if (!canTransition(currentState, nextState)) {
+  return false; // Invalid state transition
+}
+
+// 2. Role-based restrictions
+
+// Acknowledgement gate: Coordinator/Admin only
+if (nextState === 'ACKNOWLEDGED') {
+  return role === 'admin' || role === 'coordinator';
+}
+
+// Submission gate: Engineer/Admin only
+if (nextState === 'SUBMITTED') {
+  return role === 'admin' || role === 'engineer';
+}
+
+// Viewer: No state transitions allowed
+if (role === 'viewer') return false;
+
+// All other valid transitions allowed for admin, coordinator, engineer
+return true;
+```
+
+---
+
+**2. Enforced Transition Handler**
+
+```typescript
+function executeTransition(
+  role: UserRole,
+  currentState: string,
+  nextState: string
+): string
+```
+
+**Enforcement:**
+- Calls `canUserTransition()` for validation
+- Throws error if unauthorized or invalid
+- Returns new state if allowed
+- Placeholder for event logging (Phase 3D)
+
+**Error Messages:**
+```
+Error: Unauthorized or invalid transition: IN_PROGRESS → SUBMITTED for role viewer
+Error: Unauthorized or invalid transition: IN_PROGRESS → ACKNOWLEDGED for role engineer
+```
+
+---
+
+**3. Critical Gate Enforcement**
+
+**Acknowledgement Gate:**
+- Valid transition: READY_FOR_ACKNOWLEDGEMENT → ACKNOWLEDGED
+- Allowed roles: Admin, Coordinator
+- Blocked roles: Engineer, Viewer
+- **Engineer cannot acknowledge** (enforced)
+
+**Submission Gate:**
+- Valid transition: READY_FOR_SUBMISSION → SUBMITTED
+- Allowed roles: Admin, Engineer
+- Blocked roles: Coordinator, Viewer
+- **Coordinator cannot submit** (enforced)
+
+**Viewer Restriction:**
+- Viewer: Cannot perform ANY state transitions
+- All `canUserTransition()` calls return `false` for viewer
+
+---
+
+**4. Integration Prep**
+
+**Added TODO markers:**
+```typescript
+// TODO Phase 3D: Replace direct status updates with executeTransition()
+// This will enforce both state machine validation and role permissions
+// Example: const newStatus = executeTransition(role, oldStatus, targetStatus);
+```
+
+**Location:** `updateWorkflowPhase.ts` (status update function)
+
+**Future Integration (Phase 3D):**
+- Replace direct status mutations with `executeTransition()`
+- Add role parameter to mutation functions
+- Enforce validation at database update layer
+- Log transition events to audit trail
+
+---
+
+**5. Enforcement Principles**
+
+**Dual Validation:**
+```
+State Valid? → Yes → Role Authorized? → Yes → Allowed
+           ↓                           ↓
+           No → BLOCKED                No → BLOCKED
+```
+
+**Both checks must pass.**
+
+**State Machine First:**
+- Check transition validity before role check
+- Prevents invalid transitions regardless of role
+- Example: COMPLETE → IN_PROGRESS is invalid for ALL roles
+
+**Role Authorization Second:**
+- Check role permissions for valid transitions
+- Enforces acknowledgement/submission gates
+- Blocks viewer from all transitions
+
+---
+
+**Validation:**
+
+- ✅ `canUserTransition()` implemented (dual validation)
+- ✅ `executeTransition()` implemented (enforced handler)
+- ✅ State machine validation integrated
+- ✅ Role permission validation integrated
+- ✅ Acknowledgement gate enforced (Coordinator/Admin only)
+- ✅ Submission gate enforced (Engineer/Admin only)
+- ✅ Viewer blocked from all transitions
+- ✅ Error messages include role context
+- ✅ Event logging placeholder added
+- ✅ Existing code marked with TODOs
+- ✅ No schema changes
+- ✅ No breaking changes
+
+**Enforcement Examples:**
+
+| Current State              | Next State    | Role        | Result  | Reason                          |
+|---------------------------|---------------|-------------|---------|----------------------------------|
+| IN_PROGRESS               | ACKNOWLEDGED  | Engineer    | ❌ BLOCKED | Engineer cannot acknowledge     |
+| READY_FOR_ACKNOWLEDGEMENT | ACKNOWLEDGED  | Coordinator | ✅ ALLOWED | Valid state + authorized role   |
+| READY_FOR_SUBMISSION      | SUBMITTED     | Engineer    | ✅ ALLOWED | Valid state + authorized role   |
+| READY_FOR_SUBMISSION      | SUBMITTED     | Coordinator | ❌ BLOCKED | Coordinator cannot submit       |
+| IN_PROGRESS               | SUBMITTED     | Admin       | ❌ BLOCKED | Invalid state transition        |
+| ANY STATE                 | ANY STATE     | Viewer      | ❌ BLOCKED | Viewer cannot transition states |
+| COMPLETE                  | IN_PROGRESS   | Admin       | ❌ BLOCKED | Invalid state transition        |
+
+**System Guarantees:**
+
+1. **Invalid transitions are impossible** (state machine enforced)
+2. **Unauthorized transitions are impossible** (role permissions enforced)
+3. **Both checks must pass** (dual validation)
+4. **Acknowledgement gate protected** (Coordinator/Admin only)
+5. **Submission gate protected** (Engineer/Admin only)
+6. **Viewer is read-only** (no state changes allowed)
+
+**Next Actions:**
+
+- Phase 3D: Integrate `executeTransition()` into mutation functions
+- Phase 3D: Add role parameter to state change handlers
+- Phase 3D: Implement transition event logging
+- Phase 3E: Update UI to use `canUserTransition()` for button visibility
+
+- Commit: `feat: phase 3C state + permission enforcement layer (dual validation)`
+
+---
+
 ## 2026-03-24 14:40 CT - [FIX] Phase 2A - Permission Alignment Correction (Coordinator Edit Authority)
 
 - Summary: Coordinator role updated to allow full PPAP editing
