@@ -4,6 +4,221 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 14:35 CT - [IMPLEMENTATION] Phase 3B - State Machine Foundation Complete
+
+- Summary: Implemented centralized state machine with enforced workflow transitions
+- Files changed:
+  - `src/features/ppap/utils/stateMachine.ts` - Created state machine foundation
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: State transitions now enforced through centralized control system
+- No schema changes
+- No UI changes (enforcement ready for integration)
+
+**Context:**
+
+Phase 3B implements the state machine as a core control system, not a UI feature. This establishes the foundation for enforced workflow control where invalid state transitions are impossible.
+
+**Implementation:**
+
+**1. State Machine File (`stateMachine.ts`)**
+
+Created centralized state machine control system.
+
+**PPAPState Type (15 States):**
+```typescript
+type PPAPState =
+  | 'INITIATED'
+  | 'INTAKE_COMPLETE'
+  | 'IN_PROGRESS'
+  | 'IN_REVIEW'
+  | 'READY_FOR_ACKNOWLEDGEMENT'
+  | 'ACKNOWLEDGED'
+  | 'POST_ACK_ASSIGNED'
+  | 'IN_VALIDATION'
+  | 'READY_FOR_SUBMISSION'
+  | 'SUBMITTED'
+  | 'ACCEPTED'
+  | 'REJECTED'
+  | 'COMPLETE'
+  | 'BLOCKED'
+  | 'ON_HOLD';
+```
+
+---
+
+**2. Valid Transitions Map**
+
+Defined all valid state transitions:
+
+```typescript
+const VALID_TRANSITIONS: Record<PPAPState, PPAPState[]> = {
+  INITIATED: ['INTAKE_COMPLETE', 'IN_PROGRESS', 'BLOCKED', 'ON_HOLD'],
+  INTAKE_COMPLETE: ['IN_PROGRESS', 'READY_FOR_ACKNOWLEDGEMENT', 'BLOCKED'],
+  IN_PROGRESS: ['IN_REVIEW', 'READY_FOR_ACKNOWLEDGEMENT', 'BLOCKED'],
+  IN_REVIEW: ['READY_FOR_ACKNOWLEDGEMENT', 'IN_PROGRESS', 'BLOCKED'],
+  READY_FOR_ACKNOWLEDGEMENT: ['ACKNOWLEDGED'],
+  ACKNOWLEDGED: ['POST_ACK_ASSIGNED', 'IN_VALIDATION'],
+  POST_ACK_ASSIGNED: ['IN_VALIDATION'],
+  IN_VALIDATION: ['READY_FOR_SUBMISSION', 'BLOCKED'],
+  READY_FOR_SUBMISSION: ['SUBMITTED'],
+  SUBMITTED: ['ACCEPTED', 'REJECTED'],
+  REJECTED: ['IN_VALIDATION'],
+  ACCEPTED: ['COMPLETE'],
+  COMPLETE: [],
+  BLOCKED: ['IN_PROGRESS', 'IN_VALIDATION'],
+  ON_HOLD: ['IN_PROGRESS'],
+};
+```
+
+**Key Transitions:**
+- **Acknowledgement Gate:** READY_FOR_ACKNOWLEDGEMENT → ACKNOWLEDGED (one-way, hard gate)
+- **Submission Gate:** READY_FOR_SUBMISSION → SUBMITTED (one-way)
+- **Final State:** COMPLETE has no valid transitions (terminal state)
+- **Recovery Paths:** BLOCKED and ON_HOLD can transition back to work states
+- **Rejection Loop:** REJECTED → IN_VALIDATION (allows rework)
+
+---
+
+**3. Transition Validation Function**
+
+```typescript
+function canTransition(current: PPAPState, next: PPAPState): boolean {
+  return VALID_TRANSITIONS[current]?.includes(next) ?? false;
+}
+```
+
+**Behavior:**
+- Returns `true` if transition is valid
+- Returns `false` if transition is invalid
+- Returns `false` if current state is undefined
+
+**Usage:**
+```typescript
+canTransition('IN_PROGRESS', 'READY_FOR_ACKNOWLEDGEMENT') // true
+canTransition('IN_PROGRESS', 'SUBMITTED') // false
+canTransition('COMPLETE', 'IN_PROGRESS') // false
+```
+
+---
+
+**4. Enforced Transition Handler**
+
+```typescript
+function transitionPPAPState(
+  currentState: PPAPState,
+  nextState: PPAPState
+): PPAPState {
+  if (!canTransition(currentState, nextState)) {
+    throw new Error(`Invalid transition: ${currentState} → ${nextState}`);
+  }
+
+  // TODO Phase 3C: log state transition event
+
+  return nextState;
+}
+```
+
+**Enforcement:**
+- Validates transition before allowing
+- Throws error if invalid transition attempted
+- Returns new state if valid
+- Centralizes all transition logic
+- Prepared for event logging (Phase 3C)
+
+**Error Handling:**
+Invalid transitions throw descriptive errors:
+```
+Error: Invalid transition: IN_PROGRESS → SUBMITTED
+```
+
+---
+
+**5. Helper Function**
+
+```typescript
+function getValidNextStates(currentState: PPAPState): PPAPState[] {
+  return VALID_TRANSITIONS[currentState] ?? [];
+}
+```
+
+**Purpose:**
+- Returns array of valid next states for current state
+- Useful for UI: show only valid action buttons
+- Empty array for terminal states (COMPLETE)
+
+**Usage:**
+```typescript
+getValidNextStates('IN_PROGRESS')
+// Returns: ['IN_REVIEW', 'READY_FOR_ACKNOWLEDGEMENT', 'BLOCKED']
+
+getValidNextStates('COMPLETE')
+// Returns: []
+```
+
+---
+
+**6. Integration Strategy**
+
+**Current State:**
+- State machine logic centralized
+- Transition validation enforced
+- No database changes required
+- Works with existing status field
+
+**Future Integration (Phase 3C+):**
+```typescript
+// In action handlers
+const newState = transitionPPAPState(ppap.state, 'ACKNOWLEDGED');
+await updatePPAPState(ppap.id, newState); // Will add in Phase 3C
+
+// In UI components
+const validActions = getValidNextStates(ppap.state);
+// Show buttons only for valid actions
+```
+
+**No Schema Changes:**
+- State machine uses existing status field
+- Transitions enforced in application logic
+- Database remains unchanged
+
+---
+
+**Validation:**
+
+- ✅ 15 states defined
+- ✅ Valid transitions map complete
+- ✅ canTransition() validation function implemented
+- ✅ transitionPPAPState() enforcement function implemented
+- ✅ getValidNextStates() helper function added
+- ✅ Invalid transitions throw errors
+- ✅ Acknowledgement gate enforced (one-way)
+- ✅ COMPLETE is terminal state
+- ✅ Recovery paths defined (BLOCKED, ON_HOLD)
+- ✅ Rejection loop enabled (REJECTED → IN_VALIDATION)
+- ✅ Centralized transition logic
+- ✅ No schema changes
+- ✅ Event logging placeholder added
+- ✅ Future-compatible with database integration
+
+**State Machine Principles:**
+
+1. **Enforcement Over Trust:** System controls transitions, not user behavior
+2. **Centralized Logic:** All transitions go through one function
+3. **Hard Gates:** READY_FOR_ACKNOWLEDGEMENT → ACKNOWLEDGED is one-way
+4. **Terminal States:** COMPLETE has no valid transitions
+5. **Recovery Paths:** BLOCKED/ON_HOLD can transition back to work
+6. **Deterministic:** Same input always produces same validation result
+
+**Next Actions:**
+
+- Phase 3C: State transition logging and event sourcing
+- Phase 3D: Integration with action handlers
+- Phase 3E: UI enforcement (show only valid actions)
+
+- Commit: `feat: phase 3B state machine foundation (enforced workflow transitions)`
+
+---
+
 ## 2026-03-24 14:30 CT - [FIX] Phase 2A - canEditPPAP State Parameter Correction
 
 - Summary: Fixed canEditPPAP to include state parameter and final state checks
