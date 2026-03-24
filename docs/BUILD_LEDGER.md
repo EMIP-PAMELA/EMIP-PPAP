@@ -4,6 +4,62 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 14:30 CT - [FIX] Phase 2A - canEditPPAP State Parameter Correction
+
+- Summary: Fixed canEditPPAP to include state parameter and final state checks
+- Files changed:
+  - `src/features/ppap/utils/permissions.ts` - Updated canEditPPAP signature and logic
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: canEditPPAP now correctly prevents engineer edits in SUBMITTED/ACCEPTED/COMPLETE states
+- No breaking changes
+
+**Context:**
+
+Initial Phase 2A implementation had `canEditPPAP(role)` without state parameter. Spec requires `canEditPPAP(role, state)` to prevent edits in final states.
+
+**Fix Applied:**
+
+**Before:**
+```typescript
+export function canEditPPAP(role: UserRole): boolean {
+  return role === 'admin' || role === 'engineer';
+}
+```
+
+**After:**
+```typescript
+export function canEditPPAP(role: UserRole, state: string): boolean {
+  // Admin can always edit
+  if (role === 'admin') return true;
+  
+  // Engineer can edit unless in final states
+  if (role === 'engineer') {
+    return state !== 'SUBMITTED' && state !== 'ACCEPTED' && state !== 'COMPLETE';
+  }
+  
+  // Coordinator and viewer cannot edit
+  return false;
+}
+```
+
+**Behavior:**
+- Admin: Can edit in all states
+- Engineer: Can edit EXCEPT in SUBMITTED, ACCEPTED, COMPLETE
+- Coordinator: Cannot edit (workflow control, not engineering work)
+- Viewer: Cannot edit (read-only)
+
+**Validation:**
+- ✅ State parameter added to function signature
+- ✅ Final state checks implemented (SUBMITTED, ACCEPTED, COMPLETE)
+- ✅ Admin override preserved
+- ✅ Engineer blocked in final states
+- ✅ Coordinator correctly excluded from edit authority
+- ✅ Matches spec exactly
+
+- Commit: `fix: phase 2A canEditPPAP state parameter (prevent edits in final states)`
+
+---
+
 ## 2026-03-24 14:15 CT - [DESIGN] Phase 2A - Role Model Lock
 
 - Summary: Formal role and authority model defined and locked in BUILD_PLAN.md
