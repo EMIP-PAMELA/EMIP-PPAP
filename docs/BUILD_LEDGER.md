@@ -4,6 +4,134 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 14:15 CT - [DESIGN] Phase 2A - Role Model Lock
+
+- Summary: Formal role and authority model defined and locked in BUILD_PLAN.md
+- Files changed:
+  - `docs/BUILD_PLAN.md` - Added "Role & Authority Model (State-Aligned)" section
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Role definitions are now authoritative and locked
+- No implementation changes
+- Design documentation only
+
+**Context:**
+
+Phase 2A Role Model Lock formally defines and locks the role and authority model into BUILD_PLAN.md to prevent drift and ensure consistent enforcement across all future implementation.
+
+**Documentation Added:**
+
+**Section:** "Role & Authority Model (State-Aligned)"
+**Location:** BUILD_PLAN.md (after State Machine section)
+**Length:** ~280 lines of comprehensive role definitions
+
+**Content:**
+
+**1. Four Fixed Roles:**
+- **Admin:** Supervisory / Override Role
+- **Coordinator:** Process Controller
+- **Engineer:** Work Executor
+- **Viewer:** Read-Only Oversight
+
+**2. Role Definitions:**
+
+**Admin:**
+- Full system visibility
+- Can perform ALL coordinator actions
+- Escalation and override authority
+- **NOT the primary operator**
+
+**Coordinator:**
+- Primary workflow operator
+- Owns PPAP intake and assignment
+- Controls acknowledgement gate
+- **Critical authority:** Only Coordinator/Admin can acknowledge PPAPs
+
+**Engineer:**
+- Executes pre-ack and post-ack work
+- Uploads documents and completes validations
+- **Cannot assign work**
+- **Cannot acknowledge PPAPs**
+- **Cannot override workflow state**
+
+**Viewer:**
+- Read-only access to all PPAPs
+- No edit permissions
+- No workflow control
+- Leadership visibility and reporting
+
+**3. Permission Model:**
+
+**Formula:**
+```
+(role) + (state) → allowed / blocked
+```
+
+Permissions determined by **role AND state together**, not role alone.
+
+**4. Critical Rules Documented:**
+
+**Acknowledgement Gate Control:**
+- Transition: READY_FOR_ACKNOWLEDGEMENT → ACKNOWLEDGED
+- Allowed: Coordinator, Admin only
+- Prohibited: Engineer, Viewer
+
+**Assignment Authority:**
+- Allowed: Coordinator, Admin only
+- Prohibited: Engineer, Viewer
+
+**Workflow Control vs Execution:**
+- Control: Coordinator/Admin (assign, acknowledge, override)
+- Execution: Engineer (complete work, upload documents)
+- Observation: Viewer (read-only)
+
+**Admin vs Coordinator Distinction:**
+- Admin: Override authority, escalation only
+- Coordinator: Primary workflow operator
+- System must not assume Admin is primary operator
+
+**5. Permission Matrix:**
+Complete matrix showing all 7 actions across 4 roles with state dependencies.
+
+**6. Authentication Strategy:**
+- Phase 2A: Mock user, no auth
+- Future: Integration with real auth system
+- Design principle: Role model defined now, auth deferred
+
+---
+
+**Validation:**
+
+- ✅ 4 roles formally defined
+- ✅ Authority boundaries clearly documented
+- ✅ Acknowledgement gate ownership clarified (Coordinator/Admin only)
+- ✅ Role + State permission model enforced
+- ✅ Admin vs Coordinator distinction established
+- ✅ Permission matrix provided
+- ✅ Implementation examples included
+- ✅ Future auth strategy documented
+- ✅ No state machine modifications
+- ✅ No validation engine modifications
+- ✅ No schema changes
+
+**Purpose:**
+
+This documentation lock ensures:
+1. **Consistency:** All future implementations follow same role model
+2. **No Drift:** Role definitions cannot change without explicit BUILD_PLAN update
+3. **Clear Authority:** No ambiguity about who can perform which actions
+4. **State Alignment:** Permissions always respect state machine constraints
+5. **Future Compatibility:** Auth integration path clearly defined
+
+**Next Actions:**
+
+- Role model is now authoritative
+- All future permission implementations must align with this model
+- Any role changes require BUILD_PLAN update and governance approval
+
+- Commit: `docs: phase 2A role model lock (formal role definitions in BUILD_PLAN)`
+
+---
+
 ## 2026-03-24 14:10 CT - [IMPLEMENTATION] Phase 2A - Simple Role-Based Permissions Complete
 
 - Summary: Added role-based permissions without authentication

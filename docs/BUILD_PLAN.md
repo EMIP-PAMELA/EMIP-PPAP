@@ -514,6 +514,286 @@ const visiblePhases = phases.filter(phase => {
 
 ---
 
+## Role & Authority Model (State-Aligned)
+
+### Overview
+
+**CRITICAL:** EMIP-PPAP enforces role-based permissions that are **aligned with the state machine**. Permissions are determined by both **role AND state**, not role alone.
+
+**Permission Formula:**
+```
+(role) + (state) → allowed / blocked
+```
+
+This ensures workflow integrity and prevents unauthorized state transitions.
+
+---
+
+### Roles
+
+EMIP-PPAP defines **4 fixed roles**:
+
+1. **Admin** - Supervisory / Override Role
+2. **Coordinator** - Process Controller
+3. **Engineer** - Work Executor
+4. **Viewer** - Read-Only Oversight
+
+---
+
+### Role Definitions
+
+#### Admin (Supervisory / Override Role)
+
+**Responsibilities:**
+- Full system visibility
+- Can perform ALL coordinator actions
+- Can assign and reassign work
+- Can acknowledge PPAPs
+- Can override workflow decisions
+- Can reopen or redirect PPAPs
+
+**Intent:**
+Admin is **NOT the primary operator**. Admin is an **escalation and override authority** for exceptional situations.
+
+**Authority Level:** Unlimited (within system constraints)
+
+---
+
+#### Coordinator (Process Controller)
+
+**Responsibilities:**
+- Owns PPAP intake (manual entry from external systems)
+- Assigns engineers to PPAPs
+- Sets production plant context
+- Manages workflow progression
+- Controls acknowledgement gate
+
+**Critical Authority:**
+**ONLY Coordinator and Admin can acknowledge PPAPs.**
+
+This is a **hard gate** that separates pre-acknowledgement work from post-acknowledgement execution. Engineers cannot bypass this control.
+
+**Intent:**
+Coordinator is the **primary driver of workflow execution**. They control PPAP assignment, progression, and acknowledgement.
+
+**Authority Level:** Workflow control + Assignment + Acknowledgement gate
+
+---
+
+#### Engineer (Work Executor)
+
+**Responsibilities:**
+- Performs pre-ack and post-ack work
+- Uploads and edits documents
+- Completes validation requirements
+- Advances work within assigned phase
+- Prepares PPAPs for submission
+
+**Restrictions:**
+- **Cannot assign work** (no assignment authority)
+- **Cannot acknowledge PPAPs** (coordinator-only gate)
+- **Cannot override workflow state** (state machine enforced)
+
+**Intent:**
+Engineer **executes work** but does not control workflow. They operate within the phases and states assigned to them by the coordinator.
+
+**Authority Level:** Work execution only (no workflow control)
+
+---
+
+#### Viewer (Read-Only Oversight)
+
+**Responsibilities:**
+- Full visibility into all PPAPs
+- Can view all documents and validation status
+- Can view workflow history and events
+
+**Restrictions:**
+- **No edit permissions** (read-only)
+- **No workflow control** (cannot transition states)
+- **No document uploads** (cannot modify data)
+
+**Intent:**
+Used for **leadership visibility and reporting**. Provides oversight without operational control.
+
+**Authority Level:** Read-only (no write permissions)
+
+---
+
+### Permission Model
+
+**Permissions are determined by:**
+
+```
+(role) + (state) → allowed / blocked
+```
+
+**NOT role alone.**
+
+This ensures that:
+1. Roles cannot bypass state machine constraints
+2. State transitions are only allowed when both role AND state permit
+3. Workflow integrity is maintained
+
+**Example:**
+```typescript
+// Engineer trying to submit PPAP
+canSubmitPPAP(role: 'engineer', state: 'IN_PROGRESS') → FALSE (wrong state)
+canSubmitPPAP(role: 'engineer', state: 'READY_FOR_SUBMISSION') → TRUE (correct state + role)
+canSubmitPPAP(role: 'viewer', state: 'READY_FOR_SUBMISSION') → FALSE (wrong role)
+```
+
+---
+
+### Critical Rules
+
+#### 1. Acknowledgement Gate Control
+
+**Transition:**
+```
+READY_FOR_ACKNOWLEDGEMENT → ACKNOWLEDGED
+```
+
+**Allowed Roles:**
+- Coordinator
+- Admin
+
+**Explicitly Prohibited:**
+- Engineer (cannot acknowledge)
+- Viewer (read-only)
+
+**Rationale:**
+The acknowledgement gate is a **critical control point** that locks pre-ack work and enables post-ack execution. Only workflow controllers (Coordinator/Admin) can execute this transition.
+
+---
+
+#### 2. Assignment Authority
+
+**Action:** Assign PPAP to Engineer
+
+**Allowed Roles:**
+- Coordinator
+- Admin
+
+**Prohibited:**
+- Engineer (cannot assign to themselves or others)
+- Viewer (read-only)
+
+**Rationale:**
+Assignment is a workflow control action. Engineers execute assigned work but do not control assignment.
+
+---
+
+#### 3. Workflow Control vs Execution
+
+**Workflow Control (Coordinator/Admin):**
+- Assign PPAPs
+- Acknowledge PPAPs
+- Override workflow decisions
+- Manage workflow transitions
+
+**Work Execution (Engineer):**
+- Complete validation requirements
+- Upload documents
+- Mark requirements complete
+- Prepare for submission
+
+**Observation Only (Viewer):**
+- View all PPAPs
+- Monitor progress
+- Generate reports
+
+**Principle:** Separation of control and execution ensures accountability and prevents self-service workflow bypass.
+
+---
+
+#### 4. Admin vs Coordinator Distinction
+
+**Admin:**
+- Can perform **all coordinator actions**
+- Acts as **override authority**
+- Used for escalation and exceptional situations
+
+**Coordinator:**
+- **Primary workflow operator**
+- Default assignment and acknowledgement authority
+- Day-to-day workflow control
+
+**CRITICAL:** System must not assume Admin is the primary operator. Coordinators are the default workflow controllers. Admins are for escalation only.
+
+---
+
+### Permission Implementation
+
+**Permission Helpers:**
+
+```typescript
+// Edit permissions
+canEditPPAP(role: UserRole): boolean {
+  return role === 'admin' || role === 'engineer';
+}
+
+// Assignment permissions
+canAssignPPAP(role: UserRole): boolean {
+  return role === 'admin' || role === 'coordinator';
+}
+
+// Acknowledgement gate (role + state)
+canAcknowledgePPAP(role: UserRole, state: string): boolean {
+  if (state !== 'READY_FOR_ACKNOWLEDGEMENT') return false;
+  return role === 'admin' || role === 'coordinator';
+}
+
+// Submission permissions (role + state)
+canSubmitPPAP(role: UserRole, state: string): boolean {
+  if (state !== 'READY_FOR_SUBMISSION') return false;
+  return role === 'admin' || role === 'engineer';
+}
+
+// Read-only check
+isReadOnly(role: UserRole): boolean {
+  return role === 'viewer';
+}
+```
+
+**Implementation Status:** ✅ Phase 2A complete (UI enforcement, no auth)
+
+---
+
+### Permission Matrix
+
+| Action                  | Admin | Coordinator | Engineer | Viewer |
+|------------------------|-------|-------------|----------|--------|
+| View PPAPs             | ✓     | ✓           | ✓        | ✓      |
+| Navigate to Details    | ✓     | ✓           | ✓        | ✗      |
+| Create PPAP            | ✓     | ✓           | ✓        | ✗      |
+| Edit PPAP              | ✓     | ✗           | ✓        | ✗      |
+| Assign PPAP            | ✓     | ✓           | ✗        | ✗      |
+| Acknowledge PPAP       | ✓     | ✓*          | ✗        | ✗      |
+| Submit PPAP            | ✓     | ✗           | ✓*       | ✗      |
+
+*Only when state allows (READY_FOR_ACKNOWLEDGEMENT / READY_FOR_SUBMISSION)
+
+---
+
+### Authentication Strategy
+
+**Phase 2A (Current):**
+- Mock user with changeable role
+- No authentication system
+- UI-level enforcement only
+- Future-compatible with real auth
+
+**Future Phases:**
+- Integrate with existing auth system
+- User-to-role mapping from database
+- Backend permission enforcement
+- API-level access control
+
+**Design Principle:** Role model is defined now, authentication integration deferred to future phases.
+
+---
+
 ## Validation Engine (Requirement Completion System)
 
 ### Overview
