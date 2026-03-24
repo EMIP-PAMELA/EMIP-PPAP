@@ -4,6 +4,113 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-23 19:32 CT - [FIX] Phase 23.15.5.1 - Null Guard for Export Sanitization
+- Summary: Added explicit null guard before sanitizeColorsForExport to resolve TypeScript build failure.
+- Files changed:
+  - `src/features/ppap/components/MarkupTool.tsx` - Added exportRef null guard
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Resolved strict TypeScript build error, preserved export sanitization pipeline
+- No schema changes
+
+**Problem:**
+
+**Root Issue:**
+- `exportRef.current` has type `HTMLDivElement | null`
+- `sanitizeColorsForExport` requires non-null `HTMLElement` parameter
+- TypeScript build fails with strict null checking
+- Error: "Argument of type 'HTMLDivElement | null' is not assignable to parameter of type 'HTMLElement'"
+
+**Symptoms:**
+- TypeScript compilation error in MarkupTool.tsx
+- Build fails in CI/CD pipeline
+- Cannot deploy to production
+
+**Implementation:**
+
+**Before (TypeScript Error):**
+```tsx
+// Sanitize DOM for html2canvas compatibility
+console.log('Sanitizing DOM for html2canvas export...');
+const sanitizedElement = sanitizeColorsForExport(exportRef.current);
+// ❌ TypeScript error: exportRef.current may be null
+```
+
+**After (Type-Safe):**
+```tsx
+// Sanitize DOM for html2canvas compatibility
+console.log('Sanitizing DOM for html2canvas export...');
+
+if (!exportRef.current) {
+  throw new Error('Export element not available');
+}
+
+const sanitizedElement = sanitizeColorsForExport(exportRef.current);
+// ✅ TypeScript narrows to non-null HTMLDivElement
+```
+
+**Key Changes:**
+
+**1. Added Explicit Null Guard:**
+```tsx
+if (!exportRef.current) {
+  throw new Error('Export element not available');
+}
+```
+- Runtime check ensures exportRef.current is not null
+- TypeScript narrows type from `HTMLDivElement | null` to `HTMLDivElement`
+- Clear error message if export target unavailable
+
+**2. No Non-Null Assertion:**
+- Did NOT use `exportRef.current!` (unsafe)
+- Did NOT use `as HTMLElement` (bypasses type safety)
+- Used proper runtime guard for type narrowing
+
+**Why This Works:**
+
+**Type Narrowing:**
+- TypeScript's control flow analysis recognizes the null check
+- After `if (!exportRef.current)` with `throw`, TypeScript knows the value is non-null
+- Subsequent code can safely use `exportRef.current` as `HTMLDivElement`
+
+**Runtime Safety:**
+- If export element is somehow unavailable, throws clear error
+- Prevents runtime null reference errors
+- Aligns with existing error handling pattern in export pipeline
+
+**Benefits:**
+
+**Type Safety:**
+- ✅ TypeScript build passes
+- ✅ No type assertions or unsafe casts
+- ✅ Proper null handling
+- ✅ Type-safe sanitization call
+
+**Code Quality:**
+- ✅ Explicit error handling
+- ✅ Clear error messages
+- ✅ No unsafe workarounds
+- ✅ Follows TypeScript best practices
+
+**Behavior:**
+- ✅ No functional changes to export logic
+- ✅ Sanitization pipeline preserved
+- ✅ Only fails when truly unavailable
+- ✅ Consistent with existing guards
+
+**Validation:**
+- ✅ TypeScript compilation succeeds
+- ✅ Export logic unchanged
+- ✅ sanitizeColorsForExport still in use
+- ✅ No schema changes
+- ✅ No unrelated code changes
+
+**Note:**
+Minor TypeScript fix to satisfy strict null checking. Phase 23.15.5 introduced `sanitizeColorsForExport(exportRef.current)` call, but `exportRef.current` can be null. Added explicit null guard with clear error message before the call, allowing TypeScript to narrow the type correctly. This is a build-time fix with no runtime behavior change under normal operation.
+
+- Commit: `fix: phase 23.15.5.1 guard exportRef before export sanitization`
+
+---
+
 ## 2026-03-23 15:47 CT - [FIX] Phase 23.15.5 - Fix html2canvas Color Parsing Failure
 - Summary: Fixed html2canvas export failure caused by unsupported CSS color functions (lab, lch, oklab).
 - Files changed:

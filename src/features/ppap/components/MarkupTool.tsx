@@ -543,6 +543,11 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
     // Sanitize DOM for html2canvas compatibility
     console.log('Sanitizing DOM for html2canvas export...');
+    
+    if (!exportRef.current) {
+      throw new Error('Export element not available');
+    }
+    
     const sanitizedElement = sanitizeColorsForExport(exportRef.current);
 
     // Capture sanitized element
