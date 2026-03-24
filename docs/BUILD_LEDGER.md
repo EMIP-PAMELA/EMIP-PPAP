@@ -4,6 +4,254 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 17:43 CT - [IMPLEMENTATION] Phase 3D.5 - Validation Approval Layer Complete
+
+- Summary: Extended validation panel to support approval workflow for post-ack validations
+- Files changed:
+  - `src/features/ppap/components/PPAPValidationPanel.tsx` - Added approval tracking and display
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Clear visual distinction between completion and approval for post-ack validations
+- UI + local state only (no persistence, no backend)
+- Strengthens post-ack workflow clarity
+
+**Context:**
+
+Phase 3D.5 extends the validation panel to support approval workflow for post-acknowledgement validations. This creates a clear visual distinction between "complete" (work done) and "approved" (coordinator sign-off), which is critical for the post-ack phase where all validations require approval.
+
+**Implementation:**
+
+**1. Extended Validation State (Local Only)**
+
+**Added Approval Metadata:**
+```typescript
+approved_by?: string
+approved_at?: Date
+```
+
+**When Transitioning to 'approved':**
+```typescript
+{
+  approved_by: 'Coordinator',
+  approved_at: new Date(),
+}
+```
+
+**Local State Only:**
+- No database changes
+- No schema updates
+- Metadata stored in component state
+- Reset on page refresh
+
+---
+
+**2. Approval Display Rules**
+
+**For validations with `requires_approval = true`:**
+
+**IF status === 'complete':**
+```
+⏳ Approval: Pending
+```
+- Yellow text (`text-yellow-600`)
+- Hourglass icon (⏳)
+- Indicates work complete, awaiting coordinator approval
+
+**IF status === 'approved':**
+```
+✔ Approved by: Coordinator
+```
+- Purple checkmark (`text-purple-600`)
+- Gray approver text (`text-gray-500`)
+- Shows who approved and when
+
+**For validations with `requires_approval = false`:**
+- No approval display
+- Complete state is final
+
+---
+
+**3. UI Additions**
+
+**Approval Display Location:**
+- Below validation type/required/requires-approval tags
+- Inside validation item card
+- Only shown for validations with `requires_approval = true`
+
+**Visual Layout:**
+```
+[Icon] Validation Name
+       document | Required | Requires Approval
+       ⏳ Approval: Pending
+                              OR
+       ✔ Approved by: Coordinator
+```
+
+---
+
+**4. Demo Interaction Updates**
+
+**Status Cycle (requires_approval = true):**
+```
+not_started → in_progress → complete → approved → (cycle back)
+```
+
+**Status Cycle (requires_approval = false):**
+```
+not_started → in_progress → complete → (cycle back)
+```
+
+**Approval Metadata Assignment:**
+- When transitioning to 'approved': Set `approved_by = 'Coordinator'` and `approved_at = current timestamp`
+- When cycling back to other states: Approval metadata persists but not displayed
+
+---
+
+**5. Visual Design**
+
+**Awaiting Approval State:**
+- Icon: ⏳ (hourglass)
+- Text: "Approval: Pending"
+- Color: Yellow (`text-yellow-600`)
+- Purpose: Signals work complete, waiting for sign-off
+
+**Approved State:**
+- Icon: ✔ (checkmark)
+- Text: "Approved by: [Name]"
+- Color: Purple checkmark, gray text
+- Purpose: Shows approval ownership
+
+**Approved By Display:**
+- Font: `text-xs` (small)
+- Color: `text-gray-500` (subtle)
+- Format: "Approved by: [Coordinator Name]"
+
+---
+
+**6. Readiness Impact**
+
+**isPostAckReady() Behavior:**
+```typescript
+function isPostAckReady(validations: Validation[]): boolean {
+  const postAckRequired = validations.filter(
+    (v) => v.category === 'post-ack' && v.required
+  );
+  return postAckRequired.every((v) => v.status === 'approved');
+}
+```
+
+**Critical Distinction:**
+- Post-ack validations must be **'approved'**, not just 'complete'
+- Pre-ack validations only need **'complete'** (no approval required)
+- Readiness gate enforces this difference
+
+**Workflow Gate:**
+- User completes validation → status = 'complete'
+- "Approval: Pending" displayed
+- Readiness check: **NOT READY** ❌
+- Coordinator approves → status = 'approved'
+- "Approved by: Coordinator" displayed
+- Readiness check: **READY** ✅
+
+---
+
+**7. Pre-Ack vs Post-Ack Differences**
+
+**Pre-Acknowledgement (5 validations):**
+- All `requires_approval = false`
+- Status cycle: not_started → in_progress → complete
+- Final state: **complete**
+- Readiness: All must be 'complete'
+- No approval workflow
+
+**Post-Acknowledgement (9 validations):**
+- All `requires_approval = true`
+- Status cycle: not_started → in_progress → complete → approved
+- Final state: **approved**
+- Readiness: All must be 'approved'
+- Approval workflow required
+
+**Visual Indicators:**
+- Pre-ack: Green checkmark when complete (✓)
+- Post-ack: Yellow hourglass when complete (⏳), purple checkmark when approved (✔)
+
+---
+
+**8. Integration Impact**
+
+**Only PPAPValidationPanel.tsx Updated:**
+- No changes to other components
+- Approval display self-contained
+- Readiness helpers already check for 'approved' status
+- Action bar already uses readiness checks
+
+**Component State:**
+- Local state tracks approval metadata
+- Not persisted to database
+- Demo mode only
+
+---
+
+**Validation:**
+
+- ✅ Approval metadata added to local state
+- ✅ Approval display for 'complete' status (⏳ Approval: Pending)
+- ✅ Approval display for 'approved' status (✔ Approved by: Coordinator)
+- ✅ Toggle logic sets approved_by and approved_at when transitioning to 'approved'
+- ✅ Visual design: yellow for pending, purple for approved
+- ✅ Only shown for requires_approval validations
+- ✅ isPostAckReady() enforces 'approved' requirement
+- ✅ Pre-ack vs post-ack distinction clear
+- ✅ No backend changes
+- ✅ No schema changes
+- ✅ Local state only
+
+**Visual Clarity:**
+
+| Validation Type | Status      | Display                         | Ready? |
+|----------------|-------------|---------------------------------|--------|
+| Pre-ack        | complete    | ✓ Green checkmark               | Yes    |
+| Post-ack       | complete    | ⏳ Approval: Pending (yellow)   | No     |
+| Post-ack       | approved    | ✔ Approved by: Coordinator (purple) | Yes    |
+
+---
+
+**User Impact:**
+
+**Before Phase 3D.5:**
+- No visual difference between complete and approved
+- Unclear when post-ack validation is truly done
+- No approval ownership visible
+
+**After Phase 3D.5:**
+- Clear "Approval: Pending" indicator
+- Visible approver name when approved
+- Distinct colors (yellow pending, purple approved)
+- User knows who approved and when
+
+**Workflow Clarity:**
+
+1. **Engineer completes validation** → Status: 'complete' → Display: "⏳ Approval: Pending"
+2. **System shows NOT READY** (readiness gate)
+3. **Coordinator reviews and approves** → Status: 'approved' → Display: "✔ Approved by: Coordinator"
+4. **System shows READY** (readiness gate passes)
+
+**Use Cases:**
+
+1. **Engineer:** Complete work, see "Approval: Pending", knows to wait for coordinator
+2. **Coordinator:** See which validations need approval (yellow hourglasses)
+3. **All Users:** See approval history (who approved what)
+
+**Next Actions:**
+
+- Phase 3E: Persist approval metadata to database
+- Phase 3F: Implement real approval action (not just toggle)
+- Phase 3G: Add approval notifications
+- Phase 3H: Audit log of approvals
+
+- Commit: `feat: phase 3D.5 validation approval layer (completion vs approval)`
+
+---
+
 ## 2026-03-24 17:38 CT - [IMPLEMENTATION] Phase 3D.4 - Activity Feed Complete
 
 - Summary: Added event history UI component with mock data

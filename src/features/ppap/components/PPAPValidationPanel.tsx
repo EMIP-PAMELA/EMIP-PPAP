@@ -47,7 +47,16 @@ export default function PPAPValidationPanel({ validations, currentPhase }: Props
         const nextIndex = (currentIndex + 1) % statusCycle.length;
         const nextStatus = statusCycle[nextIndex];
 
-        return { ...v, status: nextStatus as any };
+        // Set approval metadata when transitioning to 'approved'
+        const approvalData =
+          nextStatus === 'approved'
+            ? {
+                approved_by: 'Coordinator',
+                approved_at: new Date(),
+              }
+            : {};
+
+        return { ...v, status: nextStatus as any, ...approvalData };
       })
     );
   };
@@ -75,7 +84,7 @@ export default function PPAPValidationPanel({ validations, currentPhase }: Props
             >
               <div className="flex items-center space-x-3">
                 <span className="text-2xl">{STATUS_ICONS[validation.status]}</span>
-                <div>
+                <div className="flex-1">
                   <div className="font-medium text-gray-900">{validation.name}</div>
                   <div className="flex items-center space-x-2 mt-1">
                     <span className="text-xs text-gray-500 capitalize">
@@ -90,6 +99,26 @@ export default function PPAPValidationPanel({ validations, currentPhase }: Props
                       </span>
                     )}
                   </div>
+                  {validation.requires_approval && (
+                    <div className="mt-1">
+                      {validation.status === 'complete' && (
+                        <div className="flex items-center space-x-1">
+                          <span className="text-yellow-600">⏳</span>
+                          <span className="text-xs text-yellow-600 font-medium">
+                            Approval: Pending
+                          </span>
+                        </div>
+                      )}
+                      {validation.status === 'approved' && validation.approved_by && (
+                        <div className="flex items-center space-x-1">
+                          <span className="text-purple-600">✔</span>
+                          <span className="text-xs text-gray-500">
+                            Approved by: {validation.approved_by}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
