@@ -2,7 +2,12 @@
 
 import { useState } from 'react';
 import { Validation, ValidationCategory } from '../types/validation';
-import { getValidationSummary } from '../utils/validationHelpers';
+import { 
+  getValidationSummary,
+  isPreAckReady,
+  isPostAckReady,
+  getNextAction,
+} from '../utils/validationHelpers';
 
 interface Props {
   validations: Validation[];
@@ -102,9 +107,61 @@ export default function PPAPValidationPanel({ validations, currentPhase }: Props
     );
   };
 
+  const preAckReady = isPreAckReady(localValidations);
+  const postAckReady = isPostAckReady(localValidations);
+  const preAckNextAction = getNextAction(localValidations, 'pre-ack');
+  const postAckNextAction = getNextAction(localValidations, 'post-ack');
+
   return (
     <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
       <h2 className="text-xl font-bold text-gray-900 mb-6">Validation Requirements</h2>
+
+      <div className="mb-6 space-y-3">
+        <div
+          className={`p-4 rounded-lg border-2 ${
+            preAckReady
+              ? 'bg-green-50 border-green-300'
+              : 'bg-red-50 border-red-300'
+          }`}
+        >
+          <div className="flex items-center space-x-2">
+            <span className="text-2xl">{preAckReady ? '✅' : '❌'}</span>
+            <span className={`font-semibold ${preAckReady ? 'text-green-800' : 'text-red-800'}`}>
+              {preAckReady ? 'Ready for Acknowledgement' : 'Not Ready for Acknowledgement'}
+            </span>
+          </div>
+        </div>
+
+        <div
+          className={`p-4 rounded-lg border-2 ${
+            postAckReady
+              ? 'bg-green-50 border-green-300'
+              : 'bg-orange-50 border-orange-300'
+          }`}
+        >
+          <div className="flex items-center space-x-2">
+            <span className="text-2xl">{postAckReady ? '✅' : '❌'}</span>
+            <span className={`font-semibold ${postAckReady ? 'text-green-800' : 'text-orange-800'}`}>
+              {postAckReady ? 'Ready for Submission' : 'Not Ready for Submission'}
+            </span>
+          </div>
+        </div>
+
+        <div className="p-4 bg-blue-50 border-2 border-blue-300 rounded-lg">
+          <div className="flex items-start space-x-2">
+            <span className="text-xl">👉</span>
+            <div>
+              <div className="font-semibold text-blue-900 mb-1">Next Action:</div>
+              <div className="text-blue-800">
+                <span className="font-medium">Pre-Ack:</span> {preAckNextAction}
+              </div>
+              <div className="text-blue-800">
+                <span className="font-medium">Post-Ack:</span> {postAckNextAction}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {renderValidationSection(
         'Pre-Acknowledgement Requirements',

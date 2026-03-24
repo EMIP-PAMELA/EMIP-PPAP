@@ -4,6 +4,258 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 17:15 CT - [IMPLEMENTATION] Phase 3D.2 - Validation Readiness + Next Action Complete
+
+- Summary: Validation panel upgraded from passive checklist → active workflow driver
+- Files changed:
+  - `src/features/ppap/utils/validationHelpers.ts` - Added readiness and next action functions
+  - `src/features/ppap/components/PPAPValidationPanel.tsx` - Added readiness banners and next action display
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Validation panel now computes readiness and guides user actions
+- UI-only enhancement (no backend persistence)
+- No schema changes
+- No enforcement yet
+
+**Context:**
+
+Phase 3D.2 transforms the validation panel from a passive checklist into an active workflow driver. The panel now computes readiness status and suggests the next action, providing clear guidance on what needs to be done to progress the PPAP.
+
+**Implementation:**
+
+**1. Readiness Functions (`validationHelpers.ts`)**
+
+Added readiness computation for both workflow gates.
+
+**isPreAckReady():**
+```typescript
+function isPreAckReady(validations: Validation[]): boolean {
+  const preAckRequired = validations.filter(
+    (v) => v.category === 'pre-ack' && v.required
+  );
+  return preAckRequired.every((v) => v.status === 'complete');
+}
+```
+
+**Rules:**
+- All required pre-ack validations must have status === 'complete'
+- Returns `true` if ready for acknowledgement
+- Returns `false` if any validation incomplete
+
+**isPostAckReady():**
+```typescript
+function isPostAckReady(validations: Validation[]): boolean {
+  const postAckRequired = validations.filter(
+    (v) => v.category === 'post-ack' && v.required
+  );
+  return postAckRequired.every((v) => v.status === 'approved');
+}
+```
+
+**Rules:**
+- All required post-ack validations must have status === 'approved'
+- Returns `true` if ready for submission
+- Returns `false` if any validation not approved
+
+**Key Difference:**
+- Pre-Ack: requires 'complete' (no approval needed)
+- Post-Ack: requires 'approved' (approval required)
+
+---
+
+**2. Next Action Engine (`validationHelpers.ts`)**
+
+Added intelligent next action suggestion.
+
+**getNextAction():**
+```typescript
+function getNextAction(
+  validations: Validation[],
+  phase: 'pre-ack' | 'post-ack'
+): string
+```
+
+**Logic:**
+1. Find first incomplete validation in phase
+2. If validation is complete but requires approval → "Await Approval"
+3. If validation is incomplete → "Complete [Validation Name]"
+4. If all complete → "Ready for Acknowledgement" or "Ready for Submission"
+
+**Examples:**
+```typescript
+// Pre-Ack incomplete
+getNextAction(validations, 'pre-ack')
+→ "Complete Process Flow Diagram"
+
+// Pre-Ack all complete
+getNextAction(validations, 'pre-ack')
+→ "Ready for Acknowledgement"
+
+// Post-Ack complete but awaiting approval
+getNextAction(validations, 'post-ack')
+→ "Await Approval"
+
+// Post-Ack all approved
+getNextAction(validations, 'post-ack')
+→ "Ready for Submission"
+```
+
+---
+
+**3. Readiness Banners (PPAPValidationPanel.tsx)**
+
+Added visual readiness indicators at top of panel.
+
+**Pre-Ack Readiness Banner:**
+```
+✅ Ready for Acknowledgement (green background)
+or
+❌ Not Ready for Acknowledgement (red background)
+```
+
+**Post-Ack Readiness Banner:**
+```
+✅ Ready for Submission (green background)
+or
+❌ Not Ready for Submission (orange background)
+```
+
+**Visual Design:**
+- Green background + green border when ready
+- Red/orange background + red/orange border when not ready
+- Large checkmark (✅) or cross (❌) icon
+- Bold status text
+- 2px border for emphasis
+
+---
+
+**4. Next Action Display (PPAPValidationPanel.tsx)**
+
+Added next action guidance section.
+
+**Display Format:**
+```
+👉 Next Action:
+   Pre-Ack: Complete Process Flow Diagram
+   Post-Ack: Ready for Submission
+```
+
+**Behavior:**
+- Shows next action for both phases
+- Updates dynamically as validations change
+- Provides clear guidance on what to do next
+- Blue background to distinguish from readiness
+
+---
+
+**5. UI Layout Order**
+
+**Panel Structure (Top to Bottom):**
+1. **Validation Requirements** (header)
+2. **Pre-Ack Readiness Banner** (✅/❌)
+3. **Post-Ack Readiness Banner** (✅/❌)
+4. **Next Action Box** (👉)
+5. Pre-Acknowledgement Requirements (checklist)
+6. Post-Acknowledgement Requirements (checklist)
+7. Demo Mode Notice
+
+**Readiness Banners First:**
+- User sees status before details
+- Clear at-a-glance readiness
+- Immediate feedback on progress
+
+---
+
+**6. Readiness Logic Rules**
+
+**Pre-Acknowledgement Gate:**
+- **Required:** 5 validations (all must be 'complete')
+- **Not Ready:** Any validation not 'complete'
+- **Ready:** All 5 validations 'complete'
+- **Approval:** Not required for pre-ack
+
+**Post-Acknowledgement Gate:**
+- **Required:** 9 validations (all must be 'approved')
+- **Not Ready:** Any validation not 'approved'
+- **Ready:** All 9 validations 'approved'
+- **Approval:** Required for all post-ack validations
+
+**Example Scenarios:**
+
+| Pre-Ack Status | Post-Ack Status | Pre-Ack Ready | Post-Ack Ready |
+|----------------|-----------------|---------------|----------------|
+| 5/5 complete   | 0/9 approved    | ✅ Yes        | ❌ No          |
+| 4/5 complete   | 9/9 approved    | ❌ No         | ✅ Yes         |
+| 5/5 complete   | 9/9 approved    | ✅ Yes        | ✅ Yes         |
+| 0/5 complete   | 0/9 approved    | ❌ No         | ❌ No          |
+
+---
+
+**7. Next Action Examples**
+
+**Pre-Ack Scenarios:**
+- 0/5 complete → "Complete Process Flow Diagram" (first incomplete)
+- 4/5 complete → "Complete Measurement Plan" (last incomplete)
+- 5/5 complete → "Ready for Acknowledgement"
+
+**Post-Ack Scenarios:**
+- 0/9 approved → "Complete Dimensional Results" (first incomplete)
+- 8/9 complete but not approved → "Await Approval"
+- 9/9 approved → "Ready for Submission"
+
+---
+
+**Validation:**
+
+- ✅ isPreAckReady() function implemented
+- ✅ isPostAckReady() function implemented
+- ✅ getNextAction() function implemented
+- ✅ Pre-Ack readiness banner displayed
+- ✅ Post-Ack readiness banner displayed
+- ✅ Next action box displayed
+- ✅ Next action updates dynamically
+- ✅ Readiness checks correct (complete vs approved)
+- ✅ Next action logic handles incomplete validations
+- ✅ Next action logic handles "Await Approval" state
+- ✅ Next action logic shows "Ready" when complete
+- ✅ Visual design clear and actionable
+- ✅ No backend persistence
+- ✅ No schema changes
+- ✅ No enforcement yet
+
+**User Impact:**
+
+**Before Phase 3D.2:**
+- Passive checklist
+- User must infer readiness
+- No guidance on next steps
+
+**After Phase 3D.2:**
+- Active workflow driver
+- Clear readiness status (✅/❌)
+- Explicit next action guidance
+- User knows exactly what to do
+
+**Demo Workflow:**
+
+1. User opens PPAP detail page
+2. Sees: "❌ Not Ready for Acknowledgement"
+3. Sees: "Next Action: Complete Process Flow Diagram"
+4. Clicks Process Flow Diagram → cycles to 'complete'
+5. Next Action updates to next incomplete validation
+6. When all 5 complete: "✅ Ready for Acknowledgement"
+7. Repeats for post-ack validations
+8. Final state: Both gates green, ready for submission
+
+**Next Actions:**
+
+- Phase 3D.3: Add database persistence for validation status
+- Phase 3D.4: Enforce readiness checks on state transitions
+- Phase 3D.5: Integrate with state machine (block invalid transitions)
+
+- Commit: `feat: phase 3D.2 validation readiness + next action (workflow driver)`
+
+---
+
 ## 2026-03-24 17:10 CT - [IMPLEMENTATION] Phase 3D.1 - Validation Panel UI Complete
 
 - Summary: Validation checklist UI component created and integrated into PPAP detail view
