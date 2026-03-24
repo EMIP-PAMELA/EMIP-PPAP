@@ -4,6 +4,321 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 17:20 CT - [IMPLEMENTATION] Phase 3D.3 - Action Bar Complete
+
+- Summary: Created action bar with role/state/validation-driven action visibility
+- Files changed:
+  - `src/features/ppap/components/PPAPActionBar.tsx` - Created action bar component
+  - `app/ppap/[id]/page.tsx` - Integrated action bar into detail page
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: System now exposes allowed actions dynamically based on role + state + validation readiness
+- UI-only behavior (no backend mutations)
+- No schema changes
+- No enforcement yet
+
+**Context:**
+
+Phase 3D.3 creates an action bar that dynamically exposes workflow actions based on the combination of state machine, role permissions, and validation readiness. This represents the convergence of all three enforcement systems into a single UI layer.
+
+**Implementation:**
+
+**1. Action Bar Component (`PPAPActionBar.tsx`)**
+
+Created smart action bar with dynamic visibility and enable/disable logic.
+
+**Component Props:**
+```typescript
+interface Props {
+  ppapState: string;
+  validations: Validation[];
+}
+```
+
+**Three Actions Supported:**
+1. **Assign Engineer** - Assignment action
+2. **Acknowledge** - Pre-ack gate transition
+3. **Submit** - Post-ack gate transition
+
+---
+
+**2. Action Visibility Rules**
+
+**Assign Engineer:**
+- **Visible if:** `canAssignPPAP(role)` → Admin OR Coordinator
+- **Hidden for:** Engineer, Viewer
+
+**Acknowledge:**
+- **Visible if:** `ppapState === 'READY_FOR_ACKNOWLEDGEMENT'`
+- **Hidden for:** All other states
+
+**Submit:**
+- **Visible if:** `ppapState === 'READY_FOR_SUBMISSION'`
+- **Hidden for:** All other states
+
+**No Button Rendered:**
+- If action not visible for current role/state combination
+- Action bar shows only applicable actions
+
+---
+
+**3. Enable/Disable Rules**
+
+**Assign Engineer:**
+- **Always enabled** for Admin/Coordinator
+- Simple action, no validation requirements
+
+**Acknowledge:**
+- **Enabled if:**
+  - `canAcknowledgePPAP(role, state)` → Admin OR Coordinator
+  - **AND** `isPreAckReady(validations)` → All 5 pre-ack validations complete
+- **Disabled if:** Role not authorized OR validations incomplete
+
+**Submit:**
+- **Enabled if:**
+  - `canSubmitPPAP(role, state)` → Admin OR Engineer
+  - **AND** `isPostAckReady(validations)` → All 9 post-ack validations approved
+- **Disabled if:** Role not authorized OR validations not approved
+
+**Three-Layer Check:**
+1. State machine (is action valid for current state?)
+2. Role permissions (is user authorized for action?)
+3. Validation readiness (are requirements complete?)
+
+---
+
+**4. Permission Integration**
+
+**Uses Existing Helpers:**
+```typescript
+import { canAssignPPAP, canAcknowledgePPAP, canSubmitPPAP } from '../utils/permissions';
+import { isPreAckReady, isPostAckReady } from '../utils/validationHelpers';
+```
+
+**Combined Logic:**
+```typescript
+const canAcknowledge = canAcknowledgePPAP(currentUser.role, ppapState) && preAckReady;
+const canSubmit = canSubmitPPAP(currentUser.role, ppapState) && postAckReady;
+```
+
+**Convergence:**
+- State machine: `ppapState === 'READY_FOR_ACKNOWLEDGEMENT'`
+- Role permissions: `role === 'admin' || role === 'coordinator'`
+- Validation readiness: `isPreAckReady(validations) === true`
+
+All three must pass for action to be enabled.
+
+---
+
+**5. UI Design**
+
+**Action Bar Layout:**
+```
+Actions: [Assign Engineer] [Acknowledge] [Submit]  Demo Mode: ...
+```
+
+**Button States:**
+
+**Enabled:**
+- Full color (blue/green/purple)
+- Hover effect
+- Clickable cursor
+- Normal styling
+
+**Disabled:**
+- Gray background (`bg-gray-300`)
+- Gray text (`text-gray-500`)
+- `opacity-50`
+- `cursor-not-allowed`
+
+**Hidden:**
+- Button not rendered at all
+- No placeholder
+
+---
+
+**6. Tooltips (Disabled State)**
+
+**Acknowledge Disabled:**
+- If role not authorized: "Only Coordinator/Admin can acknowledge"
+- If validations incomplete: "Complete all pre-ack validations"
+
+**Submit Disabled:**
+- If role not authorized: "Only Engineer/Admin can submit"
+- If validations not approved: "All validations must be approved"
+
+**Tooltip Display:**
+- Hover over disabled button
+- Black background with white text
+- Positioned above button
+- Clear explanation of why disabled
+
+---
+
+**7. Action Handlers (Demo Mode)**
+
+**All Actions:**
+- Show `alert()` with demo message
+- No backend API calls
+- No state mutations
+- No database updates
+
+**Assign Engineer:**
+```typescript
+alert('Assign Engineer action (demo only - no backend)');
+```
+
+**Acknowledge:**
+```typescript
+if (!canAcknowledge) return;
+alert('Acknowledge PPAP action (demo only - no backend)');
+```
+
+**Submit:**
+```typescript
+if (!canSubmit) return;
+alert('Submit PPAP action (demo only - no backend)');
+```
+
+---
+
+**8. Integration with PPAP Detail Page**
+
+**Page Layout (Top to Bottom):**
+1. PPAP Header + Delete Button
+2. Workflow Wrapper (phase cards)
+3. **Action Bar (NEW)** ← Dynamic actions
+4. Validation Panel (readiness + checklist)
+5. Conversations + Documents
+6. Event History
+
+**Positioned Above Validation Panel:**
+- User sees available actions first
+- Actions driven by validation status below
+- Clear workflow progression
+
+---
+
+**9. Action Visibility Matrix**
+
+| State                      | Role        | Assign | Acknowledge | Submit |
+|----------------------------|-------------|--------|-------------|--------|
+| INITIATED                  | Admin       | ✓      | ✗           | ✗      |
+| INITIATED                  | Coordinator | ✓      | ✗           | ✗      |
+| INITIATED                  | Engineer    | ✗      | ✗           | ✗      |
+| INITIATED                  | Viewer      | ✗      | ✗           | ✗      |
+| READY_FOR_ACKNOWLEDGEMENT  | Admin       | ✓      | ✓*          | ✗      |
+| READY_FOR_ACKNOWLEDGEMENT  | Coordinator | ✓      | ✓*          | ✗      |
+| READY_FOR_ACKNOWLEDGEMENT  | Engineer    | ✗      | ✗           | ✗      |
+| READY_FOR_SUBMISSION       | Admin       | ✓      | ✗           | ✓*     |
+| READY_FOR_SUBMISSION       | Engineer    | ✗      | ✗           | ✓*     |
+| READY_FOR_SUBMISSION       | Coordinator | ✓      | ✗           | ✗      |
+
+*Enabled only if validation readiness passes
+
+---
+
+**10. Enable/Disable Logic Examples**
+
+**Acknowledge Button:**
+
+| Role        | State                      | Pre-Ack Ready | Visible | Enabled | Reason                          |
+|-------------|----------------------------|---------------|---------|---------|----------------------------------|
+| Coordinator | READY_FOR_ACKNOWLEDGEMENT  | Yes           | ✓       | ✓       | All checks pass                 |
+| Coordinator | READY_FOR_ACKNOWLEDGEMENT  | No            | ✓       | ✗       | Validations incomplete          |
+| Engineer    | READY_FOR_ACKNOWLEDGEMENT  | Yes           | ✓       | ✗       | Role not authorized             |
+| Coordinator | IN_PROGRESS                | Yes           | ✗       | N/A     | Wrong state                     |
+
+**Submit Button:**
+
+| Role     | State                   | Post-Ack Ready | Visible | Enabled | Reason                          |
+|----------|-------------------------|----------------|---------|---------|----------------------------------|
+| Engineer | READY_FOR_SUBMISSION    | Yes            | ✓       | ✓       | All checks pass                 |
+| Engineer | READY_FOR_SUBMISSION    | No             | ✓       | ✗       | Validations not approved        |
+| Coordinator | READY_FOR_SUBMISSION | Yes            | ✓       | ✗       | Role not authorized             |
+| Engineer | IN_VALIDATION           | Yes            | ✗       | N/A     | Wrong state                     |
+
+---
+
+**Validation:**
+
+- ✅ PPAPActionBar component created
+- ✅ Assign Engineer action (admin/coordinator only)
+- ✅ Acknowledge action (state + role + validation)
+- ✅ Submit action (state + role + validation)
+- ✅ Visibility rules implemented
+- ✅ Enable/disable logic implemented
+- ✅ Permission helpers integrated
+- ✅ Readiness functions integrated
+- ✅ Tooltips for disabled states
+- ✅ Demo mode handlers (no backend)
+- ✅ Integrated into PPAP detail page
+- ✅ Positioned above validation panel
+- ✅ Three-layer enforcement (state + role + validation)
+- ✅ No backend mutations
+- ✅ No schema changes
+
+**System Convergence:**
+
+Phase 3D.3 represents the **convergence of three enforcement systems**:
+
+1. **State Machine (Phase 3B):** Defines valid states and transitions
+2. **Role Permissions (Phase 2A):** Defines who can perform actions
+3. **Validation Engine (Phase 3D):** Defines completion requirements
+
+**Action Bar = State + Role + Validation**
+
+**Formula:**
+```
+Action Enabled = State Valid + Role Authorized + Validations Complete
+```
+
+**Example (Acknowledge):**
+```
+State:      ppapState === 'READY_FOR_ACKNOWLEDGEMENT' ✓
+Role:       role === 'coordinator' ✓
+Validation: isPreAckReady(validations) === true ✓
+Result:     Acknowledge button ENABLED ✓
+```
+
+---
+
+**User Impact:**
+
+**Before Phase 3D.3:**
+- No workflow actions exposed
+- User must navigate elsewhere to perform actions
+- Unclear what actions are available
+
+**After Phase 3D.3:**
+- Actions visible on PPAP detail page
+- Only applicable actions shown
+- Clear enabled/disabled states
+- Tooltips explain why disabled
+- Driven by system state, not manual configuration
+
+**Demo Workflow:**
+
+1. User opens PPAP in INITIATED state
+2. Sees: [Assign Engineer] (if coordinator/admin)
+3. User completes 5 pre-ack validations
+4. State changes to READY_FOR_ACKNOWLEDGEMENT
+5. Sees: [Acknowledge] button (enabled for coordinator)
+6. Engineer sees: [Acknowledge] button (disabled, tooltip: "Only Coordinator/Admin")
+7. Coordinator acknowledges → state changes
+8. User completes 9 post-ack validations
+9. State changes to READY_FOR_SUBMISSION
+10. Sees: [Submit] button (enabled for engineer)
+
+**Next Actions:**
+
+- Phase 3E: Implement backend action handlers
+- Phase 3F: Add actual state mutations with enforcement
+- Phase 3G: Log actions to event history
+
+- Commit: `feat: phase 3D.3 action bar (role + state + validation driven)`
+
+---
+
 ## 2026-03-24 17:15 CT - [IMPLEMENTATION] Phase 3D.2 - Validation Readiness + Next Action Complete
 
 - Summary: Validation panel upgraded from passive checklist → active workflow driver
