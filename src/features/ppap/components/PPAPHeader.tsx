@@ -81,38 +81,42 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
       </div>
 
       <div className="p-6 border-b border-gray-200">
+        <div className="mb-4">
+          <Link href="/ppap">
+            <button className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-md transition-colors">
+              ← Back to Dashboard
+            </button>
+          </Link>
+        </div>
+
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
             <div className="flex items-center gap-4 mb-3">
               <h1 className="text-4xl font-bold text-gray-900">{ppap.ppap_number}</h1>
               <StatusUpdateControl ppapId={ppap.id} currentStatus={ppap.status} />
-              {!assignedTo && (
-                <button
-                  onClick={handleTakeOwnership}
-                  disabled={takingOwnership}
-                  className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                >
-                  {takingOwnership ? 'Taking...' : '✋ Take Ownership'}
-                </button>
-              )}
-              {assignedTo && (
-                <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-                  <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Owner</span>
-                  <p className="text-sm font-medium text-blue-900">{assignedTo || ''}</p>
-                </div>
-              )}
             </div>
             <div className="flex items-baseline gap-3">
               <span className="text-sm font-medium text-gray-600">Part Number:</span>
               <p className="text-xl font-semibold text-gray-900">{ppap.part_number}</p>
             </div>
           </div>
-          <Link
-            href="/ppap"
-            className="text-blue-600 hover:text-blue-800 text-sm font-semibold transition-colors"
-          >
-            ← Back to PPAP Dashboard
-          </Link>
+          <div className="flex items-center gap-3">
+            {!assignedTo && (
+              <button
+                onClick={handleTakeOwnership}
+                disabled={takingOwnership}
+                className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {takingOwnership ? 'Taking...' : '✋ Take Ownership'}
+              </button>
+            )}
+            {assignedTo && (
+              <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Owner</span>
+                <p className="text-sm font-medium text-blue-900">{assignedTo || ''}</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

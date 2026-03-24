@@ -4,6 +4,185 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 17:28 CT - [UX FIX] Navigation Visibility - Back Button Enhancement
+
+- Summary: Improved back navigation visibility based on stakeholder feedback
+- Files changed:
+  - `src/features/ppap/components/PPAPHeader.tsx` - Replaced link with button, repositioned navigation
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Back navigation now visually prominent and discoverable
+- No functional changes
+- No routing changes
+
+**Context:**
+
+User testing feedback (Colin) identified that the "Back to PPAP Dashboard" link was not visually prominent and was being missed by users. This UX fix improves discoverability and usability of the back navigation.
+
+**Problem Identified:**
+
+**Before:**
+- Small blue text link: "← Back to PPAP Dashboard"
+- Positioned in top-right corner near action buttons
+- Low visual hierarchy
+- Easily missed by users
+- Not obvious as primary navigation
+
+**User Feedback:**
+- "Back to PPAP Dashboard is not visually prominent and is being missed"
+- Users had difficulty returning to dashboard
+- Navigation pattern not intuitive
+
+---
+
+**Solution Implemented:**
+
+**1. Replaced Link with Button**
+
+**Before:**
+```tsx
+<Link
+  href="/ppap"
+  className="text-blue-600 hover:text-blue-800 text-sm font-semibold transition-colors"
+>
+  ← Back to PPAP Dashboard
+</Link>
+```
+
+**After:**
+```tsx
+<Link href="/ppap">
+  <button className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-md transition-colors">
+    ← Back to Dashboard
+  </button>
+</Link>
+```
+
+**Button Styling:**
+- Secondary button style (gray, not competing with primary actions)
+- `bg-gray-100` - Light gray background
+- `hover:bg-gray-200` - Darker gray on hover
+- `text-gray-700` - Dark gray text
+- `rounded-md` - Rounded corners
+- `px-3 py-2` - Comfortable padding
+- `font-medium` - Medium weight for readability
+
+---
+
+**2. Repositioned to Top-Left**
+
+**Before Layout:**
+```
+PPAP Title + Status     [Take Ownership] ← Back to Dashboard
+```
+
+**After Layout:**
+```
+← Back to Dashboard
+
+PPAP Title + Status                      [Take Ownership]
+```
+
+**New Hierarchy:**
+1. **Navigation** (top-left, above title)
+2. **PPAP Title + Status** (left)
+3. **Action Buttons** (right): Take Ownership, Delete
+
+**Positioning:**
+- Moved from top-right to top-left
+- Positioned above PPAP title
+- Own separate row for prominence
+- First element users see
+
+---
+
+**3. Simplified Button Text**
+
+**Before:** "← Back to PPAP Dashboard"  
+**After:** "← Back to Dashboard"
+
+**Rationale:**
+- Shorter, more scannable
+- "PPAP" context implied
+- Arrow + "Back to Dashboard" sufficient
+
+---
+
+**4. Improved Visual Hierarchy**
+
+**Header Structure:**
+
+**Navigation Row:**
+- [ ← Back to Dashboard ] (top-left)
+
+**Title Row:**
+- LEFT: PPAP Number + Status Badge
+- RIGHT: Take Ownership / Owner Badge
+
+**Action buttons no longer inline with title:**
+- Take Ownership moved to right side
+- Delete PPAP remains in page header (different component)
+
+---
+
+**Visual Impact:**
+
+**Before:**
+- Link visually weak (just blue text)
+- Positioned in action area (right side)
+- Competed with other elements
+- Low discoverability
+
+**After:**
+- Button visually strong (background, border, padding)
+- Positioned in navigation area (top-left)
+- Separated from actions
+- High discoverability
+- Clear visual affordance (looks clickable)
+
+---
+
+**Validation:**
+
+- ✅ Link replaced with button
+- ✅ Button uses secondary styling (gray)
+- ✅ Positioned at top-left above title
+- ✅ Simplified text ("← Back to Dashboard")
+- ✅ Take Ownership moved to right side
+- ✅ Visual hierarchy improved
+- ✅ No routing changes
+- ✅ No functional changes
+- ✅ Addresses stakeholder feedback
+
+**User Impact:**
+
+**Before Fix:**
+- Users missed back navigation
+- Had to use browser back button
+- Poor navigation UX
+
+**After Fix:**
+- Back button immediately visible
+- Clear visual affordance
+- Intuitive navigation pattern
+- Standard UI convention (top-left navigation)
+
+**Design Principles Applied:**
+
+1. **Visual Hierarchy:** Navigation at top-left (standard pattern)
+2. **Affordance:** Button style signals clickability
+3. **Contrast:** Gray button stands out against white background
+4. **Simplicity:** Shorter text improves scannability
+5. **Convention:** Follows standard web navigation patterns
+
+**Next Actions:**
+
+- Monitor user feedback on navigation improvements
+- Consider breadcrumb navigation for deeper pages
+
+- Commit: `fix: improve back navigation visibility (stakeholder feedback)`
+
+---
+
 ## 2026-03-24 17:20 CT - [IMPLEMENTATION] Phase 3D.3 - Action Bar Complete
 
 - Summary: Created action bar with role/state/validation-driven action visibility
