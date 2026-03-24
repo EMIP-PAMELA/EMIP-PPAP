@@ -8,6 +8,8 @@ import { DocumentList } from '@/src/features/documents/components/DocumentList';
 import { EventHistory } from '@/src/features/events/components/EventHistory';
 import { DeletePPAPButton } from '@/src/features/ppap/components/DeletePPAPButton';
 import { PPAPWorkflowWrapper } from '@/src/features/ppap/components/PPAPWorkflowWrapper';
+import PPAPValidationPanel from '@/src/features/ppap/components/PPAPValidationPanel';
+import { TRANE_VALIDATIONS } from '@/src/features/ppap/utils/traneValidationTemplate';
 
 interface PPAPDashboardPageProps {
   params: Promise<{
@@ -70,6 +72,8 @@ export default async function PPAPDashboardPage({ params }: PPAPDashboardPagePro
         </div>
 
         <PPAPWorkflowWrapper ppap={ppap} />
+
+        <PPAPValidationPanel validations={TRANE_VALIDATIONS} currentPhase="pre-ack" />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">

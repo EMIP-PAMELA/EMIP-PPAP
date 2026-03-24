@@ -4,6 +4,214 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 17:10 CT - [IMPLEMENTATION] Phase 3D.1 - Validation Panel UI Complete
+
+- Summary: Validation checklist UI component created and integrated into PPAP detail view
+- Files changed:
+  - `src/features/ppap/components/PPAPValidationPanel.tsx` - Created validation panel component
+  - `app/ppap/[id]/page.tsx` - Integrated validation panel into detail page
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: PPAP detail pages now display visible validation requirements checklist
+- Demo mode: Click to toggle status (local state only, not persisted)
+- No database changes
+- No enforcement yet
+
+**Context:**
+
+Phase 3D.1 creates a visible validation checklist UI that displays all required validations for a PPAP. This provides clarity on "what needs to be done" and demonstrates the validation workflow structure without enforcement.
+
+**Implementation:**
+
+**1. Validation Panel Component (`PPAPValidationPanel.tsx`)**
+
+Created interactive validation checklist with status tracking.
+
+**Component Props:**
+```typescript
+interface Props {
+  validations: Validation[];
+  currentPhase: 'pre-ack' | 'post-ack';
+}
+```
+
+**Features:**
+- Groups validations by category (Pre-Ack / Post-Ack)
+- Displays completion summary per category
+- Shows status with icons and color-coded badges
+- Interactive: Click to toggle status (demo mode)
+- Visual indicators for required/approval validations
+
+---
+
+**2. Visual Design**
+
+**Status Icons:**
+- ☐ `not_started` (gray)
+- ⏳ `in_progress` (blue)
+- ✓ `complete` (green)
+- ✔ `approved` (purple)
+
+**Status Badges:**
+- Color-coded labels with Tailwind classes
+- `not_started`: gray background
+- `in_progress`: blue background
+- `complete`: green background
+- `approved`: purple background
+
+**Validation Item Display:**
+```
+[Icon] Validation Name
+       document | Required | Requires Approval
+                                    [Status Badge]
+```
+
+---
+
+**3. Section Structure**
+
+**Pre-Acknowledgement Requirements:**
+- Header: "Pre-Acknowledgement Requirements"
+- Summary: "2/5 Complete"
+- List: 5 document validations (no approval required)
+
+**Post-Acknowledgement Requirements:**
+- Header: "Post-Acknowledgement Requirements"
+- Summary: "0/9 Complete"
+- List: 9 mixed validations (all require approval)
+
+**Summary Calculation:**
+- Uses `getValidationSummary()` helper
+- Counts validations with status 'complete' or 'approved'
+- Displays format: "X/Y Complete"
+
+---
+
+**4. Interactive Demo Mode**
+
+**Click to Toggle Status:**
+- Click any validation to cycle through status states
+- Status cycle depends on `requires_approval` flag
+
+**Without Approval Required:**
+```
+not_started → in_progress → complete → (cycle back)
+```
+
+**With Approval Required:**
+```
+not_started → in_progress → complete → approved → (cycle back)
+```
+
+**Local State Only:**
+- Changes stored in component state
+- Not persisted to database
+- Resets on page refresh
+- Demo mode indicator shown at bottom
+
+---
+
+**5. Integration with PPAP Detail Page**
+
+**Added to PPAP Detail (`app/ppap/[id]/page.tsx`):**
+```tsx
+import PPAPValidationPanel from '@/src/features/ppap/components/PPAPValidationPanel';
+import { TRANE_VALIDATIONS } from '@/src/features/ppap/utils/traneValidationTemplate';
+
+// In page layout
+<PPAPValidationPanel validations={TRANE_VALIDATIONS} currentPhase="pre-ack" />
+```
+
+**Page Layout:**
+1. PPAP Header + Delete Button
+2. Workflow Wrapper (phase cards)
+3. **Validation Panel (NEW)**
+4. Conversations + Documents (left)
+5. Event History (right)
+
+**Static Data:**
+- Uses `TRANE_VALIDATIONS` template (14 validations)
+- Currently hardcoded to "pre-ack" phase
+- No database integration yet
+
+---
+
+**6. UI Details**
+
+**Panel Container:**
+- Light gray background (`bg-gray-50`)
+- Rounded borders
+- Padding for spacing
+- Header: "Validation Requirements"
+
+**Validation Items:**
+- White background cards
+- Hover effect (gray background)
+- Clickable cursor indicator
+- Border and rounded corners
+- Flex layout for status alignment
+
+**Metadata Tags:**
+- Type badge (document/task/approval/data)
+- "Required" tag (red) for required validations
+- "Requires Approval" tag (orange) for approval validations
+- Small text size for metadata
+
+**Demo Mode Notice:**
+- Blue background alert box
+- Explains click-to-toggle behavior
+- Clarifies changes not persisted
+
+---
+
+**Validation:**
+
+- ✅ PPAPValidationPanel component created
+- ✅ Pre-Ack section rendered (5 validations)
+- ✅ Post-Ack section rendered (9 validations)
+- ✅ Summary counts displayed ("X/Y Complete")
+- ✅ Status icons implemented (4 states)
+- ✅ Status badges color-coded
+- ✅ Click-to-toggle status functional
+- ✅ Status cycle respects requires_approval flag
+- ✅ Required/approval tags displayed
+- ✅ Integrated into PPAP detail page
+- ✅ Uses TRANE_VALIDATIONS template
+- ✅ Local state only (no persistence)
+- ✅ Demo mode notice shown
+- ✅ No database changes
+- ✅ No enforcement
+
+**Visual Clarity:**
+
+| Element          | Implementation                  |
+|------------------|---------------------------------|
+| Pre-Ack header   | "Pre-Acknowledgement Requirements" |
+| Post-Ack header  | "Post-Acknowledgement Requirements" |
+| Summary          | "2/5 Complete"                  |
+| Status icons     | ☐ ⏳ ✓ ✔                       |
+| Status badges    | Color-coded labels              |
+| Required tag     | Red "Required"                  |
+| Approval tag     | Orange "Requires Approval"      |
+| Interactive      | Click to toggle status          |
+
+**Demo Impact:**
+
+1. **User sees what needs to be done** (14 validations visible)
+2. **Pre/Post separation clear** (two distinct sections)
+3. **Progress visible** (X/Y complete counters)
+4. **Interactive demo** (click to change status)
+5. **No enforcement yet** (status changes don't block workflow)
+
+**Next Actions:**
+
+- Phase 3D.2: Add database persistence for validation status
+- Phase 3D.3: Integrate validation completion with state transitions
+- Phase 3D.4: Enforce validation requirements for acknowledgement/submission
+
+- Commit: `feat: phase 3D.1 validation panel UI (visible checklist, demo mode)`
+
+---
+
 ## 2026-03-24 16:55 CT - [IMPLEMENTATION] Phase 3D - Validation Engine Foundation Complete
 
 - Summary: Validation engine data model and template structure implemented
