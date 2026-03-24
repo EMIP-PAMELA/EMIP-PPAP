@@ -1,5 +1,5 @@
 import { getAllPPAPs } from '@/src/features/ppap/queries';
-import { PPAPOperationsDashboard } from '@/src/features/ppap/components/PPAPOperationsDashboard';
+import { PPAPDashboardTable } from '@/src/features/ppap/components/PPAPDashboardTable';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +14,6 @@ export default async function PPAPOperationsPage() {
     error = e instanceof Error ? e.message : 'Failed to load PPAPs';
   }
 
-  // Ensure safe initialization before use
   const ppapsSafe = ppaps || [];
 
   return (
@@ -43,7 +42,7 @@ export default async function PPAPOperationsPage() {
         )}
 
         {!error && (
-          <PPAPOperationsDashboard ppaps={ppapsSafe} />
+          <PPAPDashboardTable ppaps={ppapsSafe} />
         )}
       </div>
     </div>

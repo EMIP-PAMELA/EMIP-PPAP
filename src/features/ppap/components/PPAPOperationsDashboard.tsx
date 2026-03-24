@@ -1,3 +1,17 @@
+/**
+ * @deprecated Phase 2B - Replaced by PPAPDashboardTable
+ * 
+ * This component is preserved for reference only.
+ * DO NOT USE in application code.
+ * 
+ * Replaced by: src/features/ppap/components/PPAPDashboardTable.tsx
+ * Date: 2026-03-24
+ * Phase: 2B - Table Dashboard Implementation
+ * 
+ * Reason: Card/grid dashboard does not scale for production use.
+ * New table dashboard provides sorting, filtering, search, and pagination.
+ */
+
 'use client';
 
 import { useState, useEffect } from 'react';
