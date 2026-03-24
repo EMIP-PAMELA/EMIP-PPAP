@@ -4,6 +4,190 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 13:20 CT - [IMPLEMENTATION] Phase 2B.5 - Visual Polish Complete
+
+- Summary: Added visual polish to table dashboard for improved workflow state clarity
+- Files changed:
+  - `src/features/ppap/utils/ppapTableHelpers.ts` - Added styling helper functions
+  - `src/features/ppap/components/PPAPDashboardTable.tsx` - Applied visual enhancements
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Users can quickly identify critical states at a glance
+- No logic changes
+- No schema changes
+
+**Context:**
+
+Phase 2B.5 adds visual polish to the table dashboard, improving readability and allowing users to quickly identify workflow states, bottlenecks, and action items through color-coded badges, indicators, and subtle row emphasis.
+
+**Implementation:**
+
+**1. State Badges (`ppapTableHelpers.ts` + `PPAPDashboardTable.tsx`)**
+
+Replaced plain text state display with color-coded badges:
+
+**Helper Function:**
+```typescript
+function getStateBadgeStyle(state: string): string
+```
+
+**Badge Styling (15 states):**
+- **INITIATED:** Blue (bg-blue-100, text-blue-800)
+- **INTAKE_COMPLETE:** Dark Blue (bg-blue-200, text-blue-900)
+- **IN_PROGRESS:** Indigo (bg-indigo-100, text-indigo-800)
+- **IN_REVIEW:** Purple (bg-purple-100, text-purple-800)
+- **READY_FOR_ACKNOWLEDGEMENT:** Yellow with ring (bg-yellow-100, ring-yellow-400) ⚡
+- **ACKNOWLEDGED:** Green (bg-green-100, text-green-800)
+- **POST_ACK_ASSIGNED:** Orange (bg-orange-100, text-orange-800)
+- **IN_VALIDATION:** Dark Orange (bg-orange-200, text-orange-900)
+- **READY_FOR_SUBMISSION:** Amber with ring (bg-amber-100, ring-amber-400) ⚡
+- **SUBMITTED:** Teal (bg-teal-100, text-teal-800)
+- **ACCEPTED:** Green with ring (bg-green-200, ring-green-500) ✓
+- **REJECTED:** Red (bg-red-100, text-red-800)
+- **COMPLETE:** Dark Green with ring (bg-green-300, ring-green-600) ✓
+- **BLOCKED:** Red with ring (bg-red-200, ring-red-500) 🚫
+- **ON_HOLD:** Gray (bg-gray-200, text-gray-700) ⏸
+
+**Badge Features:**
+- Rounded-full design
+- High contrast text/background
+- Ring accent for critical states
+- Compact size (px-2.5, py-0.5)
+- Underscores replaced with spaces
+
+---
+
+**2. Visual Indicators (`ppapTableHelpers.ts` + `PPAPDashboardTable.tsx`)**
+
+Added emoji indicators for critical states:
+
+**Helper Function:**
+```typescript
+function getStatusIndicator(state: string): string | null
+```
+
+**Indicators:**
+- **⚡** READY_FOR_ACKNOWLEDGEMENT (action required)
+- **⚡** READY_FOR_SUBMISSION (action required)
+- **🚫** BLOCKED (critical issue)
+- **⏸** ON_HOLD (paused)
+- **✓** ACCEPTED / COMPLETE (final success)
+
+**Placement:**
+- Displayed inline before state badge
+- Flex layout with 1-unit gap
+- Text-base size for visibility
+
+---
+
+**3. Row Background Emphasis (`ppapTableHelpers.ts` + `PPAPDashboardTable.tsx`)**
+
+Added subtle row tinting by phase:
+
+**Helper Function:**
+```typescript
+function getRowBackgroundStyle(phase: 'Pre-Ack' | 'Post-Ack' | 'Final', state: string): string
+```
+
+**Phase Tints:**
+- **Pre-Ack:** Very light blue (bg-blue-50/30)
+- **Post-Ack:** Very light orange (bg-orange-50/30)
+- **Final:** Very light green (bg-green-50/30)
+
+**Special Case:**
+- **BLOCKED:** Stronger red tint (bg-red-50) overrides phase tint
+
+**Hover State:**
+- Changed from `hover:bg-gray-50` to `hover:bg-gray-100` for better contrast
+
+---
+
+**4. Column Readability (`PPAPDashboardTable.tsx`)**
+
+Enhanced typography for key columns:
+
+**PPAP ID:**
+- `font-bold text-blue-700` (was: font-semibold text-blue-600)
+
+**Part Number:**
+- `font-semibold text-gray-900` (was: text-gray-900)
+
+**Customer:**
+- `font-medium text-gray-900` (was: text-gray-900)
+
+**Phase:**
+- `font-medium text-gray-700` (was: text-gray-900)
+
+**Assigned Engineer:**
+- `font-medium` when assigned
+- `text-gray-400` when unassigned (placeholder)
+
+**Last Updated:**
+- Preserved `text-gray-600` for subtle secondary info
+
+---
+
+**5. Placeholder Clarity (`PPAPDashboardTable.tsx`)**
+
+Ensured placeholders remain visually neutral:
+
+**Coordinator:**
+- `text-gray-400` (was: text-gray-500)
+- Displays "—" as placeholder
+
+**Validation Status:**
+- `text-gray-400` (was: text-gray-500)
+- Displays "—" as placeholder
+
+**Rationale:**
+- Lighter gray prevents misinterpretation as missing/error
+- Clearly indicates "not yet implemented" vs. "missing data"
+
+---
+
+**6. State Badge Display**
+
+Badge text formatting:
+- Underscores replaced with spaces for readability
+- Example: `READY_FOR_ACKNOWLEDGEMENT` → `READY FOR ACKNOWLEDGEMENT`
+
+---
+
+**Validation:**
+
+- ✅ State badges implemented (15 distinct states)
+- ✅ High contrast, readable at a glance
+- ✅ Visual indicators for critical states (⚡🚫⏸✓)
+- ✅ Phase-based row emphasis (Pre-Ack/Post-Ack/Final)
+- ✅ BLOCKED rows use stronger red tint
+- ✅ Column readability improved with font weights
+- ✅ Placeholder columns remain neutral (gray-400)
+- ✅ Empty states preserved
+- ✅ No logic changes
+- ✅ No schema changes
+- ✅ No external libraries
+
+**User Value:**
+
+Users can now quickly identify:
+- **Action Items:** Yellow/amber badges with ⚡ (READY_FOR_ACKNOWLEDGEMENT, READY_FOR_SUBMISSION)
+- **Blockers:** Red badges with 🚫 (BLOCKED)
+- **Paused Work:** Gray badges with ⏸ (ON_HOLD)
+- **Completed Work:** Green badges with ✓ (ACCEPTED, COMPLETE)
+- **Workflow Phase:** Row background tint (blue = pre-ack, orange = post-ack, green = final)
+
+**Next Actions:**
+
+Phase 2B complete. Table dashboard fully functional with:
+- Core table rendering (2B.1)
+- Sorting (2B.2)
+- Filtering (2B.3)
+- Search & Pagination (2B.4)
+- Visual Polish (2B.5)
+
+- Commit: `feat: phase 2B.5 visual polish (state badges, indicators, row emphasis)`
+
+---
+
 ## 2026-03-24 13:15 CT - [IMPLEMENTATION] Phase 2B.4 - Search & Pagination Complete
 
 - Summary: Added global search and pagination to table dashboard

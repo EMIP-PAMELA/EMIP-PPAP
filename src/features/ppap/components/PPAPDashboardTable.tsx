@@ -4,7 +4,7 @@ import { PPAPRecord } from '@/src/types/database.types';
 import { useRouter } from 'next/navigation';
 import { formatDate } from '@/src/lib/utils';
 import { useMemo, useState } from 'react';
-import { enhancePPAPRecord, sortPPAPs, filterPPAPs, searchPPAPs, paginatePPAPs, SortConfig, SortField, FilterConfig, PhaseFilter, PaginationConfig } from '../utils/ppapTableHelpers';
+import { enhancePPAPRecord, sortPPAPs, filterPPAPs, searchPPAPs, paginatePPAPs, getStateBadgeStyle, getRowBackgroundStyle, getStatusIndicator, SortConfig, SortField, FilterConfig, PhaseFilter, PaginationConfig } from '../utils/ppapTableHelpers';
 
 interface PPAPDashboardTableProps {
   ppaps: PPAPRecord[];
@@ -340,37 +340,50 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {paginatedPPAPs.map((ppap) => (
+            {paginatedPPAPs.map((ppap) => {
+              const statusIndicator = getStatusIndicator(ppap.derivedState);
+              const rowBgClass = getRowBackgroundStyle(ppap.derivedPhase, ppap.derivedState);
+              
+              return (
               <tr
                 key={ppap.id}
                 onClick={() => handleRowClick(ppap.id)}
-                className="hover:bg-gray-50 cursor-pointer transition-colors"
+                className={`hover:bg-gray-100 cursor-pointer transition-colors ${rowBgClass}`}
               >
-                <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-blue-600">
+                <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-blue-700">
                   {ppap.ppap_number}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">
                   {ppap.part_number}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                   {ppap.customer_name}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                  {ppap.derivedState}
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex items-center gap-1">
+                    {statusIndicator && <span className="text-base">{statusIndicator}</span>}
+                    <span className={getStateBadgeStyle(ppap.derivedState)}>
+                      {ppap.derivedState.replace(/_/g, ' ')}
+                    </span>
+                  </div>
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-700">
                   {ppap.derivedPhase}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                  {ppap.assigned_to || '—'}
+                  {ppap.assigned_to ? (
+                    <span className="font-medium">{ppap.assigned_to}</span>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                   {ppap.plant}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-400">
                   {ppap.coordinator}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-400">
                   {ppap.validationSummary}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
@@ -383,7 +396,8 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                   {formatDate(ppap.updated_at)}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

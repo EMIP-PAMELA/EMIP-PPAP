@@ -285,3 +285,77 @@ export function paginatePPAPs(
 
   return ppaps.slice(start, end);
 }
+
+export function getStateBadgeStyle(state: string): string {
+  const baseClasses = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold';
+  
+  switch (state) {
+    case 'INITIATED':
+      return `${baseClasses} bg-blue-100 text-blue-800`;
+    case 'INTAKE_COMPLETE':
+      return `${baseClasses} bg-blue-200 text-blue-900`;
+    case 'IN_PROGRESS':
+      return `${baseClasses} bg-indigo-100 text-indigo-800`;
+    case 'IN_REVIEW':
+      return `${baseClasses} bg-purple-100 text-purple-800`;
+    case 'READY_FOR_ACKNOWLEDGEMENT':
+      return `${baseClasses} bg-yellow-100 text-yellow-800 ring-2 ring-yellow-400`;
+    case 'ACKNOWLEDGED':
+      return `${baseClasses} bg-green-100 text-green-800`;
+    case 'POST_ACK_ASSIGNED':
+      return `${baseClasses} bg-orange-100 text-orange-800`;
+    case 'IN_VALIDATION':
+      return `${baseClasses} bg-orange-200 text-orange-900`;
+    case 'READY_FOR_SUBMISSION':
+      return `${baseClasses} bg-amber-100 text-amber-800 ring-2 ring-amber-400`;
+    case 'SUBMITTED':
+      return `${baseClasses} bg-teal-100 text-teal-800`;
+    case 'ACCEPTED':
+      return `${baseClasses} bg-green-200 text-green-900 ring-2 ring-green-500`;
+    case 'REJECTED':
+      return `${baseClasses} bg-red-100 text-red-800`;
+    case 'COMPLETE':
+      return `${baseClasses} bg-green-300 text-green-900 ring-2 ring-green-600`;
+    case 'BLOCKED':
+      return `${baseClasses} bg-red-200 text-red-900 ring-2 ring-red-500`;
+    case 'ON_HOLD':
+      return `${baseClasses} bg-gray-200 text-gray-700`;
+    default:
+      return `${baseClasses} bg-gray-100 text-gray-800`;
+  }
+}
+
+export function getRowBackgroundStyle(phase: 'Pre-Ack' | 'Post-Ack' | 'Final', state: string): string {
+  if (state === 'BLOCKED') {
+    return 'bg-red-50';
+  }
+  
+  switch (phase) {
+    case 'Pre-Ack':
+      return 'bg-blue-50/30';
+    case 'Post-Ack':
+      return 'bg-orange-50/30';
+    case 'Final':
+      return 'bg-green-50/30';
+    default:
+      return '';
+  }
+}
+
+export function getStatusIndicator(state: string): string | null {
+  switch (state) {
+    case 'READY_FOR_ACKNOWLEDGEMENT':
+      return '⚡';
+    case 'READY_FOR_SUBMISSION':
+      return '⚡';
+    case 'BLOCKED':
+      return '🚫';
+    case 'ON_HOLD':
+      return '⏸';
+    case 'ACCEPTED':
+    case 'COMPLETE':
+      return '✓';
+    default:
+      return null;
+  }
+}
