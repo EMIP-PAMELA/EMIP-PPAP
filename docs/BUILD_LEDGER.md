@@ -4,6 +4,190 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 12:55 CT - [IMPLEMENTATION] Phase 2B.3 - Filtering Complete
+
+- Summary: Added client-side filtering capability with 5 filter types
+- Files changed:
+  - `src/features/ppap/utils/ppapTableHelpers.ts` - Added filterPPAPs function and filter types
+  - `src/features/ppap/components/PPAPDashboardTable.tsx` - Added filter UI and state management
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Users can filter table by 5 dimensions
+- No schema changes
+- No search/pagination yet (deferred to Phase 2B.4)
+
+**Context:**
+
+Phase 2B.3 adds client-side filtering to the table dashboard, allowing users to narrow down PPAPs by customer, state, engineer, plant, and phase.
+
+**Implementation:**
+
+**1. Filter Types (`ppapTableHelpers.ts`)**
+
+Added filtering types and function:
+
+**Types:**
+```typescript
+type PhaseFilter = 'All' | 'Pre-Ack' | 'Post-Ack' | 'Final';
+
+interface FilterConfig {
+  customers: string[];
+  states: string[];
+  engineers: string[];
+  plants: string[];
+  phase: PhaseFilter;
+}
+```
+
+**Function:**
+```typescript
+function filterPPAPs(
+  ppaps: EnhancedPPAPRecord[],
+  config: FilterConfig
+): EnhancedPPAPRecord[]
+```
+
+**Filter Logic:**
+- Multi-select filters (Customer, State, Engineer, Plant): Array membership check
+- Single-select filter (Phase): Exact match or 'All'
+- Null engineers handled as 'Unassigned'
+- Empty filter arrays = no filtering on that dimension
+
+---
+
+**2. Data Pipeline (`PPAPDashboardTable.tsx`)**
+
+Updated data flow:
+
+**Pipeline:**
+```
+PPAPRecord[] 
+→ enhancePPAPRecord() 
+→ sortPPAPs() 
+→ filterPPAPs() 
+→ filteredPPAPs 
+→ render
+```
+
+**Processing Order:**
+1. Enhance (add derived fields)
+2. Sort (if sort active)
+3. Filter (if filters active)
+4. Render (final dataset)
+
+**State:**
+```typescript
+const [filters, setFilters] = useState<FilterConfig>({
+  customers: [],
+  states: [],
+  engineers: [],
+  plants: [],
+  phase: 'All',
+});
+```
+
+---
+
+**3. Dynamic Filter Options (`PPAPDashboardTable.tsx`)**
+
+Filter options derived from dataset:
+
+**Customer Options:** Unique `customer_name` values (sorted)
+**State Options:** Unique `derivedState` values (sorted)
+**Engineer Options:** Unique `assigned_to` values + 'Unassigned' (sorted)
+**Plant Options:** Unique `plant` values (sorted)
+**Phase Options:** Static (All, Pre-Ack, Post-Ack, Final)
+
+**Derivation:**
+```typescript
+const filterOptions = useMemo(() => {
+  const customers = Array.from(new Set(enhancedPPAPs.map(p => p.customer_name))).sort();
+  const states = Array.from(new Set(enhancedPPAPs.map(p => p.derivedState))).sort();
+  const engineers = Array.from(
+    new Set(enhancedPPAPs.map(p => p.assigned_to || 'Unassigned'))
+  ).sort();
+  const plants = Array.from(new Set(enhancedPPAPs.map(p => p.plant))).sort();
+  
+  return { customers, states, engineers, plants };
+}, [enhancedPPAPs]);
+```
+
+---
+
+**4. Filter UI (`PPAPDashboardTable.tsx`)**
+
+Added filter bar above table:
+
+**Components:**
+- Customer multi-select (size=3)
+- State multi-select (size=3)
+- Assigned Engineer multi-select (size=3)
+- Plant multi-select (size=3)
+- Phase single-select dropdown
+- Clear Filters button (conditional, appears when filters active)
+
+**Features:**
+- Filter count display: "Showing X of Y PPAPs"
+- Empty state for filtered results: "No PPAPs match current filters"
+- Clear Filters button in empty state
+- Minimal Tailwind styling
+
+**Behavior:**
+- Multi-select: Click to toggle selection
+- Single-select: Choose one option
+- Clear Filters: Reset all to default
+- Instant update on change
+
+---
+
+**5. Filter Management (`PPAPDashboardTable.tsx`)**
+
+**handleFilterChange:**
+- Toggles multi-select values (add/remove from array)
+- Sets single-select value directly
+
+**clearFilters:**
+- Resets all filters to default state
+```typescript
+{
+  customers: [],
+  states: [],
+  engineers: [],
+  plants: [],
+  phase: 'All',
+}
+```
+
+**hasActiveFilters:**
+- Checks if any filter is active
+- Used to conditionally show Clear button and count
+
+---
+
+**Validation:**
+
+- ✅ 5 filter types implemented (Customer, State, Engineer, Plant, Phase)
+- ✅ Client-side filtering pipeline (enhance → sort → filter → render)
+- ✅ Dynamic filter options from dataset
+- ✅ Null engineers handled as 'Unassigned'
+- ✅ Multi-select for 4 filters, single-select for Phase
+- ✅ Clear Filters button
+- ✅ Filter count display
+- ✅ Empty state handling
+- ✅ Works with sorting (sort first, filter second)
+- ✅ No backend changes
+- ✅ No schema changes
+- ✅ No URL state persistence (pure React state)
+- ✅ No external libraries
+
+**Next Actions:**
+
+- Phase 2B.4: Implement search and pagination
+- Phase 2B.5: Add visual polish (badges, indicators, row tints)
+
+- Commit: `feat: phase 2B.3 filtering (5-dimension client-side filtering)`
+
+---
+
 ## 2026-03-24 12:45 CT - [IMPLEMENTATION] Phase 2B.2 - Sorting Complete
 
 - Summary: Added column sorting capability to table dashboard

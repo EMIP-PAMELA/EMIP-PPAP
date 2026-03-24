@@ -212,3 +212,47 @@ export function sortPPAPs(
     return compareResult * multiplier;
   });
 }
+
+export type PhaseFilter = 'All' | 'Pre-Ack' | 'Post-Ack' | 'Final';
+
+export interface FilterConfig {
+  customers: string[];
+  states: string[];
+  engineers: string[];
+  plants: string[];
+  phase: PhaseFilter;
+}
+
+export function filterPPAPs(
+  ppaps: EnhancedPPAPRecord[],
+  config: FilterConfig
+): EnhancedPPAPRecord[] {
+  return ppaps.filter(ppap => {
+    if (config.customers.length > 0 && 
+        !config.customers.includes(ppap.customer_name)) {
+      return false;
+    }
+
+    if (config.states.length > 0 && 
+        !config.states.includes(ppap.derivedState)) {
+      return false;
+    }
+
+    if (config.engineers.length > 0 && 
+        !config.engineers.includes(ppap.assigned_to || 'Unassigned')) {
+      return false;
+    }
+
+    if (config.plants.length > 0 && 
+        !config.plants.includes(ppap.plant)) {
+      return false;
+    }
+
+    if (config.phase !== 'All' && 
+        ppap.derivedPhase !== config.phase) {
+      return false;
+    }
+
+    return true;
+  });
+}

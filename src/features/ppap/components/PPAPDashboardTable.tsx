@@ -4,7 +4,7 @@ import { PPAPRecord } from '@/src/types/database.types';
 import { useRouter } from 'next/navigation';
 import { formatDate } from '@/src/lib/utils';
 import { useMemo, useState } from 'react';
-import { enhancePPAPRecord, sortPPAPs, SortConfig, SortField } from '../utils/ppapTableHelpers';
+import { enhancePPAPRecord, sortPPAPs, filterPPAPs, SortConfig, SortField, FilterConfig, PhaseFilter } from '../utils/ppapTableHelpers';
 
 interface PPAPDashboardTableProps {
   ppaps: PPAPRecord[];
@@ -13,11 +13,33 @@ interface PPAPDashboardTableProps {
 export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
   const router = useRouter();
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+  const [filters, setFilters] = useState<FilterConfig>({
+    customers: [],
+    states: [],
+    engineers: [],
+    plants: [],
+    phase: 'All',
+  });
 
-  const sortedPPAPs = useMemo(() => {
-    const enhanced = ppaps.map(ppap => enhancePPAPRecord(ppap));
-    return sortPPAPs(enhanced, sortConfig);
-  }, [ppaps, sortConfig]);
+  const enhancedPPAPs = useMemo(() => {
+    return ppaps.map(ppap => enhancePPAPRecord(ppap));
+  }, [ppaps]);
+
+  const filterOptions = useMemo(() => {
+    const customers = Array.from(new Set(enhancedPPAPs.map(p => p.customer_name))).sort();
+    const states = Array.from(new Set(enhancedPPAPs.map(p => p.derivedState))).sort();
+    const engineers = Array.from(
+      new Set(enhancedPPAPs.map(p => p.assigned_to || 'Unassigned'))
+    ).sort();
+    const plants = Array.from(new Set(enhancedPPAPs.map(p => p.plant))).sort();
+    
+    return { customers, states, engineers, plants };
+  }, [enhancedPPAPs]);
+
+  const filteredPPAPs = useMemo(() => {
+    const sorted = sortPPAPs(enhancedPPAPs, sortConfig);
+    return filterPPAPs(sorted, filters);
+  }, [enhancedPPAPs, sortConfig, filters]);
 
   const handleRowClick = (ppapId: string) => {
     router.push(`/ppap/${ppapId}`);
@@ -40,7 +62,38 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
     return sortConfig.direction === 'asc' ? ' ↑' : ' ↓';
   };
 
-  if (sortedPPAPs.length === 0) {
+  const handleFilterChange = (filterType: keyof FilterConfig, value: string) => {
+    setFilters(current => {
+      if (filterType === 'phase') {
+        return { ...current, phase: value as PhaseFilter };
+      }
+      
+      const currentArray = current[filterType] as string[];
+      const newArray = currentArray.includes(value)
+        ? currentArray.filter(v => v !== value)
+        : [...currentArray, value];
+      
+      return { ...current, [filterType]: newArray };
+    });
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      customers: [],
+      states: [],
+      engineers: [],
+      plants: [],
+      phase: 'All',
+    });
+  };
+
+  const hasActiveFilters = filters.customers.length > 0 || 
+    filters.states.length > 0 || 
+    filters.engineers.length > 0 || 
+    filters.plants.length > 0 || 
+    filters.phase !== 'All';
+
+  if (ppaps.length === 0) {
     return (
       <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-12 text-center">
         <p className="text-gray-600 text-lg">No PPAPs found</p>
@@ -49,7 +102,123 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
   }
 
   return (
-    <div className="bg-white border border-gray-300 rounded-xl shadow-sm overflow-hidden">
+    <div className="space-y-4">
+      <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-4">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Customer</label>
+            <select
+              multiple
+              value={filters.customers}
+              onChange={(e) => {
+                const value = e.target.value;
+                handleFilterChange('customers', value);
+              }}
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              size={3}
+            >
+              {filterOptions.customers.map(customer => (
+                <option key={customer} value={customer}>
+                  {customer}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-semibold text-gray-700 mb-1">State</label>
+            <select
+              multiple
+              value={filters.states}
+              onChange={(e) => {
+                const value = e.target.value;
+                handleFilterChange('states', value);
+              }}
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              size={3}
+            >
+              {filterOptions.states.map(state => (
+                <option key={state} value={state}>
+                  {state}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Assigned Engineer</label>
+            <select
+              multiple
+              value={filters.engineers}
+              onChange={(e) => {
+                const value = e.target.value;
+                handleFilterChange('engineers', value);
+              }}
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              size={3}
+            >
+              {filterOptions.engineers.map(engineer => (
+                <option key={engineer} value={engineer}>
+                  {engineer}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Plant</label>
+            <select
+              multiple
+              value={filters.plants}
+              onChange={(e) => {
+                const value = e.target.value;
+                handleFilterChange('plants', value);
+              }}
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              size={3}
+            >
+              {filterOptions.plants.map(plant => (
+                <option key={plant} value={plant}>
+                  {plant}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Phase</label>
+            <select
+              value={filters.phase}
+              onChange={(e) => setFilters(current => ({ ...current, phase: e.target.value as PhaseFilter }))}
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+            >
+              <option value="All">All</option>
+              <option value="Pre-Ack">Pre-Ack</option>
+              <option value="Post-Ack">Post-Ack</option>
+              <option value="Final">Final</option>
+            </select>
+          </div>
+
+          {hasActiveFilters && (
+            <div className="flex items-end">
+              <button
+                onClick={clearFilters}
+                className="px-4 py-2 bg-gray-600 text-white text-sm font-semibold rounded hover:bg-gray-700 transition-colors"
+              >
+                Clear Filters
+              </button>
+            </div>
+          )}
+        </div>
+
+        {hasActiveFilters && (
+          <div className="mt-2 text-sm text-gray-600">
+            Showing {filteredPPAPs.length} of {enhancedPPAPs.length} PPAPs
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white border border-gray-300 rounded-xl shadow-sm overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-100 border-b border-gray-300">
@@ -123,7 +292,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {sortedPPAPs.map((ppap) => (
+            {filteredPPAPs.map((ppap) => (
               <tr
                 key={ppap.id}
                 onClick={() => handleRowClick(ppap.id)}
@@ -170,6 +339,19 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
           </tbody>
         </table>
       </div>
+      </div>
+
+      {filteredPPAPs.length === 0 && hasActiveFilters && (
+        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-12 text-center">
+          <p className="text-gray-600 text-lg">No PPAPs match current filters</p>
+          <button
+            onClick={clearFilters}
+            className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 transition-colors"
+          >
+            Clear Filters
+          </button>
+        </div>
+      )}
     </div>
   );
 }
