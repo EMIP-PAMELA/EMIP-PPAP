@@ -1,15 +1,36 @@
 import { UserRole } from '@/src/lib/mockUser';
 
+/**
+ * Edit Permission Model:
+ * 
+ * Admin:
+ * - Full system access (override authority)
+ * 
+ * Coordinator:
+ * - Primary workflow operator
+ * - Can edit PPAP data, assignment, documents, and workflow fields
+ * 
+ * Engineer:
+ * - Can edit technical work only
+ * - Blocked in final states (SUBMITTED, ACCEPTED, COMPLETE)
+ * 
+ * Viewer:
+ * - Read-only
+ */
 export function canEditPPAP(role: UserRole, state: string): boolean {
-  // Admin can always edit
+  // Admin: always allowed
   if (role === 'admin') return true;
-  
-  // Engineer can edit unless in final states
+
+  // Coordinator: full workflow edit authority
+  if (role === 'coordinator') return true;
+
+  // Engineer: limited edit (blocked in final states)
   if (role === 'engineer') {
-    return state !== 'SUBMITTED' && state !== 'ACCEPTED' && state !== 'COMPLETE';
+    const restrictedStates = ['SUBMITTED', 'ACCEPTED', 'COMPLETE'];
+    return !restrictedStates.includes(state);
   }
-  
-  // Coordinator and viewer cannot edit
+
+  // Viewer: no edit
   return false;
 }
 

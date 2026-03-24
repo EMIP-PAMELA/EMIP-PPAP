@@ -4,6 +4,131 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 14:40 CT - [FIX] Phase 2A - Permission Alignment Correction (Coordinator Edit Authority)
+
+- Summary: Coordinator role updated to allow full PPAP editing
+- Files changed:
+  - `src/features/ppap/utils/permissions.ts` - Updated canEditPPAP logic
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Coordinator can now edit PPAPs in all states (primary workflow operator)
+- No breaking changes
+- No schema changes
+
+**Context:**
+
+Phase 2A initial implementation incorrectly restricted coordinator from editing PPAPs. Coordinator is the **primary workflow operator** responsible for intake, assignment, routing, and workflow management. This correction aligns permission logic with coordinator's operational role.
+
+**Fix Applied:**
+
+**Before:**
+```typescript
+export function canEditPPAP(role: UserRole, state: string): boolean {
+  // Admin can always edit
+  if (role === 'admin') return true;
+  
+  // Engineer can edit unless in final states
+  if (role === 'engineer') {
+    return state !== 'SUBMITTED' && state !== 'ACCEPTED' && state !== 'COMPLETE';
+  }
+  
+  // Coordinator and viewer cannot edit
+  return false;
+}
+```
+
+**After:**
+```typescript
+export function canEditPPAP(role: UserRole, state: string): boolean {
+  // Admin: always allowed
+  if (role === 'admin') return true;
+
+  // Coordinator: full workflow edit authority
+  if (role === 'coordinator') return true;
+
+  // Engineer: limited edit (blocked in final states)
+  if (role === 'engineer') {
+    const restrictedStates = ['SUBMITTED', 'ACCEPTED', 'COMPLETE'];
+    return !restrictedStates.includes(state);
+  }
+
+  // Viewer: no edit
+  return false;
+}
+```
+
+**Permission Model Documentation Added:**
+```
+Admin:
+- Full system access (override authority)
+
+Coordinator:
+- Primary workflow operator
+- Can edit PPAP data, assignment, documents, and workflow fields
+
+Engineer:
+- Can edit technical work only
+- Blocked in final states (SUBMITTED, ACCEPTED, COMPLETE)
+
+Viewer:
+- Read-only
+```
+
+**Rationale:**
+
+**Coordinator Role Reality:**
+- Performs PPAP intake (manual entry from external systems)
+- Manages assignment and reassignment
+- Controls workflow progression
+- Sets production plant context
+- **Must edit PPAP data to perform these functions**
+
+**Why Edit Authority is Required:**
+1. Intake requires editing part numbers, customer data, plant assignments
+2. Workflow routing requires editing assignment and state context
+3. Coordinator manages the full PPAP lifecycle from entry to completion
+4. Restricting edit prevents coordinator from performing core duties
+
+**Distinction from Engineer:**
+- Coordinator: Workflow operator (edits workflow data, assignments, routing)
+- Engineer: Technical executor (edits documents, validations, technical work)
+- Both need edit capability for different purposes
+
+**Validation:**
+
+- ✅ Admin: Can edit in all states (unchanged)
+- ✅ Coordinator: Can edit in all states (corrected)
+- ✅ Engineer: Can edit EXCEPT in SUBMITTED, ACCEPTED, COMPLETE (unchanged)
+- ✅ Viewer: Cannot edit (unchanged)
+- ✅ Documentation added to explain permission model
+- ✅ No schema changes
+- ✅ No role definition changes
+- ✅ Acknowledgement permissions unchanged
+- ✅ Assignment permissions unchanged
+
+**Updated Permission Matrix:**
+
+| Action                  | Admin | Coordinator | Engineer | Viewer |
+|------------------------|-------|-------------|----------|--------|
+| View PPAPs             | ✓     | ✓           | ✓        | ✓      |
+| Navigate to Details    | ✓     | ✓           | ✓        | ✗      |
+| Create PPAP            | ✓     | ✓           | ✓        | ✗      |
+| **Edit PPAP**          | **✓** | **✓**       | **✓***   | **✗**  |
+| Assign PPAP            | ✓     | ✓           | ✗        | ✗      |
+| Acknowledge PPAP       | ✓     | ✓**         | ✗        | ✗      |
+| Submit PPAP            | ✓     | ✗           | ✓**      | ✗      |
+
+*Engineer blocked in SUBMITTED, ACCEPTED, COMPLETE states  
+**Only when state allows
+
+**Next Actions:**
+
+- Coordinator can now perform full workflow operations
+- Edit authority aligns with primary workflow operator role
+
+- Commit: `fix: phase 2A coordinator edit authority (primary workflow operator)`
+
+---
+
 ## 2026-03-24 14:35 CT - [IMPLEMENTATION] Phase 3B - State Machine Foundation Complete
 
 - Summary: Implemented centralized state machine with enforced workflow transitions
