@@ -4,6 +4,230 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 14:10 CT - [IMPLEMENTATION] Phase 2A - Simple Role-Based Permissions Complete
+
+- Summary: Added role-based permissions without authentication
+- Files changed:
+  - `src/lib/mockUser.ts` - Created mock user with UserRole type
+  - `src/features/ppap/utils/permissions.ts` - Created permission helper functions
+  - `app/ppap/page.tsx` - Added role indicator and Create PPAP button control
+  - `src/features/ppap/components/PPAPDashboardTable.tsx` - Added viewer restrictions
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: UI now respects role-based permissions
+- No authentication system
+- No schema changes
+- No backend enforcement
+
+**Context:**
+
+Phase 2A implements simple role-based permissions as a simulation layer to enforce workflow control aligned with the state machine. This provides UI-level access control without requiring a full authentication system, making it easy to test and future-compatible with real auth.
+
+**Implementation:**
+
+**1. Role Definition (`mockUser.ts`)**
+
+Defined 4 fixed roles:
+
+```typescript
+type UserRole = 'admin' | 'coordinator' | 'engineer' | 'viewer';
+
+const currentUser = {
+  id: 'test-user',
+  name: 'Test User',
+  role: 'engineer' as UserRole,
+};
+```
+
+**Role Responsibilities:**
+- **admin:** Full access to all actions
+- **coordinator:** Assignment and acknowledgement
+- **engineer:** Edit, submit, create PPAPs
+- **viewer:** Read-only access
+
+**Testing:**
+- Change role manually in `mockUser.ts`
+- Role easily switchable for testing different permissions
+
+---
+
+**2. Permission Helpers (`permissions.ts`)**
+
+Created permission check functions:
+
+**canEditPPAP(role):**
+- Returns: `admin || engineer`
+- Purpose: Edit PPAP details
+
+**canAssignPPAP(role):**
+- Returns: `admin || coordinator`
+- Purpose: Assign PPAPs to engineers
+
+**canAcknowledgePPAP(role, state):**
+- Returns: `(admin || coordinator) && state === 'READY_FOR_ACKNOWLEDGEMENT'`
+- Purpose: Acknowledge PPAP (coordinator gate)
+
+**canSubmitPPAP(role, state):**
+- Returns: `(admin || engineer) && state === 'READY_FOR_SUBMISSION'`
+- Purpose: Submit PPAP to customer
+
+**isReadOnly(role):**
+- Returns: `role === 'viewer'`
+- Purpose: Check if user has view-only access
+
+**canViewPPAP(role):**
+- Returns: `true` (all roles can view)
+- Purpose: Check view permission
+
+**canCreatePPAP(role):**
+- Returns: `admin || engineer || coordinator`
+- Purpose: Create new PPAP records
+
+**Permission Logic:**
+- Role + State checks ensure workflow integrity
+- State checks prevent actions in wrong workflow phase
+- Admin role bypasses most restrictions
+
+---
+
+**3. Dashboard UI Controls (`page.tsx`)**
+
+**Role Indicator:**
+- Added badge next to page title
+- Shows current role: "Role: ENGINEER"
+- Gray badge with uppercase role name
+- Visible for testing/debugging
+
+**Create PPAP Button:**
+- Shown if: `canCreatePPAP(currentUser.role)` = true
+- Hidden for viewers
+- Replaced with: "Create PPAP: Not permitted" message
+- Message in gray italic text for clarity
+
+**Display Logic:**
+```typescript
+{canCreatePPAP(currentUser.role) ? (
+  <Link href="/ppap/new">+ Create New PPAP</Link>
+) : (
+  <div className="text-gray-400 text-sm italic">
+    Create PPAP: Not permitted
+  </div>
+)}
+```
+
+---
+
+**4. Table Row Navigation (`PPAPDashboardTable.tsx`)**
+
+**Viewer Restrictions:**
+- Viewers cannot navigate to PPAP details
+- Row click disabled for viewers
+- Visual feedback: `cursor-not-allowed opacity-75`
+- Rows remain visible but non-interactive
+
+**Implementation:**
+```typescript
+const handleRowClick = (ppapId: string) => {
+  if (isReadOnly(currentUser.role)) {
+    return; // Block navigation
+  }
+  router.push(`/ppap/${ppapId}`);
+};
+
+const isClickable = !isReadOnly(currentUser.role);
+className={`${isClickable ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-not-allowed opacity-75'} ...`}
+```
+
+**Visual States:**
+- **Clickable (admin/coordinator/engineer):** `cursor-pointer`, `hover:bg-gray-100`
+- **Not clickable (viewer):** `cursor-not-allowed`, `opacity-75`
+
+---
+
+**5. Future Action Guards**
+
+Permission helpers ready for use in action handlers:
+
+**Example Pattern:**
+```typescript
+// In action handler
+if (!canAcknowledgePPAP(currentUser.role, ppap.state)) {
+  throw new Error('Unauthorized action');
+}
+```
+
+**Where to Apply:**
+- Edit PPAP forms
+- Assignment forms
+- Acknowledgement actions
+- Submission actions
+- State transitions
+
+**Hard Guards:**
+- Even if UI bypassed, action will fail
+- State + role validation together
+- Prevents unauthorized state transitions
+
+---
+
+**6. Role Switching for Testing**
+
+**Method 1 - Manual Edit:**
+- Open `src/lib/mockUser.ts`
+- Change `role: 'engineer'` to desired role
+- Save file
+- Refresh browser
+
+**Method 2 - Future Enhancement:**
+- Can add temporary dev dropdown in UI
+- Quick role switcher for testing
+- Not implemented in this phase
+
+**Test Scenarios:**
+1. **Admin:** Can do everything
+2. **Coordinator:** Can assign, acknowledge; cannot edit/submit
+3. **Engineer:** Can edit, create, submit; cannot assign/acknowledge
+4. **Viewer:** Can only view; all actions disabled
+
+---
+
+**Validation:**
+
+- ✅ 4 roles defined (admin, coordinator, engineer, viewer)
+- ✅ Permission helpers created (7 functions)
+- ✅ UI controls enforced (Create button, row clicks)
+- ✅ Role indicator visible in header
+- ✅ Viewer restrictions applied (read-only)
+- ✅ State + role validation combined
+- ✅ Future-compatible with real auth
+- ✅ No authentication system required
+- ✅ No schema changes
+- ✅ No backend enforcement
+- ✅ Easily testable by changing mockUser.ts
+
+**Permission Matrix:**
+
+| Action                  | Admin | Coordinator | Engineer | Viewer |
+|------------------------|-------|-------------|----------|--------|
+| View PPAPs             | ✓     | ✓           | ✓        | ✓      |
+| Navigate to Details    | ✓     | ✓           | ✓        | ✗      |
+| Create PPAP            | ✓     | ✓           | ✓        | ✗      |
+| Edit PPAP              | ✓     | ✗           | ✓        | ✗      |
+| Assign PPAP            | ✓     | ✓           | ✗        | ✗      |
+| Acknowledge PPAP       | ✓     | ✓*          | ✗        | ✗      |
+| Submit PPAP            | ✓     | ✗           | ✓*       | ✗      |
+
+*Only when state allows (READY_FOR_ACKNOWLEDGEMENT / READY_FOR_SUBMISSION)
+
+**Next Actions:**
+
+- Phase 2C: Detail page and inline editing
+- Phase 2D: Acknowledgement workflow
+- Phase 2E: Submission workflow
+
+- Commit: `feat: phase 2A simple role-based permissions (4 roles, UI enforcement, no auth)`
+
+---
+
 ## 2026-03-24 13:20 CT - [IMPLEMENTATION] Phase 2B.5 - Visual Polish Complete
 
 - Summary: Added visual polish to table dashboard for improved workflow state clarity

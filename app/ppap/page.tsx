@@ -1,6 +1,8 @@
 import { getAllPPAPs } from '@/src/features/ppap/queries';
 import { PPAPDashboardTable } from '@/src/features/ppap/components/PPAPDashboardTable';
 import Link from 'next/link';
+import { currentUser } from '@/src/lib/mockUser';
+import { canCreatePPAP } from '@/src/features/ppap/utils/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,17 +23,28 @@ export default async function PPAPOperationsPage() {
       <div className="max-w-[1800px] mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-4xl font-bold text-gray-900">PPAP Operations Dashboard</h1>
+            <div className="flex items-center gap-3 mb-2">
+              <h1 className="text-4xl font-bold text-gray-900">PPAP Operations Dashboard</h1>
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-200 text-gray-700">
+                Role: {currentUser.role.toUpperCase()}
+              </span>
+            </div>
             <p className="text-gray-600 mt-2">
               Track, prioritize, and resume PPAP work across the organization
             </p>
           </div>
-          <Link
-            href="/ppap/new"
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            + Create New PPAP
-          </Link>
+          {canCreatePPAP(currentUser.role) ? (
+            <Link
+              href="/ppap/new"
+              className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              + Create New PPAP
+            </Link>
+          ) : (
+            <div className="text-gray-400 text-sm italic">
+              Create PPAP: Not permitted
+            </div>
+          )}
         </div>
 
         {error && (

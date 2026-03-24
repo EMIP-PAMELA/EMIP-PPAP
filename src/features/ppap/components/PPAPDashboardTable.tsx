@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { formatDate } from '@/src/lib/utils';
 import { useMemo, useState } from 'react';
 import { enhancePPAPRecord, sortPPAPs, filterPPAPs, searchPPAPs, paginatePPAPs, getStateBadgeStyle, getRowBackgroundStyle, getStatusIndicator, SortConfig, SortField, FilterConfig, PhaseFilter, PaginationConfig } from '../utils/ppapTableHelpers';
+import { currentUser } from '@/src/lib/mockUser';
+import { isReadOnly } from '../utils/permissions';
 
 interface PPAPDashboardTableProps {
   ppaps: PPAPRecord[];
@@ -59,6 +61,9 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
   }, [searchedPPAPs, currentPage, pageSize]);
 
   const handleRowClick = (ppapId: string) => {
+    if (isReadOnly(currentUser.role)) {
+      return;
+    }
     router.push(`/ppap/${ppapId}`);
   };
 
@@ -344,11 +349,13 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
               const statusIndicator = getStatusIndicator(ppap.derivedState);
               const rowBgClass = getRowBackgroundStyle(ppap.derivedPhase, ppap.derivedState);
               
+              const isClickable = !isReadOnly(currentUser.role);
+              
               return (
               <tr
                 key={ppap.id}
                 onClick={() => handleRowClick(ppap.id)}
-                className={`hover:bg-gray-100 cursor-pointer transition-colors ${rowBgClass}`}
+                className={`${isClickable ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-not-allowed opacity-75'} transition-colors ${rowBgClass}`}
               >
                 <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-blue-700">
                   {ppap.ppap_number}
