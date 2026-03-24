@@ -4,6 +4,481 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 11:55 CT - [CORRECTION] Phase 23.16.1 - Enforcement Corrections Applied
+
+- Summary: Applied critical enforcement corrections to state machine, validation engine, and acknowledgement gate
+- Files changed:
+  - `docs/BUILD_PLAN.md` - Corrected state machine, validation engine, acknowledgement gate definitions
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Correction of incomplete enforcement logic in Phase 23.16.0 architecture
+- No schema changes
+- No code changes (design correction only)
+
+**Context:**
+
+Phase 23.16.0 defined the controlled execution system architecture but contained three incomplete enforcement definitions that required correction:
+
+1. State machine final state logic (rejection handling)
+2. Validation engine status model (approval layer)
+3. Acknowledgement gate authority (role enforcement)
+
+**Corrections Applied:**
+
+**1. State Machine - Rejection Loop Introduced**
+
+**Problem:** Previous definition treated REJECTED as terminal state with ambiguous reopen logic.
+
+**Correction:**
+- **REJECTED is NOT a terminal state**
+- **REJECTED returns PPAP to IN_VALIDATION** (post-ack phase for rework)
+- **System MUST allow continued work after rejection**
+- **Transition MUST be logged**
+
+**New Rejection Loop:**
+```
+SUBMITTED → REJECTED → IN_VALIDATION → READY_FOR_SUBMISSION → SUBMITTED
+```
+
+**Rules:**
+- Customer rejection does not close PPAP
+- Coordinator reviews rejection and returns to post-ack validation
+- Engineer addresses rejection issues
+- Resubmission follows normal post-ack completion flow
+- Only ACCEPTED state leads to COMPLETE
+
+**Status:** Replaces previous terminal rejection definition
+
+---
+
+**2. Validation Engine - Approval Layer Introduced**
+
+**Problem:** Previous definition used binary 'incomplete' | 'complete' status model, missing approval layer for critical validations.
+
+**Correction:**
+- **VALIDATION STATUS MODEL expanded to 4 states:**
+  - `NOT_STARTED` - Validation not yet started
+  - `IN_PROGRESS` - Engineer working on validation
+  - `COMPLETE` - Engineer completed validation
+  - `APPROVED` - Coordinator/QA approved validation (if required)
+
+**New Fields:**
+- `requires_approval: boolean` - Flag indicating if validation requires approval
+- `completed_by: string` - Engineer who completed validation
+- `approved_by: string` - Coordinator/QA/Admin who approved (if required)
+- `approved_at: Date` - Approval timestamp
+
+**ENFORCEMENT RULES:**
+- **Some validations REQUIRE approval before progression**
+- **System MUST block transition if approval required but missing**
+- **Validation must store evidence (document IDs, task IDs, notes)**
+- **Completion AND approval must be logged as separate events**
+
+**Approval Logic:**
+- If `requires_approval: false` → Engineer completion moves status to `COMPLETE` (sufficient)
+- If `requires_approval: true` → Engineer completion moves to `COMPLETE`, coordinator approval required to reach `APPROVED`
+- Phase transition blocked if any required validation is not in final state (`COMPLETE` or `APPROVED` depending on `requires_approval`)
+
+**Status:** Replaces prior 'complete-only' validation model
+
+---
+
+**3. Acknowledgement Gate - Authority Lock Enforced**
+
+**Problem:** Previous definition was ambiguous about who can trigger acknowledgement event.
+
+**Correction:**
+- **ACKNOWLEDGEMENT AUTHORITY defined:**
+
+**Authorized Roles:**
+- **Coordinator role (PRIMARY)** - Jasmine and designated PPAP coordinators
+- **Admin role (OVERRIDE ONLY)** - VP, leadership with system-wide authority
+
+**Prohibited:**
+- **Engineers are NOT permitted to acknowledge**
+- **Viewer role cannot acknowledge**
+- **Unassigned users cannot acknowledge**
+
+**ENFORCEMENT RULES:**
+- **Only authorized roles can trigger ACKNOWLEDGED state**
+- **Acknowledgement permanently locks all pre-ack work**
+- **Unauthorized attempts MUST be rejected with error**
+- **Event MUST be logged with actor role validation**
+
+**Implementation Logic:**
+```typescript
+function canAcknowledgePPAP(user: User, ppap: PPAP): boolean {
+  if (user.role !== 'coordinator' && user.role !== 'admin') {
+    return false;
+  }
+  if (ppap.state !== 'READY_FOR_ACKNOWLEDGEMENT') {
+    return false;
+  }
+  return true;
+}
+```
+
+**Status:** Replaces prior ambiguous authority definition
+
+---
+
+**Validation:**
+
+- ✅ State machine rejection loop defined (REJECTED → IN_VALIDATION)
+- ✅ Validation engine approval layer defined (4-state model with approval tracking)
+- ✅ Acknowledgement gate authority locked (coordinator/admin only)
+- ✅ All corrections explicitly marked in BUILD_PLAN.md
+- ✅ No code changes (design correction only)
+- ✅ No schema changes
+
+**Next Actions:**
+
+Implementation of corrected enforcement logic will occur in:
+- Phase 2B/3B: State machine with rejection loop
+- Phase 3D: Validation engine with approval layer
+- Phase 3B: Acknowledgement gate with role enforcement
+
+- Commit: `docs: phase 23.16.1 enforcement corrections (rejection loop, approval layer, authority lock)`
+
+---
+
+## 2026-03-24 11:35 CT - [DESIGN] Phase 23.16.0 - Controlled Execution System Architecture
+
+- Summary: Redefined EMIP-PPAP from tracking tool to **controlled execution system** with state machine and validation engine
+- Files changed:
+  - `docs/BUILD_PLAN.md` - Complete architecture rewrite with state machine and validation engine
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Fundamental shift from manual tracking to enforced workflow control
+- No schema changes
+- No code changes (design phase only)
+
+**Context:**
+
+EMIP-PPAP has been operating as a basic PPAP tracking tool with manual workflow management and no enforcement mechanisms. This realignment redefines the system as a **controlled execution system** with state-driven workflow enforcement and automated validation checking.
+
+**EMIP-PPAP is NOT a tracking tool.**
+
+It is now defined as a **controlled execution system** with:
+1. **State Machine** - Enforced workflow states controlling available actions
+2. **Validation Engine** - Automated requirement completion validation
+3. **Acknowledgement Gate** - Hard control point with pre-ack work locking
+4. **Template-Driven Workflow** - Customer-specific execution rules
+5. **Role-Based Execution** - Permissions aligned with workflow states
+
+**Problem:**
+
+**Root Issue:**
+- System lacks state-driven workflow control (manual status updates)
+- No validation engine (document uploads ≠ requirement completion)
+- No state machine (users can skip workflow steps)
+- No permissions system (all users have equal access)
+- No template-driven execution (workflows not customer-specific)
+- No hard acknowledgement gate (pre-ack and post-ack work not separated)
+- No automated validation (incomplete submissions possible)
+- No intake system (pre-PPAP tracking missing)
+- System positioned as tracking tool, not controlled execution platform
+
+**Symptoms:**
+- Users manually manage workflow states without enforcement
+- Documents uploaded but requirements not validated as complete
+- No prevention of workflow step skipping
+- No assignment model (anyone can edit any PPAP)
+- Customer-specific requirements (Trane vs Rheem) not enforced
+- Acknowledgement process not formalized or locked
+- Incomplete PPAPs can progress through workflow
+- Pre-PPAP parts not tracked
+
+**Architecture Defined:**
+
+**5-Layer Lifecycle Model:**
+
+**LAYER 1: Intake & Readiness**
+- Purpose: Pre-PPAP validation and plant assignment
+- Owner: PPAP Coordinator
+- State: Quote → Ready for PPAP
+- Tracks: Tooling validation, BOM validation, plant assignment, risk assessment
+- Gate: Coordinator promotes to formal PPAP when ready
+
+**LAYER 2: Pre-Acknowledgement Execution**
+- Purpose: Engineering preparation and process design
+- Owner: Assigned Engineer
+- State: Initiated → Ready for Acknowledgement
+- Phases: Initiation, Planning, Validation
+- Tracks: Process flow, FMEA, control plan, measurement plan
+- Gate: All pre-ack documents and tasks complete
+
+**LAYER 3: Acknowledgement Gate**
+- Purpose: Formal customer acceptance of PPAP responsibility
+- Owner: Customer (external actor)
+- Trigger: Customer submits acknowledgement (logged by coordinator)
+- Effect: Locks pre-ack work, enables post-ack execution
+- State Transition: Ready for Acknowledgement → Acknowledged
+
+**LAYER 4: Post-Acknowledgement Execution**
+- Purpose: Production validation and data collection
+- Owner: Assigned Engineer
+- State: Acknowledged → Ready for Submission
+- Phases: Execution, Documentation
+- Tracks: Dimensional results, MSA, capability studies, PSW
+- Gate: All post-ack documents and tasks complete
+
+**LAYER 5: Completion & Submission**
+- Purpose: Final review and customer delivery
+- Owner: PPAP Coordinator
+- State: Ready for Submission → Submitted → Approved/Rejected
+- Tracks: Submission package, customer response, approval status
+
+**Core Systems Defined:**
+
+**1. State Machine (CRITICAL - NEW)**
+
+**Purpose:** Enforce workflow execution through state-driven control
+
+**States Defined:**
+- Pre-Ack: INITIATED → IN_REVIEW → READY_FOR_ACKNOWLEDGEMENT
+- Gate: ACKNOWLEDGED (locks all pre-ack work)
+- Post-Ack: IN_VALIDATION → READY_FOR_SUBMISSION
+- Final: SUBMITTED → ACCEPTED/REJECTED → COMPLETE
+
+**Enforcement Mechanisms:**
+- UI hides unavailable actions based on current state
+- Mutations validate state before execution
+- Invalid state transitions rejected with error
+- State changes logged as events
+
+**State-Driven UI Behavior:**
+- Document upload restricted by state (pre-ack vs post-ack)
+- Phase visibility controlled by state
+- Action buttons enabled/disabled by state
+- Permissions enforced per state
+
+**Key Rules:**
+- Cannot skip states (e.g., INITIATED → ACKNOWLEDGED)
+- Cannot reverse through acknowledgement gate
+- Cannot edit after SUBMITTED (except via rejection/reopen)
+- Each state defines owner, available actions, blocked actions
+
+**Implementation Status:** Design complete, implementation in Phase 2B/3B
+
+---
+
+**2. Validation Engine (CRITICAL - NEW)**
+
+**Purpose:** Enforce requirement completion validation, not just document uploads
+
+**Validation vs Document Upload:**
+- Document Upload: File stored, event logged
+- Validation Completion: Requirement validated as complete, blocks phase progression
+
+**Validation Types:**
+1. Document Validation - Specific document(s) uploaded and reviewed
+2. Task Validation - Specific task(s) completed
+3. Approval Validation - Specific person approves work
+4. Data Validation - Required data fields populated
+
+**Trane Template Validations:**
+
+Pre-Ack (all required):
+- Process Flow Diagram Complete
+- DFMEA Complete
+- PFMEA Complete
+- Control Plan Complete
+- Measurement Plan Complete
+
+Post-Ack (all required):
+- Dimensional Results Complete
+- Material Certifications Complete
+- Performance Test Results Complete
+- MSA Complete
+- Capability Studies Complete
+- PSW Complete
+- Packaging Approval Complete
+- Final Control Plan Complete
+
+**Enforcement Logic:**
+- System blocks phase transition if required validations incomplete
+- Displays missing validations to user
+- Engineer must explicitly mark validation complete
+- Validation completion tracked with evidence (document IDs, task IDs, notes)
+
+**Phase Completion Check:**
+```typescript
+if (incompleteValidations.length > 0) {
+  return { canComplete: false, missingValidations };
+}
+```
+
+**Implementation Status:** Design complete, implementation in Phase 3D
+
+---
+
+**3. Permissions & Access Control System**
+
+Roles:
+- Admin (VP, leadership) - Full access, system oversight
+- PPAP Coordinator (Jasmine) - PPAP creation, assignment, submission
+- Engineer (BG, VB, WR) - Technical execution, documentation
+- Viewer (optional) - Read-only access
+
+Enforcement:
+- UI-level restrictions (conditional rendering)
+- Mutation-level guards (server-side validation)
+- Data-level constraints (RLS policies)
+
+Assignment Model:
+- Coordinator assigns PPAPs to engineers
+- Assigned engineer gains edit access
+- Reassignment preserves work history
+
+**2. Intake & Readiness System**
+
+Pre-PPAP tracking for quote-stage parts:
+- Tooling validation (ordered → received → validated)
+- BOM validation
+- Sub-assembly definition
+- Plant assignment
+- Risk assessment (material, supply, complexity)
+- Promotion to formal PPAP when ready
+
+**3. Process Template System**
+
+Customer-specific workflow control:
+- Trane Template: Trane PPAP requirements
+- Rheem Template: Rheem PPAP requirements (TBD)
+- Templates define: phases, tasks, document requirements
+- Auto-assigned based on customer
+- Controls all workflow behavior
+
+**4. Acknowledgement Gate System**
+
+Pre-ack vs post-ack separation:
+- External customer action logged by coordinator
+- Locks pre-ack work after acknowledgement
+- Enables post-ack phases
+- Preserves audit trail of ownership transfer
+
+**5. Document Requirement Engine**
+
+Template-driven document validation:
+- Required documents per template
+- Pre-ack vs post-ack distinction
+- Upload tracking with requirement linking
+- Completion validation before phase transition
+- Prevents incomplete submissions
+
+**Phased Roadmap:**
+
+**Phase 1: Functional Stabilization (Current)**
+- Export pipeline stabilization (Phase 23.15.5.x)
+- Markup tool reliability
+- UI polish
+
+**Phase 2: Operational Pilot Readiness (Next)**
+- **Permissions system implementation (PRIMARY NEXT STEP)**
+- Dashboard scaling (table view)
+- Navigation fixes
+- Timeline: Weeks 2-5
+
+**Phase 3: Structured Workflow Execution**
+- Intake & readiness system
+- Acknowledgement gate
+- Template-driven execution
+- Document requirement tracking
+- Timeline: Weeks 6-10
+
+**Phase 4: Production Maturity**
+- Performance optimization
+- Audit log completeness
+- Notification system
+- Timeline: Weeks 11-14
+
+**Phase 5: Integration Readiness**
+- Reliance ERP integration
+- SharePoint integration
+- API layer
+- Timeline: Weeks 15-20
+
+**Active Workstreams:**
+
+1. Platform Stability (ongoing)
+2. Workflow Definition (this design)
+3. Operational UX (planning)
+4. Document Orchestration (design)
+5. Governance & Auditability (foundation in place)
+6. Integration Readiness (planning)
+7. **Permissions & Access Control (NEW - PRIORITY)**
+8. **Intake & Readiness Modeling (NEW)**
+9. **Template & Workflow Engine (NEW)**
+
+**Immediate Priorities:**
+
+1. Export pipeline stabilization (ongoing)
+2. **Permissions system implementation (next build phase)**
+3. Workflow alignment with stakeholders
+4. UI improvements for scale
+5. Preparation for pilot use
+
+**Benefits:**
+
+**Strategic:**
+- ✅ Repositions EMIP-PPAP as EMIP foundation subsystem
+- ✅ Establishes distributed engineering work architecture
+- ✅ Defines integration readiness path
+
+**Operational:**
+- ✅ Clear role ownership and accountability
+- ✅ Workflow enforcement (not just tracking)
+- ✅ Customer-specific compliance
+- ✅ Document completeness validation
+- ✅ Pre-PPAP visibility and readiness validation
+
+**Technical:**
+- ✅ Layered architecture for future expansion
+- ✅ Template-driven flexibility
+- ✅ Event-sourced audit trail
+- ✅ Role-based access control foundation
+
+**Governance:**
+- ✅ Formal acknowledgement gate
+- ✅ Locked pre-ack work (data integrity)
+- ✅ Complete audit trail for compliance
+- ✅ Document requirement traceability
+
+**Validation:**
+
+- ✅ No code changes (design phase only)
+- ✅ No schema changes (implementation deferred)
+- ✅ No breaking changes to existing functionality
+- ✅ Preserves current export and markup architecture
+- ✅ BUILD_PLAN.md updated with full specification
+- ✅ BUILD_LEDGER.md entry created
+
+**Implementation Plan:**
+
+**Phase 2A (Next): Permissions System**
+1. Schema extension (user_roles table, assigned_to column)
+2. Permission utilities (role checking, access validation)
+3. UI guards (conditional rendering)
+4. Mutation guards (server-side enforcement)
+5. Assignment workflow
+6. Dashboard filtering by ownership
+
+**Phase 3 (Future): Workflow Systems**
+1. Intake system schema and UI
+2. Template schema and loader
+3. Acknowledgement gate logic
+4. Document requirement engine
+5. Phase-gated progression
+
+**Note:**
+
+This is a **DESIGN AND GOVERNANCE UPDATE ONLY**. No code changes, schema changes, or feature implementation in this phase. The architecture defines the strategic direction for EMIP-PPAP as a production engineering work orchestration platform and establishes the roadmap for future development.
+
+Next build phase will implement **Permissions System (Phase 2A)** as the foundation for operational pilot readiness.
+
+- Commit: `docs: phase 23.16.0 EMIP system realignment architecture`
+
+---
+
 ## 2026-03-23 21:44 CT - [FIX] Phase 23.15.5.3 - Computed Style Color Sanitization
 - Summary: Enhanced color sanitization to properly handle all computed CSS color properties with unsupported functions.
 - Files changed:
