@@ -4,6 +4,287 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 17:50 CT - [IMPLEMENTATION] Phase 3E.1 - Intake Snapshot Complete
+
+- Summary: Added intake visibility layer showing pre-PPAP readiness signals
+- Files changed:
+  - `src/features/ppap/components/PPAPIntakeSnapshot.tsx` - Created intake snapshot component
+  - `app/ppap/[id]/page.tsx` - Integrated intake snapshot into detail page
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Provides visibility into readiness signals prior to PPAP execution
+- Mock data only (no backend, no workflow enforcement)
+- Prepares for full intake workflow integration
+
+**Context:**
+
+Phase 3E.1 introduces an intake snapshot component that provides visibility into pre-PPAP readiness signals. This is an informational layer that shows the status of upstream activities (quote, tooling, BOM, materials, plant assignment) without building the full intake workflow system.
+
+**Implementation:**
+
+**1. Intake Snapshot Component (`PPAPIntakeSnapshot.tsx`)**
+
+Created informational component displaying intake readiness status.
+
+**Data Model (Static/Mock):**
+```typescript
+interface IntakeData {
+  quoteStatus: 'confirmed' | 'pending';
+  toolingStatus: 'validated' | 'pending';
+  bomStatus: 'validated' | 'pending';
+  materialRisk: 'none' | 'risk';
+  plantAssigned: string;
+}
+```
+
+**Mock Data:**
+```typescript
+{
+  quoteStatus: 'confirmed',
+  toolingStatus: 'validated',
+  bomStatus: 'pending',
+  materialRisk: 'risk',
+  plantAssigned: 'Van Buren',
+}
+```
+
+---
+
+**2. Visual Indicators**
+
+**Status Icons & Colors:**
+
+**Confirmed / Validated / No Risk:**
+- Icon: ✓ (checkmark)
+- Color: Green (`text-green-600`)
+- Meaning: Ready, validated, no issues
+
+**Pending:**
+- Icon: ⏳ (hourglass)
+- Color: Yellow (`text-yellow-600`)
+- Meaning: In progress, awaiting validation
+
+**Risk:**
+- Icon: ⚠️ (warning)
+- Color: Orange (`text-orange-600`)
+- Meaning: Issue identified, requires attention
+
+---
+
+**3. UI Design**
+
+**Section Title:** "Intake & Readiness"
+
+**Display Format:**
+```
+Quote Status:     ✓ Confirmed
+Tooling:          ✓ Validated
+BOM:              ⏳ Pending
+Material Risk:    ⚠️ Risk Identified
+Plant:            Van Buren
+```
+
+**Layout:**
+- Grid layout (2 columns on desktop, 1 on mobile)
+- Each item: white card with border
+- Label on left, status with icon on right
+- Plant assignment shown separately below
+
+---
+
+**4. Status Fields**
+
+**Quote Status:**
+- **confirmed:** Customer quote approved (✓ green)
+- **pending:** Awaiting quote approval (⏳ yellow)
+- Indicates: Commercial readiness
+
+**Tooling Status:**
+- **validated:** Tooling approved and ready (✓ green)
+- **pending:** Tooling under review (⏳ yellow)
+- Indicates: Manufacturing capability readiness
+
+**BOM Status:**
+- **validated:** Bill of materials verified (✓ green)
+- **pending:** BOM under review (⏳ yellow)
+- Indicates: Component availability readiness
+
+**Material Risk:**
+- **none:** No material sourcing risks (✓ green "No Risk")
+- **risk:** Material availability concerns (⚠️ orange "Risk Identified")
+- Indicates: Supply chain readiness
+
+**Plant Assigned:**
+- Text field showing assigned plant
+- Example: "Van Buren", "Clarksville", "Columbia"
+- Indicates: Production location
+
+---
+
+**5. Integration with PPAP Detail Page**
+
+**Page Layout:**
+1. PPAP Header + Delete Button
+2. Workflow Wrapper
+3. Action Bar
+4. Validation Panel
+5. **Intake Snapshot (NEW)**
+6. Activity Feed
+7. Conversations + Documents (grid)
+8. Event History (sidebar)
+
+**Positioning:**
+- Below validation panel
+- Above activity feed
+- Full-width component
+- Provides context before activity history
+
+---
+
+**6. Future Implementation Notes**
+
+**Code Comment:**
+```typescript
+// Phase 3E future:
+// This section will evolve into full intake workflow
+// Including quote validation, BOM checks, material planning, plant assignment
+```
+
+**Future Phases:**
+- Build full intake workflow system
+- Quote validation and approval process
+- BOM validation and component availability checks
+- Material planning and risk assessment
+- Plant assignment logic
+- Integration with ERP/PLM systems
+- Automated status updates
+- Intake gates and approval workflow
+
+---
+
+**7. Purpose & Use Cases**
+
+**Purpose:**
+1. **Visibility:** Show readiness of upstream activities
+2. **Context:** Provide PPAP context before execution begins
+3. **Risk Awareness:** Highlight material or tooling risks early
+4. **Preparation:** Foundation for full intake workflow
+
+**Use Cases:**
+
+1. **Coordinator:** Check if all intake items ready before PPAP start
+2. **Engineer:** Understand upstream constraints (tooling, BOM, materials)
+3. **Management:** See intake bottlenecks at a glance
+4. **Planning:** Identify risks before committing resources
+
+**Example Scenarios:**
+
+**Scenario 1 - Ready to Start:**
+```
+Quote:    ✓ Confirmed
+Tooling:  ✓ Validated
+BOM:      ✓ Validated
+Material: ✓ No Risk
+Plant:    Van Buren
+```
+→ All green, PPAP can proceed smoothly
+
+**Scenario 2 - Risks Identified:**
+```
+Quote:    ✓ Confirmed
+Tooling:  ⏳ Pending
+BOM:      ⏳ Pending
+Material: ⚠️ Risk
+Plant:    Van Buren
+```
+→ Multiple issues, PPAP may face delays
+
+---
+
+**8. Design Principles**
+
+**Informational Only:**
+- No workflow enforcement
+- No blocking logic
+- Pure visibility layer
+
+**Clear Signals:**
+- Color-coded status (green/yellow/orange)
+- Recognizable icons (✓ ⏳ ⚠️)
+- Simple status text
+
+**Minimal Complexity:**
+- Static mock data
+- No API calls
+- No database
+- Demonstrates concept
+
+---
+
+**Validation:**
+
+- ✅ PPAPIntakeSnapshot component created
+- ✅ Data model defined (5 fields)
+- ✅ Mock data implemented
+- ✅ Visual indicators (icons + colors)
+- ✅ Status mapping (confirmed/validated/pending/risk)
+- ✅ Grid layout for readability
+- ✅ Integrated into PPAP detail page
+- ✅ Positioned below validation panel
+- ✅ Demo mode notice displayed
+- ✅ Future implementation comment added
+- ✅ No backend integration
+- ✅ No schema changes
+- ✅ No workflow enforcement
+
+**Visual Design:**
+
+**Intake Items:**
+- White cards with borders
+- Left: Label text (medium weight)
+- Right: Icon + status text (bold, color-coded)
+- Clean, scannable layout
+- Responsive grid (2 cols → 1 col on mobile)
+
+**Status Color Coding:**
+- Green: Ready/Validated (positive)
+- Yellow: Pending (caution)
+- Orange: Risk (warning)
+
+---
+
+**User Impact:**
+
+**Before Phase 3E.1:**
+- No visibility into intake readiness
+- Cannot see upstream status
+- No context for PPAP constraints
+
+**After Phase 3E.1:**
+- Clear intake status visibility
+- Upstream activities transparent
+- Risk signals visible
+- Plant assignment shown
+
+**Information Provided:**
+
+1. **Commercial:** Quote status (confirmed vs pending)
+2. **Manufacturing:** Tooling readiness
+3. **Engineering:** BOM validation status
+4. **Supply Chain:** Material risk assessment
+5. **Operations:** Plant assignment
+
+**Next Actions:**
+
+- Phase 3E.2: Build full intake workflow system
+- Phase 3E.3: Add quote validation process
+- Phase 3E.4: BOM validation integration
+- Phase 3E.5: Material risk assessment logic
+- Phase 3E.6: Plant assignment workflow
+
+- Commit: `feat: phase 3E.1 intake snapshot (pre-PPAP readiness visibility)`
+
+---
+
 ## 2026-03-24 17:43 CT - [IMPLEMENTATION] Phase 3D.5 - Validation Approval Layer Complete
 
 - Summary: Extended validation panel to support approval workflow for post-ack validations
