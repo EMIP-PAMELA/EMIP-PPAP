@@ -87,6 +87,9 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
               ← Back to Dashboard
             </button>
           </Link>
+          <p className="text-sm text-gray-500 mt-2">
+            PPAP Dashboard &gt; {ppap.ppap_number}
+          </p>
         </div>
 
         <div className="flex items-start justify-between mb-4">

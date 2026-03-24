@@ -4,6 +4,106 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 17:33 CT - [UX POLISH] Navigation Context - Breadcrumb Enhancement
+
+- Summary: Added navigation context line (breadcrumb) under back button
+- Files changed:
+  - `src/features/ppap/components/PPAPHeader.tsx` - Added breadcrumb line
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Improved user orientation within PPAP detail view
+- No functional changes
+- No routing changes
+
+**Context:**
+
+Following the navigation visibility fix, this polish enhances user orientation by adding a breadcrumb-style context line that shows the user's location in the system hierarchy.
+
+**Implementation:**
+
+**Added Context Line:**
+```tsx
+<p className="text-sm text-gray-500 mt-2">
+  PPAP Dashboard &gt; {ppap.ppap_number}
+</p>
+```
+
+**Positioning:**
+- Directly under "← Back to Dashboard" button
+- Small spacing with `mt-2` (8px)
+- Part of navigation group
+
+**Styling:**
+- `text-sm` - Small text size (14px)
+- `text-gray-500` - Medium gray (subtle, not competing with main content)
+- Minimal visual weight
+
+**Format:**
+```
+PPAP Dashboard > TestPPAP12345678newest
+```
+
+---
+
+**Purpose:**
+
+1. **Navigation Context:** Shows where user is in system hierarchy
+2. **Reinforce Structure:** Dashboard → Detail relationship clear
+3. **Reduce Confusion:** User knows current location
+4. **Standard Pattern:** Breadcrumb navigation convention
+
+---
+
+**Visual Layout:**
+
+```
+┌────────────────────────────────────┐
+│ [ ← Back to Dashboard ]            │
+│ PPAP Dashboard > PPAPnumber        │ ← NEW
+│                                    │
+│ PPAPnumber [Status Badge]          │
+│ Part Number: 12345                 │
+└────────────────────────────────────┘
+```
+
+---
+
+**User Impact:**
+
+**Before:**
+- Only back button for navigation
+- No explicit location context
+- User must infer location
+
+**After:**
+- Back button + breadcrumb context
+- Clear location indicator
+- Reinforces system hierarchy
+- Follows standard UI patterns
+
+**Design Principles:**
+
+1. **Hierarchy:** Dashboard → Detail relationship explicit
+2. **Subtlety:** Gray text, small size (doesn't compete)
+3. **Clarity:** Simple format, easy to read
+4. **Convention:** Standard breadcrumb pattern
+
+---
+
+**Validation:**
+
+- ✅ Context line added under back button
+- ✅ Small text size (text-sm)
+- ✅ Gray color (text-gray-500)
+- ✅ Proper spacing (mt-2)
+- ✅ Dynamic PPAP number
+- ✅ Standard breadcrumb format
+- ✅ No functional changes
+- ✅ No routing changes
+
+- Commit: `polish: add navigation context breadcrumb (UX enhancement)`
+
+---
+
 ## 2026-03-24 17:28 CT - [UX FIX] Navigation Visibility - Back Button Enhancement
 
 - Summary: Improved back navigation visibility based on stakeholder feedback
