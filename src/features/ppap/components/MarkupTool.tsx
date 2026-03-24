@@ -550,12 +550,31 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     
     const sanitizedElement = sanitizeColorsForExport(exportRef.current);
 
-    // Capture sanitized element
-    const canvas = await html2canvas(sanitizedElement, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-    });
+    // Attach sanitized clone to DOM offscreen for html2canvas
+    sanitizedElement.style.position = 'fixed';
+    sanitizedElement.style.left = '-10000px';
+    sanitizedElement.style.top = '0';
+    sanitizedElement.style.pointerEvents = 'none';
+    sanitizedElement.style.zIndex = '-1';
+    sanitizedElement.style.opacity = '1';
+    sanitizedElement.style.background = '#ffffff';
+
+    document.body.appendChild(sanitizedElement);
+
+    let canvas;
+    try {
+      // Capture sanitized element (must be attached to DOM)
+      canvas = await html2canvas(sanitizedElement, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+      });
+    } finally {
+      // Remove sanitized clone from DOM
+      if (sanitizedElement.parentNode) {
+        sanitizedElement.parentNode.removeChild(sanitizedElement);
+      }
+    }
 
     const imgData = canvas.toDataURL('image/png');
 
