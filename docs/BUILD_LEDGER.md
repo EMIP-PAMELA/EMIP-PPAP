@@ -4,6 +4,296 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 17:38 CT - [IMPLEMENTATION] Phase 3D.4 - Activity Feed Complete
+
+- Summary: Added event history UI component with mock data
+- Files changed:
+  - `src/features/ppap/components/PPAPActivityFeed.tsx` - Created activity feed component
+  - `app/ppap/[id]/page.tsx` - Integrated activity feed into detail page
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Activity feed provides visibility into workflow actions and ownership changes
+- Mock data only (no persistence, no API calls)
+- Prepares for full audit logging in future phase
+
+**Context:**
+
+Phase 3D.4 implements an activity feed component that displays a chronological history of events for a PPAP. This provides traceability and visibility into workflow progression, actions taken, and ownership changes. Currently uses mock data to demonstrate the concept.
+
+**Implementation:**
+
+**1. Activity Feed Component (`PPAPActivityFeed.tsx`)**
+
+Created event history component with mock data and timeline display.
+
+**Event Interface:**
+```typescript
+interface PPAPEvent {
+  id: string;
+  timestamp: string;
+  actor: string;
+  role: 'admin' | 'coordinator' | 'engineer' | 'viewer';
+  action: string;
+  details?: string;
+}
+```
+
+---
+
+**2. Mock Event Data**
+
+**Sample Events (6 events):**
+1. **Acknowledged PPAP** - Matt Robinson (Coordinator)
+2. **Completed PFMEA** - Sarah Chen (Engineer)
+3. **Completed DFMEA** - Sarah Chen (Engineer)
+4. **Completed Process Flow Diagram** - Sarah Chen (Engineer)
+5. **Assigned PPAP to Sarah Chen** - Matt Robinson (Coordinator)
+6. **Created PPAP** - Matt Robinson (Coordinator)
+
+**Event Types:**
+- Created (📝)
+- Assigned (👤)
+- Completed (✓)
+- Acknowledged (✅)
+- Submitted (📤)
+- Updated (🔄)
+
+---
+
+**3. UI Design**
+
+**Section Title:** "Activity"
+
+**Event Display Format:**
+```
+[Icon] [Timestamp] — [Actor] ([Role Badge])
+       [Action]
+       [Details (optional)]
+```
+
+**Example:**
+```
+✓ 45 min ago — Sarah Chen [engineer]
+  Completed PFMEA
+  Uploaded document and marked validation complete
+```
+
+**Visual Elements:**
+- Event icon (emoji based on action type)
+- Relative timestamp (e.g., "45 min ago", "2 hours ago")
+- Actor name (person who performed action)
+- Role badge (color-coded: admin=purple, coordinator=blue, engineer=green, viewer=gray)
+- Action description (bold)
+- Optional details (gray text)
+
+---
+
+**4. Timestamp Formatting**
+
+**Relative Time Display:**
+- Just now (< 1 minute)
+- X min ago (< 1 hour)
+- X hour(s) ago (< 24 hours)
+- X day(s) ago (< 7 days)
+- Absolute date (> 7 days): "Mar 24, 1:12 PM"
+
+**Function:**
+```typescript
+function formatTimestamp(timestamp: string): string {
+  // Calculates time difference and returns human-readable format
+}
+```
+
+---
+
+**5. Role Color Coding**
+
+**Role Badges:**
+- **Admin:** Purple background (`bg-purple-50`), purple text (`text-purple-700`)
+- **Coordinator:** Blue background (`bg-blue-50`), blue text (`text-blue-700`)
+- **Engineer:** Green background (`bg-green-50`), green text (`text-green-700`)
+- **Viewer:** Gray background (`bg-gray-50`), gray text (`text-gray-700`)
+
+**Visual Hierarchy:**
+- Role badge small, inline with actor name
+- Color-coded for quick identification
+- Consistent with system role colors
+
+---
+
+**6. Event Icons**
+
+**Icon Mapping:**
+```typescript
+const EVENT_ICONS = {
+  Created: '📝',
+  Assigned: '👤',
+  Completed: '✓',
+  Acknowledged: '✅',
+  Submitted: '📤',
+  Updated: '🔄',
+};
+```
+
+**Fallback:** Bullet point (•) for unknown event types
+
+**Purpose:**
+- Visual differentiation between event types
+- Quick scanning of activity timeline
+- Recognizable symbols
+
+---
+
+**7. Sort Order**
+
+**Newest First:**
+- Most recent events at top of list
+- Chronological descending order
+- Matches user expectation for activity feeds
+
+---
+
+**8. Integration with PPAP Detail Page**
+
+**Page Layout:**
+1. PPAP Header + Delete Button
+2. Workflow Wrapper
+3. Action Bar
+4. Validation Panel
+5. **Activity Feed (NEW)**
+6. Conversations + Documents (grid)
+7. Event History (sidebar)
+
+**Positioning:**
+- Below validation panel
+- Above conversations section
+- Full-width component
+- Prominent placement
+
+---
+
+**9. Future Implementation Notes**
+
+**Code Comment:**
+```typescript
+// Phase 3D future:
+// Replace mock events with real event log from backend
+// Events will be generated on state transitions and actions
+```
+
+**Future Phases:**
+- Replace mock data with database queries
+- Auto-generate events on:
+  - State transitions (INITIATED → IN_PROGRESS)
+  - Validation completions
+  - Assignment changes
+  - Acknowledgements/Submissions
+  - Document uploads
+- Real-time updates
+- Event filtering and search
+- Export event history
+
+---
+
+**10. Demo Mode Notice**
+
+**User Message:**
+```
+Demo Mode: Activity feed shows mock events.
+Future: Events will be generated from actual workflow actions.
+```
+
+**Positioning:** Bottom of activity feed in blue info box
+
+---
+
+**Validation:**
+
+- ✅ PPAPActivityFeed component created
+- ✅ Event interface defined
+- ✅ Mock events created (6 sample events)
+- ✅ Relative timestamp formatting
+- ✅ Role color coding
+- ✅ Event icons implemented
+- ✅ Sorted newest first
+- ✅ Integrated into PPAP detail page
+- ✅ Positioned below validation panel
+- ✅ Demo mode notice displayed
+- ✅ Future implementation comment added
+- ✅ No API calls
+- ✅ No database changes
+- ✅ No persistence
+
+**Visual Design:**
+
+**Event List:**
+- Vertical timeline layout
+- Subtle separators between events (border-gray-100)
+- Small text for metadata (text-sm)
+- Medium weight for action text (font-medium)
+- Details in gray for hierarchy
+- Clean, scannable design
+
+**Spacing:**
+- 4-unit gap between events (space-y-4)
+- Separator line between events
+- Comfortable padding
+
+---
+
+**User Impact:**
+
+**Before Phase 3D.4:**
+- No visibility into PPAP history
+- Cannot see who did what
+- No audit trail
+- Difficult to track progression
+
+**After Phase 3D.4:**
+- Clear activity timeline
+- Actor and role visible
+- Action details provided
+- Chronological order
+- Visual event types
+
+**Use Cases:**
+
+1. **Ownership Tracking:** See who was assigned when
+2. **Validation Progress:** Track completed validations
+3. **Workflow History:** Understand PPAP progression
+4. **Accountability:** See who performed actions
+5. **Debugging:** Investigate workflow issues
+
+**System Benefits:**
+
+1. **Traceability:** Full audit trail of actions
+2. **Transparency:** All users see same history
+3. **Accountability:** Actions attributed to actors
+4. **Debugging:** Diagnose workflow issues
+5. **Compliance:** Record of all changes
+
+**Demo Workflow:**
+
+1. User opens PPAP detail page
+2. Scrolls to Activity section
+3. Sees timeline of events:
+   - PPAP created by coordinator
+   - Assigned to engineer
+   - Engineer completed validations
+   - Coordinator acknowledged
+4. Can track full workflow progression
+5. Understands current state context
+
+**Next Actions:**
+
+- Phase 3E: Implement real event logging to database
+- Phase 3F: Auto-generate events on state transitions
+- Phase 3G: Add event filtering and search
+- Phase 3H: Real-time event updates
+
+- Commit: `feat: phase 3D.4 activity feed (mock event history)`
+
+---
+
 ## 2026-03-24 17:33 CT - [UX POLISH] Navigation Context - Breadcrumb Enhancement
 
 - Summary: Added navigation context line (breadcrumb) under back button
