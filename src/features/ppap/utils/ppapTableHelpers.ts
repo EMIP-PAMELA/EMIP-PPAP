@@ -256,3 +256,32 @@ export function filterPPAPs(
     return true;
   });
 }
+
+export function searchPPAPs(
+  ppaps: EnhancedPPAPRecord[],
+  query: string
+): EnhancedPPAPRecord[] {
+  if (!query.trim()) return ppaps;
+
+  const q = query.toLowerCase();
+
+  return ppaps.filter(ppap =>
+    ppap.part_number.toLowerCase().includes(q) ||
+    ppap.ppap_number.toLowerCase().includes(q)
+  );
+}
+
+export interface PaginationConfig {
+  currentPage: number;
+  pageSize: number;
+}
+
+export function paginatePPAPs(
+  ppaps: EnhancedPPAPRecord[],
+  config: PaginationConfig
+): EnhancedPPAPRecord[] {
+  const start = (config.currentPage - 1) * config.pageSize;
+  const end = start + config.pageSize;
+
+  return ppaps.slice(start, end);
+}

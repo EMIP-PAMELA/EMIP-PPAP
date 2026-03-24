@@ -4,7 +4,7 @@ import { PPAPRecord } from '@/src/types/database.types';
 import { useRouter } from 'next/navigation';
 import { formatDate } from '@/src/lib/utils';
 import { useMemo, useState } from 'react';
-import { enhancePPAPRecord, sortPPAPs, filterPPAPs, SortConfig, SortField, FilterConfig, PhaseFilter } from '../utils/ppapTableHelpers';
+import { enhancePPAPRecord, sortPPAPs, filterPPAPs, searchPPAPs, paginatePPAPs, SortConfig, SortField, FilterConfig, PhaseFilter, PaginationConfig } from '../utils/ppapTableHelpers';
 
 interface PPAPDashboardTableProps {
   ppaps: PPAPRecord[];
@@ -20,6 +20,9 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
     plants: [],
     phase: 'All',
   });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const enhancedPPAPs = useMemo(() => {
     return ppaps.map(ppap => enhancePPAPRecord(ppap));
@@ -40,6 +43,20 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
     const sorted = sortPPAPs(enhancedPPAPs, sortConfig);
     return filterPPAPs(sorted, filters);
   }, [enhancedPPAPs, sortConfig, filters]);
+
+  const searchedPPAPs = useMemo(() => {
+    return searchPPAPs(filteredPPAPs, searchQuery);
+  }, [filteredPPAPs, searchQuery]);
+
+  const totalItems = searchedPPAPs.length;
+  const totalPages = Math.ceil(totalItems / pageSize);
+
+  const paginatedPPAPs = useMemo(() => {
+    return paginatePPAPs(searchedPPAPs, {
+      currentPage,
+      pageSize
+    });
+  }, [searchedPPAPs, currentPage, pageSize]);
 
   const handleRowClick = (ppapId: string) => {
     router.push(`/ppap/${ppapId}`);
@@ -63,6 +80,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
   };
 
   const handleFilterChange = (filterType: keyof FilterConfig, value: string) => {
+    setCurrentPage(1);
     setFilters(current => {
       if (filterType === 'phase') {
         return { ...current, phase: value as PhaseFilter };
@@ -75,6 +93,22 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
       
       return { ...current, [filterType]: newArray };
     });
+  };
+
+  const handleSearchChange = (query: string) => {
+    setCurrentPage(1);
+    setSearchQuery(query);
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    setCurrentPage(1);
+    setPageSize(size);
+  };
+
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
   };
 
   const clearFilters = () => {
@@ -103,6 +137,16 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
 
   return (
     <div className="space-y-4">
+      <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-4">
+        <input
+          type="text"
+          placeholder="Search Part Number or PPAP ID..."
+          value={searchQuery}
+          onChange={(e) => handleSearchChange(e.target.value)}
+          className="w-full border border-gray-300 rounded px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
       <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-4">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex-1 min-w-[200px]">
@@ -211,11 +255,15 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
           )}
         </div>
 
-        {hasActiveFilters && (
-          <div className="mt-2 text-sm text-gray-600">
-            Showing {filteredPPAPs.length} of {enhancedPPAPs.length} PPAPs
-          </div>
-        )}
+        <div className="mt-2 text-sm text-gray-600">
+          {searchQuery && (
+            <span>Search results: {searchedPPAPs.length} PPAPs | </span>
+          )}
+          {hasActiveFilters && (
+            <span>Filtered: {filteredPPAPs.length} of {enhancedPPAPs.length} | </span>
+          )}
+          <span>Showing {paginatedPPAPs.length} of {totalItems} PPAPs (Page {currentPage} of {totalPages})</span>
+        </div>
       </div>
 
       <div className="bg-white border border-gray-300 rounded-xl shadow-sm overflow-hidden">
@@ -292,7 +340,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {filteredPPAPs.map((ppap) => (
+            {paginatedPPAPs.map((ppap) => (
               <tr
                 key={ppap.id}
                 onClick={() => handleRowClick(ppap.id)}
@@ -341,15 +389,70 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
       </div>
       </div>
 
-      {filteredPPAPs.length === 0 && hasActiveFilters && (
+      {searchedPPAPs.length === 0 && (searchQuery || hasActiveFilters) && (
         <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-12 text-center">
-          <p className="text-gray-600 text-lg">No PPAPs match current filters</p>
-          <button
-            onClick={clearFilters}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 transition-colors"
-          >
-            Clear Filters
-          </button>
+          <p className="text-gray-600 text-lg">
+            {searchQuery ? 'No PPAPs match your search' : 'No PPAPs match current filters'}
+          </p>
+          <div className="mt-4 space-x-2">
+            {searchQuery && (
+              <button
+                onClick={() => handleSearchChange('')}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 transition-colors"
+              >
+                Clear Search
+              </button>
+            )}
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 transition-colors"
+              >
+                Clear Filters
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {totalItems > 0 && (
+        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-4">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-700">Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                className="border border-gray-300 rounded px-2 py-1 text-sm"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-gray-700">
+                Page {currentPage} of {totalPages}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 border border-gray-300 rounded text-sm font-semibold hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 border border-gray-300 rounded text-sm font-semibold hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

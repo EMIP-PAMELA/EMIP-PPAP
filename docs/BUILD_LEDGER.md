@@ -4,6 +4,227 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 13:15 CT - [IMPLEMENTATION] Phase 2B.4 - Search & Pagination Complete
+
+- Summary: Added global search and pagination to table dashboard
+- Files changed:
+  - `src/features/ppap/utils/ppapTableHelpers.ts` - Added searchPPAPs and paginatePPAPs functions
+  - `src/features/ppap/components/PPAPDashboardTable.tsx` - Added search/pagination state and UI
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Users can search PPAPs and paginate through results
+- No schema changes
+- No visual polish yet (deferred to Phase 2B.5)
+
+**Context:**
+
+Phase 2B.4 adds global search and pagination to the table dashboard, completing the core data manipulation features. Users can now search by part number or PPAP ID and paginate through large datasets.
+
+**Implementation:**
+
+**1. Search Function (`ppapTableHelpers.ts`)**
+
+Added global search function:
+
+```typescript
+function searchPPAPs(
+  ppaps: EnhancedPPAPRecord[],
+  query: string
+): EnhancedPPAPRecord[]
+```
+
+**Search Logic:**
+- Searches Part Number OR PPAP ID
+- Case-insensitive matching
+- Substring match (uses `.includes()`)
+- Empty query returns all records
+
+**Matching:**
+```typescript
+ppap.part_number.toLowerCase().includes(q) ||
+ppap.ppap_number.toLowerCase().includes(q)
+```
+
+---
+
+**2. Pagination Function (`ppapTableHelpers.ts`)**
+
+Added pagination function:
+
+```typescript
+interface PaginationConfig {
+  currentPage: number;
+  pageSize: number;
+}
+
+function paginatePPAPs(
+  ppaps: EnhancedPPAPRecord[],
+  config: PaginationConfig
+): EnhancedPPAPRecord[]
+```
+
+**Pagination Logic:**
+- Slices dataset based on page and size
+- Calculates start/end indices
+- Returns subset for current page
+
+**Calculation:**
+```typescript
+const start = (currentPage - 1) * pageSize;
+const end = start + pageSize;
+return ppaps.slice(start, end);
+```
+
+---
+
+**3. Data Pipeline (`PPAPDashboardTable.tsx`)**
+
+Updated complete pipeline:
+
+**Full Pipeline:**
+```
+PPAPRecord[]
+→ enhancePPAPRecord() (enhance)
+→ sortPPAPs() (sort)
+→ filterPPAPs() (filter)
+→ searchPPAPs() (search)
+→ paginatePPAPs() (paginate)
+→ paginatedPPAPs
+→ render
+```
+
+**Processing Order:**
+1. Enhance: Add derived fields
+2. Sort: Apply column sorting
+3. Filter: Apply 5-dimension filtering
+4. Search: Apply global search
+5. Paginate: Slice for current page
+6. Render: Display final dataset
+
+**State:**
+```typescript
+const [searchQuery, setSearchQuery] = useState('');
+const [currentPage, setCurrentPage] = useState(1);
+const [pageSize, setPageSize] = useState(50);
+```
+
+---
+
+**4. Search UI (`PPAPDashboardTable.tsx`)**
+
+Added search bar above filters:
+
+**Component:**
+- Text input with placeholder: "Search Part Number or PPAP ID..."
+- Full-width input with focus ring
+- Instant search (no debounce needed for small datasets)
+
+**Behavior:**
+- Updates `searchQuery` on input change
+- Resets page to 1 on search change
+- Shows search result count when query active
+
+---
+
+**5. Pagination UI (`PPAPDashboardTable.tsx`)**
+
+Added pagination controls below table:
+
+**Components:**
+- **Page Size Selector:** Dropdown (25 / 50 / 100 rows per page)
+- **Page Info:** "Page X of Y"
+- **Navigation:** Previous / Next buttons
+- **Disabled States:** Buttons disabled at boundaries
+
+**Layout:**
+```
+[Rows per page: [50▼]]        [Page 1 of 5] [Previous] [Next]
+```
+
+**Features:**
+- Page size change resets to page 1
+- Navigation buttons disabled at first/last page
+- Visual disabled state (opacity-50, cursor-not-allowed)
+
+---
+
+**6. Page Reset Logic (`PPAPDashboardTable.tsx`)**
+
+Page resets to 1 on:
+- Filter change
+- Search change
+- Page size change
+
+**Implementation:**
+```typescript
+const handleFilterChange = (filterType, value) => {
+  setCurrentPage(1); // Reset page
+  // ... update filter
+};
+
+const handleSearchChange = (query) => {
+  setCurrentPage(1); // Reset page
+  setSearchQuery(query);
+};
+
+const handlePageSizeChange = (size) => {
+  setCurrentPage(1); // Reset page
+  setPageSize(size);
+};
+```
+
+---
+
+**7. Information Display (`PPAPDashboardTable.tsx`)**
+
+Enhanced info bar shows:
+- Search result count (when searching)
+- Filter count (when filtering)
+- Current page info
+- Total items
+
+**Example:**
+```
+Search results: 15 PPAPs | Filtered: 45 of 120 | Showing 25 of 15 PPAPs (Page 1 of 1)
+```
+
+---
+
+**8. Empty States (`PPAPDashboardTable.tsx`)**
+
+Updated empty state handling:
+- "No PPAPs match your search" (when search active)
+- "No PPAPs match current filters" (when filters active)
+- Clear Search button (when search active)
+- Clear Filters button (when filters active)
+
+---
+
+**Validation:**
+
+- ✅ Global search implemented (Part Number + PPAP ID)
+- ✅ Case-insensitive substring matching
+- ✅ Pagination implemented (25/50/100 rows per page)
+- ✅ Previous/Next navigation
+- ✅ Page size selector
+- ✅ Page info display ("Page X of Y")
+- ✅ Page resets on filter/search change
+- ✅ Disabled states for navigation buttons
+- ✅ Full pipeline: enhance → sort → filter → search → paginate → render
+- ✅ Works with existing sorting and filtering
+- ✅ No backend changes
+- ✅ No schema changes
+- ✅ No URL state persistence (pure React state)
+- ✅ No external libraries
+- ✅ No async logic
+
+**Next Actions:**
+
+- Phase 2B.5: Add visual polish (badges, indicators, row tints)
+
+- Commit: `feat: phase 2B.4 search & pagination (global search + 25/50/100 page sizes)`
+
+---
+
 ## 2026-03-24 12:55 CT - [IMPLEMENTATION] Phase 2B.3 - Filtering Complete
 
 - Summary: Added client-side filtering capability with 5 filter types
