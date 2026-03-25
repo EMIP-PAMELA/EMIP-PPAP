@@ -12,6 +12,7 @@ import PPAPValidationPanel from '@/src/features/ppap/components/PPAPValidationPa
 import PPAPActionBar from '@/src/features/ppap/components/PPAPActionBar';
 import PPAPActivityFeed from '@/src/features/ppap/components/PPAPActivityFeed';
 import PPAPIntakeSnapshot from '@/src/features/ppap/components/PPAPIntakeSnapshot';
+import PPAPSubmissionPanel from '@/src/features/ppap/components/PPAPSubmissionPanel';
 import { TRANE_VALIDATIONS } from '@/src/features/ppap/utils/traneValidationTemplate';
 
 interface PPAPDashboardPageProps {
@@ -79,6 +80,8 @@ export default async function PPAPDashboardPage({ params }: PPAPDashboardPagePro
         <PPAPActionBar ppapState={ppap.status} validations={TRANE_VALIDATIONS} />
 
         <PPAPValidationPanel validations={TRANE_VALIDATIONS} currentPhase="pre-ack" />
+
+        <PPAPSubmissionPanel validations={TRANE_VALIDATIONS} />
 
         <PPAPIntakeSnapshot />
 

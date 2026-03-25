@@ -4,6 +4,482 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 20:15 CT - [IMPLEMENTATION] Phase 3E.5 - Submission Package Builder Complete
+
+- Summary: Introduced structured PPAP submission package assembly aligned to validation completion
+- Files changed:
+  - `src/features/ppap/components/PPAPSubmissionPanel.tsx` - Created submission package builder component
+  - `app/ppap/[id]/page.tsx` - Integrated submission panel below validation panel
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Connects validation completion to submission readiness with structured package checklist
+- UI + logic only (no backend, no file generation)
+- Aligns with Colin's PPAP assembly workflow
+
+**Context:**
+
+Phase 3E.5 creates a structured submission package builder that tracks the readiness of required PPAP documents. This component links validation completion status to submission item readiness, providing clear visibility into package completeness and gating final submission until all validations are approved.
+
+**Implementation:**
+
+**1. Submission Package Component (`PPAPSubmissionPanel.tsx`)**
+
+Created component to track submission package assembly.
+
+**Submission Items (9 required documents):**
+```typescript
+const SUBMISSION_ITEMS = [
+  { id: 'psw', name: 'PSW Document', required: true },
+  { id: 'balloon', name: 'Ballooned Drawing', required: true },
+  { id: 'control_plan', name: 'Control Plan', required: true, validationId: 'val-006' },
+  { id: 'pfmea', name: 'PFMEA', required: true, validationId: 'val-007' },
+  { id: 'dfmea', name: 'DFMEA', required: true, validationId: 'val-008' },
+  { id: 'dimensional', name: 'Dimensional Results', required: true, validationId: 'val-012' },
+  { id: 'material', name: 'Material Certifications', required: true, validationId: 'val-011' },
+  { id: 'msa', name: 'MSA', required: true, validationId: 'val-010' },
+  { id: 'capability', name: 'Capability Studies', required: true, validationId: 'val-013' },
+];
+```
+
+**Document Types:**
+- **PSW Document** - Part submission warrant
+- **Ballooned Drawing** - Engineering drawing with callouts
+- **Control Plan** - Production control plan
+- **PFMEA** - Process failure mode effects analysis
+- **DFMEA** - Design failure mode effects analysis
+- **Dimensional Results** - Inspection measurements
+- **Material Certifications** - Material test reports
+- **MSA** - Measurement system analysis
+- **Capability Studies** - Process capability data (Cpk, Ppk)
+
+---
+
+**2. Status Logic (`getItemStatus()`)**
+
+Links submission items to validation completion.
+
+**Function Logic:**
+```typescript
+const getItemStatus = (item: SubmissionItem): 'ready' | 'missing' => {
+  if (!item.validationId) {
+    return 'missing';
+  }
+  
+  const validation = validations.find(v => v.id === item.validationId);
+  if (!validation) {
+    return 'missing';
+  }
+  
+  // Item is ready if validation is complete or approved
+  return validation.status === 'complete' || validation.status === 'approved' 
+    ? 'ready' 
+    : 'missing';
+};
+```
+
+**Status Determination:**
+- **Ready:** Validation status is `complete` OR `approved`
+- **Missing:** No validation link OR validation not complete
+
+**Validation Mapping:**
+| Submission Item           | Validation ID | Linked To                    |
+|---------------------------|---------------|------------------------------|
+| PSW Document              | (none)        | Not linked                   |
+| Ballooned Drawing         | (none)        | Not linked                   |
+| Control Plan              | val-006       | Control Plan validation      |
+| PFMEA                     | val-007       | PFMEA validation             |
+| DFMEA                     | val-008       | DFMEA validation             |
+| Dimensional Results       | val-012       | Dimensional validation       |
+| Material Certifications   | val-011       | Material validation          |
+| MSA                       | val-010       | MSA validation               |
+| Capability Studies        | val-013       | Capability validation        |
+
+---
+
+**3. UI Design**
+
+**Section Header:**
+```
+Submission Package              X / 9 Complete
+```
+- Title: "Submission Package"
+- Progress: "X / 9 Complete"
+- Gray on white background
+
+**Checklist Display:**
+
+**Ready Item:**
+```
+✓ Control Plan                  Ready
+```
+- Green checkmark (✓)
+- Gray-900 text (bold)
+- Green "Ready" badge
+
+**Missing Item:**
+```
+☐ PSW Document
+```
+- Gray checkbox (☐)
+- Gray-500 text (lighter)
+- No badge
+
+**Visual Hierarchy:**
+- Ready items: Bold, dark text, green accent
+- Missing items: Lighter text, no accent
+- Clear visual differentiation
+
+---
+
+**4. Progress Indicator**
+
+**Format:** "X / 9 Complete"
+
+**Examples:**
+- "0 / 9 Complete" - No items ready
+- "5 / 9 Complete" - 5 items ready, 4 missing
+- "9 / 9 Complete" - All items ready
+
+**Display:**
+- Small font (`text-sm`)
+- Medium weight (`font-medium`)
+- Gray color (`text-gray-600`)
+- Right-aligned in header
+
+**Calculation:**
+```typescript
+const readyCount = itemStatuses.filter(item => item.status === 'ready').length;
+const totalCount = SUBMISSION_ITEMS.length;
+```
+
+---
+
+**5. Generate Package Button**
+
+**Button States:**
+
+**Enabled (packageReady = true):**
+```html
+<button class="bg-blue-600 text-white hover:bg-blue-700">
+  Generate Submission Package
+</button>
+```
+- Blue background
+- White text
+- Hover effect
+- Clickable
+
+**Disabled (packageReady = false):**
+```html
+<button class="bg-gray-300 text-gray-500 cursor-not-allowed" disabled>
+  Generate Submission Package
+</button>
+```
+- Gray background
+- Gray text
+- Not clickable
+- Tooltip on hover
+
+**Enable Condition:**
+```typescript
+const packageReady = isPostAckReady(validations);
+```
+- Uses existing `isPostAckReady()` helper
+- Requires ALL post-ack validations approved
+- Ensures complete validation before submission
+
+**Tooltip (when disabled):**
+```
+All validations must be approved before generating package
+```
+- Shown via `title` attribute
+- Also displayed as italic text below button
+
+**Click Behavior (demo):**
+```typescript
+alert('Submission package generated (demo)\n\nFuture: Export compiled PDF, upload to Reliance');
+```
+
+---
+
+**6. Detail Page Integration**
+
+**Page Layout (Updated Order):**
+```
+1. Header + Delete Button
+2. Workflow Wrapper
+3. Action Bar
+4. Validation Panel
+5. Submission Package Panel ← NEW
+6. Intake Snapshot
+7. Activity Feed
+8. Conversations + Documents (grid)
+9. Event History (grid)
+```
+
+**Position:** Below Validation Panel, above Intake Snapshot
+
+**Rationale:**
+- Validation completion drives submission readiness
+- Logical flow: Validate → Package → Submit
+- Keeps related components together
+
+---
+
+**7. Future Implementation Hooks**
+
+**Code Comments:**
+```typescript
+// FUTURE:
+// - Export compiled PDF package
+// - Pull documents from SharePoint
+// - Upload to Reliance
+// - Template-specific packaging (Trane vs Rheem)
+```
+
+**Planned Enhancements:**
+
+**PDF Export:**
+- Compile all submission items into single PDF
+- Include cover sheet with metadata
+- Generate table of contents
+- Add page numbers and headers
+- Digital signatures
+
+**SharePoint Integration:**
+- Query document library for submission items
+- Validate document versions
+- Check approval status
+- Download latest revisions
+
+**Reliance Upload:**
+- Authenticate to Reliance system
+- Upload compiled package
+- Set metadata (part number, customer, etc.)
+- Trigger customer notification
+
+**Template-Specific Packaging:**
+- Trane: 9 items (strict requirements)
+- Rheem: Alternate item list
+- Custom document templates per customer
+- Different submission formats
+
+---
+
+**8. Submission Scenarios**
+
+**Scenario 1 - Early in Workflow:**
+```
+Status: 0 / 9 Complete
+
+☐ PSW Document
+☐ Ballooned Drawing
+☐ Control Plan
+☐ PFMEA
+☐ DFMEA
+☐ Dimensional Results
+☐ Material Certifications
+☐ MSA
+☐ Capability Studies
+
+[Generate Submission Package] ← Disabled
+"All validations must be approved before generating package"
+```
+
+**Scenario 2 - Partial Completion:**
+```
+Status: 5 / 9 Complete
+
+☐ PSW Document
+☐ Ballooned Drawing
+✓ Control Plan                Ready
+✓ PFMEA                       Ready
+✓ DFMEA                       Ready
+☐ Dimensional Results
+✓ Material Certifications      Ready
+✓ MSA                         Ready
+☐ Capability Studies
+
+[Generate Submission Package] ← Disabled
+"All validations must be approved before generating package"
+```
+
+**Scenario 3 - All Validations Approved:**
+```
+Status: 9 / 9 Complete
+
+✓ PSW Document                Ready
+✓ Ballooned Drawing           Ready
+✓ Control Plan                Ready
+✓ PFMEA                       Ready
+✓ DFMEA                       Ready
+✓ Dimensional Results         Ready
+✓ Material Certifications      Ready
+✓ MSA                         Ready
+✓ Capability Studies          Ready
+
+[Generate Submission Package] ← Enabled
+```
+
+---
+
+**9. Validation-to-Submission Linkage**
+
+**How It Works:**
+
+**Step 1: Validation Tracking**
+- Engineer completes validations
+- Coordinator approves validations
+- Validation status → `complete` or `approved`
+
+**Step 2: Submission Item Update**
+- Component queries validation status
+- `getItemStatus()` evaluates each item
+- Items with completed validations → `ready`
+
+**Step 3: Visual Update**
+- Ready items: Green checkmark, "Ready" badge
+- Progress counter updates: "X / 9 Complete"
+- Generate button enables when `isPostAckReady()` = true
+
+**Step 4: Package Generation**
+- User clicks "Generate Submission Package"
+- System compiles all ready items
+- Future: Export PDF, upload to Reliance
+
+**Automatic Reactivity:**
+- Component re-renders when validations update
+- Status changes immediately visible
+- No manual refresh required
+
+---
+
+**10. Alignment with Colin's Workflow**
+
+**Colin's PPAP Assembly Process:**
+1. Engineer completes validations
+2. Coordinator reviews and approves
+3. Documents collected from various sources
+4. Package assembled manually
+5. PDF generated and uploaded to Reliance
+
+**Component Support:**
+
+**Before Phase 3E.5:**
+- Manual checklist (paper/Excel)
+- No visibility into completion status
+- Documents scattered across systems
+- No validation linkage
+- Error-prone assembly
+
+**After Phase 3E.5:**
+- Digital checklist with real-time status
+- Clear visibility: "5 / 9 Complete"
+- Validation-driven readiness
+- Automated gate (button disable/enable)
+- Foundation for automated assembly
+
+**Future State:**
+- Click button → PDF generated automatically
+- Documents pulled from SharePoint
+- Package uploaded to Reliance
+- Email sent to customer
+- Fully automated assembly workflow
+
+---
+
+**Validation:**
+
+- ✅ PPAPSubmissionPanel component created
+- ✅ 9 submission items defined
+- ✅ Validation linkage implemented
+- ✅ Status logic (ready/missing)
+- ✅ Progress indicator (X / 9 Complete)
+- ✅ Checklist with visual indicators (✓/☐)
+- ✅ Generate Package button with enable/disable logic
+- ✅ Tooltip for disabled state
+- ✅ Integrated below validation panel
+- ✅ Demo mode notice
+- ✅ Future implementation hooks (comments)
+- ✅ No backend integration
+- ✅ No file generation
+
+**Visual Design:**
+
+**Submission Panel:**
+- Gray background (`bg-gray-50`)
+- White item cards
+- Border and padding
+- Clean, organized layout
+
+**Checklist Items:**
+- White cards with borders
+- Icon + text + badge layout
+- Hover effects
+- Proper spacing
+
+**Generate Button:**
+- Full width
+- Large, prominent
+- Clear enabled/disabled states
+- Accessible tooltips
+
+---
+
+**User Impact:**
+
+**Before Phase 3E.5:**
+- No submission package visibility
+- Manual checklist maintenance
+- Unclear readiness status
+- Risk of missing documents
+- No validation linkage
+
+**After Phase 3E.5:**
+- Clear package visibility
+- Automated status tracking
+- Real-time readiness display
+- Validation-driven completeness
+- Gated submission entry point
+
+**Workflow Benefits:**
+
+1. **Visibility:** See package status at a glance
+2. **Automation:** Items auto-update with validations
+3. **Quality:** Prevent incomplete submissions
+4. **Efficiency:** Reduce manual checklist work
+5. **Traceability:** Link submissions to validations
+
+**Use Cases:**
+
+**Engineer Perspective:**
+1. Complete validations
+2. See submission items turn green
+3. Watch progress counter increase
+4. Know when ready for submission
+
+**Coordinator Perspective:**
+1. Review validation panel
+2. Approve validations
+3. See submission panel update
+4. Generate package when ready
+
+**Manager Perspective:**
+1. Quick glance: "5 / 9 Complete"
+2. Identify missing items
+3. Assess readiness
+4. Prioritize completion work
+
+**Next Actions:**
+
+- Phase 3E.6: Integrate with SharePoint document library
+- Phase 3E.7: Implement PDF export functionality
+- Phase 3E.8: Add Reliance upload capability
+- Phase 3E.9: Template-specific package configurations
+
+- Commit: `feat: phase 3E.5 submission package builder (validation-linked)`
+
+---
+
 ## 2026-03-24 20:09 CT - [IMPLEMENTATION] Phase 3E.4 - Intake → Execution Bridge Complete
 
 - Summary: Introduced intake-level readiness tracking and controlled PPAP creation
