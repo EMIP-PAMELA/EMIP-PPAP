@@ -9,7 +9,6 @@ interface InitiationFormProps {
   ppapId: string;
   partNumber: string;
   ppapType?: string | null;
-  currentPhase: WorkflowPhase;
   isReadOnly?: boolean;
 }
 
@@ -35,7 +34,7 @@ interface InitiationData {
   packaging_met: boolean;
 }
 
-export function InitiationForm({ ppapId, partNumber, ppapType, currentPhase, isReadOnly = false }: InitiationFormProps) {
+export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = false }: InitiationFormProps) {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>('project_info');
   const [loading, setLoading] = useState(false);
@@ -118,10 +117,11 @@ export function InitiationForm({ ppapId, partNumber, ppapType, currentPhase, isR
     setLoading(true);
 
     try {
+      // Phase is derived from ppap.status (Phase 3F architecture)
       // Persist phase change to database
       await updateWorkflowPhase({
         ppapId,
-        fromPhase: currentPhase,
+        fromPhase: 'INITIATION',
         toPhase: 'DOCUMENTATION',
         actor: 'Matt',
         additionalData: {

@@ -4,6 +4,234 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 09:02 CT - [CLEANUP] Phase 3F.2.1 - Remove Legacy currentPhase Prop Complete
+
+- Summary: Removed all legacy currentPhase prop references from workflow form components
+- Files changed:
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Removed currentPhase prop from all component calls
+  - `src/features/ppap/components/InitiationForm.tsx` - Removed currentPhase from interface and usage
+  - `src/features/ppap/components/DocumentationForm.tsx` - Removed currentPhase from interface and usage
+  - `src/features/ppap/components/SampleForm.tsx` - Removed currentPhase from interface and usage
+  - `src/features/ppap/components/ReviewForm.tsx` - Removed currentPhase from interface and usage
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Completed Phase 3F.2 cleanup, removed all unnecessary currentPhase props
+- Remaining: PhaseIndicator, PPAPOperationsDashboard, PPAPValidationPanel (legitimate uses)
+
+**Context:**
+
+Phase 3F.2.1 is a cleanup task following Phase 3F.2 (state-driven render enforcement). After removing UI phase state and deriving selectedPhase from ppap.status, the currentPhase prop passed to workflow form components became redundant and unnecessary. This cleanup removes all legacy currentPhase prop references from components that no longer need it.
+
+**Problem Statement:**
+
+**After Phase 3F.2:**
+- selectedPhase derived from ppap.status (no UI state)
+- currentPhase prop still being passed to all form components
+- Form components receiving but not using currentPhase
+- Unnecessary prop drilling
+- Confusing code with unused props
+
+**Phase 3F.2.1 Goal:**
+- Remove currentPhase prop from all form component calls
+- Remove currentPhase from all form component interfaces
+- Remove currentPhase usage inside form components
+- Keep only legitimate uses (PhaseIndicator for display)
+
+---
+
+**Implementation:**
+
+**1. Removed currentPhase from PPAPWorkflowWrapper Component Calls**
+
+**Before:**
+```tsx
+<InitiationForm
+  ppapId={ppap.id}
+  partNumber={ppap.part_number || ''}
+  ppapType={ppap.ppap_type}
+  currentPhase={selectedPhase}  // ❌ Unnecessary
+  isReadOnly={false}
+/>
+```
+
+**After:**
+```tsx
+<InitiationForm
+  ppapId={ppap.id}
+  partNumber={ppap.part_number || ''}
+  ppapType={ppap.ppap_type}
+  isReadOnly={false}
+/>
+```
+
+**Components Updated:**
+- InitiationForm (2 calls - main + fallback)
+- DocumentationForm
+- SampleForm
+- ReviewForm
+
+---
+
+**2. Updated Component Interfaces**
+
+**InitiationForm - Before:**
+```tsx
+interface InitiationFormProps {
+  ppapId: string;
+  partNumber: string;
+  ppapType?: string | null;
+  currentPhase: WorkflowPhase;  // ❌ Removed
+  isReadOnly?: boolean;
+}
+```
+
+**InitiationForm - After:**
+```tsx
+interface InitiationFormProps {
+  ppapId: string;
+  partNumber: string;
+  ppapType?: string | null;
+  isReadOnly?: boolean;
+}
+```
+
+**Same pattern applied to:**
+- DocumentationForm
+- SampleForm
+- ReviewForm
+
+---
+
+**3. Removed currentPhase Usage Inside Components**
+
+**Before:**
+```tsx
+await updateWorkflowPhase({
+  ppapId,
+  fromPhase: currentPhase,  // ❌ Used prop
+  toPhase: 'DOCUMENTATION',
+  actor: 'Matt',
+});
+```
+
+**After:**
+```tsx
+// Phase is derived from ppap.status (Phase 3F architecture)
+await updateWorkflowPhase({
+  ppapId,
+  fromPhase: 'INITIATION',  // ✅ Hardcoded (phase known from context)
+  toPhase: 'DOCUMENTATION',
+  actor: 'Matt',
+});
+```
+
+**Rationale:**
+- Each form knows its own phase (InitiationForm = INITIATION, etc.)
+- No need to pass phase as prop
+- Phase is contextual to the form component
+- Simpler, clearer code
+
+---
+
+**4. Remaining Legitimate Uses**
+
+**currentPhase still used in:**
+
+1. **PhaseIndicator** (Display component)
+   ```tsx
+   <PhaseIndicator currentPhase={selectedPhase} onPhaseClick={handlePhaseClick} />
+   ```
+   - **Legitimate:** Needs to know current phase to highlight it
+   - **Keep:** Required for UI display
+
+2. **PPAPOperationsDashboard** (Local logic)
+   ```tsx
+   const currentPhaseIndex = WORKFLOW_PHASES.findIndex(p => p === ppap.workflow_phase);
+   const isPast = thisPhaseIndex < currentPhaseIndex;
+   ```
+   - **Legitimate:** Local variable for phase comparison
+   - **Keep:** Not a prop, just local logic
+
+3. **PPAPValidationPanel / PPAPValidationPanelDB** (Category prop)
+   ```tsx
+   currentPhase: 'pre-ack' | 'post-ack';
+   ```
+   - **Legitimate:** Different meaning - validation category, not workflow phase
+   - **Keep:** Not related to WorkflowPhase
+
+---
+
+**5. Benefits**
+
+**Cleaner Interfaces:**
+- Removed unnecessary props
+- Simpler component signatures
+- Less prop drilling
+
+**Clearer Code:**
+- Each form knows its own phase
+- No confusion about phase source
+- Explicit phase values in updateWorkflowPhase calls
+
+**Consistent Architecture:**
+- Aligns with Phase 3F.2 (no UI phase state)
+- Phase derived from ppap.status only
+- No redundant phase tracking
+
+**Reduced Complexity:**
+- Fewer props to manage
+- Less state to track
+- Simpler component logic
+
+---
+
+**6. Verification**
+
+**Remaining currentPhase References:**
+
+✅ **PhaseIndicator.tsx** - Legitimate (display component)
+✅ **PPAPOperationsDashboard.tsx** - Legitimate (local variable)
+✅ **PPAPValidationPanel.tsx** - Legitimate (validation category)
+✅ **PPAPValidationPanelDB.tsx** - Legitimate (validation category)
+✅ **PPAPWorkflowWrapper.tsx** - Legitimate (passes to PhaseIndicator)
+
+**All other references:** ❌ **REMOVED**
+
+---
+
+**Files:**
+- Modified: PPAPWorkflowWrapper.tsx (removed currentPhase from 5 component calls)
+- Modified: InitiationForm.tsx (removed from interface, function signature, usage)
+- Modified: DocumentationForm.tsx (removed from interface, function signature, usage)
+- Modified: SampleForm.tsx (removed from interface, function signature, usage)
+- Modified: ReviewForm.tsx (removed from interface, function signature, usage)
+- Documented: BUILD_LEDGER.md (Phase 3F.2.1 entry)
+
+**Total Changes:**
+- 5 files modified
+- 1 file documented
+- currentPhase prop removed from all workflow forms
+- Only legitimate uses remain
+
+**Code Changes:**
+- Removed: currentPhase from 4 component interfaces
+- Removed: currentPhase from 4 function signatures
+- Removed: currentPhase from 5 component calls in PPAPWorkflowWrapper
+- Removed: currentPhase usage in 4 updateWorkflowPhase calls
+- Added: Comments explaining Phase 3F architecture
+
+---
+
+**Next Actions:**
+
+- Verify TypeScript compilation passes
+- Test workflow forms render correctly
+- Confirm no TypeScript errors
+- Verify phase transitions still work
+
+- Commit: `chore: phase 3F.2.1 - remove legacy currentPhase prop from workflow forms`
+
+---
+
 ## 2026-03-25 08:56 CT - [CRITICAL FIX] Phase 3F.2 - State-Driven Render Enforcement Complete
 
 - Summary: Eliminated UI phase state desynchronization by enforcing ppap.status as single source of truth

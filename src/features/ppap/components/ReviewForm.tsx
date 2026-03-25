@@ -9,7 +9,6 @@ import { WorkflowPhase } from '../constants/workflowPhases';
 interface ReviewFormProps {
   ppapId: string;
   partNumber: string;
-  currentPhase: WorkflowPhase;
   isReadOnly?: boolean;
 }
 
@@ -21,7 +20,7 @@ interface ReviewData {
   acknowledgement: boolean;
 }
 
-export function ReviewForm({ ppapId, partNumber, currentPhase, isReadOnly = false }: ReviewFormProps) {
+export function ReviewForm({ ppapId, partNumber, isReadOnly = false }: ReviewFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -104,10 +103,11 @@ export function ReviewForm({ ppapId, partNumber, currentPhase, isReadOnly = fals
         statusOverride = 'CLOSED'; // REJECTED maps to CLOSED in PPAPStatus
       }
 
+      // Phase is derived from ppap.status (Phase 3F architecture)
       // Persist phase change to database with status override
       await updateWorkflowPhase({
         ppapId,
-        fromPhase: currentPhase,
+        fromPhase: 'REVIEW',
         toPhase: nextPhase,
         actor: 'Matt',
         additionalData: {

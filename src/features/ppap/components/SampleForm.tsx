@@ -9,7 +9,6 @@ import { WorkflowPhase } from '../constants/workflowPhases';
 interface SampleFormProps {
   ppapId: string;
   partNumber: string;
-  currentPhase: WorkflowPhase;
   isReadOnly?: boolean;
 }
 
@@ -35,7 +34,7 @@ const SECTIONS = [
   { id: 'confirmation', label: 'Confirmation' },
 ] as const;
 
-export function SampleForm({ ppapId, partNumber, currentPhase, isReadOnly = false }: SampleFormProps) {
+export function SampleForm({ ppapId, partNumber, isReadOnly = false }: SampleFormProps) {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>('requirement');
   const [loading, setLoading] = useState(false);
@@ -110,10 +109,11 @@ export function SampleForm({ ppapId, partNumber, currentPhase, isReadOnly = fals
         actor_role: 'Engineer',
       });
 
+      // Phase is derived from ppap.status (Phase 3F architecture)
       // Persist phase change to database
       await updateWorkflowPhase({
         ppapId,
-        fromPhase: currentPhase,
+        fromPhase: 'SAMPLE',
         toPhase: 'REVIEW',
         actor: 'Matt',
         additionalData: {

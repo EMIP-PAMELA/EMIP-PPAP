@@ -109,7 +109,6 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
             ppapType={ppap.ppap_type}
-            currentPhase={selectedPhase}
             isReadOnly={false}
           />
         </div>
@@ -120,7 +119,6 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
           <DocumentationForm
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
-            currentPhase={selectedPhase}
             isReadOnly={false}
           />
         </div>
@@ -131,7 +129,6 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
           <SampleForm
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
-            currentPhase={selectedPhase}
             isReadOnly={false}
           />
         </div>
@@ -142,7 +139,6 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
           <ReviewForm
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
-            currentPhase={selectedPhase}
             isReadOnly={false}
           />
         </div>
@@ -162,7 +158,6 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
             ppapType={ppap.ppap_type}
-            currentPhase={currentPhase}
             isReadOnly={false}
           />
         </div>

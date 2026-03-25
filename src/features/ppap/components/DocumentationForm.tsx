@@ -13,7 +13,6 @@ import { MarkupTool } from './MarkupTool';
 interface DocumentationFormProps {
   ppapId: string;
   partNumber: string;
-  currentPhase: WorkflowPhase;
   initialSection?: Section;
   isReadOnly?: boolean;
 }
@@ -65,7 +64,7 @@ interface UploadedFile {
   uploaded_at: string;
 }
 
-export function DocumentationForm({ ppapId, partNumber, currentPhase, initialSection, isReadOnly = false }: DocumentationFormProps) {
+export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOnly = false }: DocumentationFormProps) {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>(initialSection || 'checklist');
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
@@ -240,10 +239,11 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, initialSec
         actor_role: 'Engineer',
       });
 
+      // Phase is derived from ppap.status (Phase 3F architecture)
       // Persist phase change to database
       await updateWorkflowPhase({
         ppapId,
-        fromPhase: currentPhase,
+        fromPhase: 'DOCUMENTATION',
         toPhase: 'SAMPLE',
         actor: 'Matt',
         additionalData: {
