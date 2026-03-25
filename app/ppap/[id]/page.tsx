@@ -14,6 +14,7 @@ import PPAPActivityFeed from '@/src/features/ppap/components/PPAPActivityFeed';
 import PPAPIntakeSnapshot from '@/src/features/ppap/components/PPAPIntakeSnapshot';
 import PPAPSubmissionPanel from '@/src/features/ppap/components/PPAPSubmissionPanel';
 import PPAPSummaryHeader from '@/src/features/ppap/components/PPAPSummaryHeader';
+import PPAPAcknowledgementBanner from '@/src/features/ppap/components/PPAPAcknowledgementBanner';
 import { TRANE_VALIDATIONS } from '@/src/features/ppap/utils/traneValidationTemplate';
 
 interface PPAPDashboardPageProps {
@@ -81,6 +82,8 @@ export default async function PPAPDashboardPage({ params }: PPAPDashboardPagePro
         <PPAPSummaryHeader ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
 
         <PPAPActionBar ppapState={ppap.status} validations={TRANE_VALIDATIONS} />
+
+        <PPAPAcknowledgementBanner ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
 
         <PPAPValidationPanel validations={TRANE_VALIDATIONS} currentPhase="pre-ack" />
 
