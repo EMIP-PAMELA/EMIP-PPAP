@@ -12,6 +12,7 @@ import {
   isPostAckReady,
   getNextAction,
 } from '../utils/validationHelpers';
+import { getValidationGuidance } from '../utils/validationGuidance';
 
 interface Props {
   validations: Validation[];
@@ -89,7 +90,21 @@ export default function PPAPValidationPanel({ validations, currentPhase }: Props
               <div className="flex items-center space-x-3">
                 <span className="text-2xl">{STATUS_ICONS[validation.status]}</span>
                 <div className="flex-1">
-                  <div className="font-medium text-gray-900">{validation.name}</div>
+                  <div className="group relative inline-block">
+                    <div className="font-medium text-gray-900 border-b border-dotted border-gray-400 cursor-help">
+                      {validation.name}
+                    </div>
+                    {getValidationGuidance(validation.id) && (
+                      <div className="absolute left-0 top-full mt-1 hidden group-hover:block bg-gray-800 text-white text-xs p-3 rounded-lg w-72 z-10 shadow-lg">
+                        <div className="font-semibold mb-1">
+                          {getValidationGuidance(validation.id)?.title}
+                        </div>
+                        <div className="text-gray-200">
+                          {getValidationGuidance(validation.id)?.description}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center space-x-2 mt-1">
                     <span className="text-xs text-gray-500 capitalize">
                       {validation.validation_type}
