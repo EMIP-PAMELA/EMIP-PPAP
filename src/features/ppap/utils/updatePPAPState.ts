@@ -33,6 +33,18 @@ export async function updatePPAPState(
   userRole: string
 ): Promise<StateTransitionResult> {
   try {
+    // Phase 3F.5: Log before update
+    console.log('Phase 3F.5 - UPDATE START', {
+      ppapId,
+      newState,
+      userId,
+      userRole,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Phase 3F.5: Verify PPAP ID
+    console.log('Phase 3F.5 - PPAP ID CHECK (updatePPAPState)', ppapId);
+
     // Fetch current PPAP state
     const { data: currentPPAP, error: fetchError } = await supabase
       .from('ppap_records')
@@ -40,7 +52,16 @@ export async function updatePPAPState(
       .eq('id', ppapId)
       .single();
 
+    // Phase 3F.5: Log fetch result
+    console.log('Phase 3F.5 - FETCH CURRENT STATE RESULT', currentPPAP);
+
     if (fetchError || !currentPPAP) {
+      // Phase 3F.5: Critical error - PPAP not found
+      console.error('Phase 3F.5 - CRITICAL: PPAP NOT FOUND', {
+        ppapId,
+        fetchError: fetchError?.message,
+        currentPPAP,
+      });
       throw new Error(`Failed to fetch current PPAP state: ${fetchError?.message || 'PPAP not found'}`);
     }
 
@@ -55,8 +76,47 @@ export async function updatePPAPState(
       })
       .eq('id', ppapId);
 
+    // Phase 3F.5: Log update result
+    console.log('Phase 3F.5 - UPDATE RESULT', {
+      newState,
+      error: updateError,
+      success: !updateError,
+    });
+
     if (updateError) {
+      console.error('Phase 3F.5 - UPDATE FAILED', updateError);
       throw new Error(`Failed to update PPAP state: ${updateError.message}`);
+    }
+
+    // Phase 3F.5: Force post-update verification
+    const { data: verifyPPAP, error: verifyError } = await supabase
+      .from('ppap_records')
+      .select('id, status')
+      .eq('id', ppapId)
+      .single();
+
+    console.log('Phase 3F.5 - POST-UPDATE VERIFY', {
+      verifyPPAP,
+      verifyError,
+      expectedStatus: newState,
+      actualStatus: verifyPPAP?.status,
+      statusMatch: verifyPPAP?.status === newState,
+    });
+
+    if (verifyError || !verifyPPAP) {
+      console.error('Phase 3F.5 - CRITICAL: POST-UPDATE VERIFICATION FAILED', {
+        ppapId,
+        verifyError: verifyError?.message,
+        verifyPPAP,
+      });
+    }
+
+    if (verifyPPAP && verifyPPAP.status !== newState) {
+      console.error('Phase 3F.5 - CRITICAL: STATUS MISMATCH AFTER UPDATE', {
+        expected: newState,
+        actual: verifyPPAP.status,
+        ppapId,
+      });
     }
 
     // Log state transition event

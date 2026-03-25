@@ -16,6 +16,25 @@ interface PPAPWorkflowWrapperProps {
 }
 
 export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
+  // Phase 3F.5: Guard against null/undefined PPAP
+  if (!ppap) {
+    console.error('Phase 3F.5 - CRITICAL: PPAP NOT FOUND IN WRAPPER', ppap);
+    return (
+      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+        <p className="font-semibold">Error: PPAP data not available</p>
+        <p className="text-sm">PPAP object is null or undefined</p>
+      </div>
+    );
+  }
+
+  // Phase 3F.5: Log PPAP received in wrapper
+  console.log('Phase 3F.5 - PPAP RECEIVED IN WRAPPER', {
+    id: ppap.id,
+    status: ppap.status,
+    ppap_number: ppap.ppap_number,
+    updated_at: ppap.updated_at,
+  });
+
   // Phase 3F.4: SINGLE SOURCE OF TRUTH - ppap.status
   // DIRECT MAPPING: PPAPStatus → WorkflowPhase (explicit switch statement)
   const selectedPhase = mapStatusToPhase(ppap.status);

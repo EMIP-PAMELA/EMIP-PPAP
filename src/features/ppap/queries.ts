@@ -49,6 +49,9 @@ export async function getPPAPById(id: string) {
     throw new Error('PPAP ID is required');
   }
 
+  // Phase 3F.5: Verify PPAP ID
+  console.log('Phase 3F.5 - PPAP ID CHECK (getPPAPById)', id);
+
   const { data, error } = await supabase
     .from('ppap_records')
     .select('*')
@@ -56,12 +59,29 @@ export async function getPPAPById(id: string) {
     .maybeSingle();
 
   if (error) {
+    console.error('Phase 3F.5 - FETCH ERROR', {
+      id,
+      error: error.message,
+    });
     throw new Error(`Failed to fetch PPAP: ${error.message}`);
   }
 
   if (!data) {
+    // Phase 3F.5: Critical error - PPAP not found after refresh
+    console.error('Phase 3F.5 - CRITICAL: PPAP NOT FOUND AFTER REFRESH', {
+      id,
+      data,
+    });
     throw new Error(`PPAP not found with ID: ${id}`);
   }
+
+  // Phase 3F.5: Log PPAP fetched in UI
+  console.log('Phase 3F.5 - PPAP FETCHED IN UI', {
+    id: data.id,
+    status: data.status,
+    ppap_number: data.ppap_number,
+    updated_at: data.updated_at,
+  });
 
   return data as PPAPRecord;
 }
