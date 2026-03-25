@@ -4,6 +4,532 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 18:45 CT - Phase 3F.14 - Document Action System with Upload + Create Capability Complete
+
+- Summary: Implemented document action system with inline Upload + Create capability in DocumentationForm
+- Files changed:
+  - `src/features/ppap/components/DocumentationForm.tsx` - Added DocumentAction type, DocumentItem interface, document cards with inline actions
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Each document now has actionable controls (Upload/Create) directly within document cards, supporting future template-based document generation
+- Objective: Enable Upload + Create capability for each document with future support for template-based document generation
+
+**Context:**
+
+Phase 3F.14 transforms the DocumentationForm from separate checklist/upload sections into a unified document action system where each document is represented as a card with inline Upload and Create actions. This enables direct interaction with documents and prepares the system for future template-based document generation.
+
+**Problem Statement:**
+
+**Before Phase 3F.14:**
+- Separate checklist and upload sections
+- Generic upload area for all documents
+- No document-specific actions
+- No Create capability
+- No support for template-based generation
+
+**After Phase 3F.14:**
+- Unified document cards with inline actions
+- Document-specific upload per card
+- Create button for template generation (placeholder)
+- Actions array defines available operations per document
+- Ballooned Drawing has both Upload + Create
+- All other documents have Upload only (for now)
+
+---
+
+**Solution:**
+
+**STEP 1 - Document Action Model:**
+
+**Type Definitions:**
+```typescript
+// Phase 3F.14: Document Action System
+type DocumentAction = 'upload' | 'create';
+
+interface DocumentItem {
+  id: string;
+  name: string;
+  requirement_level: 'REQUIRED' | 'CONDITIONAL';
+  status: 'missing' | 'ready';
+  actions: DocumentAction[];
+  file?: {
+    name: string;
+    uploaded_at: string;
+  };
+}
+```
+
+**Purpose:**
+- `DocumentAction`: Defines available actions (upload, create)
+- `DocumentItem`: Complete document model with status and actions
+- `requirement_level`: REQUIRED (red badge) or CONDITIONAL (yellow badge)
+- `status`: 'missing' (no file) or 'ready' (file uploaded)
+- `actions`: Array of available actions (not hardcoded)
+
+---
+
+**STEP 2 - Document Configuration:**
+
+**Initial Config:**
+```typescript
+const DOCUMENT_CONFIG: DocumentItem[] = [
+  { id: 'ballooned_drawing', name: 'Ballooned Drawing', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
+  { id: 'design_record', name: 'Design Record', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'dimensional_results', name: 'Dimensional Results', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'dfmea', name: 'DFMEA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'pfmea', name: 'PFMEA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'control_plan', name: 'Control Plan', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'msa', name: 'MSA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'material_test_results', name: 'Material Test Results', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'initial_process_studies', name: 'Initial Process Studies', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'packaging', name: 'Packaging Specification', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload'] },
+  { id: 'tooling', name: 'Tooling Documentation', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload'] },
+];
+```
+
+**Key Points:**
+- **Ballooned Drawing**: Only document with `['upload', 'create']`
+- **All others**: `['upload']` only (for now)
+- **NOT hardcoded**: Actions array drives UI rendering
+- **9 REQUIRED documents**: Red badge, strong emphasis
+- **2 CONDITIONAL documents**: Yellow badge, lower emphasis
+
+---
+
+**STEP 3 - Upload Behavior:**
+
+**Document-Specific Upload Handler:**
+```typescript
+const handleDocumentUpload = async (documentId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+  const files = event.target.files;
+  if (!files || files.length === 0) return;
+
+  setUploading(true);
+  setErrors({});
+
+  try {
+    const file = files[0]; // Single file per document
+    
+    // Phase 3F.14: Document upload logging
+    console.log('📄 DOCUMENT UPLOADED', {
+      documentType: documentId,
+      fileName: file.name,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Upload file to Supabase Storage
+    const filePath = await uploadPPAPDocument(file, ppapId);
+
+    // Log upload event
+    await logEvent({
+      ppap_id: ppapId,
+      event_type: 'DOCUMENT_ADDED',
+      event_data: {
+        file_name: file.name,
+        file_path: filePath,
+        document_type: documentId,
+      },
+      actor: currentUser.name,
+      actor_role: currentUser.role,
+    });
+
+    // Update document state
+    setDocuments(prevDocs =>
+      prevDocs.map(doc =>
+        doc.id === documentId
+          ? {
+              ...doc,
+              status: 'ready' as const,
+              file: {
+                name: file.name,
+                uploaded_at: new Date().toISOString(),
+              },
+            }
+          : doc
+      )
+    );
+
+    setSuccessMessage(`Successfully uploaded ${file.name}`);
+    setTimeout(() => setSuccessMessage(''), 3000);
+  } catch (error) {
+    console.error('Upload failed:', error);
+    setErrors({ [documentId]: error instanceof Error ? error.message : 'Upload failed' });
+  } finally {
+    setUploading(false);
+    event.target.value = '';
+  }
+};
+```
+
+**Features:**
+- Single file per document
+- Document-specific logging
+- Updates document status to 'ready'
+- Shows file name and timestamp
+- Error handling per document
+
+**After Upload:**
+- Status → "Ready"
+- File name displayed
+- Uploaded timestamp shown
+- Button changes to "Replace File"
+
+---
+
+**STEP 4 - Create Button Behavior:**
+
+**Placeholder Implementation:**
+```typescript
+// Phase 3F.14: Create button handler (placeholder for future template engine)
+const handleCreateDocument = (documentId: string) => {
+  console.log('🛠 CREATE DOCUMENT', {
+    documentType: documentId,
+  });
+  // TODO: Implement template-based document generation
+};
+```
+
+**Purpose:**
+- Console log ONLY (no modal, no navigation)
+- Placeholder for future template engine
+- Allows system to support template generation later without refactor
+- Currently only available for Ballooned Drawing
+
+**Future Implementation:**
+- Template selection modal
+- Document generation from template
+- Auto-fill with PPAP data
+- Download or save to storage
+
+---
+
+**STEP 5 - State Rules:**
+
+**Status Logic:**
+```typescript
+// Phase 3F.14: Update document status based on uploaded files
+setDocuments(prevDocs => 
+  prevDocs.map(doc => {
+    const uploadedFile = files.find(f => f.document_type === doc.id);
+    if (uploadedFile) {
+      return {
+        ...doc,
+        status: 'ready' as const,
+        file: {
+          name: uploadedFile.file_name,
+          uploaded_at: uploadedFile.uploaded_at,
+        },
+      };
+    }
+    return doc;
+  })
+);
+```
+
+**Rules:**
+- **Status = "ready"**: File exists
+- **Status = "missing"**: No file
+
+**Badge Styling:**
+- **REQUIRED**: Red badge (`bg-red-100 text-red-800`)
+- **CONDITIONAL**: Yellow badge (`bg-yellow-100 text-yellow-800`)
+
+**Status Badge:**
+- **Ready**: Green (`bg-green-100 text-green-800`) with ✓
+- **Missing**: Gray (`bg-gray-100 text-gray-600`)
+
+---
+
+**STEP 6 - Phase-Based Behavior:**
+
+**Current Implementation:**
+```typescript
+{isReadOnly && (
+  <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+    Editing available during Documentation phase
+  </div>
+)}
+```
+
+**Behavior:**
+- **DOCUMENTATION phase**: Upload + Create enabled
+- **Other phases**: Actions disabled via `isReadOnly` prop
+- **Message**: "Editing available during Documentation phase"
+
+**Button States:**
+- Enabled: Blue/Purple with hover effect
+- Disabled: Gray with cursor-not-allowed
+
+---
+
+**STEP 7 - UI Layout:**
+
+**Document Card Structure:**
+```tsx
+<div className={`border rounded-lg p-4 ${
+  doc.status === 'ready'
+    ? 'border-green-300 bg-green-50'
+    : 'border-gray-300 bg-white'
+}`}>
+  {/* Title Row */}
+  <div className="flex items-center justify-between mb-3">
+    <div className="flex items-center gap-3">
+      <h4>{doc.name}</h4>
+      <span className={requirement_level badge}>{doc.requirement_level}</span>
+    </div>
+    <span className={status badge}>{doc.status}</span>
+  </div>
+
+  {/* File Info (if uploaded) */}
+  {doc.file && (
+    <div className="mb-3 p-2 bg-white border border-green-200 rounded text-xs">
+      <p>{doc.file.name}</p>
+      <p>Uploaded {doc.file.uploaded_at}</p>
+    </div>
+  )}
+
+  {/* Actions Row */}
+  <div className="flex gap-2 mb-2">
+    {doc.actions.includes('upload') && (
+      <label>📤 Upload / Replace File</label>
+    )}
+    {doc.actions.includes('create') && (
+      <button>🛠 Create</button>
+    )}
+  </div>
+
+  {/* Dropzone */}
+  {doc.actions.includes('upload') && (
+    <div className="border-2 border-dashed">
+      Drag & drop file here or click Upload button
+    </div>
+  )}
+</div>
+```
+
+**Layout Features:**
+- Clean card design
+- Title row: Name + Requirement badge + Status badge
+- File info: Name + timestamp (if uploaded)
+- Actions row: Upload button + Create button (if available)
+- Dropzone: Always visible when upload allowed
+- Consistent spacing and alignment
+
+---
+
+**STEP 8 - Logging:**
+
+**Document Upload Logging:**
+```javascript
+📄 DOCUMENT UPLOADED {
+  documentType: 'ballooned_drawing',
+  fileName: 'drawing_v2.pdf',
+  timestamp: '2026-03-25T18:45:00.000Z'
+}
+```
+
+**Create Document Logging:**
+```javascript
+🛠 CREATE DOCUMENT {
+  documentType: 'ballooned_drawing'
+}
+```
+
+**Purpose:**
+- Track document uploads per type
+- Monitor Create button usage
+- Debug document action system
+
+---
+
+**Implementation:**
+
+**DocumentationForm.tsx Changes:**
+
+**1. Added Type Definitions:**
+```typescript
+type DocumentAction = 'upload' | 'create';
+interface DocumentItem { ... }
+```
+
+**2. Added Document Configuration:**
+```typescript
+const DOCUMENT_CONFIG: DocumentItem[] = [ ... ];
+```
+
+**3. Added Document State:**
+```typescript
+const [documents, setDocuments] = useState<DocumentItem[]>(DOCUMENT_CONFIG);
+```
+
+**4. Added Upload Handler:**
+```typescript
+const handleDocumentUpload = async (documentId: string, event) => { ... };
+```
+
+**5. Added Create Handler:**
+```typescript
+const handleCreateDocument = (documentId: string) => { ... };
+```
+
+**6. Updated useEffect:**
+- Sync uploaded files with document state
+- Update status to 'ready' when file exists
+
+**7. Replaced Upload Section:**
+- Removed generic upload area
+- Added document cards with inline actions
+
+---
+
+**Files:**
+- Modified: DocumentationForm.tsx (added document action system)
+- Documented: BUILD_LEDGER.md (Phase 3F.14 entry)
+
+**Total Changes:**
+- 1 file modified
+- 2 type definitions added (DocumentAction, DocumentItem)
+- 1 document configuration array (11 documents)
+- 2 action handlers (upload, create)
+- 1 upload section replaced with document cards
+- Document-specific logging added
+
+**Code Changes:**
+- Added: DocumentAction type
+- Added: DocumentItem interface
+- Added: DOCUMENT_CONFIG array
+- Added: documents state
+- Added: handleDocumentUpload function
+- Added: handleCreateDocument function
+- Updated: useEffect to sync document state
+- Replaced: Upload section with document cards
+- Added: 📄 DOCUMENT UPLOADED logging
+- Added: 🛠 CREATE DOCUMENT logging
+
+---
+
+**Document Card Example:**
+
+**Ballooned Drawing (REQUIRED, Upload + Create):**
+```
+┌─────────────────────────────────────────────────┐
+│ Ballooned Drawing  [REQUIRED]      [✓ Ready]   │
+│                                                 │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ drawing_v2.pdf                              │ │
+│ │ Uploaded 3/25/2026, 6:45 PM                 │ │
+│ └─────────────────────────────────────────────┘ │
+│                                                 │
+│ [📤 Replace File]  [🛠 Create]                  │
+│                                                 │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ Drag & drop file here or click Upload      │ │
+│ └─────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+**DFMEA (REQUIRED, Upload only):**
+```
+┌─────────────────────────────────────────────────┐
+│ DFMEA  [REQUIRED]                   [Missing]  │
+│                                                 │
+│ [📤 Upload]                                     │
+│                                                 │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ Drag & drop file here or click Upload      │ │
+│ └─────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+**Packaging (CONDITIONAL, Upload only):**
+```
+┌─────────────────────────────────────────────────┐
+│ Packaging Specification  [CONDITIONAL] [Missing]│
+│                                                 │
+│ [📤 Upload]                                     │
+│                                                 │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ Drag & drop file here or click Upload      │ │
+│ └─────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+**Success Criteria Met:**
+
+- ✅ Each document has visible actionable controls
+- ✅ Upload happens inline with document
+- ✅ Create button exists for future expansion
+- ✅ System supports template-based document generation later without refactor
+- ✅ Actions array defines available operations (not hardcoded)
+- ✅ Ballooned Drawing has Upload + Create
+- ✅ All others have Upload only
+- ✅ Status = "ready" when file exists
+- ✅ Status = "missing" when no file
+- ✅ REQUIRED badge (red) for required documents
+- ✅ CONDITIONAL badge (yellow) for conditional documents
+- ✅ Phase-based behavior (disabled when isReadOnly)
+- ✅ Clean card layout with consistent spacing
+- ✅ Document upload logging
+- ✅ Create button logging
+
+---
+
+**Action Matrix:**
+
+| Document | Requirement Level | Actions | Create Available |
+|----------|------------------|---------|------------------|
+| Ballooned Drawing | REQUIRED | ['upload', 'create'] | ✅ Yes |
+| Design Record | REQUIRED | ['upload'] | ❌ No |
+| Dimensional Results | REQUIRED | ['upload'] | ❌ No |
+| DFMEA | REQUIRED | ['upload'] | ❌ No |
+| PFMEA | REQUIRED | ['upload'] | ❌ No |
+| Control Plan | REQUIRED | ['upload'] | ❌ No |
+| MSA | REQUIRED | ['upload'] | ❌ No |
+| Material Test Results | REQUIRED | ['upload'] | ❌ No |
+| Initial Process Studies | REQUIRED | ['upload'] | ❌ No |
+| Packaging Specification | CONDITIONAL | ['upload'] | ❌ No |
+| Tooling Documentation | CONDITIONAL | ['upload'] | ❌ No |
+
+---
+
+**Future Enhancements:**
+
+**Template Engine Integration:**
+- Add template selection modal
+- Implement document generation from templates
+- Auto-fill with PPAP data (part number, supplier, etc.)
+- Save generated documents to storage
+- Enable Create for more document types
+
+**Additional Actions:**
+- 'view': Preview uploaded document
+- 'download': Download document
+- 'delete': Remove uploaded document
+- 'edit': Edit document metadata
+
+**Workflow Integration:**
+- Require all REQUIRED documents before submission
+- Validate document types
+- Check file sizes
+- Scan for viruses
+
+---
+
+**Next Actions:**
+
+- Test document upload for each document type
+- Verify Create button logs to console
+- Test Replace File functionality
+- Verify status updates to 'ready' after upload
+- Test phase-based disabling (isReadOnly)
+- Monitor console for document upload logs
+- Plan template engine implementation
+
+- Commit: `feat: phase 3F.14 - document action system with upload + create capability`
+
+---
+
 ## 2026-03-25 15:33 CT - Phase 3F.13 - Guided Validation Workflow (Progressive Gating) Complete
 
 - Summary: Converted Pre-Acknowledgement checklist into guided, step-by-step workflow with progressive gating

@@ -19,6 +19,21 @@ interface DocumentationFormProps {
 
 type Section = 'checklist' | 'upload' | 'readiness' | 'confirmation';
 
+// Phase 3F.14: Document Action System
+type DocumentAction = 'upload' | 'create';
+
+interface DocumentItem {
+  id: string;
+  name: string;
+  requirement_level: 'REQUIRED' | 'CONDITIONAL';
+  status: 'missing' | 'ready';
+  actions: DocumentAction[];
+  file?: {
+    name: string;
+    uploaded_at: string;
+  };
+}
+
 interface DocumentationData {
   suggested_date: string;
   can_meet_date: boolean;
@@ -50,6 +65,21 @@ const REQUIRED_DOCUMENTS = [
   { key: 'tooling', label: 'Tooling Documentation' },
 ] as const;
 
+// Phase 3F.14: Document configuration with actions
+const DOCUMENT_CONFIG: DocumentItem[] = [
+  { id: 'ballooned_drawing', name: 'Ballooned Drawing', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
+  { id: 'design_record', name: 'Design Record', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'dimensional_results', name: 'Dimensional Results', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'dfmea', name: 'DFMEA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'pfmea', name: 'PFMEA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'control_plan', name: 'Control Plan', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'msa', name: 'MSA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'material_test_results', name: 'Material Test Results', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'initial_process_studies', name: 'Initial Process Studies', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
+  { id: 'packaging', name: 'Packaging Specification', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload'] },
+  { id: 'tooling', name: 'Tooling Documentation', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload'] },
+];
+
 const SECTIONS = [
   { id: 'checklist', label: 'Required Documents' },
   { id: 'upload', label: 'Upload Documents' },
@@ -74,6 +104,9 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState('');
   const [showMarkupTool, setShowMarkupTool] = useState(false);
+  
+  // Phase 3F.14: Document state with actions
+  const [documents, setDocuments] = useState<DocumentItem[]>(DOCUMENT_CONFIG);
 
   const [formData, setFormData] = useState<DocumentationData>({
     suggested_date: '',
@@ -93,7 +126,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     acknowledgement: false,
   });
 
-  // Fetch uploaded files using shared utility
+  // Phase 3F.14: Fetch uploaded files and sync with document state
   useEffect(() => {
     const fetchUploadedFiles = async () => {
       try {
@@ -108,6 +141,24 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
         }));
 
         setUploadedFiles(files);
+        
+        // Phase 3F.14: Update document status based on uploaded files
+        setDocuments(prevDocs => 
+          prevDocs.map(doc => {
+            const uploadedFile = files.find(f => f.document_type === doc.id);
+            if (uploadedFile) {
+              return {
+                ...doc,
+                status: 'ready' as const,
+                file: {
+                  name: uploadedFile.file_name,
+                  uploaded_at: uploadedFile.uploaded_at,
+                },
+              };
+            }
+            return doc;
+          })
+        );
       } catch (error) {
         console.error('Failed to fetch uploaded files:', error);
       }
@@ -115,6 +166,75 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
 
     fetchUploadedFiles();
   }, [ppapId]);
+
+  // Phase 3F.14: Document-specific upload handler
+  const handleDocumentUpload = async (documentId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploading(true);
+    setErrors({});
+
+    try {
+      const file = files[0]; // Single file per document
+      
+      // Phase 3F.14: Document upload logging
+      console.log('📄 DOCUMENT UPLOADED', {
+        documentType: documentId,
+        fileName: file.name,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Upload file to Supabase Storage
+      const filePath = await uploadPPAPDocument(file, ppapId);
+
+      // Log upload event
+      await logEvent({
+        ppap_id: ppapId,
+        event_type: 'DOCUMENT_ADDED',
+        event_data: {
+          file_name: file.name,
+          file_path: filePath,
+          document_type: documentId,
+        },
+        actor: currentUser.name,
+        actor_role: currentUser.role,
+      });
+
+      // Update document state
+      setDocuments(prevDocs =>
+        prevDocs.map(doc =>
+          doc.id === documentId
+            ? {
+                ...doc,
+                status: 'ready' as const,
+                file: {
+                  name: file.name,
+                  uploaded_at: new Date().toISOString(),
+                },
+              }
+            : doc
+        )
+      );
+
+      setSuccessMessage(`Successfully uploaded ${file.name}`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error) {
+      console.error('Upload failed:', error);
+      setErrors({ [documentId]: error instanceof Error ? error.message : 'Upload failed' });
+    } finally {
+      setUploading(false);
+      event.target.value = '';
+    }
+  };
+
+  // Phase 3F.14: Create button handler (placeholder for future template engine)
+  const handleCreateDocument = (documentId: string) => {
+    console.log('🛠 CREATE DOCUMENT', {
+      documentType: documentId,
+    });
+    // TODO: Implement template-based document generation
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -437,76 +557,126 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
             </div>
           )}
 
-          {/* Upload Documents Section - NOW SECOND */}
+          {/* Phase 3F.14: Document Cards with Upload + Create Actions */}
           {activeSection === 'upload' && (
             <div className="space-y-6">
               <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-2">Upload Required Documents</h3>
+                <h3 className="text-base font-semibold text-gray-900 mb-2">Document Actions</h3>
                 <p className="text-sm text-gray-600 mb-4">
-                  Upload documents required for this PPAP submission.
+                  Upload or create documents required for this PPAP submission.
                 </p>
 
-                {/* Upload area */}
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-gray-400 transition-colors">
-                  <div className="space-y-4">
-                    <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                      <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    <div className="text-sm text-gray-600">
-                      <label htmlFor="file-upload" className={`relative rounded-md font-medium ${
-                        uploading || isReadOnly ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:text-blue-500 cursor-pointer'
-                      }`}>
-                        <span>{uploading ? 'Uploading...' : 'Click to upload'}</span>
-                        <input 
-                          id="file-upload" 
-                          name="file-upload" 
-                          type="file" 
-                          className="sr-only" 
-                          multiple 
-                          onChange={handleFileUpload}
-                          disabled={uploading || isReadOnly}
-                          accept=".pdf,.doc,.docx,.xls,.xlsx"
-                        />
-                      </label>
-                      <span className="pl-1">or drag and drop</span>
-                    </div>
-                    <p className="text-xs text-gray-500">PDF, DOC, DOCX, XLS, XLSX up to 10MB each</p>
-                  </div>
-                </div>
-
-                {errors.upload && (
-                  <div className="mt-4 p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800">
-                    <p className="font-bold">⚠️ Upload Error</p>
-                    <p className="mt-1 text-xs">{errors.upload || ''}</p>
+                {isReadOnly && (
+                  <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                    Editing available during Documentation phase
                   </div>
                 )}
 
-                {/* Uploaded Files List */}
-                {uploadedFiles.length > 0 && (
-                  <div className="mt-6">
-                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Uploaded Documents ({uploadedFiles.length})</h4>
-                    <div className="space-y-2">
-                      {(uploadedFiles || []).map((file, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
-                          <div className="flex items-center gap-3">
-                            <svg className="h-5 w-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-                            </svg>
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">{file.file_name || 'Unknown file'}</p>
-                              <p className="text-xs text-gray-600">
-                                Uploaded {new Date(file.uploaded_at).toLocaleString()}
-                              </p>
-                            </div>
-                          </div>
-                          <span className="text-xs font-semibold text-green-700 px-3 py-1 bg-green-100 rounded-full">
-                            ✓ Uploaded
+                {/* Document Cards */}
+                <div className="space-y-4">
+                  {documents.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className={`border rounded-lg p-4 ${
+                        doc.status === 'ready'
+                          ? 'border-green-300 bg-green-50'
+                          : 'border-gray-300 bg-white'
+                      }`}
+                    >
+                      {/* Title Row */}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <h4 className="text-sm font-semibold text-gray-900">{doc.name}</h4>
+                          <span
+                            className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                              doc.requirement_level === 'REQUIRED'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-yellow-100 text-yellow-800'
+                            }`}
+                          >
+                            {doc.requirement_level}
                           </span>
                         </div>
-                      ))}
+                        <span
+                          className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                            doc.status === 'ready'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {doc.status === 'ready' ? '✓ Ready' : 'Missing'}
+                        </span>
+                      </div>
+
+                      {/* File Info (if uploaded) */}
+                      {doc.file && (
+                        <div className="mb-3 p-2 bg-white border border-green-200 rounded text-xs">
+                          <p className="font-medium text-gray-900">{doc.file.name}</p>
+                          <p className="text-gray-600">
+                            Uploaded {new Date(doc.file.uploaded_at).toLocaleString()}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Actions Row */}
+                      <div className="flex gap-2 mb-2">
+                        {doc.actions.includes('upload') && (
+                          <div className="flex-1">
+                            <label
+                              htmlFor={`upload-${doc.id}`}
+                              className={`block w-full px-4 py-2 text-sm font-medium text-center rounded transition-colors ${
+                                isReadOnly || uploading
+                                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                  : doc.status === 'ready'
+                                  ? 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
+                                  : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
+                              }`}
+                            >
+                              {doc.status === 'ready' ? '📤 Replace File' : '📤 Upload'}
+                              <input
+                                id={`upload-${doc.id}`}
+                                type="file"
+                                className="sr-only"
+                                onChange={(e) => handleDocumentUpload(doc.id, e)}
+                                disabled={isReadOnly || uploading}
+                                accept=".pdf,.doc,.docx,.xls,.xlsx"
+                              />
+                            </label>
+                          </div>
+                        )}
+                        {doc.actions.includes('create') && (
+                          <button
+                            onClick={() => handleCreateDocument(doc.id)}
+                            disabled={isReadOnly}
+                            className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
+                              isReadOnly
+                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                : 'bg-purple-600 text-white hover:bg-purple-700'
+                            }`}
+                          >
+                            🛠 Create
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Dropzone (always visible when upload allowed) */}
+                      {doc.actions.includes('upload') && !isReadOnly && (
+                        <div className="border-2 border-dashed border-gray-300 rounded p-4 text-center text-xs text-gray-500 hover:border-gray-400 transition-colors">
+                          <label htmlFor={`upload-${doc.id}`} className="cursor-pointer">
+                            Drag & drop file here or click Upload button
+                          </label>
+                        </div>
+                      )}
+
+                      {/* Error Message */}
+                      {errors[doc.id] && (
+                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
+                          {errors[doc.id]}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
             </div>
           )}
