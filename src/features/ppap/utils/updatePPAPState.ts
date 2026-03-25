@@ -1,6 +1,12 @@
-// ✅ CRITICAL RULE: This is the ONLY way to update PPAP status.
-// ALL status updates MUST go through updatePPAPState().
-// NEVER update status directly via Supabase .update() calls.
+/**
+ * SINGLE SOURCE OF TRUTH
+ *
+ * ALL status updates MUST go through this function.
+ * ANY direct database update to `status` is a critical bug.
+ * 
+ * Phase 3F.8: Hard enforcement - legacy functions disabled.
+ * This is the ONLY way to update PPAP status.
+ */
 
 import { supabase } from '@/src/lib/supabaseClient';
 import { PPAPStatus } from '@/src/types/database.types';
@@ -12,6 +18,7 @@ import { logEvent } from '@/src/features/events/mutations';
  * Updates PPAP state in database with event logging.
  * This is the SINGLE ENTRY POINT for all state transitions.
  * Phase 3F.7: Enforces state machine rules, prevents direct writes.
+ * Phase 3F.8: Hard enforcement - updateWorkflowPhase() and updatePPAP(status) disabled.
  */
 
 export interface StateTransitionResult {

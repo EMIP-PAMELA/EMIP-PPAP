@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logEvent } from '@/src/features/events/mutations';
-import { updateWorkflowPhase } from '../mutations/updateWorkflowPhase';
-import { WorkflowPhase } from '../constants/workflowPhases';
+import { updatePPAPState } from '../utils/updatePPAPState';
+import { currentUser } from '@/src/lib/mockUser';
 
 interface ReviewFormProps {
   ppapId: string;
@@ -97,25 +97,25 @@ export function ReviewForm({ ppapId, partNumber, isReadOnly = false }: ReviewFor
 
       // Determine status override for APPROVE/REJECT decisions
       let statusOverride: 'APPROVED' | 'CLOSED' | undefined;
+      // Phase 3F.8: Use state machine for status updates
+      let newStatus: 'APPROVED' | 'CLOSED' = 'APPROVED';
       if (formData.decision === 'APPROVE') {
-        statusOverride = 'APPROVED';
+        newStatus = 'APPROVED';
       } else if (formData.decision === 'REJECT') {
-        statusOverride = 'CLOSED'; // REJECTED maps to CLOSED in PPAPStatus
+        newStatus = 'CLOSED'; // REJECTED maps to CLOSED in PPAPStatus
       }
 
-      // Phase is derived from ppap.status (Phase 3F architecture)
-      // Persist phase change to database with status override
-      await updateWorkflowPhase({
+      // Phase 3F.8: ALL status updates go through updatePPAPState()
+      const result = await updatePPAPState(
         ppapId,
-        fromPhase: 'REVIEW',
-        toPhase: nextPhase,
-        actor: 'Matt',
-        additionalData: {
-          review_data: formData,
-          decision: formData.decision,
-        },
-        overrideStatus: statusOverride,
-      });
+        newStatus,
+        currentUser.id,
+        currentUser.role
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update PPAP status');
+      }
 
       const phaseMessages: Record<ReviewDecision, string> = {
         APPROVE: '✓ Review completed! PPAP APPROVED. Advancing to COMPLETE phase...',

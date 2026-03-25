@@ -77,20 +77,21 @@ export async function updatePPAP(
     throw new Error(`PPAP not found with ID: ${id}`);
   }
 
-  // Phase 3F.7: 🚨 DIRECT STATUS WRITE DETECTED (if input.status exists)
+  // Phase 3F.8: HARD ENFORCEMENT - Block status updates
   if (input.status) {
-    console.warn('🚨 DIRECT STATUS WRITE DETECTED', {
-      status: input.status,
-      file: 'mutations.ts (updatePPAP)',
-      warning: 'This bypasses updatePPAPState() - DEPRECATED',
-    });
+    throw new Error(
+      'DEPRECATED: Status updates must use updatePPAPState(). ' +
+      'Direct status writes are not allowed.'
+    );
   }
 
-  // ⚠️ LEGACY: Allows direct status write - bypasses state machine
+  // Phase 3F.8: Remove status from input to prevent bypass
+  const { status, ...updateData } = input;
+
   const { data, error } = await supabase
     .from('ppap_records')
     .update({
-      ...input,
+      ...updateData,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)

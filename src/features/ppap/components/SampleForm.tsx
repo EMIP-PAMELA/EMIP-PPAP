@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logEvent } from '@/src/features/events/mutations';
-import { updateWorkflowPhase } from '../mutations/updateWorkflowPhase';
-import { WorkflowPhase } from '../constants/workflowPhases';
+import { updatePPAPState } from '../utils/updatePPAPState';
+import { currentUser } from '@/src/lib/mockUser';
 
 interface SampleFormProps {
   ppapId: string;
@@ -109,17 +109,17 @@ export function SampleForm({ ppapId, partNumber, isReadOnly = false }: SampleFor
         actor_role: 'Engineer',
       });
 
-      // Phase is derived from ppap.status (Phase 3F architecture)
-      // Persist phase change to database
-      await updateWorkflowPhase({
+      // Phase 3F.8: ALL status updates go through updatePPAPState()
+      const result = await updatePPAPState(
         ppapId,
-        fromPhase: 'SAMPLE',
-        toPhase: 'REVIEW',
-        actor: 'Matt',
-        additionalData: {
-          sample_data: formData,
-        },
-      });
+        'SUBMITTED',
+        currentUser.id,
+        currentUser.role
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update PPAP status');
+      }
 
       setSuccessMessage('✓ Sample phase completed! Advancing to Review phase...');
       

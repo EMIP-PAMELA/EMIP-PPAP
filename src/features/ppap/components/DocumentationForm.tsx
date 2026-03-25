@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { logEvent } from '@/src/features/events/mutations';
-import { updateWorkflowPhase } from '../mutations/updateWorkflowPhase';
-import { WorkflowPhase } from '../constants/workflowPhases';
+import { updatePPAPState } from '../utils/updatePPAPState';
+import { currentUser } from '@/src/lib/mockUser';
 import { uploadPPAPDocument } from '../utils/uploadFile';
 import { getPPAPDocuments } from '../utils/getPPAPDocuments';
 import { supabase } from '@/src/lib/supabaseClient';
@@ -239,17 +239,17 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
         actor_role: 'Engineer',
       });
 
-      // Phase is derived from ppap.status (Phase 3F architecture)
-      // Persist phase change to database
-      await updateWorkflowPhase({
+      // Phase 3F.8: ALL status updates go through updatePPAPState()
+      const result = await updatePPAPState(
         ppapId,
-        fromPhase: 'DOCUMENTATION',
-        toPhase: 'SAMPLE',
-        actor: 'Matt',
-        additionalData: {
-          documentation_data: formData,
-        },
-      });
+        'AWAITING_SUBMISSION',
+        currentUser.id,
+        currentUser.role
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update PPAP status');
+      }
 
       setSuccessMessage('✓ Documentation phase completed! Advancing to Sample phase...');
       
