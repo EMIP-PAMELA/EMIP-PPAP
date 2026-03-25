@@ -36,31 +36,47 @@ export interface ValidationTemplate {
 }
 
 /**
- * Trane validation template (14 validations)
+ * Phase 3E.8 - PPAP Requirement Restructure
+ * 
+ * Trane validation template with clear separation:
+ * - Pre-Ack: Readiness validations (boolean checks, not documents)
+ * - Post-Ack: Submission documents (REQUIRED/CONDITIONAL)
  */
 export const TRANE_VALIDATION_TEMPLATE: ValidationTemplate[] = [
-  // Pre-Ack Validations (5)
-  { key: 'design_record', name: 'Design Record', category: 'pre-ack', required: true, requires_approval: false },
-  { key: 'dimensional_results', name: 'Dimensional Results', category: 'pre-ack', required: true, requires_approval: false },
-  { key: 'material_certs', name: 'Material Certifications', category: 'pre-ack', required: true, requires_approval: false },
-  { key: 'performance_test', name: 'Performance Test Results', category: 'pre-ack', required: true, requires_approval: false },
-  { key: 'appearance_approval', name: 'Appearance Approval Report', category: 'pre-ack', required: true, requires_approval: false },
+  // Pre-Acknowledgement Readiness (6 validation checks)
+  { key: 'drawing_verification', name: 'Drawing Verification', category: 'pre-ack', required: true, requires_approval: false },
+  { key: 'bom_review', name: 'BOM Review', category: 'pre-ack', required: true, requires_approval: false },
+  { key: 'tooling_validation', name: 'Tooling Validation', category: 'pre-ack', required: true, requires_approval: false },
+  { key: 'material_availability', name: 'Material Availability Check', category: 'pre-ack', required: true, requires_approval: false },
+  { key: 'psw_presence', name: 'PSW Presence', category: 'pre-ack', required: true, requires_approval: false },
+  { key: 'discrepancy_resolution', name: 'Discrepancy Resolution', category: 'pre-ack', required: true, requires_approval: false },
   
-  // Post-Ack Validations (9)
-  { key: 'sample_production', name: 'Sample Production Run', category: 'post-ack', required: true, requires_approval: true },
-  { key: 'msa', name: 'Measurement System Analysis', category: 'post-ack', required: true, requires_approval: true },
-  { key: 'process_capability', name: 'Process Capability Study', category: 'post-ack', required: true, requires_approval: true },
+  // Post-Acknowledgement REQUIRED Documents (10)
+  { key: 'psw', name: 'PSW', category: 'post-ack', required: true, requires_approval: true },
+  { key: 'ballooned_drawing', name: 'Ballooned Drawing', category: 'post-ack', required: true, requires_approval: true },
+  { key: 'fair', name: 'First Article Inspection Report (FAIR)', category: 'post-ack', required: true, requires_approval: true },
   { key: 'control_plan', name: 'Control Plan', category: 'post-ack', required: true, requires_approval: true },
-  { key: 'pfmea', name: 'Process FMEA', category: 'post-ack', required: true, requires_approval: true },
-  { key: 'packaging_approval', name: 'Packaging Approval', category: 'post-ack', required: true, requires_approval: true },
-  { key: 'quality_agreement', name: 'Quality Agreement', category: 'post-ack', required: true, requires_approval: true },
-  { key: 'shipping_approval', name: 'Shipping Approval', category: 'post-ack', required: true, requires_approval: true },
-  { key: 'final_inspection', name: 'Final Inspection Report', category: 'post-ack', required: true, requires_approval: true },
+  { key: 'pfmea', name: 'PFMEA', category: 'post-ack', required: true, requires_approval: true },
+  { key: 'dfmea', name: 'DFMEA', category: 'post-ack', required: true, requires_approval: true },
+  { key: 'dimensional_results', name: 'Dimensional Results', category: 'post-ack', required: true, requires_approval: true },
+  { key: 'material_certs', name: 'Material Certifications', category: 'post-ack', required: true, requires_approval: true },
+  { key: 'msa', name: 'MSA', category: 'post-ack', required: true, requires_approval: true },
+  { key: 'capability_studies', name: 'Capability Studies', category: 'post-ack', required: true, requires_approval: true },
+  
+  // Post-Acknowledgement CONDITIONAL Documents (5)
+  { key: 'packaging_approval', name: 'Packaging Approval', category: 'post-ack', required: false, requires_approval: true },
+  { key: 'appearance_approval', name: 'Appearance Approval', category: 'post-ack', required: false, requires_approval: true },
+  { key: 'performance_testing', name: 'Performance Testing', category: 'post-ack', required: false, requires_approval: true },
+  { key: 'barcode_standards', name: 'Barcode Standards', category: 'post-ack', required: false, requires_approval: true },
+  { key: 'assembly_standards', name: 'Assembly Standards', category: 'post-ack', required: false, requires_approval: true },
 ];
 
 /**
  * Initialize validations for a new PPAP.
- * Creates 14 validation records based on Trane template.
+ * Creates 21 validation records based on Trane template:
+ * - 6 Pre-Ack Readiness checks
+ * - 10 Post-Ack REQUIRED documents
+ * - 5 Post-Ack CONDITIONAL documents
  */
 export async function initializeValidations(ppapId: string): Promise<void> {
   const validations = TRANE_VALIDATION_TEMPLATE.map(template => ({

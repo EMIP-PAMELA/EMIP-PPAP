@@ -10,7 +10,13 @@ export type ValidationType =
   | 'document'
   | 'task'
   | 'approval'
-  | 'data';
+  | 'data'
+  | 'check';
+
+export type RequirementLevel =
+  | 'REQUIRED'
+  | 'CONDITIONAL'
+  | 'OPTIONAL';
 
 export interface Validation {
   id: string;
@@ -19,6 +25,7 @@ export interface Validation {
   validation_type: ValidationType;
   required: boolean;
   requires_approval: boolean;
+  requirement_level: RequirementLevel;
 
   status: ValidationStatus;
 

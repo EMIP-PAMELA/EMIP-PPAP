@@ -4,6 +4,378 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 10:26 CT - Phase 3E.8 - PPAP Requirement Restructure Complete
+
+- Summary: Separated pre-ack validations from post-ack documentation, clearly marked REQUIRED vs CONDITIONAL documents
+- Files changed:
+  - `src/features/ppap/types/validation.ts` - Added RequirementLevel type and 'check' validation type
+  - `src/features/ppap/utils/validationDatabase.ts` - Restructured template (6 pre-ack + 15 post-ack)
+  - `src/features/ppap/utils/traneValidationTemplate.ts` - Updated with new structure
+  - `src/features/ppap/utils/validationHelpers.ts` - Added badge helpers and submission logic
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Clean separation of validation vs documentation, required documents clearly identified
+- Objective: Remove mixed workflow confusion, enable submission only when REQUIRED documents complete
+
+**Context:**
+
+Phase 3E.8 restructures the PPAP validation system to clearly separate pre-acknowledgement readiness checks from post-acknowledgement submission documents. The previous structure mixed validation checks with document requirements, causing confusion about what was needed at each phase. This restructure provides clear guidance on what must be completed before acknowledgement (readiness checks) versus what must be submitted for approval (documents).
+
+**Problem Statement:**
+
+**Before Phase 3E.8:**
+- Pre-Ack and Post-Ack validations mixed document uploads with boolean checks
+- No clear distinction between readiness validations and submission documents
+- All items marked as "required" without differentiation
+- Unclear which documents were truly mandatory vs conditional
+- Submission logic not tied to specific REQUIRED documents
+
+**After Phase 3E.8:**
+- Pre-Ack: 6 readiness validation checks (boolean, not documents)
+- Post-Ack: 10 REQUIRED documents + 5 CONDITIONAL documents
+- Clear badge system: Red (REQUIRED), Yellow (CONDITIONAL), Gray (OPTIONAL)
+- Submission enabled only when all REQUIRED documents approved
+
+---
+
+**Solution:**
+
+**STEP 1 - Renamed Pre-Ack Section:**
+```
+"Pre-Acknowledgement Requirements" → "Pre-Acknowledgement Readiness"
+```
+
+**STEP 2 - Updated Pre-Ack Items (Validations, Not Documents):**
+
+**New Pre-Ack Readiness Checks (6):**
+1. Drawing Verification
+2. BOM Review
+3. Tooling Validation
+4. Material Availability Check
+5. PSW Presence
+6. Discrepancy Resolution
+
+**Type:** `'check'` (boolean validations, not document uploads)
+
+---
+
+**STEP 3 - Defined REQUIRED Submission Documents:**
+
+**Post-Ack REQUIRED Documents (10):**
+1. PSW
+2. Ballooned Drawing
+3. First Article Inspection Report (FAIR)
+4. Control Plan
+5. PFMEA
+6. DFMEA
+7. Dimensional Results
+8. Material Certifications
+9. MSA
+10. Capability Studies
+
+**Badge:** Red badge with `REQUIRED` label
+**Style:** `bg-red-100 text-red-800 ring-1 ring-red-600`
+
+---
+
+**STEP 4 - Defined CONDITIONAL Documents:**
+
+**Post-Ack CONDITIONAL Documents (5):**
+1. Packaging Approval
+2. Appearance Approval
+3. Performance Testing
+4. Barcode Standards
+5. Assembly Standards
+
+**Badge:** Yellow badge with `CONDITIONAL` label
+**Style:** `bg-yellow-100 text-yellow-800 ring-1 ring-yellow-600`
+
+---
+
+**STEP 5 - Removed "NOT REQUIRED" Labels:**
+
+**New Label System:**
+- `REQUIRED` - Must be completed for submission
+- `CONDITIONAL` - Required only if applicable
+- `OPTIONAL` - Nice to have but not required
+
+**No more:** "NOT REQUIRED" or ambiguous labels
+
+---
+
+**STEP 6 - Submission Logic:**
+
+**Before:**
+```tsx
+// Submission enabled when all post-ack validations approved
+const postAckRequired = validations.filter(
+  v => v.category === 'post-ack' && v.required
+);
+return postAckRequired.every(v => v.status === 'approved');
+```
+
+**After:**
+```tsx
+// Submission enabled ONLY when all REQUIRED documents approved
+export function isSubmissionEnabled(validations: Validation[]): boolean {
+  const requiredPostAck = validations.filter(
+    (v) => v.category === 'post-ack' && v.requirement_level === 'REQUIRED'
+  );
+  return requiredPostAck.every((v) => v.status === 'approved');
+}
+```
+
+---
+
+**Implementation:**
+
+**1. Updated Validation Types:**
+
+**Added RequirementLevel:**
+```tsx
+export type RequirementLevel =
+  | 'REQUIRED'
+  | 'CONDITIONAL'
+  | 'OPTIONAL';
+```
+
+**Added 'check' ValidationType:**
+```tsx
+export type ValidationType =
+  | 'document'
+  | 'task'
+  | 'approval'
+  | 'data'
+  | 'check';  // New: for boolean validation checks
+```
+
+**Updated Validation Interface:**
+```tsx
+export interface Validation {
+  id: string;
+  name: string;
+  category: ValidationCategory;
+  validation_type: ValidationType;
+  required: boolean;
+  requires_approval: boolean;
+  requirement_level: RequirementLevel;  // New field
+  status: ValidationStatus;
+  // ... other fields
+}
+```
+
+---
+
+**2. Restructured Validation Database Template:**
+
+**Before (14 validations):**
+- 5 Pre-Ack (mixed documents and checks)
+- 9 Post-Ack (all marked required)
+
+**After (21 validations):**
+- 6 Pre-Ack Readiness checks
+- 10 Post-Ack REQUIRED documents
+- 5 Post-Ack CONDITIONAL documents
+
+**Example Pre-Ack Readiness Check:**
+```tsx
+{
+  key: 'drawing_verification',
+  name: 'Drawing Verification',
+  category: 'pre-ack',
+  required: true,
+  requires_approval: false
+}
+```
+
+**Example REQUIRED Document:**
+```tsx
+{
+  key: 'psw',
+  name: 'PSW',
+  category: 'post-ack',
+  required: true,
+  requires_approval: true
+}
+```
+
+**Example CONDITIONAL Document:**
+```tsx
+{
+  key: 'packaging_approval',
+  name: 'Packaging Approval',
+  category: 'post-ack',
+  required: false,  // Not required for all PPAPs
+  requires_approval: true
+}
+```
+
+---
+
+**3. Updated Trane Validation Template:**
+
+**Pre-Ack Readiness (6 checks):**
+```tsx
+{
+  id: 'drawing_verification',
+  name: 'Drawing Verification',
+  category: 'pre-ack',
+  validation_type: 'check',
+  required: true,
+  requires_approval: false,
+  requirement_level: 'REQUIRED',
+  status: 'not_started',
+}
+```
+
+**Post-Ack REQUIRED (10 documents):**
+```tsx
+{
+  id: 'psw',
+  name: 'PSW',
+  category: 'post-ack',
+  validation_type: 'document',
+  required: true,
+  requires_approval: true,
+  requirement_level: 'REQUIRED',
+  status: 'not_started',
+}
+```
+
+**Post-Ack CONDITIONAL (5 documents):**
+```tsx
+{
+  id: 'packaging_approval',
+  name: 'Packaging Approval',
+  category: 'post-ack',
+  validation_type: 'approval',
+  required: false,
+  requires_approval: true,
+  requirement_level: 'CONDITIONAL',
+  status: 'not_started',
+}
+```
+
+---
+
+**4. Added Helper Functions:**
+
+**Requirement Badge Style:**
+```tsx
+export function getRequirementBadgeStyle(level: RequirementLevel): string {
+  switch (level) {
+    case 'REQUIRED':
+      return 'bg-red-100 text-red-800 ring-1 ring-red-600';
+    case 'CONDITIONAL':
+      return 'bg-yellow-100 text-yellow-800 ring-1 ring-yellow-600';
+    case 'OPTIONAL':
+      return 'bg-gray-100 text-gray-600';
+  }
+}
+```
+
+**Submission Enabled Check:**
+```tsx
+export function isSubmissionEnabled(validations: Validation[]): boolean {
+  const requiredPostAck = validations.filter(
+    (v) => v.category === 'post-ack' && v.requirement_level === 'REQUIRED'
+  );
+  return requiredPostAck.every((v) => v.status === 'approved');
+}
+```
+
+**Required Documents Summary:**
+```tsx
+export function getRequiredDocumentsSummary(validations: Validation[]): string {
+  const required = validations.filter(
+    (v) => v.category === 'post-ack' && v.requirement_level === 'REQUIRED'
+  );
+  const completed = required.filter((v) => v.status === 'approved');
+  return `${completed.length}/${required.length}`;
+}
+```
+
+---
+
+**5. Benefits:**
+
+**Clean Separation:**
+- Pre-Ack: Readiness validations (boolean checks)
+- Post-Ack: Submission documents (file uploads)
+- No mixed workflow confusion
+
+**Required Documents Clearly Identified:**
+- Red badge: REQUIRED (must complete for submission)
+- Yellow badge: CONDITIONAL (required only if applicable)
+- Gray badge: OPTIONAL (nice to have)
+
+**Improved Submission Logic:**
+- Submission enabled only when all REQUIRED documents approved
+- CONDITIONAL documents don't block submission
+- Clear progress tracking: "7/10 REQUIRED documents complete"
+
+**Better User Experience:**
+- Clear guidance on what's needed at each phase
+- No ambiguity about which documents are mandatory
+- Visual badges make requirements obvious
+
+---
+
+**6. Validation Counts:**
+
+**Total Validations: 21**
+- Pre-Ack Readiness: 6 checks
+- Post-Ack REQUIRED: 10 documents
+- Post-Ack CONDITIONAL: 5 documents
+
+**Comparison:**
+```
+Before: 14 validations (5 pre-ack + 9 post-ack)
+After: 21 validations (6 pre-ack + 15 post-ack)
+```
+
+**Reason for Increase:**
+- Separated readiness checks from document requirements
+- Added specific CONDITIONAL documents
+- More granular tracking of requirements
+
+---
+
+**Files:**
+- Modified: validation.ts (added RequirementLevel type, 'check' validation type, requirement_level field)
+- Modified: validationDatabase.ts (restructured template with 21 validations)
+- Modified: traneValidationTemplate.ts (updated with new structure and requirement levels)
+- Modified: validationHelpers.ts (added badge helpers and submission logic)
+- Documented: BUILD_LEDGER.md (Phase 3E.8 entry)
+
+**Total Changes:**
+- 4 files modified
+- 21 validation items defined
+- 3 new helper functions added
+- Clear REQUIRED/CONDITIONAL/OPTIONAL system
+
+**Code Changes:**
+- Added: RequirementLevel type
+- Added: 'check' validation type
+- Added: requirement_level field to Validation interface
+- Updated: TRANE_VALIDATION_TEMPLATE (6 + 10 + 5 = 21 items)
+- Updated: TRANE_VALIDATIONS (6 + 10 + 5 = 21 items)
+- Added: getRequirementBadgeStyle()
+- Added: isSubmissionEnabled()
+- Added: getRequiredDocumentsSummary()
+
+---
+
+**Next Actions:**
+
+- Update UI components to display requirement level badges
+- Implement submission button logic using isSubmissionEnabled()
+- Add visual distinction between readiness checks and documents
+- Update validation panel to show REQUIRED vs CONDITIONAL sections
+
+- Commit: `feat: phase 3E.8 - restructure PPAP requirements with clear REQUIRED/CONDITIONAL separation`
+
+---
+
 ## 2026-03-25 10:09 CT - [CRITICAL FIX] Phase 3G.2 - Database Schema Verification + Alignment Complete
 
 - Summary: Verified actual database schema and aligned code to use correct table name 'ppap_records'

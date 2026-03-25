@@ -1,4 +1,4 @@
-import { Validation, ValidationCategory } from '../types/validation';
+import { Validation, ValidationStatus, RequirementLevel, ValidationCategory } from '../types/validation';
 import { determineNextState } from './stateWorkflowMapping';
 
 /**
@@ -66,4 +66,41 @@ export function getNextAction(
   }
 
   return phase === 'pre-ack' ? 'Ready for Acknowledgement' : 'Ready for Submission';
+}
+
+/**
+ * Phase 3E.8 - Get badge style for requirement level
+ */
+export function getRequirementBadgeStyle(level: RequirementLevel): string {
+  switch (level) {
+    case 'REQUIRED':
+      return 'bg-red-100 text-red-800 ring-1 ring-red-600';
+    case 'CONDITIONAL':
+      return 'bg-yellow-100 text-yellow-800 ring-1 ring-yellow-600';
+    case 'OPTIONAL':
+      return 'bg-gray-100 text-gray-600';
+    default:
+      return 'bg-gray-100 text-gray-600';
+  }
+}
+
+/**
+ * Phase 3E.8 - Check if submission is enabled (all REQUIRED documents complete)
+ */
+export function isSubmissionEnabled(validations: Validation[]): boolean {
+  const requiredPostAck = validations.filter(
+    (v) => v.category === 'post-ack' && v.requirement_level === 'REQUIRED'
+  );
+  return requiredPostAck.every((v) => v.status === 'approved');
+}
+
+/**
+ * Phase 3E.8 - Get count of completed REQUIRED documents
+ */
+export function getRequiredDocumentsSummary(validations: Validation[]): string {
+  const required = validations.filter(
+    (v) => v.category === 'post-ack' && v.requirement_level === 'REQUIRED'
+  );
+  const completed = required.filter((v) => v.status === 'approved');
+  return `${completed.length}/${required.length}`;
 }
