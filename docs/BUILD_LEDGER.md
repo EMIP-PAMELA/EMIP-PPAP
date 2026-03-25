@@ -4,6 +4,382 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 10:49 CT - Phase 3F.3 - Role-Based Work View Complete
+
+- Summary: Implemented role-based conditional rendering to display only relevant workflow sections based on user role
+- Files changed:
+  - `app/ppap/[id]/page.tsx` - Added role detection and conditional rendering for Coordinator vs Engineer views
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Cleaner UI per role, reduced cognitive load, clear ownership of tasks
+- Objective: Display only relevant sections based on user role (Coordinator vs Engineer)
+
+**Context:**
+
+Phase 3F.3 implements role-based work views to reduce cognitive load and provide clear task ownership. The previous UI showed all workflow sections to all users, creating information overload and unclear responsibilities. This implementation conditionally renders sections based on user role: Coordinators see assignment controls and overview, Engineers see validation details and execution tasks.
+
+**Problem Statement:**
+
+**Before Phase 3F.3:**
+- All users saw all workflow sections regardless of role
+- Information overload with irrelevant sections
+- Unclear which sections each role should focus on
+- Coordinators saw detailed validation panels (not their responsibility)
+- Engineers saw assignment controls (not their responsibility)
+- No visual indication of current role view
+
+**After Phase 3F.3:**
+- Role-based conditional rendering shows only relevant sections
+- Coordinator view: Assignment, Acknowledgement, Overview
+- Engineer view: Validations, Documents, Execution
+- View label banner shows current role
+- Reduced cognitive load per role
+- Clear task ownership
+
+---
+
+**Solution:**
+
+**STEP 1 - Determine Role:**
+
+```tsx
+import { currentUser } from '@/src/lib/mockUser';
+
+const role = currentUser.role;
+```
+
+---
+
+**STEP 2 - Create View Modes:**
+
+```tsx
+const isCoordinator = role === 'coordinator' || role === 'admin';
+const isEngineer = role === 'engineer';
+const viewLabel = isCoordinator ? 'Coordinator View' : isEngineer ? 'Engineer View' : 'Viewer';
+```
+
+---
+
+**STEP 3 - Conditional Rendering:**
+
+**Coordinator View:**
+```tsx
+{isCoordinator && (
+  <>
+    <PPAPSummaryHeader ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
+    <PPAPActionBar ppapId={ppap.id} ppapState={ppap.status} validations={TRANE_VALIDATIONS} />
+    <PPAPAcknowledgementBanner ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
+    <PPAPIntakeSnapshot />
+  </>
+)}
+```
+
+**Shows:**
+- Intake Snapshot
+- Assignment controls (PPAPActionBar)
+- Acknowledgement button (PPAPAcknowledgementBanner)
+- Summary header (PPAPSummaryHeader)
+
+**Hides:**
+- Full validation panel details
+- Submission panel
+
+---
+
+**Engineer View:**
+```tsx
+{isEngineer && (
+  <>
+    <PPAPValidationPanel validations={TRANE_VALIDATIONS} currentPhase="pre-ack" ppapStatus={ppap.status} />
+    <PPAPSubmissionPanel validations={TRANE_VALIDATIONS} />
+  </>
+)}
+```
+
+**Shows:**
+- Pre-Ack Readiness (PPAPValidationPanel)
+- Required Documents (PPAPSubmissionPanel)
+- Next Action panel
+
+**Hides:**
+- Intake details
+- Assignment UI
+- Acknowledgement controls
+
+---
+
+**STEP 4 - Shared Components:**
+
+**Always Show:**
+```tsx
+{/* Shared: Always show header */}
+<div className="flex items-start justify-between">
+  <PPAPHeader ppap={ppap} />
+  <DeletePPAPButton ppapId={ppap.id} ppapNumber={ppap.ppap_number} />
+</div>
+
+{/* Shared: Always show workflow progress */}
+<PPAPWorkflowWrapper ppap={ppap} />
+
+{/* Shared: Always show activity feed */}
+<PPAPActivityFeed />
+
+{/* Shared: Always show conversations, documents, events */}
+<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <div className="lg:col-span-2 space-y-6">
+    <ConversationList ppapId={id} conversations={conversations || []} />
+    <DocumentList ppapId={id} documents={documents || []} />
+  </div>
+  <div className="space-y-6">
+    <EventHistory events={events || []} />
+  </div>
+</div>
+```
+
+---
+
+**STEP 5 - Add View Label:**
+
+**Top Banner:**
+```tsx
+<div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-3 rounded">
+  <div className="flex items-center">
+    <span className="text-blue-800 font-semibold text-sm">{viewLabel}</span>
+    <span className="ml-2 text-blue-600 text-xs">
+      {isCoordinator && '(Assignment, Acknowledgement, Overview)'}
+      {isEngineer && '(Validations, Documents, Execution)'}
+    </span>
+  </div>
+</div>
+```
+
+**Display:**
+- **Coordinator View** (Assignment, Acknowledgement, Overview)
+- **Engineer View** (Validations, Documents, Execution)
+
+---
+
+**Implementation:**
+
+**1. Added Import:**
+```tsx
+import { currentUser } from '@/src/lib/mockUser';
+```
+
+---
+
+**2. Added Role Detection Logic:**
+```tsx
+// Phase 3F.3: Role-based view logic
+const role = currentUser.role;
+const isCoordinator = role === 'coordinator' || role === 'admin';
+const isEngineer = role === 'engineer';
+const viewLabel = isCoordinator ? 'Coordinator View' : isEngineer ? 'Engineer View' : 'Viewer';
+```
+
+---
+
+**3. Added View Label Banner:**
+```tsx
+{/* Phase 3F.3: View Label Banner */}
+<div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-3 rounded">
+  <div className="flex items-center">
+    <span className="text-blue-800 font-semibold text-sm">{viewLabel}</span>
+    <span className="ml-2 text-blue-600 text-xs">
+      {isCoordinator && '(Assignment, Acknowledgement, Overview)'}
+      {isEngineer && '(Validations, Documents, Execution)'}
+    </span>
+  </div>
+</div>
+```
+
+---
+
+**4. Implemented Conditional Rendering:**
+
+**Coordinator View Sections:**
+```tsx
+{/* Coordinator View: Summary and Assignment Controls */}
+{isCoordinator && (
+  <>
+    <PPAPSummaryHeader ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
+    <PPAPActionBar ppapId={ppap.id} ppapState={ppap.status} validations={TRANE_VALIDATIONS} />
+    <PPAPAcknowledgementBanner ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
+    <PPAPIntakeSnapshot />
+  </>
+)}
+```
+
+**Engineer View Sections:**
+```tsx
+{/* Engineer View: Validation Details and Documents */}
+{isEngineer && (
+  <>
+    <PPAPValidationPanel validations={TRANE_VALIDATIONS} currentPhase="pre-ack" ppapStatus={ppap.status} />
+    <PPAPSubmissionPanel validations={TRANE_VALIDATIONS} />
+  </>
+)}
+```
+
+**Shared Sections:**
+```tsx
+{/* Shared: Always show header */}
+<div className="flex items-start justify-between">
+  <PPAPHeader ppap={ppap} />
+  <DeletePPAPButton ppapId={ppap.id} ppapNumber={ppap.ppap_number} />
+</div>
+
+{/* Shared: Always show workflow progress */}
+<PPAPWorkflowWrapper ppap={ppap} />
+
+{/* Shared: Always show activity feed */}
+<PPAPActivityFeed />
+```
+
+---
+
+**5. Benefits:**
+
+**Cleaner UI Per Role:**
+- Coordinators see only management sections
+- Engineers see only execution sections
+- No irrelevant information displayed
+
+**Reduced Cognitive Load:**
+- Fewer sections to scan
+- Focus on role-specific tasks
+- Less visual clutter
+
+**Clear Ownership of Tasks:**
+- Coordinator: Assignment, Acknowledgement, Overview
+- Engineer: Validations, Documents, Execution
+- No confusion about responsibilities
+
+**Better User Experience:**
+- View label shows current role
+- Contextual help text explains sections
+- Faster task completion
+
+---
+
+**6. View Comparison:**
+
+**Coordinator View Shows:**
+1. View Label Banner: "Coordinator View (Assignment, Acknowledgement, Overview)"
+2. PPAPHeader (shared)
+3. PPAPWorkflowWrapper (shared)
+4. PPAPSummaryHeader
+5. PPAPActionBar (assignment controls)
+6. PPAPAcknowledgementBanner
+7. PPAPIntakeSnapshot
+8. PPAPActivityFeed (shared)
+9. ConversationList, DocumentList, EventHistory (shared)
+
+**Coordinator View Hides:**
+- PPAPValidationPanel (detailed validations)
+- PPAPSubmissionPanel (document submission)
+
+---
+
+**Engineer View Shows:**
+1. View Label Banner: "Engineer View (Validations, Documents, Execution)"
+2. PPAPHeader (shared)
+3. PPAPWorkflowWrapper (shared)
+4. PPAPValidationPanel (detailed validations)
+5. PPAPSubmissionPanel (document submission)
+6. PPAPActivityFeed (shared)
+7. ConversationList, DocumentList, EventHistory (shared)
+
+**Engineer View Hides:**
+- PPAPSummaryHeader (high-level summary)
+- PPAPActionBar (assignment controls)
+- PPAPAcknowledgementBanner (acknowledgement button)
+- PPAPIntakeSnapshot (intake details)
+
+---
+
+**7. Role Detection:**
+
+**User Roles:**
+```tsx
+export type UserRole = 'admin' | 'coordinator' | 'engineer' | 'viewer';
+```
+
+**Detection Logic:**
+```tsx
+const role = currentUser.role;
+const isCoordinator = role === 'coordinator' || role === 'admin';
+const isEngineer = role === 'engineer';
+```
+
+**Admin Role:**
+- Treated as Coordinator (sees management sections)
+- Has access to all controls
+- Can perform both Coordinator and Engineer actions
+
+---
+
+**8. View Label Styling:**
+
+**Banner:**
+- Background: Blue (`bg-blue-50`)
+- Border: Left border, blue (`border-l-4 border-blue-500`)
+- Text: Blue (`text-blue-800`, `text-blue-600`)
+- Font: Semibold for role, regular for description
+
+**Example:**
+```
+┌─────────────────────────────────────────────────────────┐
+│ Coordinator View (Assignment, Acknowledgement, Overview) │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+**Files:**
+- Modified: app/ppap/[id]/page.tsx (added role detection and conditional rendering)
+- Documented: BUILD_LEDGER.md (Phase 3F.3 entry)
+
+**Total Changes:**
+- 1 file modified
+- 1 import added (currentUser)
+- 3 variables added (role, isCoordinator, isEngineer, viewLabel)
+- 1 banner added (view label)
+- 2 conditional blocks added (Coordinator view, Engineer view)
+- 3 shared sections marked (header, workflow, activity)
+
+**Code Changes:**
+- Added: Import for currentUser
+- Added: Role detection logic
+- Added: View label banner
+- Added: Conditional rendering for Coordinator view
+- Added: Conditional rendering for Engineer view
+- Marked: Shared components with comments
+
+---
+
+**Success Criteria Met:**
+
+- ✅ Cleaner UI per role
+- ✅ Reduced cognitive load
+- ✅ Clear ownership of tasks
+- ✅ View label shows current role
+- ✅ Coordinator sees assignment/acknowledgement sections
+- ✅ Engineer sees validation/document sections
+- ✅ Shared components always display
+
+---
+
+**Next Actions:**
+
+- Test Coordinator view (set role to 'coordinator' in mockUser.ts)
+- Test Engineer view (set role to 'engineer' in mockUser.ts)
+- Verify conditional rendering works correctly
+- Confirm shared sections always display
+
+- Commit: `feat: phase 3F.3 - implement role-based work view for Coordinator vs Engineer`
+
+---
+
 ## 2026-03-25 10:43 CT - Phase 3E.9 - Requirement Badge Render Fix Complete
 
 - Summary: Fixed UI to display correct REQUIRED/CONDITIONAL/OPTIONAL badges instead of "Not Required"

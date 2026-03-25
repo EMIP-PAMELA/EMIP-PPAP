@@ -16,6 +16,7 @@ import PPAPSubmissionPanel from '@/src/features/ppap/components/PPAPSubmissionPa
 import PPAPSummaryHeader from '@/src/features/ppap/components/PPAPSummaryHeader';
 import PPAPAcknowledgementBanner from '@/src/features/ppap/components/PPAPAcknowledgementBanner';
 import { TRANE_VALIDATIONS } from '@/src/features/ppap/utils/traneValidationTemplate';
+import { currentUser } from '@/src/lib/mockUser';
 
 interface PPAPDashboardPageProps {
   params: Promise<{
@@ -69,28 +70,54 @@ export default async function PPAPDashboardPage({ params }: PPAPDashboardPagePro
     );
   }
 
+  // Phase 3F.3: Role-based view logic
+  const role = currentUser.role;
+  const isCoordinator = role === 'coordinator' || role === 'admin';
+  const isEngineer = role === 'engineer';
+  const viewLabel = isCoordinator ? 'Coordinator View' : isEngineer ? 'Engineer View' : 'Viewer';
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
+        {/* Phase 3F.3: View Label Banner */}
+        <div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-3 rounded">
+          <div className="flex items-center">
+            <span className="text-blue-800 font-semibold text-sm">{viewLabel}</span>
+            <span className="ml-2 text-blue-600 text-xs">
+              {isCoordinator && '(Assignment, Acknowledgement, Overview)'}
+              {isEngineer && '(Validations, Documents, Execution)'}
+            </span>
+          </div>
+        </div>
+
+        {/* Shared: Always show header */}
         <div className="flex items-start justify-between">
           <PPAPHeader ppap={ppap} />
           <DeletePPAPButton ppapId={ppap.id} ppapNumber={ppap.ppap_number} />
         </div>
 
+        {/* Shared: Always show workflow progress */}
         <PPAPWorkflowWrapper ppap={ppap} />
 
-        <PPAPSummaryHeader ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
+        {/* Coordinator View: Summary and Assignment Controls */}
+        {isCoordinator && (
+          <>
+            <PPAPSummaryHeader ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
+            <PPAPActionBar ppapId={ppap.id} ppapState={ppap.status} validations={TRANE_VALIDATIONS} />
+            <PPAPAcknowledgementBanner ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
+            <PPAPIntakeSnapshot />
+          </>
+        )}
 
-        <PPAPActionBar ppapId={ppap.id} ppapState={ppap.status} validations={TRANE_VALIDATIONS} />
+        {/* Engineer View: Validation Details and Documents */}
+        {isEngineer && (
+          <>
+            <PPAPValidationPanel validations={TRANE_VALIDATIONS} currentPhase="pre-ack" ppapStatus={ppap.status} />
+            <PPAPSubmissionPanel validations={TRANE_VALIDATIONS} />
+          </>
+        )}
 
-        <PPAPAcknowledgementBanner ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
-
-        <PPAPValidationPanel validations={TRANE_VALIDATIONS} currentPhase="pre-ack" ppapStatus={ppap.status} />
-
-        <PPAPSubmissionPanel validations={TRANE_VALIDATIONS} />
-
-        <PPAPIntakeSnapshot />
-
+        {/* Shared: Always show activity feed */}
         <PPAPActivityFeed />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
