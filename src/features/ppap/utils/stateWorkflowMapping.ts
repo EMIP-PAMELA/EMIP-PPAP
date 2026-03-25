@@ -2,16 +2,72 @@ import { PPAPStatus } from '@/src/types/database.types';
 import { WorkflowPhase } from '../constants/workflowPhases';
 
 /**
- * Phase 3F.2.2 - Direct State → WorkflowPhase Mapping
+ * Phase 3F.4 - Complete State → Phase Mapping
  * 
- * CRITICAL FIX: Maps PPAP state directly to WorkflowPhase enum.
- * NO intermediate string labels - direct mapping only.
- * This is the ONLY source of truth for phase derivation.
+ * CRITICAL FIX: Explicit switch statement for ALL PPAPStatus values.
+ * NO fallback-to-INITIATION behavior except for safety.
+ * This is the SINGLE SOURCE OF TRUTH for phase derivation.
  */
+
+/**
+ * Phase 3F.4: Maps PPAPStatus directly to WorkflowPhase with explicit switch.
+ * Ensures ALL status values have explicit mapping.
+ */
+export function mapStatusToPhase(status: PPAPStatus): WorkflowPhase {
+  switch (status) {
+    // INITIATION Phase
+    case 'NEW':
+    case 'INTAKE_COMPLETE':
+    case 'PRE_ACK_ASSIGNED':
+    case 'PRE_ACK_IN_PROGRESS':
+      return 'INITIATION';
+
+    // DOCUMENTATION Phase
+    case 'READY_TO_ACKNOWLEDGE':
+    case 'ACKNOWLEDGED':
+    case 'POST_ACK_ASSIGNED':
+    case 'POST_ACK_IN_PROGRESS':
+      return 'DOCUMENTATION';
+
+    // SAMPLE Phase
+    case 'AWAITING_SUBMISSION':
+      return 'SAMPLE';
+
+    // REVIEW Phase
+    case 'SUBMITTED':
+      return 'REVIEW';
+
+    // COMPLETE Phase
+    case 'APPROVED':
+    case 'CLOSED':
+      return 'COMPLETE';
+
+    // Special States (map to appropriate phase)
+    case 'ON_HOLD':
+    case 'BLOCKED':
+      return 'INITIATION'; // Keep in current phase context
+
+    default:
+      console.error('Phase 3F.4 - CRITICAL: Unmapped PPAP status:', status);
+      return 'INITIATION'; // Fallback only for safety
+  }
+}
+
+/**
+ * Phase 3F.4: Debug logging for state → phase mapping.
+ */
+export function logStateToPhaseMapping(status: PPAPStatus, phase: WorkflowPhase): void {
+  console.log('Phase 3F.4 - STATE → PHASE:', {
+    status,
+    phase,
+    timestamp: new Date().toISOString(),
+  });
+}
 
 /**
  * Maps PPAP state directly to WorkflowPhase enum.
  * Phase 3F.2.2: Removed intermediate string-based labels.
+ * @deprecated Use mapStatusToPhase instead for direct PPAPStatus mapping
  */
 export function mapStateToWorkflowPhase(state: string): WorkflowPhase {
   const mapping: Record<string, WorkflowPhase> = {

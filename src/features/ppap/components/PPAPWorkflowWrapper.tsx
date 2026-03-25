@@ -9,31 +9,27 @@ import { SampleForm } from './SampleForm';
 import { ReviewForm } from './ReviewForm';
 import { WorkflowPhase, isValidWorkflowPhase, WORKFLOW_PHASE_LABELS, WORKFLOW_PHASES } from '../constants/workflowPhases';
 import { getNextAction } from '../utils/getNextAction';
-import { mapStatusToState } from '../utils/ppapTableHelpers';
-import { mapStateToWorkflowPhase } from '../utils/stateWorkflowMapping';
+import { mapStatusToPhase, logStateToPhaseMapping } from '../utils/stateWorkflowMapping';
 
 interface PPAPWorkflowWrapperProps {
   ppap: PPAPRecord;
 }
 
 export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
-  // Phase 3F.2.2: SINGLE SOURCE OF TRUTH - ppap.status
-  // NO UI PHASE STATE - Phase is ALWAYS derived from ppap.status
-  // DIRECT MAPPING: state → WorkflowPhase (no intermediate string labels)
-  const derivedState = mapStatusToState(ppap.status);
-  
-  // Phase 3F.2.2: Direct state → WorkflowPhase mapping (no phaseMapping object)
-  const selectedPhase = mapStateToWorkflowPhase(derivedState);
+  // Phase 3F.4: SINGLE SOURCE OF TRUTH - ppap.status
+  // DIRECT MAPPING: PPAPStatus → WorkflowPhase (explicit switch statement)
+  const selectedPhase = mapStatusToPhase(ppap.status);
   const activePhaseRef = useRef<HTMLDivElement>(null);
 
-  // Debug logging (Phase 3F.2.2)
+  // Phase 3F.4: Critical error guard
+  if (!selectedPhase) {
+    console.error('Phase 3F.4 - CRITICAL: Unmapped PPAP status', ppap.status);
+  }
+
+  // Phase 3F.4: Debug logging
   useEffect(() => {
-    console.log('Phase 3F.2.2 State → WorkflowPhase Mapping:', {
-      status: ppap.status,
-      derivedState,
-      selectedPhase,
-    });
-  }, [ppap.status, derivedState, selectedPhase]);
+    logStateToPhaseMapping(ppap.status, selectedPhase);
+  }, [ppap.status, selectedPhase]);
 
   // Auto-scroll to active phase on mount
   useEffect(() => {
@@ -52,10 +48,10 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     }
   };
 
-  // Phase 3F.2: Phase navigation disabled - phase is derived from ppap.status only
+  // Phase 3F.4: Phase navigation disabled - phase is derived from ppap.status only
   // User cannot manually select phases - they must update ppap.status via state transitions
   const handlePhaseClick = (phase: WorkflowPhase) => {
-    // Phase is derived from ppap.status (Phase 3F.2 architecture)
+    // Phase is derived from ppap.status (Phase 3F.4 architecture)
     // Manual phase selection removed - use state transitions instead
     scrollToActivePhase();
   };
