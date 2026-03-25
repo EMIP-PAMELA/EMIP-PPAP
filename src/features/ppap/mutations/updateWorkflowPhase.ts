@@ -1,3 +1,8 @@
+// ⚠️ CRITICAL RULE: NEVER update status directly.
+// ALL status updates MUST go through updatePPAPState().
+// This file contains LEGACY code that bypasses the state machine.
+// @deprecated Use updatePPAPState() instead for all status transitions.
+
 import { supabase } from '@/src/lib/supabaseClient';
 import { logEvent } from '@/src/features/events/mutations';
 import { WorkflowPhase } from '../constants/workflowPhases';
@@ -78,10 +83,18 @@ export async function updateWorkflowPhase({
   const oldStatus = currentRecord?.status || 'NEW';
   const newStatus = overrideStatus || getStatusForPhase(toPhase);
 
+  // Phase 3F.7: 🚨 DIRECT STATUS WRITE DETECTED
+  console.warn('🚨 DIRECT STATUS WRITE DETECTED', {
+    status: newStatus,
+    file: 'updateWorkflowPhase.ts',
+    warning: 'This bypasses updatePPAPState() - DEPRECATED',
+  });
+
   // TODO Phase 3D: Replace direct status updates with executeTransition()
   // This will enforce both state machine validation and role permissions
   // Example: const newStatus = executeTransition(role, oldStatus, targetStatus);
 
+  // ⚠️ LEGACY: Direct status write - bypasses state machine
   // Update workflow_phase AND status in database
   const { data, error } = await supabase
     .from('ppap_records')

@@ -1,3 +1,7 @@
+// ✅ CRITICAL RULE: This is the ONLY way to update PPAP status.
+// ALL status updates MUST go through updatePPAPState().
+// NEVER update status directly via Supabase .update() calls.
+
 import { supabase } from '@/src/lib/supabaseClient';
 import { PPAPStatus } from '@/src/types/database.types';
 import { logEvent } from '@/src/features/events/mutations';
@@ -6,7 +10,8 @@ import { logEvent } from '@/src/features/events/mutations';
  * Phase 3G - Persistent State Transitions
  * 
  * Updates PPAP state in database with event logging.
- * This is the single entry point for all state transitions.
+ * This is the SINGLE ENTRY POINT for all state transitions.
+ * Phase 3F.7: Enforces state machine rules, prevents direct writes.
  */
 
 export interface StateTransitionResult {

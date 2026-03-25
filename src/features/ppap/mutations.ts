@@ -1,3 +1,8 @@
+// ⚠️ CRITICAL RULE: NEVER update status directly.
+// ALL status updates MUST go through updatePPAPState().
+// This file contains LEGACY code that bypasses the state machine.
+// @deprecated Use updatePPAPState() for status transitions.
+
 import { supabase } from '@/src/lib/supabaseClient';
 import type {
   CreatePPAPInput,
@@ -72,6 +77,16 @@ export async function updatePPAP(
     throw new Error(`PPAP not found with ID: ${id}`);
   }
 
+  // Phase 3F.7: 🚨 DIRECT STATUS WRITE DETECTED (if input.status exists)
+  if (input.status) {
+    console.warn('🚨 DIRECT STATUS WRITE DETECTED', {
+      status: input.status,
+      file: 'mutations.ts (updatePPAP)',
+      warning: 'This bypasses updatePPAPState() - DEPRECATED',
+    });
+  }
+
+  // ⚠️ LEGACY: Allows direct status write - bypasses state machine
   const { data, error } = await supabase
     .from('ppap_records')
     .update({

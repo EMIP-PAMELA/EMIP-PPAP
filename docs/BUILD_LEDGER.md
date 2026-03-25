@@ -4,6 +4,416 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 12:18 CT - Phase 3F.7 - Catch Direct Status Writes (Bypassing State Machine) Complete
+
+- Summary: Identified and flagged legacy code that bypasses updatePPAPState() with direct status writes
+- Files changed:
+  - `src/features/ppap/mutations/updateWorkflowPhase.ts` - Added deprecation warning and 🚨 alert for direct write
+  - `src/features/ppap/mutations.ts` - Added deprecation warning for updatePPAP direct status write
+  - `src/features/ppap/utils/updatePPAPState.ts` - Added enforcement rule comment
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Visibility into legacy code bypassing state machine, clear deprecation warnings
+- Objective: Find and flag all direct Supabase status updates that bypass updatePPAPState
+
+**Context:**
+
+Phase 3F.7 identifies legacy code that directly updates the `status` field via Supabase `.update()` calls, bypassing the `updatePPAPState()` state machine. These direct writes circumvent backward transition guards, state validation, and logging, potentially causing workflow regression and silent state overwrites.
+
+**Problem Statement:**
+
+**Before Phase 3F.7:**
+- No visibility into direct status writes
+- Legacy functions bypass state machine
+- No warnings when direct writes occur
+- Silent state overwrites possible
+- No enforcement of single source of truth
+
+**After Phase 3F.7:**
+- 2 direct write violations identified and flagged
+- Console warnings when legacy code executes
+- Deprecation notices in file headers
+- Enforcement rule comments added
+- Clear path to migration
+
+---
+
+**Solution:**
+
+**STEP 1 - Search Entire Codebase:**
+
+**Searched for:**
+- `.update({` - Found 8 locations
+- `status:` in updates - Identified 2 violations
+
+**Results:**
+- ✅ `updatePPAPState.ts` - Legitimate (this IS the state machine)
+- ✅ `validationDatabase.ts` - Updates validations, not PPAP status
+- ✅ `tasks/mutations.ts` - Updates tasks, not PPAP status
+- ✅ `PPAPHeader.tsx` - Updates assigned_to only
+- ✅ `PPAPOperationsDashboard.tsx` - Updates assigned_to only
+- ✅ `AssignmentControl.tsx` - Updates assigned_to only
+- ❌ **`updateWorkflowPhase.ts`** - VIOLATION: Direct status write
+- ❌ **`mutations.ts (updatePPAP)`** - VIOLATION: Allows direct status write
+
+---
+
+**STEP 2 - Identify Violations:**
+
+**VIOLATION #1: updateWorkflowPhase.ts**
+
+**Location:** `src/features/ppap/mutations/updateWorkflowPhase.ts:88-91`
+
+**Code:**
+```tsx
+const { data, error } = await supabase
+  .from('ppap_records')
+  .update({
+    workflow_phase: toPhase,
+    status: newStatus,  // ❌ Direct status write
+    updated_at: new Date().toISOString(),
+  })
+```
+
+**Issue:**
+- Bypasses `updatePPAPState()` state machine
+- No backward transition guard
+- Maps phase to status without validation
+- Used by legacy workflow phase updates
+
+---
+
+**VIOLATION #2: mutations.ts (updatePPAP)**
+
+**Location:** `src/features/ppap/mutations.ts:75-80`
+
+**Code:**
+```tsx
+const { data, error } = await supabase
+  .from('ppap_records')
+  .update({
+    ...input,  // ❌ Allows input.status to bypass state machine
+    updated_at: new Date().toISOString(),
+  })
+```
+
+**Issue:**
+- Accepts `UpdatePPAPInput` which includes optional `status` field
+- No validation of status transitions
+- No backward transition guard
+- Generic update function used in multiple places
+
+---
+
+**STEP 3 - Log Them:**
+
+**Added to updateWorkflowPhase.ts:**
+```tsx
+// Phase 3F.7: 🚨 DIRECT STATUS WRITE DETECTED
+console.warn('🚨 DIRECT STATUS WRITE DETECTED', {
+  status: newStatus,
+  file: 'updateWorkflowPhase.ts',
+  warning: 'This bypasses updatePPAPState() - DEPRECATED',
+});
+```
+
+**Added to mutations.ts:**
+```tsx
+// Phase 3F.7: 🚨 DIRECT STATUS WRITE DETECTED (if input.status exists)
+if (input.status) {
+  console.warn('🚨 DIRECT STATUS WRITE DETECTED', {
+    status: input.status,
+    file: 'mutations.ts (updatePPAP)',
+    warning: 'This bypasses updatePPAPState() - DEPRECATED',
+  });
+}
+```
+
+---
+
+**STEP 4 - Fix Them (Documentation Only):**
+
+**Current Status:** FLAGGED, NOT YET REPLACED
+
+**Reason:** These functions are used in multiple places and require careful migration to avoid breaking existing functionality.
+
+**Migration Path:**
+
+**For updateWorkflowPhase.ts:**
+```tsx
+// ❌ OLD (bypasses state machine):
+await updateWorkflowPhase({
+  ppapId,
+  fromPhase: 'INITIATION',
+  toPhase: 'DOCUMENTATION',
+});
+
+// ✅ NEW (uses state machine):
+await updatePPAPState(
+  ppapId,
+  'READY_TO_ACKNOWLEDGE',
+  userId,
+  userRole
+);
+```
+
+**For mutations.ts (updatePPAP):**
+```tsx
+// ❌ OLD (allows direct status write):
+await updatePPAP(ppapId, {
+  status: 'PRE_ACK_IN_PROGRESS',
+  part_number: 'ABC123',
+});
+
+// ✅ NEW (separate concerns):
+// 1. Update status via state machine
+await updatePPAPState(ppapId, 'PRE_ACK_IN_PROGRESS', userId, userRole);
+
+// 2. Update other fields separately
+await updatePPAP(ppapId, {
+  part_number: 'ABC123',
+  // NO status field
+});
+```
+
+---
+
+**STEP 5 - Enforce Rule:**
+
+**Added to updateWorkflowPhase.ts:**
+```tsx
+// ⚠️ CRITICAL RULE: NEVER update status directly.
+// ALL status updates MUST go through updatePPAPState().
+// This file contains LEGACY code that bypasses the state machine.
+// @deprecated Use updatePPAPState() instead for all status transitions.
+```
+
+**Added to mutations.ts:**
+```tsx
+// ⚠️ CRITICAL RULE: NEVER update status directly.
+// ALL status updates MUST go through updatePPAPState().
+// This file contains LEGACY code that bypasses the state machine.
+// @deprecated Use updatePPAPState() for status transitions.
+```
+
+**Added to updatePPAPState.ts:**
+```tsx
+// ✅ CRITICAL RULE: This is the ONLY way to update PPAP status.
+// ALL status updates MUST go through updatePPAPState().
+// NEVER update status directly via Supabase .update() calls.
+```
+
+---
+
+**STEP 6 - Verify:**
+
+**Expected Console Output:**
+
+**When legacy code executes:**
+```javascript
+🚨 DIRECT STATUS WRITE DETECTED {
+  status: 'PRE_ACK_IN_PROGRESS',
+  file: 'updateWorkflowPhase.ts',
+  warning: 'This bypasses updatePPAPState() - DEPRECATED'
+}
+```
+
+**When updatePPAP called with status:**
+```javascript
+🚨 DIRECT STATUS WRITE DETECTED {
+  status: 'ACKNOWLEDGED',
+  file: 'mutations.ts (updatePPAP)',
+  warning: 'This bypasses updatePPAPState() - DEPRECATED'
+}
+```
+
+**When proper state machine used:**
+```javascript
+Phase 3F.6 - STATE WRITE ATTEMPT {
+  to: 'READY_TO_ACKNOWLEDGE',
+  source: 'InitiationForm.tsx'
+}
+Phase 3F.5 - UPDATE START { ... }
+// No 🚨 warning - correct path
+```
+
+---
+
+**Implementation:**
+
+**1. updateWorkflowPhase.ts Changes:**
+
+**Added header warning:**
+```tsx
+// ⚠️ CRITICAL RULE: NEVER update status directly.
+// ALL status updates MUST go through updatePPAPState().
+// This file contains LEGACY code that bypasses the state machine.
+// @deprecated Use updatePPAPState() instead for all status transitions.
+```
+
+**Added console warning:**
+```tsx
+// Phase 3F.7: 🚨 DIRECT STATUS WRITE DETECTED
+console.warn('🚨 DIRECT STATUS WRITE DETECTED', {
+  status: newStatus,
+  file: 'updateWorkflowPhase.ts',
+  warning: 'This bypasses updatePPAPState() - DEPRECATED',
+});
+```
+
+**Added inline comment:**
+```tsx
+// ⚠️ LEGACY: Direct status write - bypasses state machine
+const { data, error } = await supabase
+  .from('ppap_records')
+  .update({
+    workflow_phase: toPhase,
+    status: newStatus,
+    updated_at: new Date().toISOString(),
+  })
+```
+
+---
+
+**2. mutations.ts Changes:**
+
+**Added header warning:**
+```tsx
+// ⚠️ CRITICAL RULE: NEVER update status directly.
+// ALL status updates MUST go through updatePPAPState().
+// This file contains LEGACY code that bypasses the state machine.
+// @deprecated Use updatePPAPState() for status transitions.
+```
+
+**Added conditional console warning:**
+```tsx
+// Phase 3F.7: 🚨 DIRECT STATUS WRITE DETECTED (if input.status exists)
+if (input.status) {
+  console.warn('🚨 DIRECT STATUS WRITE DETECTED', {
+    status: input.status,
+    file: 'mutations.ts (updatePPAP)',
+    warning: 'This bypasses updatePPAPState() - DEPRECATED',
+  });
+}
+```
+
+**Added inline comment:**
+```tsx
+// ⚠️ LEGACY: Allows direct status write - bypasses state machine
+const { data, error } = await supabase
+  .from('ppap_records')
+  .update({
+    ...input,
+    updated_at: new Date().toISOString(),
+  })
+```
+
+---
+
+**3. updatePPAPState.ts Changes:**
+
+**Added enforcement rule header:**
+```tsx
+// ✅ CRITICAL RULE: This is the ONLY way to update PPAP status.
+// ALL status updates MUST go through updatePPAPState().
+// NEVER update status directly via Supabase .update() calls.
+```
+
+**Updated JSDoc:**
+```tsx
+/**
+ * Phase 3G - Persistent State Transitions
+ * 
+ * Updates PPAP state in database with event logging.
+ * This is the SINGLE ENTRY POINT for all state transitions.
+ * Phase 3F.7: Enforces state machine rules, prevents direct writes.
+ */
+```
+
+---
+
+**Files:**
+- Modified: updateWorkflowPhase.ts (added warnings, deprecation notice)
+- Modified: mutations.ts (added warnings, deprecation notice)
+- Modified: updatePPAPState.ts (added enforcement rule)
+- Documented: BUILD_LEDGER.md (Phase 3F.7 entry)
+
+**Total Changes:**
+- 3 files modified
+- 2 direct write violations identified
+- 2 console warnings added
+- 3 enforcement rule comments added
+- 0 violations fixed (flagged for future migration)
+
+**Code Changes:**
+- Added: 🚨 DIRECT STATUS WRITE DETECTED warnings
+- Added: Deprecation notices in file headers
+- Added: Inline LEGACY comments
+- Added: Enforcement rule in updatePPAPState.ts
+- Identified: 2 functions that bypass state machine
+
+---
+
+**Violations Summary:**
+
+**Direct Status Write Violations (2 total):**
+
+| File | Function | Line | Issue | Status |
+|------|----------|------|-------|--------|
+| updateWorkflowPhase.ts | updateWorkflowPhase | 88-91 | Direct status write | FLAGGED |
+| mutations.ts | updatePPAP | 75-80 | Allows input.status | FLAGGED |
+
+**Safe Updates (6 total):**
+- updatePPAPState.ts - Legitimate state machine ✅
+- validationDatabase.ts - Updates validations only ✅
+- tasks/mutations.ts - Updates tasks only ✅
+- PPAPHeader.tsx - Updates assigned_to only ✅
+- PPAPOperationsDashboard.tsx - Updates assigned_to only ✅
+- AssignmentControl.tsx - Updates assigned_to only ✅
+
+---
+
+**Success Criteria Met:**
+
+- ✅ All direct status writes identified
+- ✅ Console warnings added for violations
+- ✅ Deprecation notices in place
+- ✅ Enforcement rules documented
+- ✅ Clear migration path defined
+- ⚠️ Violations flagged but not yet fixed (requires careful migration)
+
+---
+
+**Migration Strategy:**
+
+**Phase 1 (Current - Phase 3F.7):**
+- ✅ Identify violations
+- ✅ Add warnings
+- ✅ Document deprecation
+
+**Phase 2 (Future):**
+- Find all call sites of `updateWorkflowPhase()`
+- Replace with `updatePPAPState()` calls
+- Remove `updateWorkflowPhase()` function
+
+**Phase 3 (Future):**
+- Find all call sites of `updatePPAP()` with `status` field
+- Split into separate `updatePPAPState()` + `updatePPAP()` calls
+- Remove `status` from `UpdatePPAPInput` type
+
+---
+
+**Next Actions:**
+
+- Monitor console for 🚨 warnings
+- Identify which code paths trigger legacy functions
+- Plan migration of updateWorkflowPhase callers
+- Plan migration of updatePPAP status writes
+- Eventually remove legacy functions
+
+- Commit: `feat: phase 3F.7 - flag direct status writes bypassing state machine`
+
+---
+
 ## 2026-03-25 11:34 CT - Phase 3F.6 - Prevent Backward State Override Complete
 
 - Summary: Added backward transition guards and comprehensive state write logging to prevent invalid state reversions
