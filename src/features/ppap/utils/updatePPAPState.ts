@@ -45,6 +45,16 @@ export async function updatePPAPState(
   userRole: string
 ): Promise<StateTransitionResult> {
   try {
+    // Phase 3F.10: GLOBAL TRACE - Log authorized state write with stack trace
+    console.log('🔥 STATE WRITE (AUTHORIZED)', {
+      ppapId,
+      newState,
+      userId,
+      userRole,
+      timestamp: new Date().toISOString(),
+      caller: new Error().stack,
+    });
+
     // Phase 3F.5: Log before update
     console.log('Phase 3F.5 - UPDATE START', {
       ppapId,

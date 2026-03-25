@@ -58,6 +58,13 @@ export async function getPPAPById(id: string) {
     .eq('id', id)
     .maybeSingle();
 
+  // Phase 3F.10: GLOBAL TRACE - Log every PPAP read
+  console.log('👀 PPAP FETCH', {
+    id,
+    status: data?.status,
+    timestamp: new Date().toISOString(),
+  });
+
   if (error) {
     console.error('Phase 3F.5 - FETCH ERROR', {
       id,
