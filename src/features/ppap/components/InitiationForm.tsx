@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { updateWorkflowPhase } from '../mutations/updateWorkflowPhase';
-import { WorkflowPhase } from '../constants/workflowPhases';
+import { updatePPAPState } from '../utils/updatePPAPState';
 
 interface InitiationFormProps {
   ppapId: string;
@@ -117,25 +116,27 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
     setLoading(true);
 
     try {
-      // Phase is derived from ppap.status (Phase 3F architecture)
-      // Persist phase change to database
-      await updateWorkflowPhase({
-        ppapId,
-        fromPhase: 'INITIATION',
-        toPhase: 'DOCUMENTATION',
-        actor: 'Matt',
-        additionalData: {
-          initiation_data: formData,
-        },
-      });
-
-      setSuccessMessage('✓ Initiation phase completed! Advancing to Documentation phase...');
+      // Phase 3F.2.3: Use updatePPAPState for proper state machine transition
+      // State machine path: INITIATED → IN_PROGRESS → READY_FOR_ACKNOWLEDGEMENT
+      console.log('Phase 3F.2.3: Transitioning to IN_PROGRESS');
       
-      // Refresh UI to reflect status/phase change
+      const result = await updatePPAPState(
+        ppapId,
+        'IN_PROGRESS',
+        'Matt', // TODO: Replace with actual user ID
+        'engineer' // TODO: Replace with actual user role
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update state');
+      }
+
+      console.log('Phase 3F.2.3: State transition successful, refreshing UI');
+      
+      // Phase 3F.2.3: Refresh UI to reflect state change
+      // UI will automatically update based on ppap.status
       router.refresh();
       
-      // Phase 3F: Phase is now derived from state, no manual phase setting
-      // The workflow bar will automatically update when state changes
     } catch (error) {
       console.error('Failed to advance phase:', error);
       setErrors({ 
