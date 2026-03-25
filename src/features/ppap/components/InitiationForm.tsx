@@ -116,13 +116,13 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
     setLoading(true);
 
     try {
-      // Phase 3F.2.3: Use updatePPAPState for proper state machine transition
-      // State machine path: INITIATED → IN_PROGRESS → READY_FOR_ACKNOWLEDGEMENT
-      console.log('Phase 3F.2.3: Transitioning to IN_PROGRESS');
+      // Phase 3F.2.4: Use READY_TO_ACKNOWLEDGE (correct PPAPStatus)
+      // Mapping: READY_TO_ACKNOWLEDGE → READY_FOR_ACKNOWLEDGEMENT → DOCUMENTATION
+      console.log('Phase 3F.2.4: Transitioning INITIATION → READY_TO_ACKNOWLEDGE');
       
       const result = await updatePPAPState(
         ppapId,
-        'IN_PROGRESS',
+        'READY_TO_ACKNOWLEDGE',
         'Matt', // TODO: Replace with actual user ID
         'engineer' // TODO: Replace with actual user role
       );
@@ -131,7 +131,7 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
         throw new Error(result.error || 'Failed to update state');
       }
 
-      console.log('Phase 3F.2.3: State transition successful, refreshing UI');
+      console.log('Phase 3F.2.4: State transition successful, UI will advance to DOCUMENTATION');
       
       // Phase 3F.2.3: Refresh UI to reflect state change
       // UI will automatically update based on ppap.status

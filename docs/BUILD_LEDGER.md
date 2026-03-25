@@ -4,6 +4,310 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 09:38 CT - [CRITICAL CORRECTION] Phase 3F.2.4 - INITIATION → DOCUMENTATION Transition Correction Complete
+
+- Summary: Fixed InitiationForm to use correct PPAPStatus value for advancing to DOCUMENTATION phase
+- Files changed:
+  - `src/features/ppap/components/InitiationForm.tsx` - Changed IN_PROGRESS to READY_TO_ACKNOWLEDGE
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: UI now correctly advances to DOCUMENTATION phase when "Send to Next Phase" is clicked
+- Root cause: Phase 3F.2.3 used IN_PROGRESS (invalid PPAPStatus, maps to INITIATION phase)
+
+**Context:**
+
+Phase 3F.2.4 is a critical correction to Phase 3F.2.3. The previous fix used `'IN_PROGRESS'` as the target state, but this caused two critical issues:
+1. `'IN_PROGRESS'` is NOT a valid `PPAPStatus` enum value (TypeScript error)
+2. Even if it were valid, `'IN_PROGRESS'` maps to `INITIATION` phase, so the UI would not advance
+
+The correct `PPAPStatus` value is `'READY_TO_ACKNOWLEDGE'`, which maps to the `DOCUMENTATION` phase.
+
+**Problem Statement:**
+
+**Phase 3F.2.3 Implementation (INCORRECT):**
+```tsx
+const result = await updatePPAPState(
+  ppapId,
+  'IN_PROGRESS',  // ❌ NOT a valid PPAPStatus
+  userId,
+  userRole
+);
+```
+
+**Critical Issues:**
+1. **TypeScript Error:** `'IN_PROGRESS'` is not in `PPAPStatus` enum
+2. **Wrong Mapping:** Even if accepted, `'IN_PROGRESS'` → `'INITIATION'` phase
+3. **UI Stuck:** Workflow bar does not advance
+4. **No Phase Change:** DocumentationForm does not render
+
+**PPAPStatus Enum:**
+```tsx
+export type PPAPStatus =
+  | 'NEW'
+  | 'INTAKE_COMPLETE'
+  | 'PRE_ACK_ASSIGNED'
+  | 'PRE_ACK_IN_PROGRESS'
+  | 'READY_TO_ACKNOWLEDGE'  // ✅ Correct value
+  | 'ACKNOWLEDGED'
+  | 'POST_ACK_ASSIGNED'
+  | 'POST_ACK_IN_PROGRESS'
+  | 'AWAITING_SUBMISSION'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'ON_HOLD'
+  | 'BLOCKED'
+  | 'CLOSED';
+```
+
+**Mapping Chain:**
+```tsx
+// ppapTableHelpers.ts
+'READY_TO_ACKNOWLEDGE': 'READY_FOR_ACKNOWLEDGEMENT',  // PPAPStatus → State
+
+// stateWorkflowMapping.ts
+'READY_FOR_ACKNOWLEDGEMENT': 'DOCUMENTATION',  // State → WorkflowPhase
+```
+
+**Phase 3F.2.4 Implementation (CORRECT):**
+```tsx
+const result = await updatePPAPState(
+  ppapId,
+  'READY_TO_ACKNOWLEDGE',  // ✅ Valid PPAPStatus
+  userId,
+  userRole
+);
+```
+
+**Correct Flow:**
+1. `ppap.status` → `'READY_TO_ACKNOWLEDGE'`
+2. `mapStatusToState('READY_TO_ACKNOWLEDGE')` → `'READY_FOR_ACKNOWLEDGEMENT'`
+3. `mapStateToWorkflowPhase('READY_FOR_ACKNOWLEDGEMENT')` → `'DOCUMENTATION'`
+4. UI renders `<DocumentationForm />`
+5. Workflow bar shows "Documentation"
+
+---
+
+**Solution:**
+
+**RULE ENFORCEMENT:**
+```
+❌ DO NOT use 'IN_PROGRESS' in updatePPAPState
+❌ DO NOT use updateWorkflowPhase
+✅ ALWAYS transition using valid PPAPStatus values
+✅ Phase MUST be derived from ppap.status only
+```
+
+---
+
+**Implementation:**
+
+**1. Replaced IN_PROGRESS with READY_TO_ACKNOWLEDGE**
+
+**Before (Phase 3F.2.3 - INCORRECT):**
+```tsx
+const result = await updatePPAPState(
+  ppapId,
+  'IN_PROGRESS',  // ❌ Invalid PPAPStatus
+  'Matt',
+  'engineer'
+);
+```
+
+**After (Phase 3F.2.4 - CORRECT):**
+```tsx
+const result = await updatePPAPState(
+  ppapId,
+  'READY_TO_ACKNOWLEDGE',  // ✅ Valid PPAPStatus
+  'Matt',
+  'engineer'
+);
+```
+
+**Impact:**
+- Uses valid `PPAPStatus` enum value
+- Maps to `DOCUMENTATION` phase correctly
+- UI advances as expected
+- Workflow bar updates correctly
+
+---
+
+**2. Updated Debug Logging**
+
+**Before:**
+```tsx
+console.log('Phase 3F.2.3: Transitioning to IN_PROGRESS');
+console.log('Phase 3F.2.3: State transition successful, refreshing UI');
+```
+
+**After:**
+```tsx
+console.log('Phase 3F.2.4: Transitioning INITIATION → READY_TO_ACKNOWLEDGE');
+console.log('Phase 3F.2.4: State transition successful, UI will advance to DOCUMENTATION');
+```
+
+**Impact:**
+- Clearer debug messages
+- Shows correct transition
+- Indicates expected UI behavior
+
+---
+
+**3. Updated Code Comments**
+
+**Before:**
+```tsx
+// Phase 3F.2.3: Use updatePPAPState for proper state machine transition
+// State machine path: INITIATED → IN_PROGRESS → READY_FOR_ACKNOWLEDGEMENT
+```
+
+**After:**
+```tsx
+// Phase 3F.2.4: Use READY_TO_ACKNOWLEDGE (correct PPAPStatus)
+// Mapping: READY_TO_ACKNOWLEDGE → READY_FOR_ACKNOWLEDGEMENT → DOCUMENTATION
+```
+
+**Impact:**
+- Accurate documentation
+- Shows correct mapping chain
+- References correct phase
+
+---
+
+**4. Mapping Verification**
+
+**PPAPStatus → State Mapping:**
+```tsx
+// ppapTableHelpers.ts - mapStatusToState()
+'READY_TO_ACKNOWLEDGE': 'READY_FOR_ACKNOWLEDGEMENT',
+```
+
+**State → WorkflowPhase Mapping:**
+```tsx
+// stateWorkflowMapping.ts - mapStateToWorkflowPhase()
+'READY_FOR_ACKNOWLEDGEMENT': 'DOCUMENTATION',
+```
+
+**Complete Chain:**
+```
+PPAPStatus: 'READY_TO_ACKNOWLEDGE'
+    ↓ mapStatusToState()
+State: 'READY_FOR_ACKNOWLEDGEMENT'
+    ↓ mapStateToWorkflowPhase()
+WorkflowPhase: 'DOCUMENTATION'
+```
+
+**Verification:**
+- ✅ `'READY_TO_ACKNOWLEDGE'` exists in `PPAPStatus` enum
+- ✅ Maps to `'READY_FOR_ACKNOWLEDGEMENT'` state
+- ✅ Maps to `'DOCUMENTATION'` phase
+- ✅ UI will render `DocumentationForm`
+- ✅ Workflow bar will show "Documentation"
+
+---
+
+**5. State Transition Flow**
+
+**User Action:**
+1. User fills out InitiationForm
+2. User clicks "Send to Next Phase"
+
+**State Transition:**
+3. `handleAdvancePhase()` called
+4. Form validation passes
+5. `updatePPAPState(ppapId, 'READY_TO_ACKNOWLEDGE', userId, userRole)`
+6. Database: `ppap.status` → `'READY_TO_ACKNOWLEDGE'`
+7. Event logged: `STATUS_CHANGED`
+8. `router.refresh()`
+
+**UI Update:**
+9. Component re-renders with new `ppap.status = 'READY_TO_ACKNOWLEDGE'`
+10. `derivedState = mapStatusToState('READY_TO_ACKNOWLEDGE')` → `'READY_FOR_ACKNOWLEDGEMENT'`
+11. `selectedPhase = mapStateToWorkflowPhase('READY_FOR_ACKNOWLEDGEMENT')` → `'DOCUMENTATION'`
+12. UI renders `<DocumentationForm />`
+13. Workflow bar shows "Documentation"
+14. Debug log shows: `{ status: 'READY_TO_ACKNOWLEDGE', derivedState: 'READY_FOR_ACKNOWLEDGEMENT', selectedPhase: 'DOCUMENTATION' }`
+
+**Success Criteria Met:**
+- ✅ Database status updates to `'READY_TO_ACKNOWLEDGE'`
+- ✅ Page refreshes
+- ✅ selectedPhase becomes `'DOCUMENTATION'`
+- ✅ DocumentationForm renders
+- ✅ Workflow bar advances to "Documentation"
+
+---
+
+**6. Benefits**
+
+**Correct Enum Usage:**
+- Uses valid `PPAPStatus` value
+- No TypeScript errors
+- Type-safe transitions
+
+**Correct Phase Mapping:**
+- Maps to `DOCUMENTATION` phase
+- UI advances correctly
+- Workflow bar updates
+
+**Proper Architecture:**
+- Follows state-driven rendering
+- Uses correct database enum
+- Enforces single source of truth
+
+**Better User Experience:**
+- UI advances as expected
+- Workflow bar shows progress
+- No stuck states
+
+---
+
+**7. Comparison: Phase 3F.2.3 vs Phase 3F.2.4**
+
+**Phase 3F.2.3 (INCORRECT):**
+```
+Target: 'IN_PROGRESS'
+Status: ❌ Invalid PPAPStatus
+Mapping: 'IN_PROGRESS' → 'INITIATION' (if it worked)
+Result: UI stuck in INITIATION
+```
+
+**Phase 3F.2.4 (CORRECT):**
+```
+Target: 'READY_TO_ACKNOWLEDGE'
+Status: ✅ Valid PPAPStatus
+Mapping: 'READY_TO_ACKNOWLEDGE' → 'DOCUMENTATION'
+Result: UI advances to DOCUMENTATION
+```
+
+---
+
+**Files:**
+- Modified: InitiationForm.tsx (changed IN_PROGRESS to READY_TO_ACKNOWLEDGE, updated debug logging, updated comments)
+- Documented: BUILD_LEDGER.md (Phase 3F.2.4 entry)
+
+**Total Changes:**
+- 1 file modified
+- 1 file documented
+- Correct PPAPStatus value used
+- UI phase advancement fixed
+
+**Code Changes:**
+- Changed: 'IN_PROGRESS' → 'READY_TO_ACKNOWLEDGE'
+- Updated: Debug logging (2 console.log statements)
+- Updated: Code comments to reference Phase 3F.2.4
+- Updated: Mapping documentation in comments
+
+---
+
+**Next Actions:**
+
+- Test "Send to Next Phase" advances to DOCUMENTATION
+- Verify debug logging shows correct transition
+- Confirm workflow bar advances properly
+- Verify DocumentationForm renders
+
+- Commit: `fix(critical): phase 3F.2.4 - use READY_TO_ACKNOWLEDGE for DOCUMENTATION phase transition`
+
+---
+
 ## 2026-03-25 09:24 CT - [CRITICAL FIX] Phase 3F.2.3 - Fix INITIATION → DOCUMENTATION Transition Complete
 
 - Summary: Fixed InitiationForm to actually update ppap.status in database using state machine
