@@ -427,11 +427,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
                               ⚠ Missing
                             </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                              Not Required
-                            </span>
-                          )}
+                          ) : null}
                         </div>
                       </div>
                     );

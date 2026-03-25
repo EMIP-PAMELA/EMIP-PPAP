@@ -11,6 +11,7 @@ import {
   isPreAckReady,
   isPostAckReady,
   getNextAction,
+  getRequirementBadgeStyle,
 } from '../utils/validationHelpers';
 import { getValidationGuidance } from '../utils/validationGuidance';
 import { PPAPStatus } from '@/src/types/database.types';
@@ -39,6 +40,13 @@ const STATUS_COLORS = {
 
 export default function PPAPValidationPanel({ validations, currentPhase, ppapStatus }: Props) {
   const [localValidations, setLocalValidations] = useState(validations);
+  
+  // Phase 3E.9: Debug logging for requirement levels
+  console.log('Phase 3E.9 - Validation Requirement Levels:', localValidations.map(v => ({
+    name: v.name,
+    level: v.requirement_level || 'MISSING',
+    category: v.category
+  })));
   
   // Phase 3F: Determine editability based on state
   const derivedState = ppapStatus ? mapStatusToState(ppapStatus) : 'INITIATED';
@@ -130,8 +138,10 @@ export default function PPAPValidationPanel({ validations, currentPhase, ppapSta
                     <span className="text-xs text-gray-500 capitalize">
                       {validation.validation_type}
                     </span>
-                    {validation.required && (
-                      <span className="text-xs text-red-600 font-medium">Required</span>
+                    {validation.requirement_level && (
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${getRequirementBadgeStyle(validation.requirement_level)}`}>
+                        {validation.requirement_level}
+                      </span>
                     )}
                     {validation.requires_approval && (
                       <span className="text-xs text-orange-600 font-medium">
@@ -234,7 +244,7 @@ export default function PPAPValidationPanel({ validations, currentPhase, ppapSta
       </div>
 
       {renderValidationSection(
-        'Pre-Acknowledgement Requirements',
+        'Pre-Acknowledgement Readiness',
         'pre-ack',
         preAckValidations
       )}
