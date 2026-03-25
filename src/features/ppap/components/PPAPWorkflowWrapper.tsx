@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { PPAPRecord } from '@/src/types/database.types';
+import { PPAPRecord, PPAPStatus } from '@/src/types/database.types';
 import { PhaseIndicator } from './PhaseIndicator';
 import { InitiationForm } from './InitiationForm';
 import { DocumentationForm } from './DocumentationForm';
@@ -17,11 +17,11 @@ interface PPAPWorkflowWrapperProps {
 }
 
 export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
-  // Phase 3F: Derive phase from state only (single source of truth)
+  // Phase 3F UI Fix: Use state-based rendering with ppap.status as source of truth
   const derivedState = mapStatusToState(ppap.status);
   const derivedPhaseLabel = mapStateToPhase(derivedState);
   
-  // Map derived phase label to WorkflowPhase enum
+  // Map derived phase label to WorkflowPhase enum with safety fallback
   const phaseMapping: Record<string, WorkflowPhase> = {
     'Initiation': 'INITIATION',
     'Pre-Ack Complete': 'DOCUMENTATION',
@@ -100,6 +100,7 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
 
       <PhaseIndicator currentPhase={currentPhase} onPhaseClick={handlePhaseClick} />
       
+      {/* Phase 3F UI Fix: State-based rendering with safety fallback */}
       {selectedPhase === 'INITIATION' && (
         <div ref={activePhaseRef}>
           <InitiationForm
@@ -150,6 +151,19 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
         <div ref={activePhaseRef} className="bg-white border border-gray-200 rounded-lg p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">COMPLETE Phase</h2>
           <p className="text-green-700 font-medium">✓ PPAP workflow complete!</p>
+        </div>
+      )}
+
+      {/* Safety fallback: Render initiation form if no phase matches */}
+      {!['INITIATION', 'DOCUMENTATION', 'SAMPLE', 'REVIEW', 'COMPLETE'].includes(selectedPhase) && (
+        <div ref={activePhaseRef}>
+          <InitiationForm
+            ppapId={ppap.id}
+            partNumber={ppap.part_number || ''}
+            ppapType={ppap.ppap_type}
+            currentPhase={currentPhase}
+            isReadOnly={false}
+          />
         </div>
       )}
     </div>
