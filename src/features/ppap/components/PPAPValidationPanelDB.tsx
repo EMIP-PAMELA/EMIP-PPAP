@@ -1,0 +1,305 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { currentUser } from '@/src/lib/mockUser';
+import { 
+  DBValidation,
+  ValidationCategory,
+  ValidationStatus,
+  getValidations,
+  updateValidationStatus,
+  isPreAckReady,
+  isPostAckReady,
+  getValidationSummary,
+  canUpdateValidation,
+} from '../utils/validationDatabase';
+import { getValidationGuidance } from '../utils/validationGuidance';
+import { PPAPStatus } from '@/src/types/database.types';
+import { mapStatusToState } from '../utils/ppapTableHelpers';
+import { canEditPreAckValidations, canEditPostAckValidations } from '../utils/stateWorkflowMapping';
+import { updatePPAPState } from '../utils/updatePPAPState';
+
+/**
+ * Phase 3H - Persistent Validation Engine
+ * 
+ * Database-backed validation panel with auto state transitions.
+ */
+
+interface Props {
+  ppapId: string;
+  currentPhase: 'pre-ack' | 'post-ack';
+  ppapStatus?: PPAPStatus;
+}
+
+const STATUS_ICONS = {
+  not_started: '☐',
+  in_progress: '⏳',
+  complete: '✓',
+  approved: '✔',
+};
+
+const STATUS_COLORS = {
+  not_started: 'text-gray-400 bg-gray-100',
+  in_progress: 'text-blue-600 bg-blue-100',
+  complete: 'text-green-600 bg-green-100',
+  approved: 'text-purple-600 bg-purple-100',
+};
+
+export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus }: Props) {
+  const router = useRouter();
+  const [validations, setValidations] = useState<DBValidation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Phase 3F: Determine editability based on state
+  const derivedState = ppapStatus ? mapStatusToState(ppapStatus) : 'INITIATED';
+  const canEditPreAck = canEditPreAckValidations(derivedState);
+  const canEditPostAck = canEditPostAckValidations(derivedState);
+
+  // Fetch validations from database
+  useEffect(() => {
+    async function fetchValidations() {
+      try {
+        setLoading(true);
+        const data = await getValidations(ppapId);
+        setValidations(data);
+      } catch (err) {
+        console.error('Failed to fetch validations:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load validations');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchValidations();
+  }, [ppapId]);
+
+  const preAckValidations = validations.filter((v) => v.category === 'pre-ack');
+  const postAckValidations = validations.filter((v) => v.category === 'post-ack');
+
+  const handleValidationClick = async (validation: DBValidation) => {
+    // Phase 3F: Check if validation is editable based on state
+    if (validation.category === 'pre-ack' && !canEditPreAck) {
+      return; // Pre-ack validations locked after acknowledgement
+    }
+    if (validation.category === 'post-ack' && !canEditPostAck) {
+      return; // Post-ack validations locked before acknowledgement
+    }
+
+    if (updating) return; // Prevent concurrent updates
+
+    // Determine next status
+    const statusCycle = validation.requires_approval
+      ? ['not_started', 'in_progress', 'complete', 'approved']
+      : ['not_started', 'in_progress', 'complete'];
+
+    const currentIndex = statusCycle.indexOf(validation.status);
+    const nextIndex = (currentIndex + 1) % statusCycle.length;
+    const nextStatus = statusCycle[nextIndex] as ValidationStatus;
+
+    // Phase 3H: Check role-based permissions
+    const permission = canUpdateValidation(validation, currentUser.role, nextStatus);
+    if (!permission.allowed) {
+      setError(permission.reason || 'Not allowed');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
+    setUpdating(validation.id);
+    setError(null);
+
+    try {
+      // Update validation in database
+      const updated = await updateValidationStatus(
+        validation.id,
+        nextStatus,
+        currentUser.id,
+        currentUser.role
+      );
+
+      // Update local state
+      setValidations(prev =>
+        prev.map(v => (v.id === validation.id ? updated : v))
+      );
+
+      // Phase 3H: Check for auto state transitions
+      const updatedValidations = validations.map(v => 
+        v.id === validation.id ? updated : v
+      );
+
+      await checkAutoTransition(updatedValidations);
+
+      // Refresh UI
+      router.refresh();
+    } catch (err) {
+      console.error('Failed to update validation:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update validation');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  /**
+   * Phase 3H: Auto state transition integration
+   * Check if validation completion triggers state transition
+   */
+  const checkAutoTransition = async (updatedValidations: DBValidation[]) => {
+    if (!ppapStatus) return;
+
+    const preAckReady = isPreAckReady(updatedValidations);
+    const postAckReady = isPostAckReady(updatedValidations);
+
+    // Auto-transition: Pre-ack complete → READY_FOR_ACKNOWLEDGEMENT
+    if (preAckReady && ppapStatus === 'PRE_ACK_IN_PROGRESS') {
+      try {
+        await updatePPAPState(
+          ppapId,
+          'READY_TO_ACKNOWLEDGE',
+          currentUser.id,
+          currentUser.role
+        );
+      } catch (err) {
+        console.error('Auto-transition to READY_FOR_ACKNOWLEDGEMENT failed:', err);
+      }
+    }
+
+    // Auto-transition: Post-ack approved → READY_FOR_SUBMISSION
+    if (postAckReady && ppapStatus === 'POST_ACK_IN_PROGRESS') {
+      try {
+        await updatePPAPState(
+          ppapId,
+          'AWAITING_SUBMISSION',
+          currentUser.id,
+          currentUser.role
+        );
+      } catch (err) {
+        console.error('Auto-transition to READY_FOR_SUBMISSION failed:', err);
+      }
+    }
+  };
+
+  const renderValidationSection = (
+    title: string,
+    category: ValidationCategory,
+    validationList: DBValidation[]
+  ) => {
+    const summary = getValidationSummary(validations, category);
+    const isEditable = category === 'pre-ack' ? canEditPreAck : canEditPostAck;
+
+    return (
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <span className="text-sm font-medium text-gray-600">{summary} Complete</span>
+        </div>
+
+        <div className="space-y-2">
+          {validationList.map((validation) => {
+            const isUpdating = updating === validation.id;
+            const canClick = isEditable && !isUpdating;
+
+            return (
+              <div
+                key={validation.id}
+                onClick={() => canClick && handleValidationClick(validation)}
+                className={`flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg transition-colors ${
+                  canClick ? 'hover:bg-gray-50 cursor-pointer' : 'opacity-60 cursor-not-allowed'
+                }`}
+              >
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl">
+                    {isUpdating ? '⏳' : STATUS_ICONS[validation.status]}
+                  </span>
+                  <div className="flex-1">
+                    <div className="group relative inline-block">
+                      <div className="font-medium text-gray-900 border-b border-dotted border-gray-400 cursor-help">
+                        {validation.name}
+                      </div>
+                      {getValidationGuidance(validation.validation_key) && (
+                        <div className="absolute left-0 top-full mt-1 hidden group-hover:block bg-gray-800 text-white text-xs p-3 rounded-lg w-72 z-10 shadow-lg">
+                          <div className="font-semibold mb-1">
+                            {getValidationGuidance(validation.validation_key)?.title}
+                          </div>
+                          <div className="text-gray-300">
+                            {getValidationGuidance(validation.validation_key)?.description}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {validation.requires_approval && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        Requires Coordinator Approval
+                      </div>
+                    )}
+                    {validation.completed_by && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        Completed by: {validation.completed_by}
+                      </div>
+                    )}
+                    {validation.approved_by && (
+                      <div className="text-xs text-gray-500">
+                        Approved by: {validation.approved_by}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <span
+                  className={`px-3 py-1 text-xs font-medium rounded-full ${
+                    STATUS_COLORS[validation.status]
+                  }`}
+                >
+                  {validation.status.replace('_', ' ')}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+        <div className="text-center text-gray-500">Loading validations...</div>
+      </div>
+    );
+  }
+
+  const preAckReady = isPreAckReady(validations);
+  const postAckReady = isPostAckReady(validations);
+
+  return (
+    <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+      <h2 className="text-xl font-bold text-gray-900 mb-4">Validation Checklist</h2>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
+          <strong>Error:</strong> {error}
+        </div>
+      )}
+
+      {renderValidationSection('Pre-Acknowledgement Validations', 'pre-ack', preAckValidations)}
+      {renderValidationSection('Post-Acknowledgement Validations', 'post-ack', postAckValidations)}
+
+      <div className="mt-6 pt-4 border-t border-gray-200">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-600">
+            Phase 3H: Database-backed validation tracking with auto state transitions
+          </span>
+          <div className="flex items-center space-x-4">
+            <span className={`font-medium ${preAckReady ? 'text-green-600' : 'text-gray-400'}`}>
+              Pre-Ack: {preAckReady ? '✓ Ready' : 'In Progress'}
+            </span>
+            <span className={`font-medium ${postAckReady ? 'text-green-600' : 'text-gray-400'}`}>
+              Post-Ack: {postAckReady ? '✓ Ready' : 'In Progress'}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
