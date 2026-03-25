@@ -10,7 +10,6 @@ interface ReviewFormProps {
   ppapId: string;
   partNumber: string;
   currentPhase: WorkflowPhase;
-  setPhase: (phase: WorkflowPhase) => void;
   isReadOnly?: boolean;
 }
 
@@ -22,7 +21,7 @@ interface ReviewData {
   acknowledgement: boolean;
 }
 
-export function ReviewForm({ ppapId, partNumber, currentPhase, setPhase, isReadOnly = false }: ReviewFormProps) {
+export function ReviewForm({ ppapId, partNumber, currentPhase, isReadOnly = false }: ReviewFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -129,10 +128,8 @@ export function ReviewForm({ ppapId, partNumber, currentPhase, setPhase, isReadO
       // Refresh UI to reflect status/phase change
       router.refresh();
       
-      // Update UI state after successful database update
-      setTimeout(() => {
-        setPhase(nextPhase);
-      }, 1500);
+      // Phase 3F: Phase is now derived from state, no manual phase setting
+      // The workflow bar will automatically update when state changes
     } catch (error) {
       console.error('Failed to submit review:', error);
       setErrors({ 

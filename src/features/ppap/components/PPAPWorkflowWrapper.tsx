@@ -107,7 +107,6 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             partNumber={ppap.part_number || ''}
             ppapType={ppap.ppap_type}
             currentPhase={currentPhase}
-            setPhase={setCurrentPhase}
             isReadOnly={isFuturePhase}
           />
         </div>
@@ -119,7 +118,6 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
             currentPhase={currentPhase}
-            setPhase={setCurrentPhase}
             initialSection={documentationSection}
             isReadOnly={isFuturePhase}
           />
@@ -132,7 +130,6 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
             currentPhase={currentPhase}
-            setPhase={setCurrentPhase}
             isReadOnly={isFuturePhase}
           />
         </div>
@@ -144,7 +141,6 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
             currentPhase={currentPhase}
-            setPhase={setCurrentPhase}
             isReadOnly={isFuturePhase}
           />
         </div>

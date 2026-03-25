@@ -10,7 +10,6 @@ interface InitiationFormProps {
   partNumber: string;
   ppapType?: string | null;
   currentPhase: WorkflowPhase;
-  setPhase: (phase: WorkflowPhase) => void;
   isReadOnly?: boolean;
 }
 
@@ -36,7 +35,7 @@ interface InitiationData {
   packaging_met: boolean;
 }
 
-export function InitiationForm({ ppapId, partNumber, ppapType, currentPhase, setPhase, isReadOnly = false }: InitiationFormProps) {
+export function InitiationForm({ ppapId, partNumber, ppapType, currentPhase, isReadOnly = false }: InitiationFormProps) {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>('project_info');
   const [loading, setLoading] = useState(false);
@@ -135,10 +134,8 @@ export function InitiationForm({ ppapId, partNumber, ppapType, currentPhase, set
       // Refresh UI to reflect status/phase change
       router.refresh();
       
-      // Update UI state after successful database update
-      setTimeout(() => {
-        setPhase('DOCUMENTATION');
-      }, 1500);
+      // Phase 3F: Phase is now derived from state, no manual phase setting
+      // The workflow bar will automatically update when state changes
     } catch (error) {
       console.error('Failed to advance phase:', error);
       setErrors({ 

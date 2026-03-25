@@ -14,7 +14,6 @@ interface DocumentationFormProps {
   ppapId: string;
   partNumber: string;
   currentPhase: WorkflowPhase;
-  setPhase: (phase: WorkflowPhase) => void;
   initialSection?: Section;
   isReadOnly?: boolean;
 }
@@ -66,7 +65,7 @@ interface UploadedFile {
   uploaded_at: string;
 }
 
-export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, initialSection, isReadOnly = false }: DocumentationFormProps) {
+export function DocumentationForm({ ppapId, partNumber, currentPhase, initialSection, isReadOnly = false }: DocumentationFormProps) {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>(initialSection || 'checklist');
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
@@ -257,10 +256,8 @@ export function DocumentationForm({ ppapId, partNumber, currentPhase, setPhase, 
       // Refresh UI to reflect status/phase change
       router.refresh();
       
-      // Update UI state after successful database update
-      setTimeout(() => {
-        setPhase('SAMPLE');
-      }, 1500);
+      // Phase 3F: Phase is now derived from state, no manual phase setting
+      // The workflow bar will automatically update when state changes
     } catch (error) {
       console.error('Failed to submit documentation:', error);
       setErrors({ 
