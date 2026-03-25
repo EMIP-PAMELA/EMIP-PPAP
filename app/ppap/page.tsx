@@ -33,18 +33,26 @@ export default async function PPAPOperationsPage() {
               Track, prioritize, and resume PPAP work across the organization
             </p>
           </div>
-          {canCreatePPAP(currentUser.role) ? (
+          <div className="flex gap-3">
             <Link
-              href="/ppap/new"
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+              href="/ppap/intake"
+              className="bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-semibold hover:bg-gray-200 transition-colors shadow-sm"
             >
-              + Create New PPAP
+              View Intake Queue
             </Link>
-          ) : (
-            <div className="text-gray-400 text-sm italic">
-              Create PPAP: Not permitted
-            </div>
-          )}
+            {canCreatePPAP(currentUser.role) ? (
+              <Link
+                href="/ppap/new"
+                className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+              >
+                + Create New PPAP
+              </Link>
+            ) : (
+              <div className="text-gray-400 text-sm italic">
+                Create PPAP: Not permitted
+              </div>
+            )}
+          </div>
         </div>
 
         {error && (
