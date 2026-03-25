@@ -35,7 +35,7 @@ export async function updatePPAPState(
   try {
     // Fetch current PPAP state
     const { data: currentPPAP, error: fetchError } = await supabase
-      .from('ppap')
+      .from('ppaps')
       .select('status')
       .eq('id', ppapId)
       .single();
@@ -48,7 +48,7 @@ export async function updatePPAPState(
 
     // Update PPAP state in database
     const { error: updateError } = await supabase
-      .from('ppap')
+      .from('ppaps')
       .update({ 
         status: newState,
         updated_at: new Date().toISOString(),
