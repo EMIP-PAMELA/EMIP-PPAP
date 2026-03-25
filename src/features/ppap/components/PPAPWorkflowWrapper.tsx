@@ -10,43 +10,30 @@ import { ReviewForm } from './ReviewForm';
 import { WorkflowPhase, isValidWorkflowPhase, WORKFLOW_PHASE_LABELS, WORKFLOW_PHASES } from '../constants/workflowPhases';
 import { getNextAction } from '../utils/getNextAction';
 import { mapStatusToState } from '../utils/ppapTableHelpers';
-import { mapStateToPhase } from '../utils/stateWorkflowMapping';
+import { mapStateToWorkflowPhase } from '../utils/stateWorkflowMapping';
 
 interface PPAPWorkflowWrapperProps {
   ppap: PPAPRecord;
 }
 
 export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
-  // Phase 3F.2: SINGLE SOURCE OF TRUTH - ppap.status
+  // Phase 3F.2.2: SINGLE SOURCE OF TRUTH - ppap.status
   // NO UI PHASE STATE - Phase is ALWAYS derived from ppap.status
+  // DIRECT MAPPING: state → WorkflowPhase (no intermediate string labels)
   const derivedState = mapStatusToState(ppap.status);
-  const derivedPhaseLabel = mapStateToPhase(derivedState);
   
-  // Map derived phase label to WorkflowPhase enum with safety fallback
-  const phaseMapping: Record<string, WorkflowPhase> = {
-    'Initiation': 'INITIATION',
-    'Pre-Ack Complete': 'DOCUMENTATION',
-    'Acknowledged': 'DOCUMENTATION',
-    'Assigned': 'SAMPLE',
-    'Validation': 'SAMPLE',
-    'Ready for Submission': 'REVIEW',
-    'Submitted': 'REVIEW',
-    'Complete': 'COMPLETE',
-  };
-  
-  // Phase 3F.2: selectedPhase is DERIVED ONLY (no useState)
-  const selectedPhase = phaseMapping[derivedPhaseLabel] || 'INITIATION';
+  // Phase 3F.2.2: Direct state → WorkflowPhase mapping (no phaseMapping object)
+  const selectedPhase = mapStateToWorkflowPhase(derivedState);
   const activePhaseRef = useRef<HTMLDivElement>(null);
 
-  // Debug logging (Phase 3F.2)
+  // Debug logging (Phase 3F.2.2)
   useEffect(() => {
-    console.log('Phase 3F.2 State Mapping:', {
+    console.log('Phase 3F.2.2 State → WorkflowPhase Mapping:', {
       status: ppap.status,
       derivedState,
-      derivedPhaseLabel,
       selectedPhase,
     });
-  }, [ppap.status, derivedState, derivedPhaseLabel, selectedPhase]);
+  }, [ppap.status, derivedState, selectedPhase]);
 
   // Auto-scroll to active phase on mount
   useEffect(() => {
