@@ -27,6 +27,16 @@ export function ReviewForm({ ppapId, partNumber, isReadOnly = false }: ReviewFor
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState('');
 
+  // Phase 3F.11: Role-based access control
+  const userRole = currentUser.role;
+  const isCoordinator = userRole === 'coordinator';
+
+  // Phase 3F.11: Log review access check
+  console.log('👤 REVIEW ACCESS CHECK', {
+    role: userRole,
+    hasAccess: isCoordinator,
+  });
+
   const [formData, setFormData] = useState<ReviewData>({
     decision: '',
     reviewer_comments: '',
@@ -69,6 +79,18 @@ export function ReviewForm({ ppapId, partNumber, isReadOnly = false }: ReviewFor
   const handleSubmit = async () => {
     setErrors({});
     setSuccessMessage('');
+
+    // Phase 3F.11: CRITICAL - Authorization guard
+    if (currentUser.role !== 'coordinator') {
+      console.error('🚨 UNAUTHORIZED REVIEW ATTEMPT', {
+        userId: currentUser.id,
+        role: currentUser.role,
+      });
+      setErrors({
+        _form: 'Only coordinators can perform review decisions',
+      });
+      return;
+    }
 
     if (!validateForm()) {
       setErrors(prev => ({
@@ -145,12 +167,56 @@ export function ReviewForm({ ppapId, partNumber, isReadOnly = false }: ReviewFor
     }
   };
 
+  // Phase 3F.11: Render read-only status panel for non-coordinators
+  if (!isCoordinator) {
+    return (
+      <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-300 rounded-xl shadow-sm">
+        <div className="border-b border-gray-200 px-8 py-6">
+          <h2 className="text-2xl font-bold text-gray-900">Review Phase</h2>
+          <p className="text-sm text-gray-600 mt-1">
+            Part Number: <span className="font-medium">{partNumber || ''}</span>
+          </p>
+          <p className="text-xs text-gray-500 mt-2">
+            Role: <span className="font-medium">{userRole}</span>
+          </p>
+        </div>
+
+        <div className="p-8">
+          <div className="flex items-start p-6 bg-blue-50 border-2 border-blue-200 rounded-lg">
+            <div className="flex-shrink-0">
+              <svg className="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="ml-4">
+              <h3 className="text-lg font-semibold text-blue-900">Awaiting Coordinator Review Decision</h3>
+              <p className="mt-2 text-sm text-blue-800">
+                This PPAP submission is currently awaiting review by a coordinator.
+              </p>
+              <p className="mt-2 text-sm text-blue-700">
+                Only users with the <span className="font-semibold">coordinator</span> role can make review decisions.
+              </p>
+              <div className="mt-4 p-3 bg-white border border-blue-200 rounded">
+                <p className="text-xs font-medium text-gray-700">Current Status:</p>
+                <p className="text-sm font-semibold text-gray-900 mt-1">Submitted - Pending Review</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Phase 3F.11: Full ReviewForm for coordinators only
   return (
     <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-300 rounded-xl shadow-sm">
       <div className="border-b border-gray-200 px-8 py-6">
         <h2 className="text-2xl font-bold text-gray-900">Review Phase</h2>
         <p className="text-sm text-gray-600 mt-1">
           Part Number: <span className="font-medium">{partNumber || ''}</span>
+        </p>
+        <p className="text-xs text-gray-500 mt-2">
+          Role: <span className="font-medium text-green-700">{userRole}</span> ✓
         </p>
       </div>
 

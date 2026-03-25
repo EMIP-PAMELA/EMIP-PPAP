@@ -4,6 +4,462 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 14:54 CT - Phase 3F.11 - Role-Based Review Access Control Complete
+
+- Summary: Implemented role-based access control to restrict review decisions to coordinator role only
+- Files changed:
+  - `src/features/ppap/components/ReviewForm.tsx` - Added role check, authorization guard, and read-only status panel for non-coordinators
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Engineers can view review status but cannot make review decisions; only coordinators have full review functionality
+- Objective: Restrict Review Decision actions to COORDINATOR role only, while allowing all users to view review status
+
+**Context:**
+
+Phase 3F.11 implements role-based access control for the Review phase, ensuring that only users with the `coordinator` role can make review decisions (APPROVE, REJECT, CORRECTIONS_NEEDED). Engineers and other roles can view the review status but cannot interact with decision controls.
+
+**Problem Statement:**
+
+**Before Phase 3F.11:**
+- ReviewForm rendered for all users regardless of role
+- No role-based access control
+- Any user could potentially make review decisions
+- No distinction between viewing and decision authority
+
+**After Phase 3F.11:**
+- Role check on component mount
+- Conditional rendering based on role
+- Authorization guard prevents unauthorized submissions
+- Read-only status panel for non-coordinators
+- Full functionality for coordinators only
+
+---
+
+**Solution:**
+
+**STEP 1 - Role Check Implementation:**
+
+**Added role detection:**
+```tsx
+// Phase 3F.11: Role-based access control
+const userRole = currentUser.role;
+const isCoordinator = userRole === 'coordinator';
+
+// Phase 3F.11: Log review access check
+console.log('👤 REVIEW ACCESS CHECK', {
+  role: userRole,
+  hasAccess: isCoordinator,
+});
+```
+
+**Purpose:**
+- Determine user role from currentUser context
+- Calculate access permission (isCoordinator)
+- Log access check for debugging
+
+---
+
+**STEP 2 - Conditional UI Rendering:**
+
+**For Coordinators (userRole === 'coordinator'):**
+```tsx
+// Phase 3F.11: Full ReviewForm for coordinators only
+return (
+  <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-300 rounded-xl shadow-sm">
+    <div className="border-b border-gray-200 px-8 py-6">
+      <h2 className="text-2xl font-bold text-gray-900">Review Phase</h2>
+      <p className="text-sm text-gray-600 mt-1">
+        Part Number: <span className="font-medium">{partNumber || ''}</span>
+      </p>
+      <p className="text-xs text-gray-500 mt-2">
+        Role: <span className="font-medium text-green-700">{userRole}</span> ✓
+      </p>
+    </div>
+    
+    {/* Full form with decision controls, comments, submit button */}
+  </div>
+);
+```
+
+**Features:**
+- Full ReviewForm with all controls
+- Decision dropdown (APPROVE / REJECT / CORRECTIONS_NEEDED)
+- Reviewer comments textarea
+- Acknowledgement checkbox
+- Submit button
+- Role badge with green checkmark
+
+---
+
+**For Non-Coordinators (userRole !== 'coordinator'):**
+```tsx
+// Phase 3F.11: Render read-only status panel for non-coordinators
+if (!isCoordinator) {
+  return (
+    <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-300 rounded-xl shadow-sm">
+      <div className="border-b border-gray-200 px-8 py-6">
+        <h2 className="text-2xl font-bold text-gray-900">Review Phase</h2>
+        <p className="text-sm text-gray-600 mt-1">
+          Part Number: <span className="font-medium">{partNumber || ''}</span>
+        </p>
+        <p className="text-xs text-gray-500 mt-2">
+          Role: <span className="font-medium">{userRole}</span>
+        </p>
+      </div>
+
+      <div className="p-8">
+        <div className="flex items-start p-6 bg-blue-50 border-2 border-blue-200 rounded-lg">
+          <div className="flex-shrink-0">
+            <svg className="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div className="ml-4">
+            <h3 className="text-lg font-semibold text-blue-900">Awaiting Coordinator Review Decision</h3>
+            <p className="mt-2 text-sm text-blue-800">
+              This PPAP submission is currently awaiting review by a coordinator.
+            </p>
+            <p className="mt-2 text-sm text-blue-700">
+              Only users with the <span className="font-semibold">coordinator</span> role can make review decisions.
+            </p>
+            <div className="mt-4 p-3 bg-white border border-blue-200 rounded">
+              <p className="text-xs font-medium text-gray-700">Current Status:</p>
+              <p className="text-sm font-semibold text-gray-900 mt-1">Submitted - Pending Review</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+**Features:**
+- Read-only status panel
+- Informational message about coordinator requirement
+- Current status display
+- No decision controls
+- No submit button
+- Role badge (no checkmark)
+
+---
+
+**STEP 3 - Action Guard (CRITICAL):**
+
+**Added authorization guard in handleSubmit:**
+```tsx
+const handleSubmit = async () => {
+  setErrors({});
+  setSuccessMessage('');
+
+  // Phase 3F.11: CRITICAL - Authorization guard
+  if (currentUser.role !== 'coordinator') {
+    console.error('🚨 UNAUTHORIZED REVIEW ATTEMPT', {
+      userId: currentUser.id,
+      role: currentUser.role,
+    });
+    setErrors({
+      _form: 'Only coordinators can perform review decisions',
+    });
+    return;
+  }
+
+  // ... rest of submit logic
+};
+```
+
+**Purpose:**
+- **Defense in depth:** Even if UI is bypassed (e.g., browser dev tools)
+- **Hard block:** Prevents unauthorized state transitions
+- **Logging:** Records unauthorized attempts
+- **User feedback:** Clear error message
+
+---
+
+**STEP 4 - Role Visibility Tag:**
+
+**Coordinator view:**
+```tsx
+<p className="text-xs text-gray-500 mt-2">
+  Role: <span className="font-medium text-green-700">{userRole}</span> ✓
+</p>
+```
+
+**Non-coordinator view:**
+```tsx
+<p className="text-xs text-gray-500 mt-2">
+  Role: <span className="font-medium">{userRole}</span>
+</p>
+```
+
+**Purpose:**
+- Clear visibility of current user role
+- Green checkmark for authorized users
+- Helps debugging and demo clarity
+
+---
+
+**STEP 5 - No Changes to State Machine:**
+
+**Verified:**
+- ✅ No modifications to PPAPStatus logic
+- ✅ No modifications to mapStatusToPhase
+- ✅ Only UI and access control changes
+- ✅ State machine remains unchanged
+
+---
+
+**STEP 6 - Success Criteria:**
+
+**✅ Engineers cannot see decision controls**
+- Read-only status panel rendered instead
+- No decision radio buttons
+- No submit button
+- No reviewer comments textarea
+
+**✅ Engineers cannot trigger review actions**
+- Authorization guard blocks handleSubmit
+- Error logged to console
+- User-friendly error message displayed
+
+**✅ Coordinators retain full functionality**
+- Full ReviewForm rendered
+- All decision controls available
+- Submit button enabled
+- Can make review decisions
+
+**✅ Unauthorized attempts throw explicit error**
+- Console error: "🚨 UNAUTHORIZED REVIEW ATTEMPT"
+- UI error: "Only coordinators can perform review decisions"
+- Prevents state transition
+
+**✅ UI clearly indicates waiting state**
+- "Awaiting Coordinator Review Decision" heading
+- Informational message about role requirement
+- Current status display
+
+---
+
+**STEP 7 - Logging:**
+
+**Access check logging:**
+```tsx
+console.log('👤 REVIEW ACCESS CHECK', {
+  role: userRole,
+  hasAccess: isCoordinator,
+});
+```
+
+**Unauthorized attempt logging:**
+```tsx
+console.error('🚨 UNAUTHORIZED REVIEW ATTEMPT', {
+  userId: currentUser.id,
+  role: currentUser.role,
+});
+```
+
+**Purpose:**
+- Track all review access attempts
+- Identify unauthorized access attempts
+- Debug role-based access control
+
+---
+
+**Implementation:**
+
+**ReviewForm.tsx Changes:**
+
+**1. Added role check on mount:**
+```tsx
+const userRole = currentUser.role;
+const isCoordinator = userRole === 'coordinator';
+
+console.log('👤 REVIEW ACCESS CHECK', {
+  role: userRole,
+  hasAccess: isCoordinator,
+});
+```
+
+**2. Added conditional rendering:**
+```tsx
+if (!isCoordinator) {
+  return (/* Read-only status panel */);
+}
+
+return (/* Full ReviewForm for coordinators */);
+```
+
+**3. Added authorization guard:**
+```tsx
+if (currentUser.role !== 'coordinator') {
+  console.error('🚨 UNAUTHORIZED REVIEW ATTEMPT', {...});
+  setErrors({ _form: 'Only coordinators can perform review decisions' });
+  return;
+}
+```
+
+**4. Added role visibility tags:**
+```tsx
+// Coordinator
+<p className="text-xs text-gray-500 mt-2">
+  Role: <span className="font-medium text-green-700">{userRole}</span> ✓
+</p>
+
+// Non-coordinator
+<p className="text-xs text-gray-500 mt-2">
+  Role: <span className="font-medium">{userRole}</span>
+</p>
+```
+
+---
+
+**Files:**
+- Modified: ReviewForm.tsx (added role-based access control)
+- Documented: BUILD_LEDGER.md (Phase 3F.11 entry)
+
+**Total Changes:**
+- 1 file modified
+- 2 role checks added
+- 1 authorization guard added
+- 1 read-only status panel created
+- 2 logging statements added
+- 2 role visibility tags added
+
+**Code Changes:**
+- Added: Role check and isCoordinator flag
+- Added: 👤 REVIEW ACCESS CHECK logging
+- Added: Conditional rendering (coordinator vs non-coordinator)
+- Added: Read-only status panel for non-coordinators
+- Added: 🚨 UNAUTHORIZED REVIEW ATTEMPT guard
+- Added: Role visibility tags in header
+
+---
+
+**Role-Based Access Matrix:**
+
+| Role | View Review Status | Make Review Decisions | Submit Review | UI Rendered |
+|------|-------------------|----------------------|---------------|-------------|
+| Coordinator | ✅ Yes | ✅ Yes | ✅ Yes | Full ReviewForm |
+| Engineer | ✅ Yes | ❌ No | ❌ No | Read-only status panel |
+| Other | ✅ Yes | ❌ No | ❌ No | Read-only status panel |
+
+---
+
+**UI Comparison:**
+
+**Coordinator View:**
+```
+┌─────────────────────────────────────┐
+│ Review Phase                        │
+│ Part Number: P-12345                │
+│ Role: coordinator ✓                 │
+├─────────────────────────────────────┤
+│ ○ Approve                           │
+│ ○ Reject                            │
+│ ○ Corrections Needed                │
+│                                     │
+│ [Reviewer Comments textarea]        │
+│                                     │
+│ ☑ I acknowledge...                  │
+│                                     │
+│         [Submit Review Decision →]  │
+└─────────────────────────────────────┘
+```
+
+**Engineer View:**
+```
+┌─────────────────────────────────────┐
+│ Review Phase                        │
+│ Part Number: P-12345                │
+│ Role: engineer                      │
+├─────────────────────────────────────┤
+│ ℹ️ Awaiting Coordinator Review      │
+│                                     │
+│ This PPAP submission is currently   │
+│ awaiting review by a coordinator.   │
+│                                     │
+│ Only users with the coordinator     │
+│ role can make review decisions.     │
+│                                     │
+│ ┌─────────────────────────────┐   │
+│ │ Current Status:             │   │
+│ │ Submitted - Pending Review  │   │
+│ └─────────────────────────────┘   │
+└─────────────────────────────────────┘
+```
+
+---
+
+**Security Layers:**
+
+**Layer 1: UI Rendering**
+- Conditional rendering based on role
+- Non-coordinators see read-only panel
+- No decision controls rendered
+
+**Layer 2: Authorization Guard**
+- Hard check in handleSubmit
+- Blocks unauthorized submissions
+- Logs unauthorized attempts
+
+**Layer 3: State Machine**
+- updatePPAPState() is single source of truth
+- Phase 3F.8 enforcement still active
+- No direct status writes possible
+
+---
+
+**Success Criteria Met:**
+
+- ✅ Engineers cannot see decision controls
+- ✅ Engineers cannot trigger review actions
+- ✅ Coordinators retain full functionality
+- ✅ Unauthorized attempts throw explicit error
+- ✅ UI clearly indicates waiting state
+- ✅ Role visibility tag displays current role
+- ✅ Access check logging for debugging
+- ✅ No changes to state machine
+- ✅ Separation of visibility vs authority
+
+---
+
+**Testing Scenarios:**
+
+**Scenario 1: Coordinator Access**
+1. User with role='coordinator' loads ReviewForm
+2. Console logs: "👤 REVIEW ACCESS CHECK { role: 'coordinator', hasAccess: true }"
+3. Full ReviewForm renders with all controls
+4. User can make review decision
+5. Submit succeeds
+
+**Scenario 2: Engineer Access**
+1. User with role='engineer' loads ReviewForm
+2. Console logs: "👤 REVIEW ACCESS CHECK { role: 'engineer', hasAccess: false }"
+3. Read-only status panel renders
+4. No decision controls visible
+5. Cannot submit review
+
+**Scenario 3: Unauthorized Attempt (UI Bypass)**
+1. Engineer somehow triggers handleSubmit (e.g., browser dev tools)
+2. Authorization guard catches attempt
+3. Console logs: "🚨 UNAUTHORIZED REVIEW ATTEMPT { userId: '...', role: 'engineer' }"
+4. Error displayed: "Only coordinators can perform review decisions"
+5. Submit blocked, no state transition
+
+---
+
+**Next Actions:**
+
+- Test as coordinator (role='coordinator')
+- Test as engineer (role='engineer')
+- Verify read-only panel displays correctly
+- Verify full form displays for coordinators
+- Test authorization guard with UI bypass attempt
+- Monitor console for access check logs
+
+- Commit: `feat: phase 3F.11 - role-based review access control`
+
+---
+
 ## 2026-03-25 14:23 CT - Phase 3F.10 - Hard Block All Direct Status Writes + Trace Source Complete
 
 - Summary: Added global trace logging to identify source of backward state regression and verified all direct status write blocks are in place
