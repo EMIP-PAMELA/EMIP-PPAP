@@ -154,6 +154,13 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
     // Auto-transition: Pre-ack complete → READY_FOR_ACKNOWLEDGEMENT
     if (preAckReady && ppapStatus === 'PRE_ACK_IN_PROGRESS') {
       try {
+        // Phase 3F.6: Log state write attempt
+        console.log('Phase 3F.6 - STATE WRITE ATTEMPT', {
+          from: ppapStatus,
+          to: 'READY_TO_ACKNOWLEDGE',
+          source: 'PPAPValidationPanelDB.tsx (auto-transition)',
+        });
+        
         await updatePPAPState(
           ppapId,
           'READY_TO_ACKNOWLEDGE',
@@ -168,6 +175,13 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
     // Auto-transition: Post-ack approved → READY_FOR_SUBMISSION
     if (postAckReady && ppapStatus === 'POST_ACK_IN_PROGRESS') {
       try {
+        // Phase 3F.6: Log state write attempt
+        console.log('Phase 3F.6 - STATE WRITE ATTEMPT', {
+          from: ppapStatus,
+          to: 'AWAITING_SUBMISSION',
+          source: 'PPAPValidationPanelDB.tsx (auto-transition)',
+        });
+        
         await updatePPAPState(
           ppapId,
           'AWAITING_SUBMISSION',

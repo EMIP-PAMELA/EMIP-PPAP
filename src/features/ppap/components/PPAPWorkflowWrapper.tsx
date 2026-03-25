@@ -35,6 +35,9 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     updated_at: ppap.updated_at,
   });
 
+  // Phase 3F.6: Log state after refresh
+  console.log('Phase 3F.6 - STATE AFTER REFRESH', ppap.status);
+
   // Phase 3F.4: SINGLE SOURCE OF TRUTH - ppap.status
   // DIRECT MAPPING: PPAPStatus → WorkflowPhase (explicit switch statement)
   const selectedPhase = mapStatusToPhase(ppap.status);

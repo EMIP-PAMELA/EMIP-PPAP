@@ -120,6 +120,12 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
       // Mapping: READY_TO_ACKNOWLEDGE → READY_FOR_ACKNOWLEDGEMENT → DOCUMENTATION
       console.log('Phase 3F.2.4: Transitioning INITIATION → READY_TO_ACKNOWLEDGE');
       
+      // Phase 3F.6: Log state write attempt
+      console.log('Phase 3F.6 - STATE WRITE ATTEMPT', {
+        to: 'READY_TO_ACKNOWLEDGE',
+        source: 'InitiationForm.tsx',
+      });
+      
       const result = await updatePPAPState(
         ppapId,
         'READY_TO_ACKNOWLEDGE',

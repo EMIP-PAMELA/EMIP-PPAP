@@ -64,6 +64,12 @@ export default function PPAPActionBar({ ppapId, ppapState, validations }: Props)
     setError(null);
     
     try {
+      // Phase 3F.6: Log state write attempt
+      console.log('Phase 3F.6 - STATE WRITE ATTEMPT', {
+        to: 'ACKNOWLEDGED',
+        source: 'PPAPActionBar.tsx (handleAcknowledge)',
+      });
+      
       // Phase 3G: Real state transition with persistence
       const result = await updatePPAPState(
         ppapId,
@@ -93,6 +99,12 @@ export default function PPAPActionBar({ ppapId, ppapState, validations }: Props)
     setError(null);
     
     try {
+      // Phase 3F.6: Log state write attempt
+      console.log('Phase 3F.6 - STATE WRITE ATTEMPT', {
+        to: 'SUBMITTED',
+        source: 'PPAPActionBar.tsx (handleSubmit)',
+      });
+      
       // Phase 3G: Real state transition with persistence
       const result = await updatePPAPState(
         ppapId,

@@ -67,6 +67,43 @@ export async function updatePPAPState(
 
     const oldState = currentPPAP.status;
 
+    // Phase 3F.6: Backward transition guard
+    const invalidBackwardTransitions: Array<[PPAPStatus, PPAPStatus]> = [
+      ['READY_TO_ACKNOWLEDGE', 'PRE_ACK_IN_PROGRESS'],
+      ['READY_TO_ACKNOWLEDGE', 'PRE_ACK_ASSIGNED'],
+      ['READY_TO_ACKNOWLEDGE', 'INTAKE_COMPLETE'],
+      ['READY_TO_ACKNOWLEDGE', 'NEW'],
+      ['ACKNOWLEDGED', 'READY_TO_ACKNOWLEDGE'],
+      ['ACKNOWLEDGED', 'PRE_ACK_IN_PROGRESS'],
+      ['ACKNOWLEDGED', 'PRE_ACK_ASSIGNED'],
+      ['POST_ACK_IN_PROGRESS', 'ACKNOWLEDGED'],
+      ['POST_ACK_IN_PROGRESS', 'PRE_ACK_IN_PROGRESS'],
+      ['AWAITING_SUBMISSION', 'POST_ACK_IN_PROGRESS'],
+      ['AWAITING_SUBMISSION', 'ACKNOWLEDGED'],
+      ['SUBMITTED', 'AWAITING_SUBMISSION'],
+      ['SUBMITTED', 'POST_ACK_IN_PROGRESS'],
+      ['APPROVED', 'SUBMITTED'],
+      ['APPROVED', 'AWAITING_SUBMISSION'],
+      ['CLOSED', 'APPROVED'],
+    ];
+
+    if (invalidBackwardTransitions.some(([from, to]) => 
+      oldState === from && newState === to
+    )) {
+      console.error('Phase 3F.6 - BLOCKED INVALID BACKWARD TRANSITION', {
+        from: oldState,
+        to: newState,
+        ppapId,
+      });
+      return {
+        success: false,
+        ppapId,
+        oldState,
+        newState,
+        error: `Invalid backward transition: Cannot move from ${oldState} to ${newState}`,
+      };
+    }
+
     // Update PPAP state in database
     const { error: updateError } = await supabase
       .from('ppap_records')
