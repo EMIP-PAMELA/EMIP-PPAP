@@ -4,6 +4,312 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 14:07 CT - Phase 3F.8.1 - Remove WorkflowPhase from ReviewForm Complete
+
+- Summary: Replaced legacy phase-based logic with state-based transitions using PPAPStatus
+- Files changed:
+  - `src/features/ppap/components/ReviewForm.tsx` - Removed WorkflowPhase, replaced with PPAPStatus-based state transitions
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: ReviewForm now fully aligned with Phase 3F state machine architecture
+- Objective: Replace legacy phase-based logic with state-based transitions using PPAPStatus
+
+**Context:**
+
+Phase 3F.8.1 removes the last remnants of phase-based logic from ReviewForm.tsx, replacing the `getNextPhase()` function with `getNextState()` that returns `PPAPStatus` values. This ensures ReviewForm is fully aligned with the Phase 3F architecture where workflow phases are derived from PPAP status, not managed separately.
+
+**Problem Statement:**
+
+**Before Phase 3F.8.1:**
+- ReviewForm still referenced `WorkflowPhase` type
+- `getNextPhase()` function returned phase values
+- Mixed phase/state logic
+- Not fully aligned with Phase 3F architecture
+
+**After Phase 3F.8.1:**
+- No WorkflowPhase references
+- `getNextState()` function returns PPAPStatus values
+- Pure state-based transitions
+- Fully aligned with Phase 3F architecture
+
+---
+
+**Solution:**
+
+**STEP 1 - Remove WorkflowPhase Type:**
+
+**Before:**
+```tsx
+import { updatePPAPState } from '../utils/updatePPAPState';
+import { currentUser } from '@/src/lib/mockUser';
+```
+
+**After:**
+```tsx
+import { updatePPAPState } from '../utils/updatePPAPState';
+import { currentUser } from '@/src/lib/mockUser';
+import { PPAPStatus } from '@/src/types/database.types';
+```
+
+**Result:** Added PPAPStatus import, no WorkflowPhase import needed.
+
+---
+
+**STEP 2 - Update Function Return Type:**
+
+**Before:**
+```tsx
+const getNextPhase = (decision: ReviewDecision): WorkflowPhase => {
+  switch (decision) {
+    case 'APPROVE':
+      return 'COMPLETE';
+    case 'REJECT':
+      return 'DOCUMENTATION';
+    case 'CORRECTIONS_NEEDED':
+      return 'SAMPLE';
+    default:
+      return 'COMPLETE';
+  }
+};
+```
+
+**After:**
+```tsx
+// Phase 3F.8.1: State-based transitions using PPAPStatus
+const getNextState = (decision: ReviewDecision): PPAPStatus => {
+  switch (decision) {
+    case 'APPROVE':
+      return 'APPROVED';
+    case 'REJECT':
+      return 'CLOSED'; // REJECTED maps to CLOSED in PPAPStatus
+    case 'CORRECTIONS_NEEDED':
+      return 'SUBMITTED'; // Return to submitted state for corrections
+    default:
+      return 'APPROVED';
+  }
+};
+```
+
+**Changes:**
+- Function renamed: `getNextPhase` → `getNextState`
+- Return type: `WorkflowPhase` → `PPAPStatus`
+- Return values updated to PPAPStatus enum values
+
+---
+
+**STEP 3 - Update Return Values:**
+
+**Phase-based (OLD):**
+- `APPROVE` → `'COMPLETE'` (WorkflowPhase)
+- `REJECT` → `'DOCUMENTATION'` (WorkflowPhase)
+- `CORRECTIONS_NEEDED` → `'SAMPLE'` (WorkflowPhase)
+
+**State-based (NEW):**
+- `APPROVE` → `'APPROVED'` (PPAPStatus)
+- `REJECT` → `'CLOSED'` (PPAPStatus)
+- `CORRECTIONS_NEEDED` → `'SUBMITTED'` (PPAPStatus)
+
+**Rationale:**
+- `APPROVED`: Final approval state
+- `CLOSED`: Rejection maps to CLOSED in PPAPStatus enum
+- `SUBMITTED`: Return to submitted state for corrections (allows re-review)
+
+---
+
+**STEP 4 - Update Call Site:**
+
+**Before:**
+```tsx
+// Determine next phase based on decision
+const nextPhase = getNextPhase(formData.decision as ReviewDecision);
+
+// Determine status override for APPROVE/REJECT decisions
+let statusOverride: 'APPROVED' | 'CLOSED' | undefined;
+// Phase 3F.8: Use state machine for status updates
+let newStatus: 'APPROVED' | 'CLOSED' = 'APPROVED';
+if (formData.decision === 'APPROVE') {
+  newStatus = 'APPROVED';
+} else if (formData.decision === 'REJECT') {
+  newStatus = 'CLOSED'; // REJECTED maps to CLOSED in PPAPStatus
+}
+
+// Phase 3F.8: ALL status updates go through updatePPAPState()
+const result = await updatePPAPState(
+  ppapId,
+  newStatus,
+  currentUser.id,
+  currentUser.role
+);
+```
+
+**After:**
+```tsx
+// Phase 3F.8.1: Determine next state based on decision
+const nextState = getNextState(formData.decision as ReviewDecision);
+
+// Phase 3F.8.1: ALL status updates go through updatePPAPState()
+const result = await updatePPAPState(
+  ppapId,
+  nextState,
+  currentUser.id,
+  currentUser.role
+);
+```
+
+**Changes:**
+- Removed: `nextPhase` variable
+- Removed: `statusOverride` variable
+- Removed: `newStatus` variable and conditional logic
+- Simplified: Direct call to `getNextState()` and pass to `updatePPAPState()`
+
+---
+
+**STEP 5 - Remove Any Remaining Phase Logic:**
+
+**Verified removed:**
+- ✅ No `WorkflowPhase` import
+- ✅ No `getNextPhase` function
+- ✅ No `setPhase` calls
+- ✅ No phase-based logic
+
+**Grep verification:**
+```bash
+grep -n "WorkflowPhase" ReviewForm.tsx
+# No results found
+
+grep -n "setPhase\|getNextPhase" ReviewForm.tsx
+# No results found
+```
+
+---
+
+**STEP 6 - Import Correct Type:**
+
+**Added import:**
+```tsx
+import { PPAPStatus } from '@/src/types/database.types';
+```
+
+**Used in:**
+- `getNextState()` return type
+- State transition logic
+
+---
+
+**Implementation:**
+
+**ReviewForm.tsx Changes:**
+
+**1. Added PPAPStatus import:**
+```tsx
+import { PPAPStatus } from '@/src/types/database.types';
+```
+
+**2. Renamed and updated function:**
+```tsx
+// Phase 3F.8.1: State-based transitions using PPAPStatus
+const getNextState = (decision: ReviewDecision): PPAPStatus => {
+  switch (decision) {
+    case 'APPROVE':
+      return 'APPROVED';
+    case 'REJECT':
+      return 'CLOSED';
+    case 'CORRECTIONS_NEEDED':
+      return 'SUBMITTED';
+    default:
+      return 'APPROVED';
+  }
+};
+```
+
+**3. Simplified call site:**
+```tsx
+const nextState = getNextState(formData.decision as ReviewDecision);
+
+const result = await updatePPAPState(
+  ppapId,
+  nextState,
+  currentUser.id,
+  currentUser.role
+);
+```
+
+---
+
+**Files:**
+- Modified: ReviewForm.tsx (removed WorkflowPhase, added PPAPStatus)
+- Documented: BUILD_LEDGER.md (Phase 3F.8.1 entry)
+
+**Total Changes:**
+- 1 file modified
+- 1 import added (PPAPStatus)
+- 1 function renamed (getNextPhase → getNextState)
+- 1 return type updated (WorkflowPhase → PPAPStatus)
+- 3 return values updated (COMPLETE/DOCUMENTATION/SAMPLE → APPROVED/CLOSED/SUBMITTED)
+- 10+ lines removed (simplified call site)
+
+**Code Changes:**
+- Removed: WorkflowPhase references
+- Added: PPAPStatus import and usage
+- Renamed: getNextPhase → getNextState
+- Simplified: State transition logic
+- Aligned: With Phase 3F architecture
+
+---
+
+**State Transition Mapping:**
+
+**Review Decisions → PPAPStatus:**
+
+| Decision | Old (WorkflowPhase) | New (PPAPStatus) | Workflow Phase |
+|----------|---------------------|------------------|----------------|
+| APPROVE | COMPLETE | APPROVED | COMPLETE |
+| REJECT | DOCUMENTATION | CLOSED | COMPLETE |
+| CORRECTIONS_NEEDED | SAMPLE | SUBMITTED | REVIEW |
+
+**Note:** Workflow phases are now derived from PPAPStatus via `mapStatusToPhase()`, not set directly.
+
+---
+
+**Success Criteria Met:**
+
+- ✅ No reference to WorkflowPhase
+- ✅ Review form uses state machine only
+- ✅ Transitions use PPAPStatus values
+- ✅ APPROVE → APPROVED
+- ✅ REJECT → CLOSED (not REJECTED)
+- ✅ CORRECTIONS_NEEDED → SUBMITTED
+- ✅ Fully aligned with Phase 3F architecture
+
+---
+
+**Architecture Alignment:**
+
+**Phase 3F Principles:**
+1. **Status is source of truth** ✅
+2. **Phase derived from status** ✅
+3. **No direct phase manipulation** ✅
+4. **All updates through updatePPAPState()** ✅
+
+**ReviewForm.tsx now:**
+- Uses PPAPStatus exclusively
+- No WorkflowPhase references
+- Pure state-based transitions
+- Fully aligned with state machine
+
+---
+
+**Next Actions:**
+
+- Test review approval flow (APPROVE → APPROVED)
+- Test review rejection flow (REJECT → CLOSED)
+- Test corrections flow (CORRECTIONS_NEEDED → SUBMITTED)
+- Verify workflow phase derives correctly from status
+- Confirm no WorkflowPhase references remain in codebase
+
+- Commit: `feat: phase 3F.8.1 - remove WorkflowPhase from ReviewForm`
+
+---
+
 ## 2026-03-25 12:25 CT - Phase 3F.8 - Enforce Single Source of Truth for Status Complete
 
 - Summary: Hard enforcement of single source of truth by disabling legacy functions and forcing all status updates through updatePPAPState()

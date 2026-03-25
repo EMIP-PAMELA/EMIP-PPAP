@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { logEvent } from '@/src/features/events/mutations';
 import { updatePPAPState } from '../utils/updatePPAPState';
 import { currentUser } from '@/src/lib/mockUser';
+import { PPAPStatus } from '@/src/types/database.types';
 
 interface ReviewFormProps {
   ppapId: string;
@@ -51,16 +52,17 @@ export function ReviewForm({ ppapId, partNumber, isReadOnly = false }: ReviewFor
     return Object.keys(newErrors).length === 0;
   };
 
-  const getNextPhase = (decision: ReviewDecision): WorkflowPhase => {
+  // Phase 3F.8.1: State-based transitions using PPAPStatus
+  const getNextState = (decision: ReviewDecision): PPAPStatus => {
     switch (decision) {
       case 'APPROVE':
-        return 'COMPLETE';
+        return 'APPROVED';
       case 'REJECT':
-        return 'DOCUMENTATION';
+        return 'CLOSED'; // REJECTED maps to CLOSED in PPAPStatus
       case 'CORRECTIONS_NEEDED':
-        return 'SAMPLE';
+        return 'SUBMITTED'; // Return to submitted state for corrections
       default:
-        return 'COMPLETE';
+        return 'APPROVED';
     }
   };
 
@@ -92,23 +94,13 @@ export function ReviewForm({ ppapId, partNumber, isReadOnly = false }: ReviewFor
         actor_role: 'Engineer',
       });
 
-      // Determine next phase based on decision
-      const nextPhase = getNextPhase(formData.decision as ReviewDecision);
+      // Phase 3F.8.1: Determine next state based on decision
+      const nextState = getNextState(formData.decision as ReviewDecision);
 
-      // Determine status override for APPROVE/REJECT decisions
-      let statusOverride: 'APPROVED' | 'CLOSED' | undefined;
-      // Phase 3F.8: Use state machine for status updates
-      let newStatus: 'APPROVED' | 'CLOSED' = 'APPROVED';
-      if (formData.decision === 'APPROVE') {
-        newStatus = 'APPROVED';
-      } else if (formData.decision === 'REJECT') {
-        newStatus = 'CLOSED'; // REJECTED maps to CLOSED in PPAPStatus
-      }
-
-      // Phase 3F.8: ALL status updates go through updatePPAPState()
+      // Phase 3F.8.1: ALL status updates go through updatePPAPState()
       const result = await updatePPAPState(
         ppapId,
-        newStatus,
+        nextState,
         currentUser.id,
         currentUser.role
       );
