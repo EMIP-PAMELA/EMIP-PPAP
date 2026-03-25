@@ -77,6 +77,41 @@ export function getSubmissionStatus(status: PPAPStatus): 'Not Submitted' | 'Subm
   return 'Not Submitted';
 }
 
+export function getAttentionStatus(derivedState: string): string {
+  // Phase 3E.2: Attention signals for dashboard scanning
+  // Future: Integrate with validation readiness and material risk data
+  
+  if (derivedState === 'BLOCKED') {
+    return '🚫 Blocked';
+  }
+  
+  if (derivedState === 'READY_FOR_ACKNOWLEDGEMENT') {
+    return '⚡ Ready';
+  }
+  
+  if (derivedState === 'READY_FOR_SUBMISSION') {
+    return '⚡ Ready';
+  }
+  
+  if (derivedState === 'IN_VALIDATION') {
+    return '⏳ Awaiting Approval';
+  }
+  
+  if (derivedState === 'ON_HOLD') {
+    return '⚠️ At Risk';
+  }
+  
+  return '—';
+}
+
+export function getAttentionColor(attentionStatus: string): string {
+  if (attentionStatus.includes('Blocked')) return 'text-red-600';
+  if (attentionStatus.includes('At Risk')) return 'text-orange-600';
+  if (attentionStatus.includes('Ready')) return 'text-green-600';
+  if (attentionStatus.includes('Awaiting')) return 'text-yellow-600';
+  return 'text-gray-400';
+}
+
 export interface EnhancedPPAPRecord extends PPAPRecord {
   derivedState: string;
   derivedPhase: 'Pre-Ack' | 'Post-Ack' | 'Final';
@@ -84,17 +119,20 @@ export interface EnhancedPPAPRecord extends PPAPRecord {
   submissionStatus: 'Not Submitted' | 'Submitted' | 'Approved';
   coordinator: string;
   validationSummary: string;
+  attentionStatus: string;
 }
 
 export function enhancePPAPRecord(ppap: PPAPRecord): EnhancedPPAPRecord {
+  const derivedState = mapStatusToState(ppap.status);
   return {
     ...ppap,
-    derivedState: mapStatusToState(ppap.status),
+    derivedState,
     derivedPhase: derivePhase(ppap.status),
     acknowledgementStatus: getAcknowledgementStatus(ppap.status),
     submissionStatus: getSubmissionStatus(ppap.status),
     coordinator: '—',
     validationSummary: '—',
+    attentionStatus: getAttentionStatus(derivedState),
   };
 }
 

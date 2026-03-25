@@ -4,7 +4,7 @@ import { PPAPRecord } from '@/src/types/database.types';
 import { useRouter } from 'next/navigation';
 import { formatDate } from '@/src/lib/utils';
 import { useMemo, useState } from 'react';
-import { enhancePPAPRecord, sortPPAPs, filterPPAPs, searchPPAPs, paginatePPAPs, getStateBadgeStyle, getRowBackgroundStyle, getStatusIndicator, SortConfig, SortField, FilterConfig, PhaseFilter, PaginationConfig } from '../utils/ppapTableHelpers';
+import { enhancePPAPRecord, sortPPAPs, filterPPAPs, searchPPAPs, paginatePPAPs, getStateBadgeStyle, getRowBackgroundStyle, getStatusIndicator, getAttentionColor, SortConfig, SortField, FilterConfig, PhaseFilter, PaginationConfig } from '../utils/ppapTableHelpers';
 import { currentUser } from '@/src/lib/mockUser';
 import { isReadOnly } from '../utils/permissions';
 
@@ -336,6 +336,9 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
               >
                 Submission{getSortIndicator('submission')}
               </th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Attention
+              </th>
               <th 
                 onClick={() => handleSort('updated_at')}
                 className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
@@ -398,6 +401,11 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                   {ppap.submissionStatus}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <span className={`text-sm font-medium ${getAttentionColor(ppap.attentionStatus)}`}>
+                    {ppap.attentionStatus}
+                  </span>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
                   {formatDate(ppap.updated_at)}
