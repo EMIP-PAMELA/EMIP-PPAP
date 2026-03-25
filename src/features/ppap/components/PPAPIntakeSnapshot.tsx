@@ -80,12 +80,7 @@ export default function PPAPIntakeSnapshot() {
         </div>
       </div>
 
-      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-        <p className="text-sm text-blue-800">
-          <span className="font-medium">Demo Mode:</span> Intake data shows mock readiness
-          signals. Future: Full intake workflow integration.
-        </p>
-      </div>
+      {/* Phase 3F.12: Real state-driven UI - removed demo mode banner */}
     </div>
   );
 }

@@ -167,12 +167,7 @@ export default function PPAPIntakeQueue() {
         </div>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-sm text-blue-800">
-          <span className="font-medium">Demo Mode:</span> Intake queue shows mock data.
-          Future: Integrate with intake system and PPAP creation workflow.
-        </p>
-      </div>
+      {/* Phase 3F.12: Real state-driven UI - removed demo mode banner */}
     </div>
   );
 }

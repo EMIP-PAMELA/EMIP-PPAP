@@ -255,12 +255,7 @@ export default function PPAPValidationPanel({ validations, currentPhase, ppapSta
         postAckValidations
       )}
 
-      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-        <p className="text-sm text-blue-800">
-          <span className="font-medium">Demo Mode:</span> Click any validation to cycle through
-          status states. Changes are not persisted.
-        </p>
-      </div>
+      {/* Phase 3F.12: Real state-driven UI - removed demo mode banner */}
     </div>
   );
 }

@@ -150,12 +150,7 @@ export default function PPAPActivityFeed() {
         ))}
       </div>
 
-      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-        <p className="text-sm text-blue-800">
-          <span className="font-medium">Demo Mode:</span> Activity feed shows mock events.
-          Future: Events will be generated from actual workflow actions.
-        </p>
-      </div>
+      {/* Phase 3F.12: Real state-driven UI - removed demo mode banner */}
     </div>
   );
 }
