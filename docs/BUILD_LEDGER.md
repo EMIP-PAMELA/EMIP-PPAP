@@ -4,6 +4,341 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-24 20:03 CT - [IMPLEMENTATION] Phase 3E.3 - Customer Template Awareness Complete
+
+- Summary: Added customer-specific workflow awareness (Trane vs Rheem)
+- Files changed:
+  - `src/features/ppap/utils/ppapTableHelpers.ts` - Added deriveCustomerType() helper and customerType field
+  - `src/features/ppap/components/PPAPDashboardTable.tsx` - Added Template column
+  - `src/features/ppap/components/PPAPHeader.tsx` - Added template display
+  - `src/features/ppap/components/PPAPValidationPanel.tsx` - Added future template hook comment
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Prepares system for template-driven workflows and customer-specific validation logic
+- No backend changes, UI + derived logic only
+
+**Context:**
+
+Phase 3E.3 introduces customer template awareness to differentiate between Trane and Rheem PPAP workflows. This lays the foundation for customer-specific validation sets, requirements, and workflow variations without building the full template system yet.
+
+**Implementation:**
+
+**1. Customer Type Helper (`deriveCustomerType()`)**
+
+Created function to identify customer type from customer name.
+
+**Function Signature:**
+```typescript
+function deriveCustomerType(customerName: string): 'TRANE' | 'RHEEM'
+```
+
+**Derivation Logic:**
+```typescript
+if (customerName.toLowerCase().includes('trane')) {
+  return 'TRANE';
+}
+// Default to RHEEM for all other customers
+return 'RHEEM';
+```
+
+**Design Decision:**
+- Simple name-based detection
+- Default fallback to RHEEM
+- Case-insensitive matching
+- No database lookup required
+
+---
+
+**2. Enhanced PPAP Record Extension**
+
+**Added Field:**
+```typescript
+export interface EnhancedPPAPRecord extends PPAPRecord {
+  derivedState: string;
+  derivedPhase: 'Pre-Ack' | 'Post-Ack' | 'Final';
+  acknowledgementStatus: 'Pending' | 'Acknowledged';
+  submissionStatus: 'Not Submitted' | 'Submitted' | 'Approved';
+  coordinator: string;
+  validationSummary: string;
+  attentionStatus: string;
+  customerType: CustomerType;  // NEW
+}
+```
+
+**Auto-Computed:**
+- Derived in `enhancePPAPRecord()` function
+- No manual updates required
+- Consistent across system
+
+---
+
+**3. Dashboard Template Column**
+
+**Column Added:** "Template"
+
+**Position:** After "Production Plant", before "Coordinator"
+
+**Display Format:**
+
+**Trane:**
+- Icon: 🔵 (blue circle)
+- Text: "Trane"
+- Color: `text-blue-600` (blue)
+
+**Rheem:**
+- Icon: 🟢 (green circle)
+- Text: "Rheem"
+- Color: `text-green-600` (green)
+
+**Example Display:**
+```
+Template
+--------
+🔵 Trane
+🟢 Rheem
+🔵 Trane
+🟢 Rheem
+```
+
+---
+
+**4. Detail Page Template Display**
+
+**Location:** PPAP Header → PPAP Details section
+
+**Field Added:** "Template"
+
+**Display Format:**
+
+**Trane:**
+```
+Template
+🔵 Trane PPAP Workflow
+```
+- Blue text (`text-blue-600`)
+- Semibold font
+
+**Rheem:**
+```
+Template
+🟢 Rheem PPAP Workflow
+```
+- Green text (`text-green-600`)
+- Semibold font
+
+**Grid Layout:**
+```
+┌─────────────┬─────────────┬─────────────┬─────────────┐
+│ Customer    │ Template    │ Plant       │ Request Date│
+│ Trane       │ 🔵 Trane    │ Van Buren   │ Jan 15, 2026│
+│             │ PPAP        │             │             │
+│             │ Workflow    │             │             │
+└─────────────┴─────────────┴─────────────┴─────────────┘
+```
+
+---
+
+**5. Validation Panel Future Hook**
+
+**Code Comment Added:**
+```typescript
+// FUTURE: Load validation set based on customerType
+// TRANE → 14 validations (strict)
+// RHEEM → alternate validation set
+```
+
+**Purpose:**
+- Marks extension point for future development
+- Documents planned differentiation
+- Prepares for template-driven validation logic
+
+**Future Implementation:**
+```typescript
+const validations = customerType === 'TRANE' 
+  ? TRANE_VALIDATIONS  // 14 validations (strict)
+  : RHEEM_VALIDATIONS; // alternate validation set
+```
+
+---
+
+**6. Customer Type Mapping**
+
+| Customer Name         | Derived Type | Template Display      | Color |
+|----------------------|--------------|----------------------|-------|
+| Trane                | TRANE        | 🔵 Trane             | Blue  |
+| Trane Corporation    | TRANE        | 🔵 Trane             | Blue  |
+| Trane Technologies   | TRANE        | 🔵 Trane             | Blue  |
+| Rheem                | RHEEM        | 🟢 Rheem             | Green |
+| Ruud                 | RHEEM        | 🟢 Rheem             | Green |
+| Any Other Customer   | RHEEM        | 🟢 Rheem             | Green |
+
+**Default Behavior:**
+- All non-Trane customers → RHEEM template
+- Safe fallback for unknown customers
+- Extensible for future customer types
+
+---
+
+**7. Visual Design**
+
+**Color Scheme:**
+- **Trane:** Blue (🔵 `text-blue-600`)
+  - Represents Trane corporate colors
+  - Distinct from other status colors
+  - Professional appearance
+
+- **Rheem:** Green (🟢 `text-green-600`)
+  - Represents Rheem/Ruud brand
+  - Different from validation green (approval)
+  - Clear differentiation
+
+**Icon Usage:**
+- Circle icons for brand identity
+- Consistent with existing emoji usage
+- Quick visual recognition
+
+---
+
+**8. Use Cases**
+
+**Dashboard Scanning:**
+1. Coordinator views dashboard
+2. Sees Template column with 🔵/🟢 icons
+3. Quickly identifies customer type at a glance
+4. Can filter/group by template type (future)
+
+**Detail Page Context:**
+1. User opens PPAP detail
+2. Sees "Template: 🔵 Trane PPAP Workflow"
+3. Understands which validation set applies
+4. Knows workflow requirements
+
+**Validation Selection (Future):**
+1. System loads PPAP
+2. Checks `customerType`
+3. Loads appropriate validation set
+4. Trane → 14 strict validations
+5. Rheem → alternate validation set
+
+---
+
+**9. Template Differentiation (Future)**
+
+**Planned Differences:**
+
+**Trane PPAP Workflow:**
+- 14 validations (5 pre-ack, 9 post-ack)
+- Strict requirements
+- All post-ack require approval
+- Specific document templates
+- Extended review periods
+
+**Rheem PPAP Workflow:**
+- Alternate validation set
+- Different requirements
+- Potentially fewer validations
+- Different document templates
+- Streamlined approval process
+
+**Other Potential Differences:**
+- State machine variations
+- Approval authorities
+- Timeline requirements
+- Document naming conventions
+- Notification rules
+
+---
+
+**10. Future Extensions**
+
+**Planned Enhancements:**
+- Load validation templates from database
+- Customer-specific state machines
+- Template configuration UI
+- Multi-customer template support
+- Template versioning
+- Customer template override capability
+
+**Code Structure Prepared:**
+```typescript
+// Future: Load from database
+const validationTemplate = await getValidationTemplate(customerType);
+
+// Future: Load state machine
+const stateMachine = await getStateMachine(customerType);
+
+// Future: Load workflow config
+const workflowConfig = await getWorkflowConfig(customerType);
+```
+
+---
+
+**Validation:**
+
+- ✅ deriveCustomerType() helper created
+- ✅ CustomerType type defined ('TRANE' | 'RHEEM')
+- ✅ EnhancedPPAPRecord extended with customerType
+- ✅ Template column added to dashboard
+- ✅ Color-coded display (blue/green)
+- ✅ Template display in PPAP header
+- ✅ Future hook comment in validation panel
+- ✅ Auto-computed in enhancePPAPRecord()
+- ✅ No backend changes
+- ✅ No schema changes
+- ✅ No validation logic changes yet
+
+**Visual Design:**
+
+**Dashboard Column:**
+- Small font, medium weight
+- Color-coded icons
+- Left-aligned
+- Compact display
+
+**Detail Page:**
+- Larger font, semibold
+- Full workflow text
+- Prominent placement
+- Clear labeling
+
+---
+
+**User Impact:**
+
+**Before Phase 3E.3:**
+- No customer differentiation
+- All PPAPs treated identically
+- Cannot identify customer type at a glance
+- No foundation for template-driven workflows
+
+**After Phase 3E.3:**
+- Clear customer type visibility
+- Dashboard shows template at a glance
+- Detail page displays workflow type
+- Foundation for customer-specific logic
+
+**Information Provided:**
+
+**Dashboard:**
+- Quick visual scan: 🔵 = Trane, 🟢 = Rheem
+- No need to read full customer name
+- Filter/group by template (future)
+
+**Detail Page:**
+- Full template name: "Trane PPAP Workflow"
+- Clear workflow context
+- Prepares user for template-specific requirements
+
+**Next Actions:**
+
+- Phase 3E.4: Implement template-specific validation sets
+- Phase 3E.5: Add template configuration UI
+- Phase 3E.6: Customer template database schema
+- Phase 3E.7: Template versioning system
+
+- Commit: `feat: phase 3E.3 customer template awareness (Trane vs Rheem)`
+
+---
+
 ## 2026-03-24 19:55 CT - [IMPLEMENTATION] Phase 3E.2 - Dashboard Attention Signals Complete
 
 - Summary: Added attention column to dashboard for at-a-glance status scanning

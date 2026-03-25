@@ -9,6 +9,7 @@ import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils
 import { supabase } from '@/src/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { logEvent } from '@/src/features/events/mutations';
+import { deriveCustomerType } from '../utils/ppapTableHelpers';
 
 interface PPAPHeaderProps {
   ppap: PPAPRecord;
@@ -19,6 +20,7 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
   const [assignedTo, setAssignedTo] = useState(ppap.assigned_to || null);
   const [takingOwnership, setTakingOwnership] = useState(false);
   const nextActionData = getNextAction(ppap.workflow_phase, ppap.status);
+  const customerType = deriveCustomerType(ppap.customer_name);
   
   const handleTakeOwnership = async () => {
     setTakingOwnership(true);
@@ -129,6 +131,15 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
           <div>
             <h4 className="text-xs font-medium text-gray-600 mb-2 uppercase tracking-wide">Customer</h4>
             <p className="text-base font-semibold text-gray-900">{ppap.customer_name}</p>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-medium text-gray-600 mb-2 uppercase tracking-wide">Template</h4>
+            <p className={`text-base font-semibold ${
+              customerType === 'TRANE' ? 'text-blue-600' : 'text-green-600'
+            }`}>
+              {customerType === 'TRANE' ? '🔵 Trane PPAP Workflow' : '🟢 Rheem PPAP Workflow'}
+            </p>
           </div>
 
           <div>

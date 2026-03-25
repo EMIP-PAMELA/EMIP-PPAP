@@ -1,5 +1,9 @@
 'use client';
 
+// FUTURE: Load validation set based on customerType
+// TRANE → 14 validations (strict)
+// RHEEM → alternate validation set
+
 import { useState } from 'react';
 import { Validation, ValidationCategory } from '../types/validation';
 import { 

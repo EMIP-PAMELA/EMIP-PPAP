@@ -319,6 +319,9 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                 Production Plant{getSortIndicator('plant')}
               </th>
               <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Template
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 Coordinator (TBD)
               </th>
               <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
@@ -389,6 +392,13 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                   {ppap.plant}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <span className={`text-sm font-medium ${
+                    ppap.customerType === 'TRANE' ? 'text-blue-600' : 'text-green-600'
+                  }`}>
+                    {ppap.customerType === 'TRANE' ? '🔵 Trane' : '🟢 Rheem'}
+                  </span>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-400">
                   {ppap.coordinator}

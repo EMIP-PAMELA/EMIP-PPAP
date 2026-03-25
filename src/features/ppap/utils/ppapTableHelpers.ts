@@ -77,6 +77,20 @@ export function getSubmissionStatus(status: PPAPStatus): 'Not Submitted' | 'Subm
   return 'Not Submitted';
 }
 
+export type CustomerType = 'TRANE' | 'RHEEM';
+
+export function deriveCustomerType(customerName: string): CustomerType {
+  // Phase 3E.3: Customer template awareness for workflow differentiation
+  const lowerName = customerName.toLowerCase();
+  
+  if (lowerName.includes('trane')) {
+    return 'TRANE';
+  }
+  
+  // Default to RHEEM for all other customers
+  return 'RHEEM';
+}
+
 export function getAttentionStatus(derivedState: string): string {
   // Phase 3E.2: Attention signals for dashboard scanning
   // Future: Integrate with validation readiness and material risk data
@@ -120,6 +134,7 @@ export interface EnhancedPPAPRecord extends PPAPRecord {
   coordinator: string;
   validationSummary: string;
   attentionStatus: string;
+  customerType: CustomerType;
 }
 
 export function enhancePPAPRecord(ppap: PPAPRecord): EnhancedPPAPRecord {
@@ -133,6 +148,7 @@ export function enhancePPAPRecord(ppap: PPAPRecord): EnhancedPPAPRecord {
     coordinator: '—',
     validationSummary: '—',
     attentionStatus: getAttentionStatus(derivedState),
+    customerType: deriveCustomerType(ppap.customer_name),
   };
 }
 
