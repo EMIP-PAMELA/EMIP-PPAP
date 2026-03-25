@@ -13,10 +13,14 @@ import {
   getNextAction,
 } from '../utils/validationHelpers';
 import { getValidationGuidance } from '../utils/validationGuidance';
+import { PPAPStatus } from '@/src/types/database.types';
+import { mapStatusToState } from '../utils/ppapTableHelpers';
+import { canEditPreAckValidations, canEditPostAckValidations } from '../utils/stateWorkflowMapping';
 
 interface Props {
   validations: Validation[];
   currentPhase: 'pre-ack' | 'post-ack';
+  ppapStatus?: PPAPStatus;
 }
 
 const STATUS_ICONS = {
@@ -33,13 +37,26 @@ const STATUS_COLORS = {
   approved: 'text-purple-600 bg-purple-100',
 };
 
-export default function PPAPValidationPanel({ validations, currentPhase }: Props) {
+export default function PPAPValidationPanel({ validations, currentPhase, ppapStatus }: Props) {
   const [localValidations, setLocalValidations] = useState(validations);
+  
+  // Phase 3F: Determine editability based on state
+  const derivedState = ppapStatus ? mapStatusToState(ppapStatus) : 'INITIATED';
+  const canEditPreAck = canEditPreAckValidations(derivedState);
+  const canEditPostAck = canEditPostAckValidations(derivedState);
 
   const preAckValidations = localValidations.filter((v) => v.category === 'pre-ack');
   const postAckValidations = localValidations.filter((v) => v.category === 'post-ack');
 
-  const toggleValidationStatus = (id: string) => {
+  const toggleValidationStatus = (id: string, category: ValidationCategory) => {
+    // Phase 3F: Check if validation is editable based on state
+    if (category === 'pre-ack' && !canEditPreAck) {
+      return; // Pre-ack validations locked after acknowledgement
+    }
+    if (category === 'post-ack' && !canEditPostAck) {
+      return; // Post-ack validations locked before acknowledgement
+    }
+    
     setLocalValidations((prev) =>
       prev.map((v) => {
         if (v.id !== id) return v;
@@ -81,11 +98,15 @@ export default function PPAPValidationPanel({ validations, currentPhase }: Props
         </div>
 
         <div className="space-y-2">
-          {validationList.map((validation) => (
+          {validationList.map((validation) => {
+            const isEditable = validation.category === 'pre-ack' ? canEditPreAck : canEditPostAck;
+            return (
             <div
               key={validation.id}
-              onClick={() => toggleValidationStatus(validation.id)}
-              className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+              onClick={() => isEditable && toggleValidationStatus(validation.id, validation.category)}
+              className={`flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg transition-colors ${
+                isEditable ? 'hover:bg-gray-50 cursor-pointer' : 'opacity-60 cursor-not-allowed'
+              }`}
             >
               <div className="flex items-center space-x-3">
                 <span className="text-2xl">{STATUS_ICONS[validation.status]}</span>
@@ -149,7 +170,8 @@ export default function PPAPValidationPanel({ validations, currentPhase }: Props
                 {validation.status.replace('_', ' ')}
               </span>
             </div>
-          ))}
+          );
+          })}
         </div>
       </div>
     );

@@ -1,4 +1,18 @@
 import { Validation, ValidationCategory } from '../types/validation';
+import { determineNextState } from './stateWorkflowMapping';
+
+/**
+ * Phase 3F: Auto state progression based on validation completion
+ */
+export function getAutoProgressedState(
+  currentState: string,
+  validations: Validation[]
+): string {
+  const preAckComplete = isPreAckReady(validations);
+  const postAckComplete = isPostAckReady(validations);
+  
+  return determineNextState(currentState, preAckComplete, postAckComplete);
+}
 
 export function getValidationSummary(
   validations: Validation[],

@@ -9,33 +9,39 @@ import { SampleForm } from './SampleForm';
 import { ReviewForm } from './ReviewForm';
 import { WorkflowPhase, isValidWorkflowPhase, WORKFLOW_PHASE_LABELS, WORKFLOW_PHASES } from '../constants/workflowPhases';
 import { getNextAction } from '../utils/getNextAction';
+import { mapStatusToState } from '../utils/ppapTableHelpers';
+import { mapStateToPhase } from '../utils/stateWorkflowMapping';
 
 interface PPAPWorkflowWrapperProps {
   ppap: PPAPRecord;
 }
 
 export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
-  // Initialize phase from database, fallback to INITIATION if invalid
-  const initialPhase = isValidWorkflowPhase(ppap.workflow_phase) 
-    ? ppap.workflow_phase 
-    : 'INITIATION';
+  // Phase 3F: Derive phase from state only (single source of truth)
+  const derivedState = mapStatusToState(ppap.status);
+  const derivedPhaseLabel = mapStateToPhase(derivedState);
   
-  const [currentPhase, setCurrentPhase] = useState<WorkflowPhase>(initialPhase);
-  const [selectedPhase, setSelectedPhase] = useState<WorkflowPhase>(initialPhase);
+  // Map derived phase label to WorkflowPhase enum
+  const phaseMapping: Record<string, WorkflowPhase> = {
+    'Initiation': 'INITIATION',
+    'Pre-Ack Complete': 'DOCUMENTATION',
+    'Acknowledged': 'DOCUMENTATION',
+    'Assigned': 'SAMPLE',
+    'Validation': 'SAMPLE',
+    'Ready for Submission': 'REVIEW',
+    'Submitted': 'REVIEW',
+    'Complete': 'COMPLETE',
+  };
+  
+  const currentPhase = phaseMapping[derivedPhaseLabel] || 'INITIATION';
+  const [selectedPhase, setSelectedPhase] = useState<WorkflowPhase>(currentPhase);
   const [documentationSection, setDocumentationSection] = useState<'checklist' | 'upload' | 'readiness' | 'confirmation' | undefined>(undefined);
   const activePhaseRef = useRef<HTMLDivElement>(null);
 
-  // Sync local state when ppap.workflow_phase prop changes (e.g., after router.refresh())
+  // Sync selected phase when derived phase changes
   useEffect(() => {
-    const newPhase = isValidWorkflowPhase(ppap.workflow_phase) 
-      ? ppap.workflow_phase 
-      : 'INITIATION';
-    
-    if (newPhase !== currentPhase) {
-      setCurrentPhase(newPhase);
-      setSelectedPhase(newPhase);
-    }
-  }, [ppap.workflow_phase, currentPhase]);
+    setSelectedPhase(currentPhase);
+  }, [currentPhase]);
 
   // Auto-scroll to active phase on mount
   useEffect(() => {
