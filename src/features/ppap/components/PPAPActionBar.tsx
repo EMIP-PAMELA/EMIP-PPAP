@@ -1,16 +1,25 @@
 'use client';
 
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { currentUser } from '@/src/lib/mockUser';
 import { canAssignPPAP, canAcknowledgePPAP, canSubmitPPAP } from '../utils/permissions';
 import { isPreAckReady, isPostAckReady } from '../utils/validationHelpers';
 import { Validation } from '../types/validation';
+import { updatePPAPState } from '../utils/updatePPAPState';
+import { PPAPStatus } from '@/src/types/database.types';
 
 interface Props {
+  ppapId: string;
   ppapState: string;
   validations: Validation[];
 }
 
-export default function PPAPActionBar({ ppapState, validations }: Props) {
+export default function PPAPActionBar({ ppapId, ppapState, validations }: Props) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
   const preAckReady = isPreAckReady(validations);
   const postAckReady = isPostAckReady(validations);
 
@@ -43,18 +52,67 @@ export default function PPAPActionBar({ ppapState, validations }: Props) {
     return '';
   };
 
-  const handleAssign = () => {
-    alert('Assign Engineer action (demo only - no backend)');
+  const handleAssign = async () => {
+    // TODO: Implement assign engineer logic
+    alert('Assign Engineer action (to be implemented)');
   };
 
-  const handleAcknowledge = () => {
-    if (!canAcknowledge) return;
-    alert('Acknowledge PPAP action (demo only - no backend)');
+  const handleAcknowledge = async () => {
+    if (!canAcknowledge || loading) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Phase 3G: Real state transition with persistence
+      const result = await updatePPAPState(
+        ppapId,
+        'ACKNOWLEDGED' as PPAPStatus,
+        currentUser.id,
+        currentUser.role
+      );
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to acknowledge PPAP');
+      }
+      
+      // Refresh UI to reflect new state
+      router.refresh();
+    } catch (err) {
+      console.error('Acknowledge failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to acknowledge PPAP');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSubmit = () => {
-    if (!canSubmit) return;
-    alert('Submit PPAP action (demo only - no backend)');
+  const handleSubmit = async () => {
+    if (!canSubmit || loading) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Phase 3G: Real state transition with persistence
+      const result = await updatePPAPState(
+        ppapId,
+        'SUBMITTED' as PPAPStatus,
+        currentUser.id,
+        currentUser.role
+      );
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to submit PPAP');
+      }
+      
+      // Refresh UI to reflect new state
+      router.refresh();
+    } catch (err) {
+      console.error('Submit failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to submit PPAP');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!showAssign && !showAcknowledge && !showSubmit) {
@@ -63,6 +121,12 @@ export default function PPAPActionBar({ ppapState, validations }: Props) {
 
   return (
     <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+      {error && (
+        <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
+          <strong>Error:</strong> {error}
+        </div>
+      )}
+      
       <div className="flex items-center space-x-3">
         <span className="text-sm font-semibold text-gray-700">Actions:</span>
 
@@ -79,14 +143,14 @@ export default function PPAPActionBar({ ppapState, validations }: Props) {
           <div className="relative group">
             <button
               onClick={handleAcknowledge}
-              disabled={!canAcknowledge}
+              disabled={!canAcknowledge || loading}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                canAcknowledge
+                canAcknowledge && !loading
                   ? 'bg-green-600 text-white hover:bg-green-700'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-50'
               }`}
             >
-              Acknowledge
+              {loading ? 'Processing...' : 'Acknowledge'}
             </button>
             {!canAcknowledge && getAcknowledgeTooltip() && (
               <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg z-10">
@@ -100,14 +164,14 @@ export default function PPAPActionBar({ ppapState, validations }: Props) {
           <div className="relative group">
             <button
               onClick={handleSubmit}
-              disabled={!canSubmit}
+              disabled={!canSubmit || loading}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                canSubmit
+                canSubmit && !loading
                   ? 'bg-purple-600 text-white hover:bg-purple-700'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-50'
               }`}
             >
-              Submit
+              {loading ? 'Processing...' : 'Submit'}
             </button>
             {!canSubmit && getSubmitTooltip() && (
               <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg z-10">
@@ -118,7 +182,7 @@ export default function PPAPActionBar({ ppapState, validations }: Props) {
         )}
 
         <div className="ml-auto text-xs text-gray-500">
-          Demo Mode: Actions visible based on role + state + validation readiness
+          Phase 3G: Real state transitions with persistence
         </div>
       </div>
     </div>

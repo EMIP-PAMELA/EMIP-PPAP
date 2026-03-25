@@ -81,7 +81,7 @@ export default async function PPAPDashboardPage({ params }: PPAPDashboardPagePro
 
         <PPAPSummaryHeader ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
 
-        <PPAPActionBar ppapState={ppap.status} validations={TRANE_VALIDATIONS} />
+        <PPAPActionBar ppapId={ppap.id} ppapState={ppap.status} validations={TRANE_VALIDATIONS} />
 
         <PPAPAcknowledgementBanner ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
 
