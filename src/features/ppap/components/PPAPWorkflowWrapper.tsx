@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import { PPAPRecord, PPAPStatus } from '@/src/types/database.types';
 import { PhaseIndicator } from './PhaseIndicator';
 import { InitiationForm } from './InitiationForm';
@@ -17,7 +17,8 @@ interface PPAPWorkflowWrapperProps {
 }
 
 export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
-  // Phase 3F UI Fix: Use state-based rendering with ppap.status as source of truth
+  // Phase 3F.2: SINGLE SOURCE OF TRUTH - ppap.status
+  // NO UI PHASE STATE - Phase is ALWAYS derived from ppap.status
   const derivedState = mapStatusToState(ppap.status);
   const derivedPhaseLabel = mapStateToPhase(derivedState);
   
@@ -33,15 +34,19 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     'Complete': 'COMPLETE',
   };
   
-  const currentPhase = phaseMapping[derivedPhaseLabel] || 'INITIATION';
-  const [selectedPhase, setSelectedPhase] = useState<WorkflowPhase>(currentPhase);
-  const [documentationSection, setDocumentationSection] = useState<'checklist' | 'upload' | 'readiness' | 'confirmation' | undefined>(undefined);
+  // Phase 3F.2: selectedPhase is DERIVED ONLY (no useState)
+  const selectedPhase = phaseMapping[derivedPhaseLabel] || 'INITIATION';
   const activePhaseRef = useRef<HTMLDivElement>(null);
 
-  // Sync selected phase when derived phase changes
+  // Debug logging (Phase 3F.2)
   useEffect(() => {
-    setSelectedPhase(currentPhase);
-  }, [currentPhase]);
+    console.log('Phase 3F.2 State Mapping:', {
+      status: ppap.status,
+      derivedState,
+      derivedPhaseLabel,
+      selectedPhase,
+    });
+  }, [ppap.status, derivedState, derivedPhaseLabel, selectedPhase]);
 
   // Auto-scroll to active phase on mount
   useEffect(() => {
@@ -60,16 +65,13 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     }
   };
 
+  // Phase 3F.2: Phase navigation disabled - phase is derived from ppap.status only
+  // User cannot manually select phases - they must update ppap.status via state transitions
   const handlePhaseClick = (phase: WorkflowPhase) => {
-    setSelectedPhase(phase);
-    setDocumentationSection(undefined);
+    // Phase is derived from ppap.status (Phase 3F.2 architecture)
+    // Manual phase selection removed - use state transitions instead
     scrollToActivePhase();
   };
-
-  // Calculate if selected phase is in the future (read-only)
-  const currentPhaseIndex = WORKFLOW_PHASES.indexOf(currentPhase);
-  const selectedPhaseIndex = WORKFLOW_PHASES.indexOf(selectedPhase);
-  const isFuturePhase = selectedPhaseIndex > currentPhaseIndex;
 
   return (
     <div className="space-y-5">
@@ -85,7 +87,7 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-gray-600">Current Phase:</span>
               <span className="px-3 py-1 bg-white border border-blue-200 rounded-lg text-sm font-bold text-blue-900">
-                {WORKFLOW_PHASE_LABELS[currentPhase] || ''}
+                {WORKFLOW_PHASE_LABELS[selectedPhase] || ''}
               </span>
             </div>
           </div>
@@ -98,7 +100,7 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
         </div>
       </div>
 
-      <PhaseIndicator currentPhase={currentPhase} onPhaseClick={handlePhaseClick} />
+      <PhaseIndicator currentPhase={selectedPhase} onPhaseClick={handlePhaseClick} />
       
       {/* Phase 3F UI Fix: State-based rendering with safety fallback */}
       {selectedPhase === 'INITIATION' && (
@@ -107,8 +109,8 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
             ppapType={ppap.ppap_type}
-            currentPhase={currentPhase}
-            isReadOnly={isFuturePhase}
+            currentPhase={selectedPhase}
+            isReadOnly={false}
           />
         </div>
       )}
@@ -118,9 +120,8 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
           <DocumentationForm
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
-            currentPhase={currentPhase}
-            initialSection={documentationSection}
-            isReadOnly={isFuturePhase}
+            currentPhase={selectedPhase}
+            isReadOnly={false}
           />
         </div>
       )}
@@ -130,8 +131,8 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
           <SampleForm
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
-            currentPhase={currentPhase}
-            isReadOnly={isFuturePhase}
+            currentPhase={selectedPhase}
+            isReadOnly={false}
           />
         </div>
       )}
@@ -141,8 +142,8 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
           <ReviewForm
             ppapId={ppap.id}
             partNumber={ppap.part_number || ''}
-            currentPhase={currentPhase}
-            isReadOnly={isFuturePhase}
+            currentPhase={selectedPhase}
+            isReadOnly={false}
           />
         </div>
       )}
