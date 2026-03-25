@@ -76,8 +76,42 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
     fetchValidations();
   }, [ppapId]);
 
-  const preAckValidations = validations.filter((v) => v.category === 'pre-ack');
+  // Phase 3F.13: Define ordered validation sequence for Pre-Ack
+  const PRE_ACK_ORDER = [
+    'drawing_verification',
+    'bom_review',
+    'tooling_validation',
+    'material_availability',
+    'psw_presence',
+    'discrepancy_resolution',
+  ];
+
+  const preAckValidations = validations
+    .filter((v) => v.category === 'pre-ack')
+    .sort((a, b) => {
+      const aIndex = PRE_ACK_ORDER.indexOf(a.validation_key);
+      const bIndex = PRE_ACK_ORDER.indexOf(b.validation_key);
+      return aIndex - bIndex;
+    });
+  
   const postAckValidations = validations.filter((v) => v.category === 'post-ack');
+
+  // Phase 3F.13: Determine active step (first incomplete required validation)
+  const activeStepIndex = preAckValidations.findIndex(
+    (v) => v.required && v.status !== 'complete' && v.status !== 'approved'
+  );
+  const activeStep = activeStepIndex >= 0 ? preAckValidations[activeStepIndex] : null;
+  const completedSteps = preAckValidations.filter(
+    (v) => v.status === 'complete' || v.status === 'approved'
+  ).length;
+
+  // Phase 3F.13: Log validation flow
+  console.log('🧭 VALIDATION FLOW', {
+    activeStep: activeStep?.name || 'All complete',
+    activeStepKey: activeStep?.validation_key || null,
+    completedSteps,
+    totalSteps: preAckValidations.length,
+  });
 
   const handleValidationClick = async (validation: DBValidation) => {
     // Phase 3F: Check if validation is editable based on state
@@ -210,26 +244,54 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
         </div>
 
         <div className="space-y-2">
-          {validationList.map((validation) => {
+          {validationList.map((validation, index) => {
             const isUpdating = updating === validation.id;
-            const canClick = isEditable && !isUpdating;
+            
+            // Phase 3F.13: Determine validation state (ACTIVE, COMPLETE, LOCKED)
+            const isComplete = validation.status === 'complete' || validation.status === 'approved';
+            const isActive = category === 'pre-ack' && activeStep?.id === validation.id;
+            const isLocked = category === 'pre-ack' && !isComplete && !isActive && validation.required;
+            
+            // Phase 3F.13: Override flexibility - allow if already complete
+            const canClick = isEditable && !isUpdating && !isLocked;
 
             return (
               <div
                 key={validation.id}
                 onClick={() => canClick && handleValidationClick(validation)}
-                className={`flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg transition-colors ${
-                  canClick ? 'hover:bg-gray-50 cursor-pointer' : 'opacity-60 cursor-not-allowed'
+                className={`flex items-center justify-between p-3 bg-white rounded-lg transition-all ${
+                  isActive
+                    ? 'border-2 border-blue-500 shadow-md'
+                    : isComplete
+                    ? 'border border-green-300 bg-green-50'
+                    : isLocked
+                    ? 'border border-gray-200 opacity-50'
+                    : 'border border-gray-200'
+                } ${
+                  canClick ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-not-allowed'
                 }`}
+                title={
+                  isLocked
+                    ? 'Complete previous step first'
+                    : isActive
+                    ? 'Current active step'
+                    : isComplete
+                    ? 'Completed'
+                    : ''
+                }
               >
                 <div className="flex items-center space-x-3">
                   <span className="text-2xl">
-                    {isUpdating ? '⏳' : STATUS_ICONS[validation.status]}
+                    {isUpdating ? '⏳' : isActive ? '👉' : STATUS_ICONS[validation.status]}
                   </span>
                   <div className="flex-1">
                     <div className="group relative inline-block">
-                      <div className="font-medium text-gray-900 border-b border-dotted border-gray-400 cursor-help">
+                      <div className={`font-medium border-b border-dotted cursor-help ${
+                        isActive ? 'text-blue-700 border-blue-400' : 'text-gray-900 border-gray-400'
+                      }`}>
                         {validation.name}
+                        {isActive && <span className="ml-2 text-xs font-semibold text-blue-600">(ACTIVE)</span>}
+                        {isLocked && <span className="ml-2 text-xs font-semibold text-gray-400">(LOCKED)</span>}
                       </div>
                       {getValidationGuidance(validation.validation_key) && (
                         <div className="absolute left-0 top-full mt-1 hidden group-hover:block bg-gray-800 text-white text-xs p-3 rounded-lg w-72 z-10 shadow-lg">
@@ -293,6 +355,41 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
           <strong>Error:</strong> {error}
+        </div>
+      )}
+
+      {/* Phase 3F.13: Next Action Panel */}
+      {activeStep && (
+        <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-300 rounded-lg">
+          <div className="flex items-start space-x-3">
+            <span className="text-2xl">🎯</span>
+            <div>
+              <h3 className="font-semibold text-blue-900 mb-1">Current Step</h3>
+              <p className="text-sm text-blue-800 font-medium">{activeStep.name}</p>
+              {preAckValidations[activeStepIndex + 1] && (
+                <p className="text-xs text-blue-700 mt-2">
+                  Next: {preAckValidations[activeStepIndex + 1].name}
+                </p>
+              )}
+              {!preAckValidations[activeStepIndex + 1] && activeStepIndex === preAckValidations.length - 1 && (
+                <p className="text-xs text-green-700 mt-2 font-semibold">
+                  ✓ Final step - Complete to enable acknowledgement
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!activeStep && preAckReady && (
+        <div className="mb-6 p-4 bg-green-50 border-2 border-green-300 rounded-lg">
+          <div className="flex items-start space-x-3">
+            <span className="text-2xl">✅</span>
+            <div>
+              <h3 className="font-semibold text-green-900 mb-1">All Pre-Acknowledgement Steps Complete</h3>
+              <p className="text-sm text-green-800">Ready to proceed to acknowledgement phase</p>
+            </div>
+          </div>
         </div>
       )}
 

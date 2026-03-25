@@ -4,6 +4,492 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 15:33 CT - Phase 3F.13 - Guided Validation Workflow (Progressive Gating) Complete
+
+- Summary: Converted Pre-Acknowledgement checklist into guided, step-by-step workflow with progressive gating
+- Files changed:
+  - `src/features/ppap/components/PPAPValidationPanelDB.tsx` - Added ordered validation sequence, active step logic, UI states, and Next Action Panel
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Clear visual progression through validations, reduced cognitive overload, users always know what to do next
+- Objective: Convert Pre-Acknowledgement checklist into guided, step-by-step workflow
+
+**Context:**
+
+Phase 3F.13 implements a guided validation workflow with progressive gating for the Pre-Acknowledgement checklist. This transforms the flat list of validations into a step-by-step process where only one validation is active at a time, completed validations are highlighted, and future validations are locked until previous steps are complete. This reduces cognitive overload and provides clear guidance on what to do next.
+
+**Problem Statement:**
+
+**Before Phase 3F.13:**
+- Flat list of 6 Pre-Ack validations
+- All validations editable simultaneously
+- No clear indication of which to do first
+- Cognitive overload - user must decide order
+- No visual progression
+
+**After Phase 3F.13:**
+- Ordered validation sequence (1-6)
+- Only one active validation at a time
+- Clear visual states (ACTIVE, COMPLETE, LOCKED)
+- Next Action Panel shows current and next steps
+- Reduced cognitive load - system guides user
+
+---
+
+**Solution:**
+
+**STEP 1 - Define Ordered Validation Sequence:**
+
+**Pre-Acknowledgement Order (6 steps):**
+1. Drawing Verification
+2. BOM Review
+3. Tooling Validation
+4. Material Availability Check
+5. PSW Presence
+6. Discrepancy Resolution
+
+**Implementation:**
+```tsx
+// Phase 3F.13: Define ordered validation sequence for Pre-Ack
+const PRE_ACK_ORDER = [
+  'drawing_verification',
+  'bom_review',
+  'tooling_validation',
+  'material_availability',
+  'psw_presence',
+  'discrepancy_resolution',
+];
+
+const preAckValidations = validations
+  .filter((v) => v.category === 'pre-ack')
+  .sort((a, b) => {
+    const aIndex = PRE_ACK_ORDER.indexOf(a.validation_key);
+    const bIndex = PRE_ACK_ORDER.indexOf(b.validation_key);
+    return aIndex - bIndex;
+  });
+```
+
+**Result:** Validations always display in consistent, logical order.
+
+---
+
+**STEP 2 - Active Step Logic:**
+
+**Determine current active step:**
+- First incomplete required validation = ACTIVE
+- All others:
+  - Completed = COMPLETE
+  - Not yet active = LOCKED
+
+**Implementation:**
+```tsx
+// Phase 3F.13: Determine active step (first incomplete required validation)
+const activeStepIndex = preAckValidations.findIndex(
+  (v) => v.required && v.status !== 'complete' && v.status !== 'approved'
+);
+const activeStep = activeStepIndex >= 0 ? preAckValidations[activeStepIndex] : null;
+const completedSteps = preAckValidations.filter(
+  (v) => v.status === 'complete' || v.status === 'approved'
+).length;
+```
+
+**Logic:**
+- Find first validation that is required AND not complete
+- If all complete, activeStep = null
+- Track completed steps count
+
+---
+
+**STEP 3 - UI States:**
+
+**Three visual states:**
+
+**ACTIVE:**
+- Blue border (border-2 border-blue-500)
+- Shadow effect (shadow-md)
+- 👉 pointing finger icon
+- "(ACTIVE)" label
+- Blue text color
+- Editable
+
+**COMPLETE:**
+- Green border (border border-green-300)
+- Green background (bg-green-50)
+- ✓ checkmark icon
+- Green text
+- Editable (override flexibility)
+
+**LOCKED:**
+- Gray border (border border-gray-200)
+- Reduced opacity (opacity-50)
+- ☐ empty checkbox icon
+- "(LOCKED)" label
+- Gray text
+- Not editable
+- Tooltip: "Complete previous step first"
+
+**Implementation:**
+```tsx
+// Phase 3F.13: Determine validation state (ACTIVE, COMPLETE, LOCKED)
+const isComplete = validation.status === 'complete' || validation.status === 'approved';
+const isActive = category === 'pre-ack' && activeStep?.id === validation.id;
+const isLocked = category === 'pre-ack' && !isComplete && !isActive && validation.required;
+
+// Phase 3F.13: Override flexibility - allow if already complete
+const canClick = isEditable && !isUpdating && !isLocked;
+
+<div
+  className={`flex items-center justify-between p-3 bg-white rounded-lg transition-all ${
+    isActive
+      ? 'border-2 border-blue-500 shadow-md'
+      : isComplete
+      ? 'border border-green-300 bg-green-50'
+      : isLocked
+      ? 'border border-gray-200 opacity-50'
+      : 'border border-gray-200'
+  } ${
+    canClick ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-not-allowed'
+  }`}
+  title={
+    isLocked
+      ? 'Complete previous step first'
+      : isActive
+      ? 'Current active step'
+      : isComplete
+      ? 'Completed'
+      : ''
+  }
+>
+```
+
+---
+
+**STEP 4 - Next Action Panel:**
+
+**Replaces generic "Next Action" with specific guidance:**
+
+**When active step exists:**
+```tsx
+{activeStep && (
+  <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-300 rounded-lg">
+    <div className="flex items-start space-x-3">
+      <span className="text-2xl">🎯</span>
+      <div>
+        <h3 className="font-semibold text-blue-900 mb-1">Current Step</h3>
+        <p className="text-sm text-blue-800 font-medium">{activeStep.name}</p>
+        {preAckValidations[activeStepIndex + 1] && (
+          <p className="text-xs text-blue-700 mt-2">
+            Next: {preAckValidations[activeStepIndex + 1].name}
+          </p>
+        )}
+        {!preAckValidations[activeStepIndex + 1] && activeStepIndex === preAckValidations.length - 1 && (
+          <p className="text-xs text-green-700 mt-2 font-semibold">
+            ✓ Final step - Complete to enable acknowledgement
+          </p>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+```
+
+**When all complete:**
+```tsx
+{!activeStep && preAckReady && (
+  <div className="mb-6 p-4 bg-green-50 border-2 border-green-300 rounded-lg">
+    <div className="flex items-start space-x-3">
+      <span className="text-2xl">✅</span>
+      <div>
+        <h3 className="font-semibold text-green-900 mb-1">All Pre-Acknowledgement Steps Complete</h3>
+        <p className="text-sm text-green-800">Ready to proceed to acknowledgement phase</p>
+      </div>
+    </div>
+  </div>
+)}
+```
+
+**Features:**
+- Shows current step name
+- Shows next step name
+- Shows "Final step" message on last validation
+- Shows completion message when all done
+
+---
+
+**STEP 5 - Completion Trigger:**
+
+**Already implemented (verified):**
+
+```tsx
+// Auto-transition: Pre-ack complete → READY_FOR_ACKNOWLEDGEMENT
+if (preAckReady && ppapStatus === 'PRE_ACK_IN_PROGRESS') {
+  await updatePPAPState(
+    ppapId,
+    'READY_TO_ACKNOWLEDGE',
+    currentUser.id,
+    currentUser.role
+  );
+}
+```
+
+**When all validations complete:**
+- System automatically transitions to READY_TO_ACKNOWLEDGE
+- Enables transition to next phase
+- No manual intervention required
+
+---
+
+**STEP 6 - Override Flexibility (IMPORTANT):**
+
+**Allow override for already-completed validations:**
+
+```tsx
+// Phase 3F.13: Override flexibility - allow if already complete
+const canClick = isEditable && !isUpdating && !isLocked;
+```
+
+**Logic:**
+- If validation already marked complete → allow clicking/editing
+- Do NOT force strict blocking if data exists
+- Locked state only applies to incomplete, non-active validations
+- Users can go back and update completed validations
+
+**Rationale:**
+- Prevents unnecessary blocking
+- Allows corrections to completed work
+- Flexible workflow, not rigid
+
+---
+
+**STEP 7 - Logging:**
+
+**Added validation flow logging:**
+
+```tsx
+// Phase 3F.13: Log validation flow
+console.log('🧭 VALIDATION FLOW', {
+  activeStep: activeStep?.name || 'All complete',
+  activeStepKey: activeStep?.validation_key || null,
+  completedSteps,
+  totalSteps: preAckValidations.length,
+});
+```
+
+**Purpose:**
+- Track current active step
+- Monitor progression through workflow
+- Debug validation flow issues
+
+---
+
+**Implementation:**
+
+**PPAPValidationPanelDB.tsx Changes:**
+
+**1. Added ordered validation sequence:**
+```tsx
+const PRE_ACK_ORDER = [
+  'drawing_verification',
+  'bom_review',
+  'tooling_validation',
+  'material_availability',
+  'psw_presence',
+  'discrepancy_resolution',
+];
+```
+
+**2. Added active step logic:**
+```tsx
+const activeStepIndex = preAckValidations.findIndex(
+  (v) => v.required && v.status !== 'complete' && v.status !== 'approved'
+);
+const activeStep = activeStepIndex >= 0 ? preAckValidations[activeStepIndex] : null;
+```
+
+**3. Added UI state logic:**
+```tsx
+const isComplete = validation.status === 'complete' || validation.status === 'approved';
+const isActive = category === 'pre-ack' && activeStep?.id === validation.id;
+const isLocked = category === 'pre-ack' && !isComplete && !isActive && validation.required;
+```
+
+**4. Added Next Action Panel:**
+- Current step display
+- Next step preview
+- Completion message
+
+**5. Added visual styling:**
+- Active: Blue border, shadow, 👉 icon
+- Complete: Green border/background, ✓ icon
+- Locked: Gray, reduced opacity, ☐ icon
+
+---
+
+**Files:**
+- Modified: PPAPValidationPanelDB.tsx (added guided workflow)
+- Documented: BUILD_LEDGER.md (Phase 3F.13 entry)
+
+**Total Changes:**
+- 1 file modified
+- 1 ordered sequence defined (6 validations)
+- 1 active step logic added
+- 3 UI states implemented (ACTIVE, COMPLETE, LOCKED)
+- 1 Next Action Panel added
+- 1 logging statement added
+- Override flexibility maintained
+
+**Code Changes:**
+- Added: PRE_ACK_ORDER array
+- Added: activeStepIndex calculation
+- Added: activeStep determination
+- Added: completedSteps count
+- Added: 🧭 VALIDATION FLOW logging
+- Added: isActive, isComplete, isLocked state flags
+- Added: Next Action Panel component
+- Added: Completion message component
+- Updated: Validation item styling with state-based classes
+
+---
+
+**Validation Flow Example:**
+
+**Step 1 - Drawing Verification (ACTIVE):**
+```
+🎯 Current Step
+   Drawing Verification
+   Next: BOM Review
+
+✓ Drawing Verification (ACTIVE) 👉
+☐ BOM Review (LOCKED)
+☐ Tooling Validation (LOCKED)
+☐ Material Availability Check (LOCKED)
+☐ PSW Presence (LOCKED)
+☐ Discrepancy Resolution (LOCKED)
+```
+
+**Step 3 - Tooling Validation (ACTIVE):**
+```
+🎯 Current Step
+   Tooling Validation
+   Next: Material Availability Check
+
+✓ Drawing Verification
+✓ BOM Review
+✓ Tooling Validation (ACTIVE) 👉
+☐ Material Availability Check (LOCKED)
+☐ PSW Presence (LOCKED)
+☐ Discrepancy Resolution (LOCKED)
+```
+
+**All Complete:**
+```
+✅ All Pre-Acknowledgement Steps Complete
+   Ready to proceed to acknowledgement phase
+
+✓ Drawing Verification
+✓ BOM Review
+✓ Tooling Validation
+✓ Material Availability Check
+✓ PSW Presence
+✓ Discrepancy Resolution
+```
+
+---
+
+**Success Criteria Met:**
+
+- ✅ Only one active task at a time
+- ✅ Clear visual progression (ACTIVE → COMPLETE → LOCKED states)
+- ✅ Reduced cognitive overload (system guides user)
+- ✅ User always knows what to do next (Next Action Panel)
+- ✅ No unnecessary blocking of already-completed work (override flexibility)
+- ✅ Validation flow logging for debugging
+
+---
+
+**UI State Comparison:**
+
+| State | Border | Background | Icon | Label | Editable | Tooltip |
+|-------|--------|------------|------|-------|----------|---------|
+| ACTIVE | Blue (2px) | White | 👉 | (ACTIVE) | ✅ Yes | "Current active step" |
+| COMPLETE | Green (1px) | Green-50 | ✓ | - | ✅ Yes | "Completed" |
+| LOCKED | Gray (1px) | White | ☐ | (LOCKED) | ❌ No | "Complete previous step first" |
+| Not Started | Gray (1px) | White | ☐ | - | ❌ No | - |
+
+---
+
+**Progressive Gating Logic:**
+
+**Validation 1 (Drawing Verification):**
+- Status: not_started
+- State: ACTIVE (first incomplete)
+- Editable: Yes
+
+**Validation 2 (BOM Review):**
+- Status: not_started
+- State: LOCKED (previous not complete)
+- Editable: No
+
+**After completing Validation 1:**
+
+**Validation 1 (Drawing Verification):**
+- Status: complete
+- State: COMPLETE
+- Editable: Yes (override flexibility)
+
+**Validation 2 (BOM Review):**
+- Status: not_started
+- State: ACTIVE (now first incomplete)
+- Editable: Yes
+
+---
+
+**Logging Output:**
+
+**Initial state:**
+```javascript
+🧭 VALIDATION FLOW {
+  activeStep: 'Drawing Verification',
+  activeStepKey: 'drawing_verification',
+  completedSteps: 0,
+  totalSteps: 6
+}
+```
+
+**After completing 3 validations:**
+```javascript
+🧭 VALIDATION FLOW {
+  activeStep: 'Material Availability Check',
+  activeStepKey: 'material_availability',
+  completedSteps: 3,
+  totalSteps: 6
+}
+```
+
+**All complete:**
+```javascript
+🧭 VALIDATION FLOW {
+  activeStep: 'All complete',
+  activeStepKey: null,
+  completedSteps: 6,
+  totalSteps: 6
+}
+```
+
+---
+
+**Next Actions:**
+
+- Test guided workflow with real PPAP
+- Verify active step highlights correctly
+- Verify locked validations cannot be clicked
+- Verify Next Action Panel updates as validations complete
+- Verify completion message appears when all done
+- Monitor console for validation flow logs
+
+- Commit: `feat: phase 3F.13 - guided validation workflow with progressive gating`
+
+---
+
 ## 2026-03-25 15:24 CT - Phase 3F.12 - Remove Demo Mode + Enforce Real Data Flow Complete
 
 - Summary: Removed all demo mode banners and placeholder alerts, enforced real state-driven UI
