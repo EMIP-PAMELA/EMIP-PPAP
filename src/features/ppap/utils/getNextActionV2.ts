@@ -30,13 +30,30 @@ interface DocumentItem {
 
 /**
  * Phase 3H.2: Get next action for operator
+ * Phase 3H.11: Added fallback for missing validation data
  */
 export function getNextAction(
   ppapStatus: PPAPStatus,
   validations: DBValidation[],
   documents: DocumentItem[]
 ): NextAction {
-  console.log('🎯 NEXT ACTION CALCULATION', { ppapStatus, validations: validations.length, documents: documents.length });
+  // Phase 3H.11: Input validation and logging
+  console.log('🎯 NEXT ACTION INPUT', {
+    status: ppapStatus,
+    validationCount: validations?.length || 0,
+    documentCount: documents?.length || 0,
+  });
+
+  // Phase 3H.11: Handle missing validation data
+  if (!validations || validations.length === 0) {
+    console.warn('⚠️ NO VALIDATION DATA - returning initialization action');
+    return {
+      label: 'Initialize PPAP Validations',
+      instruction: 'Validation data is being initialized. Please refresh the page.',
+      actionType: 'validation',
+      nextStep: 'Pre-Ack Validations'
+    };
+  }
 
   // Pre-Ack Phase: Focus on validations
   if (ppapStatus === 'NEW' || ppapStatus === 'PRE_ACK_ASSIGNED' || ppapStatus === 'PRE_ACK_IN_PROGRESS') {
@@ -165,10 +182,11 @@ export function getNextAction(
     };
   }
 
-  // Default fallback
+  // Phase 3H.11: Enhanced default fallback with status context
+  console.warn('⚠️ UNMAPPED STATUS IN NEXT ACTION', { ppapStatus });
   return {
     label: 'Continue Process',
-    instruction: 'Follow workflow steps',
+    instruction: `Follow workflow steps for status: ${ppapStatus}`,
     actionType: 'review'
   };
 }

@@ -17,7 +17,7 @@ import {
 import { getValidationGuidance } from '../utils/validationGuidance';
 import { PPAPStatus } from '@/src/types/database.types';
 import { mapStatusToState } from '../utils/ppapTableHelpers';
-import { canEditPreAckValidations, canEditPostAckValidations } from '../utils/stateWorkflowMapping';
+import { canEditPreAckValidations, canEditPostAckValidations, mapStatusToPhase } from '../utils/stateWorkflowMapping';
 import { updatePPAPState } from '../utils/updatePPAPState';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
 
@@ -62,6 +62,11 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
   const derivedState = ppapStatus ? mapStatusToState(ppapStatus) : 'INITIATED';
   const canEditPreAck = canEditPreAckValidations(derivedState);
   const canEditPostAck = canEditPostAckValidations(derivedState);
+  
+  // Phase 3H.11: Derive actual phase from status for display logic
+  const derivedPhase = ppapStatus ? mapStatusToPhase(ppapStatus) : 'INITIATION';
+  const showPreAckActive = derivedPhase === 'INITIATION';
+  const showPostAckActive = derivedPhase === 'DOCUMENTATION';
 
   // Fetch validations from database
   useEffect(() => {
@@ -374,8 +379,8 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
   const preAckReady = isPreAckReady(validations);
   const postAckReady = isPostAckReady(validations);
 
-  // Phase 3H.1: Determine if this section is currently active
-  const isActiveSection = currentPhase === 'pre-ack';
+  // Phase 3H.11: Determine if this section is currently active based on derived phase
+  const isActiveSection = showPreAckActive;
   
   return (
     <div className={`bg-white rounded-lg border shadow-sm transition-all ${
@@ -432,11 +437,27 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
         </div>
       )}
 
-      {/* Phase 3H.1: Collapsible Content */}
+      {/* Phase 3H.11: Smart display based on phase */}
       {(isActiveSection || isExpanded) && (
         <>
-          {renderValidationSection('Pre-Acknowledgement Validations', 'pre-ack', preAckValidations)}
-          {renderValidationSection('Post-Acknowledgement Validations', 'post-ack', postAckValidations)}
+          {/* Pre-Ack Validations - always show, but with different labels */}
+          {renderValidationSection(
+            showPreAckActive ? 'Pre-Acknowledgement Validations' : 'Pre-Acknowledgement Validations (Completed)',
+            'pre-ack',
+            preAckValidations
+          )}
+          
+          {/* Post-Ack Validations - only show if acknowledged */}
+          {showPostAckActive && (
+            <>
+              <div className="border-t border-gray-200 pt-4 mt-4" />
+              {renderValidationSection(
+                'Post-Acknowledgement Validations (In Progress)',
+                'post-ack',
+                postAckValidations
+              )}
+            </>
+          )}
         </>
       )}
       

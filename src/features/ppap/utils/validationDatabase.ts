@@ -100,6 +100,7 @@ export async function initializeValidations(ppapId: string): Promise<void> {
 
 /**
  * Fetch all validations for a PPAP.
+ * Phase 3H.11: Auto-seed if missing (prevents 0/0 display)
  */
 export async function getValidations(ppapId: string): Promise<DBValidation[]> {
   const { data, error } = await supabase
@@ -112,6 +113,27 @@ export async function getValidations(ppapId: string): Promise<DBValidation[]> {
     throw new Error(`Failed to fetch validations: ${error.message}`);
   }
 
+  // Phase 3H.11: Auto-seed if no validations exist
+  if (!data || data.length === 0) {
+    console.warn('⚠️ NO VALIDATIONS FOUND - AUTO-SEEDING DEFAULT SET', { ppapId });
+    await initializeValidations(ppapId);
+    
+    // Re-fetch after seeding
+    const { data: seededData, error: refetchError } = await supabase
+      .from('ppap_validations')
+      .select('*')
+      .eq('ppap_id', ppapId)
+      .order('created_at', { ascending: true });
+    
+    if (refetchError) {
+      throw new Error(`Failed to fetch seeded validations: ${refetchError.message}`);
+    }
+    
+    console.log('✅ VALIDATIONS SEEDED', { count: seededData?.length || 0 });
+    return seededData as DBValidation[];
+  }
+
+  console.log('🧭 VALIDATION DATA', { ppapId, count: data.length });
   return data as DBValidation[];
 }
 

@@ -111,11 +111,21 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   // Phase 3H.2: Determine current phase for active work zone
   const currentPhase = selectedPhase === 'INITIATION' || selectedPhase === 'DOCUMENTATION' && ppap.status.includes('PRE_ACK') ? 'pre-ack' : 'post-ack';
   
-  // Phase 3H.6: Logging
-  console.log('🧑‍💼 CONTROL PANEL VIEW', {
-    ppapId: ppap.id,
+  // Phase 3H.11: GLOBAL STATE SNAPSHOT
+  console.log('� SYSTEM STATE SNAPSHOT', {
     status: ppap.status,
+    phase: selectedPhase,
+    currentPhase,
+    validations: validations?.length || 0,
+    documents: documents?.length || 0,
     viewMode,
+    ppapId: ppap.id,
+  });
+  
+  // Phase 3H.11: PHASE DERIVATION CHECK
+  console.log('🧭 PHASE DERIVATION CHECK', {
+    status: ppap.status,
+    derivedPhase: selectedPhase,
   });
   
   return (
