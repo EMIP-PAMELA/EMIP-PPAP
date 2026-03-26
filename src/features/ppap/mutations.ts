@@ -11,15 +11,19 @@ import type {
   PPAPStatus,
 } from '@/src/types/database.types';
 import { logEvent } from '@/src/features/events/mutations';
+import { sanitizePlant } from './utils/plantValidation';
 
 export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
+  // Phase 3H.9: Sanitize plant value before write (blocks invalid plants)
+  const sanitizedPlant = sanitizePlant(input.plant);
+  
   const { data, error } = await supabase
     .from('ppap_records')
     .insert({
       ppap_number: input.ppap_number.trim(),
       part_number: input.part_number,
       customer_name: input.customer_name,
-      plant: input.plant || 'Van Buren',
+      plant: sanitizedPlant,
       request_date: input.request_date,
       ppap_type: input.ppap_type,
       status: 'NEW',

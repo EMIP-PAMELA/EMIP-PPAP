@@ -10,17 +10,26 @@ import { isReadOnly } from '../utils/permissions';
 import { calculateDocumentProgress, getHealthStatus, getHealthBadgeStyle, getHealthBadgeIcon, getStatusClarityTag } from '../utils/documentHelpers';
 import { mapStatusToPhase } from '../utils/stateWorkflowMapping';
 import { WORKFLOW_PHASE_LABELS } from '../constants/workflowPhases';
+import { validatePlantForDisplay } from '../utils/plantValidation';
 
 /**
- * Phase 3H.8: Format user name for display
- * Input: username string (e.g., "Matt", "System User")
+ * Phase 3H.9: Safe user name formatting (React #418 fix)
+ * Input: username string or object (defensive)
  * Output: Formatted name (e.g., "Matt R.", "Unassigned")
+ * 
+ * CRITICAL: Handles object types safely to prevent React error #418
  */
-function formatUserName(user: string | null | undefined): string {
-  if (!user) return 'Unassigned';
+function formatUserName(user: unknown): string {
+  // Phase 3H.9: Guard against object rendering (React #418)
+  if (!user || typeof user === 'object') {
+    return 'Unassigned';
+  }
+  
+  // Ensure we have a string
+  const userName = String(user);
   
   // Handle known usernames with proper formatting
-  const nameParts = user.split(' ');
+  const nameParts = userName.split(' ');
   if (nameParts.length >= 2) {
     const first = nameParts[0];
     const lastInitial = nameParts[1][0] + '.';
@@ -28,24 +37,7 @@ function formatUserName(user: string | null | undefined): string {
   }
   
   // Single name or unknown format
-  return user;
-}
-
-/**
- * Phase 3H.8: Validate plant value
- * Allowed: "Ft. Smith", "Ball Ground", "Warner Robins"
- */
-function validatePlant(plant: string | null | undefined, ppapId: string): string {
-  if (!plant) return '—';
-  
-  const validPlants = ['Ft. Smith', 'Ball Ground', 'Warner Robins'];
-  
-  if (!validPlants.includes(plant)) {
-    console.warn('⚠️ INVALID PLANT VALUE', { ppapId, plant, validPlants });
-    return plant; // Show invalid value but log warning
-  }
-  
-  return plant;
+  return userName;
 }
 
 interface PPAPDashboardTableProps {
@@ -415,17 +407,19 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
               // Phase 3H.8: Format assigned engineer
               const formattedEngineer = formatUserName(ppap.assigned_to);
               
-              // Phase 3H.8: Validate plant
-              const validatedPlant = validatePlant(ppap.plant, ppap.id);
+              // Phase 3H.9: Validate plant for display
+              const validatedPlant = validatePlantForDisplay(ppap.plant, ppap.id);
               
-              // Phase 3H.8: Defensive logging for data integrity
-              console.log('📊 DASHBOARD ROW DATA', {
+              // Phase 3H.9: Final validation logging
+              console.log('📊 DASHBOARD ROW FINAL', {
                 id: ppap.id,
                 ppap_number: ppap.ppap_number,
                 status: ppap.status,
                 plant: ppap.plant,
                 assigned_to: ppap.assigned_to,
                 derivedPhase,
+                formattedEngineer,
+                validatedPlant,
               });
               
               return (
