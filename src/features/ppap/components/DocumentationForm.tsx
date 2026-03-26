@@ -67,7 +67,46 @@ const REQUIRED_DOCUMENTS = [
   { key: 'tooling', label: 'Tooling Documentation' },
 ] as const;
 
-// Phase 3H.2: Document configuration with actions - ALL documents have upload + create for future template system
+// Phase 3H.3: Document sections for soft-gated workflow
+interface DocumentSection {
+  id: string;
+  title: string;
+  documents: string[];
+}
+
+const DOCUMENT_SECTIONS: DocumentSection[] = [
+  {
+    id: 'core_engineering',
+    title: 'Core Engineering Documents',
+    documents: [
+      'ballooned_drawing',
+      'design_record',
+      'dimensional_results'
+    ]
+  },
+  {
+    id: 'process_docs',
+    title: 'Process Documentation',
+    documents: [
+      'dfmea',
+      'pfmea',
+      'control_plan',
+      'msa'
+    ]
+  },
+  {
+    id: 'supporting_docs',
+    title: 'Supporting Documentation',
+    documents: [
+      'material_test_results',
+      'initial_process_studies',
+      'packaging',
+      'tooling'
+    ]
+  }
+];
+
+// Phase 3H.3: Document configuration with actions - ALL documents have upload + create for future template system
 const DOCUMENT_CONFIG: DocumentItem[] = [
   { id: 'ballooned_drawing', name: 'Ballooned Drawing', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
   { id: 'design_record', name: 'Design Record', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
@@ -109,6 +148,9 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
   // Phase 3H.1: Active work zone - collapsible when not active
   const [isSectionExpanded, setIsSectionExpanded] = useState(true);
   const isActiveWorkZone = currentPhase === 'post-ack';
+  
+  // Phase 3H.3: Section collapse state
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -118,6 +160,48 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
   
   // Phase 3F.14: Document state with actions
   const [documents, setDocuments] = useState<DocumentItem[]>(DOCUMENT_CONFIG);
+  
+  // Phase 3H.3: Section state logic
+  const getDocumentStatus = (docId: string): 'ready' | 'missing' => {
+    const doc = documents.find(d => d.id === docId);
+    return doc?.status || 'missing';
+  };
+  
+  const isSectionComplete = (section: DocumentSection): boolean => {
+    return section.documents.every(docId => getDocumentStatus(docId) === 'ready');
+  };
+  
+  const isSectionUnlocked = (sectionIndex: number): boolean => {
+    if (sectionIndex === 0) return true;
+    const previousSection = DOCUMENT_SECTIONS[sectionIndex - 1];
+    return isSectionComplete(previousSection);
+  };
+  
+  const isActiveSection = (sectionIndex: number): boolean => {
+    const section = DOCUMENT_SECTIONS[sectionIndex];
+    return isSectionUnlocked(sectionIndex) && !isSectionComplete(section);
+  };
+  
+  const getSectionProgress = (section: DocumentSection): { complete: number; total: number } => {
+    const complete = section.documents.filter(docId => getDocumentStatus(docId) === 'ready').length;
+    return { complete, total: section.documents.length };
+  };
+  
+  const getActiveSectionIndex = (): number => {
+    return DOCUMENT_SECTIONS.findIndex((_, idx) => isActiveSection(idx));
+  };
+  
+  const toggleSectionCollapse = (sectionId: string) => {
+    setCollapsedSections(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(sectionId)) {
+        newSet.delete(sectionId);
+      } else {
+        newSet.add(sectionId);
+      }
+      return newSet;
+    });
+  };
 
   const [formData, setFormData] = useState<DocumentationData>({
     suggested_date: '',
@@ -136,6 +220,20 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     tooling: false,
     acknowledgement: false,
   });
+
+  // Phase 3H.3: Logging for section flow
+  useEffect(() => {
+    const activeSectionIdx = getActiveSectionIndex();
+    const completedSections = DOCUMENT_SECTIONS.filter((_, idx) => 
+      isSectionComplete(DOCUMENT_SECTIONS[idx])
+    ).length;
+    
+    console.log('📂 DOCUMENT SECTION FLOW', {
+      activeSection: activeSectionIdx >= 0 ? DOCUMENT_SECTIONS[activeSectionIdx].id : 'none',
+      completedSections,
+      totalSections: DOCUMENT_SECTIONS.length
+    });
+  }, [documents]);
 
   // Phase 3F.14: Fetch uploaded files and sync with document state
   useEffect(() => {
@@ -613,24 +711,71 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
             </div>
           )}
 
-          {/* Phase 3F.14: Document Cards with Upload + Create Actions */}
+          {/* Phase 3H.3: Section-Based Document Workflow */}
           {activeSection === 'upload' && (
             <div className="space-y-6">
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-2">Document Actions</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Upload or create documents required for this PPAP submission.
-                </p>
+              {DOCUMENT_SECTIONS.map((section, sectionIdx) => {
+                const sectionComplete = isSectionComplete(section);
+                const sectionUnlocked = isSectionUnlocked(sectionIdx);
+                const sectionActive = isActiveSection(sectionIdx);
+                const progress = getSectionProgress(section);
+                const isCollapsed = collapsedSections.has(section.id);
+                const sectionDocs = documents.filter(doc => section.documents.includes(doc.id));
 
-                {isReadOnly && (
-                  <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
-                    Editing available during Documentation phase
-                  </div>
-                )}
+                return (
+                  <div
+                    key={section.id}
+                    className={`border rounded-lg transition-all ${
+                      sectionActive
+                        ? 'border-2 border-blue-400 bg-white shadow-md'
+                        : sectionComplete
+                        ? 'border border-green-300 bg-green-50'
+                        : 'border border-gray-300 bg-gray-50 opacity-60'
+                    }`}
+                  >
+                    {/* Section Header */}
+                    <div className="p-4 border-b border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-1">
+                            <h3 className={`text-lg font-bold ${
+                              sectionActive ? 'text-blue-900' : sectionComplete ? 'text-green-900' : 'text-gray-600'
+                            }`}>
+                              {section.title}
+                            </h3>
+                            <span
+                              className={`px-2 py-0.5 text-xs font-bold uppercase rounded ${
+                                sectionActive
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : sectionComplete
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-gray-100 text-gray-600'
+                              }`}
+                            >
+                              {sectionActive ? 'ACTIVE SECTION' : sectionComplete ? '✓ Complete' : 'LOCKED'}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600">
+                            ({progress.complete} / {progress.total} Complete)
+                          </p>
+                        </div>
+                        
+                        {/* Collapse Toggle (only for complete or locked sections) */}
+                        {!sectionActive && (
+                          <button
+                            onClick={() => toggleSectionCollapse(section.id)}
+                            className="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                          >
+                            {isCollapsed ? '▶ Expand' : '▼ Collapse'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
-                {/* Document Cards */}
-                <div className="space-y-4">
-                  {documents.map((doc) => (
+                    {/* Section Content */}
+                    {(!isCollapsed || sectionActive) && (
+                      <div className="p-4 space-y-4">
+                        {sectionDocs.map((doc) => (
                     <div
                       key={doc.id}
                       className={`border rounded-lg p-4 ${
@@ -681,7 +826,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                             <label
                               htmlFor={`upload-${doc.id}`}
                               className={`block w-full px-4 py-2 text-sm font-medium text-center rounded transition-colors ${
-                                isReadOnly || uploading
+                                isReadOnly || uploading || !sectionUnlocked
                                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                   : doc.status === 'ready'
                                   ? 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
@@ -694,7 +839,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                                 type="file"
                                 className="sr-only"
                                 onChange={(e) => handleDocumentUpload(doc.id, e)}
-                                disabled={isReadOnly || uploading}
+                                disabled={isReadOnly || uploading || !sectionUnlocked}
                                 accept=".pdf,.doc,.docx,.xls,.xlsx"
                               />
                             </label>
@@ -703,10 +848,10 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                         {doc.actions.includes('create') && (
                           <button
                             onClick={() => handleCreateDocument(doc.id)}
-                            disabled={isReadOnly || !canCreate(doc.id)}
-                            title={!canCreate(doc.id) ? 'Template coming soon' : 'Create from template'}
+                            disabled={isReadOnly || !canCreate(doc.id) || !sectionUnlocked}
+                            title={!sectionUnlocked ? 'Complete previous section first' : !canCreate(doc.id) ? 'Template coming soon' : 'Create from template'}
                             className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
-                              isReadOnly || !canCreate(doc.id)
+                              isReadOnly || !canCreate(doc.id) || !sectionUnlocked
                                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                 : 'bg-purple-600 text-white hover:bg-purple-700'
                             }`}
@@ -732,9 +877,12 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                         </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 

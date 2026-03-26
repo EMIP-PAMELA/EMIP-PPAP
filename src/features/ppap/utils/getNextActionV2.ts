@@ -80,25 +80,45 @@ export function getNextAction(
     };
   }
 
-  // Post-Ack Phase: Focus on documents
+  // Post-Ack Phase: Focus on document sections (Phase 3H.3)
   if (ppapStatus === 'POST_ACK_IN_PROGRESS') {
-    const missingRequiredDocs = documents.filter(
-      d => d.requirement_level === 'REQUIRED' && d.status === 'missing'
-    );
+    // Phase 3H.3: Section-based guidance
+    const DOCUMENT_SECTIONS = [
+      {
+        id: 'core_engineering',
+        title: 'Core Engineering Documents',
+        documents: ['ballooned_drawing', 'design_record', 'dimensional_results']
+      },
+      {
+        id: 'process_docs',
+        title: 'Process Documentation',
+        documents: ['dfmea', 'pfmea', 'control_plan', 'msa']
+      },
+      {
+        id: 'supporting_docs',
+        title: 'Supporting Documentation',
+        documents: ['material_test_results', 'initial_process_studies', 'packaging', 'tooling']
+      }
+    ];
 
-    if (missingRequiredDocs.length > 0) {
-      const firstMissing = missingRequiredDocs[0];
-      const nextMissing = missingRequiredDocs[1];
+    // Find first incomplete section
+    for (const section of DOCUMENT_SECTIONS) {
+      const sectionDocs = documents.filter(d => section.documents.includes(d.id));
+      const completedCount = sectionDocs.filter(d => d.status === 'ready').length;
+      const totalCount = sectionDocs.length;
 
-      return {
-        label: `Upload ${firstMissing.name}`,
-        instruction: `Upload or create ${firstMissing.name}`,
-        actionType: 'document',
-        nextStep: nextMissing ? `Next: ${nextMissing.name}` : 'All documents uploaded'
-      };
+      if (completedCount < totalCount) {
+        const remaining = totalCount - completedCount;
+        return {
+          label: `Complete: ${section.title}`,
+          instruction: `Upload or create any required document in ${section.title}`,
+          actionType: 'document',
+          nextStep: `(${remaining} remaining)`
+        };
+      }
     }
 
-    // All required docs ready
+    // All sections complete
     return {
       label: 'Ready for Submission',
       instruction: 'All required documents uploaded. Ready to generate submission package.',

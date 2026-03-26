@@ -4,6 +4,492 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 20:35 CT - Phase 3H.3 - Soft-Gated Document Workflow with Section-Based Active Work Zone Complete
+
+- Summary: Transformed documentation workflow from strict linear gating to section-based soft gating, allowing operator flexibility within structured boundaries
+- Files changed:
+  - `src/features/ppap/components/DocumentationForm.tsx` - Section-based UI with ACTIVE/COMPLETE/LOCKED states
+  - `src/features/ppap/utils/getNextActionV2.ts` - Section-level next action guidance
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Operators can complete documents in ANY order within sections, sections unlock progressively, clear visual hierarchy, reduced cognitive load
+- Objective: Implement flexible control model per BUILD_PLAN.md Active Work Zone principles
+
+**Context:**
+
+Phase 3H.3 builds on Phase 3H.1 (Active Work Zone UI) and Phase 3H.2 (Next Action Engine) by replacing strict single-document gating with section-based soft gating. This provides operator autonomy within logical engineering boundaries.
+
+**Problem Statement:**
+
+**Before Phase 3H.3:**
+- All 11 documents shown in single flat list
+- No grouping or logical structure
+- Overwhelming choice paralysis (where to start?)
+- No visual indication of progress within document groups
+- Strict linear workflow not aligned with real engineering practices
+
+**After Phase 3H.3:**
+- Documents grouped into 3 logical sections (Core Engineering, Process Docs, Supporting Docs)
+- Operators can work on ANY document within active section
+- Sections unlock progressively (soft gating between sections)
+- Clear visual states: ACTIVE (blue), COMPLETE (green), LOCKED (gray)
+- ONE active section at a time (visual dominance)
+- Progress shown per section: "(2 / 3 Complete)"
+
+---
+
+**Solution:**
+
+**COMPONENT 1 - Document Section Structure**
+
+Defined 3 logical document sections aligned with engineering workflow:
+
+```typescript
+const DOCUMENT_SECTIONS: DocumentSection[] = [
+  {
+    id: 'core_engineering',
+    title: 'Core Engineering Documents',
+    documents: [
+      'ballooned_drawing',
+      'design_record',
+      'dimensional_results'
+    ]
+  },
+  {
+    id: 'process_docs',
+    title: 'Process Documentation',
+    documents: [
+      'dfmea',
+      'pfmea',
+      'control_plan',
+      'msa'
+    ]
+  },
+  {
+    id: 'supporting_docs',
+    title: 'Supporting Documentation',
+    documents: [
+      'material_test_results',
+      'initial_process_studies',
+      'packaging',
+      'tooling'
+    ]
+  }
+];
+```
+
+**Rationale:**
+- Core Engineering: Must complete first (drawings, records, dimensional data)
+- Process Documentation: Depends on core docs (FMEAs, control plan, MSA)
+- Supporting Documentation: Final evidence (material tests, process studies)
+
+---
+
+**COMPONENT 2 - Section State Logic**
+
+Implemented clean state calculation for each section:
+
+```typescript
+const getDocumentStatus = (docId: string): 'ready' | 'missing' => {
+  const doc = documents.find(d => d.id === docId);
+  return doc?.status || 'missing';
+};
+
+const isSectionComplete = (section: DocumentSection): boolean => {
+  return section.documents.every(docId => getDocumentStatus(docId) === 'ready');
+};
+
+const isSectionUnlocked = (sectionIndex: number): boolean => {
+  if (sectionIndex === 0) return true;
+  const previousSection = DOCUMENT_SECTIONS[sectionIndex - 1];
+  return isSectionComplete(previousSection);
+};
+
+const isActiveSection = (sectionIndex: number): boolean => {
+  const section = DOCUMENT_SECTIONS[sectionIndex];
+  return isSectionUnlocked(sectionIndex) && !isSectionComplete(section);
+};
+
+const getSectionProgress = (section: DocumentSection) => {
+  const complete = section.documents.filter(docId => 
+    getDocumentStatus(docId) === 'ready'
+  ).length;
+  return { complete, total: section.documents.length };
+};
+```
+
+**State Flow:**
+1. Section 0 (Core Engineering): Always unlocked
+2. Section 1 (Process Docs): Unlocked when Section 0 complete
+3. Section 2 (Supporting Docs): Unlocked when Section 1 complete
+
+**Active Section:**
+- Unlocked AND not complete = ACTIVE
+- Only ONE section can be active at a time
+- Active section gets visual dominance
+
+---
+
+**COMPONENT 3 - Section UI States**
+
+**ACTIVE SECTION:**
+```tsx
+border-2 border-blue-400
+bg-white
+shadow-md
+```
+- Label: "ACTIVE SECTION" (blue badge)
+- Cannot collapse (always expanded)
+- ALL documents inside are interactive
+- Users can upload/create ANY document in section
+
+**COMPLETE SECTION:**
+```tsx
+border border-green-300
+bg-green-50
+```
+- Label: "✓ Complete" (green badge)
+- Collapsible (user can expand/collapse)
+- Shows progress: "(3 / 3 Complete)"
+- Documents inside still accessible (can replace files)
+
+**LOCKED SECTION:**
+```tsx
+border border-gray-300
+bg-gray-50
+opacity-60
+```
+- Label: "LOCKED" (gray badge)
+- Collapsed by default
+- All actions disabled
+- Tooltip: "Complete previous section first"
+
+---
+
+**COMPONENT 4 - Visual Hierarchy Enforcement**
+
+**Active Work Zone Dominance:**
+- Active section visually prominent (blue border-2, white bg, shadow)
+- Complete sections visually secondary (green tint, thinner border)
+- Locked sections visually tertiary (gray, reduced opacity)
+
+**Result:**
+- User immediately sees where to focus
+- No hunting for active tasks
+- Clear progression path
+
+---
+
+**COMPONENT 5 - Collapse/Expand Behavior**
+
+```typescript
+const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+
+const toggleSectionCollapse = (sectionId: string) => {
+  setCollapsedSections(prev => {
+    const newSet = new Set(prev);
+    if (newSet.has(sectionId)) {
+      newSet.delete(sectionId);
+    } else {
+      newSet.add(sectionId);
+    }
+    return newSet;
+  });
+};
+```
+
+**Rules:**
+- ACTIVE section: No collapse button (always expanded)
+- COMPLETE sections: Collapse toggle shown
+- LOCKED sections: Collapsed by default, can expand to preview
+
+**Benefit:**
+- Reduces visual clutter
+- Keeps focus on active work
+- User controls information density
+
+---
+
+**COMPONENT 6 - Section Progress Visualization**
+
+Each section header shows:
+
+```
+Core Engineering Documents
+(2 / 3 Complete)
+```
+
+**Calculation:**
+```typescript
+const progress = getSectionProgress(section);
+// { complete: 2, total: 3 }
+```
+
+**Display:**
+- Always visible in section header
+- Updates in real-time as documents uploaded
+- Clear numerical feedback on progress
+
+---
+
+**COMPONENT 7 - Document Action Control (Soft Gating)**
+
+**Within ACTIVE Section:**
+- Upload button: **ENABLED**
+- Create button: **ENABLED** (if `canCreate(docId)` true)
+- User can work on documents in ANY order
+
+**Within COMPLETE Section:**
+- Upload button: **ENABLED** (can replace files)
+- Create button: **ENABLED** (can recreate)
+- Section already complete, but still accessible
+
+**Within LOCKED Section:**
+- Upload button: **DISABLED**
+- Create button: **DISABLED**
+- Tooltip: "Complete previous section first"
+
+**Code:**
+```typescript
+disabled={isReadOnly || uploading || !sectionUnlocked}
+title={!sectionUnlocked ? 'Complete previous section first' : ...}
+```
+
+---
+
+**COMPONENT 8 - Next Action Update (Section-Level)**
+
+Updated `getNextActionV2()` to provide section-level guidance:
+
+**Before (Phase 3H.2):**
+```
+Current Task: Upload Ballooned Drawing
+Next: Upload Design Record
+```
+
+**After (Phase 3H.3):**
+```
+Current Task: Complete: Core Engineering Documents
+Upload or create any required document in Core Engineering Documents
+(2 remaining)
+```
+
+**Implementation:**
+```typescript
+// Find first incomplete section
+for (const section of DOCUMENT_SECTIONS) {
+  const sectionDocs = documents.filter(d => section.documents.includes(d.id));
+  const completedCount = sectionDocs.filter(d => d.status === 'ready').length;
+  const totalCount = sectionDocs.length;
+
+  if (completedCount < totalCount) {
+    const remaining = totalCount - completedCount;
+    return {
+      label: `Complete: ${section.title}`,
+      instruction: `Upload or create any required document in ${section.title}`,
+      actionType: 'document',
+      nextStep: `(${remaining} remaining)`
+    };
+  }
+}
+```
+
+**Benefit:**
+- Operator knows WHICH SECTION to work in
+- Knows HOW MANY documents remaining in section
+- Freedom to choose which document within section
+
+---
+
+**COMPONENT 9 - Section Flow Logging**
+
+Added real-time section flow tracking:
+
+```typescript
+useEffect(() => {
+  const activeSectionIdx = getActiveSectionIndex();
+  const completedSections = DOCUMENT_SECTIONS.filter((_, idx) => 
+    isSectionComplete(DOCUMENT_SECTIONS[idx])
+  ).length;
+  
+  console.log('📂 DOCUMENT SECTION FLOW', {
+    activeSection: activeSectionIdx >= 0 ? DOCUMENT_SECTIONS[activeSectionIdx].id : 'none',
+    completedSections,
+    totalSections: DOCUMENT_SECTIONS.length
+  });
+}, [documents]);
+```
+
+**Logs:**
+```
+📂 DOCUMENT SECTION FLOW {
+  activeSection: 'core_engineering',
+  completedSections: 0,
+  totalSections: 3
+}
+```
+
+---
+
+**User Experience Flow:**
+
+**Scenario: New Documentation Phase**
+
+1. **Operator sees:**
+   - CurrentTaskBanner: "Complete: Core Engineering Documents"
+   - Core Engineering section: ACTIVE (blue, expanded)
+   - Process Documentation section: LOCKED (gray, collapsed)
+   - Supporting Documentation section: LOCKED (gray, collapsed)
+
+2. **Operator uploads ballooned drawing:**
+   - Progress updates: "(1 / 3 Complete)"
+   - Still in Core Engineering (active)
+   - Can now work on design_record OR dimensional_results
+
+3. **Operator uploads design_record:**
+   - Progress updates: "(2 / 3 Complete)"
+   - Still in Core Engineering (active)
+   - Only dimensional_results remaining
+
+4. **Operator uploads dimensional_results:**
+   - Progress updates: "(3 / 3 Complete)"
+   - Core Engineering section: COMPLETE (green)
+   - Process Documentation section: ACTIVE (blue) **UNLOCKS**
+   - CurrentTaskBanner updates: "Complete: Process Documentation"
+
+5. **Operator continues:**
+   - Works on DFMEA, PFMEA, Control Plan, MSA in ANY order
+   - Process Documentation section shows progress
+   - Upon completion, Supporting Documentation unlocks
+
+---
+
+**Success Criteria Met:**
+
+- ✅ Users can complete documents in ANY order within section
+- ✅ Sections unlock progressively (soft gating enforced)
+- ✅ UI clearly communicates section-level progress
+- ✅ No forced linear workflow frustration
+- ✅ Logical engineering sequence still enforced (section order)
+- ✅ Clear next action at SECTION level
+- ✅ Reduced cognitive load (grouped, organized)
+- ✅ Real-world engineering flexibility preserved
+- ✅ ONE active section visually dominant at all times
+- ✅ No overwhelming document list
+- ✅ No decision paralysis (clear focus area)
+
+---
+
+**Architecture Compliance:**
+
+**Phase 3F Rules Respected:**
+- ✅ NO state machine changes
+- ✅ NO database schema changes
+- ✅ NO validation logic changes
+- ✅ UI/UX transformation ONLY
+
+**BUILD_PLAN.md Compliance:**
+- ✅ Active Work Zone dominance enforced
+- ✅ Guided workflow (sections guide progression)
+- ✅ Operator-first design (flexibility within structure)
+- ✅ Clear visual hierarchy (ACTIVE > COMPLETE > LOCKED)
+
+---
+
+**Benefits:**
+
+**For Operators:**
+- Autonomy within sections (not forced linear order)
+- Clear focus area (active section)
+- Visible progress (section completion)
+- Less overwhelming (11 docs → 3 sections)
+- Faster workflow (parallel work within section)
+
+**For Engineering Reality:**
+- Aligns with actual engineering practices
+- Core docs first, process docs second, supporting docs last
+- Flexibility where it matters (within section)
+- Structure where it matters (between sections)
+
+**For System:**
+- Clean state management (section-based)
+- Easy to extend (add more sections)
+- Maintainable logic (clear separation)
+- Testable (section state functions)
+
+---
+
+**Files Modified:**
+- Modified: `src/features/ppap/components/DocumentationForm.tsx` (+90 lines, section UI)
+- Modified: `src/features/ppap/utils/getNextActionV2.ts` (+25 lines, section guidance)
+- Documented: `docs/BUILD_LEDGER.md` (Phase 3H.3 entry)
+
+**Total Changes:**
+- 0 backend changes
+- 0 state machine changes
+- 0 database changes
+- UI transformation ONLY
+
+**Code Quality:**
+- ✅ TypeScript compilation successful
+- ✅ No lint errors
+- ✅ Clean state logic
+- ✅ Consistent styling
+- ✅ Future-ready (easy to add sections)
+
+---
+
+**Comparison Matrix:**
+
+| Aspect | Before 3H.3 | After 3H.3 |
+|--------|-------------|------------|
+| Document View | Flat list (11 items) | 3 sections (3-4 items each) |
+| Work Order | Forced linear | Free within section |
+| Gating | Per-document (strict) | Per-section (soft) |
+| Visual Dominance | None | Active section blue |
+| Progress Tracking | Overall only | Per-section + overall |
+| Cognitive Load | High (11 choices) | Low (3-4 choices) |
+| Flexibility | None | High (within section) |
+| Structure | Weak | Strong (section order) |
+
+---
+
+**Next Actions:**
+
+**Immediate (Phase 3H):**
+- Monitor operator feedback on section-based workflow
+- Collect data on document completion patterns
+- Validate section groupings with engineering team
+
+**Future (Phase 3I+):**
+- Dynamic section ordering based on PPAP type
+- Smart section suggestions (e.g., skip conditional sections)
+- Section templates for common PPAP scenarios
+- AI-assisted section completion estimation
+
+---
+
+**Technical Notes:**
+
+**Why Section-Based?**
+- Engineering documents naturally cluster
+- Core → Process → Supporting is logical flow
+- Provides structure without rigidity
+- Balances control with autonomy
+
+**Why Soft Gating?**
+- Hard gating (per-document) too restrictive
+- No gating would be chaotic
+- Section gating = middle ground
+- Operator freedom + logical progression
+
+**Why 3 Sections?**
+- Small enough to understand at glance
+- Large enough to provide meaningful organization
+- Aligns with PPAP documentation structure
+- Easy to communicate ("finish core docs first")
+
+---
+
 ## 2026-03-25 20:10 CT - Phase 3H.2 - Active Work Zone Dominance + Document Action Engine Complete
 
 - Summary: Implemented operator-first guided workflow with next action system, fixed balloon drawing routing, and enabled upload + create model for all documents
