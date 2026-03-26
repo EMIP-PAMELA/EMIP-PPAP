@@ -8,6 +8,45 @@ import { enhancePPAPRecord, sortPPAPs, filterPPAPs, searchPPAPs, paginatePPAPs, 
 import { currentUser } from '@/src/lib/mockUser';
 import { isReadOnly } from '../utils/permissions';
 import { calculateDocumentProgress, getHealthStatus, getHealthBadgeStyle, getHealthBadgeIcon, getStatusClarityTag } from '../utils/documentHelpers';
+import { mapStatusToPhase } from '../utils/stateWorkflowMapping';
+import { WORKFLOW_PHASE_LABELS } from '../constants/workflowPhases';
+
+/**
+ * Phase 3H.8: Format user name for display
+ * Input: username string (e.g., "Matt", "System User")
+ * Output: Formatted name (e.g., "Matt R.", "Unassigned")
+ */
+function formatUserName(user: string | null | undefined): string {
+  if (!user) return 'Unassigned';
+  
+  // Handle known usernames with proper formatting
+  const nameParts = user.split(' ');
+  if (nameParts.length >= 2) {
+    const first = nameParts[0];
+    const lastInitial = nameParts[1][0] + '.';
+    return `${first} ${lastInitial}`;
+  }
+  
+  // Single name or unknown format
+  return user;
+}
+
+/**
+ * Phase 3H.8: Validate plant value
+ * Allowed: "Ft. Smith", "Ball Ground", "Warner Robins"
+ */
+function validatePlant(plant: string | null | undefined, ppapId: string): string {
+  if (!plant) return '—';
+  
+  const validPlants = ['Ft. Smith', 'Ball Ground', 'Warner Robins'];
+  
+  if (!validPlants.includes(plant)) {
+    console.warn('⚠️ INVALID PLANT VALUE', { ppapId, plant, validPlants });
+    return plant; // Show invalid value but log warning
+  }
+  
+  return plant;
+}
 
 interface PPAPDashboardTableProps {
   ppaps: PPAPRecord[];
@@ -369,6 +408,26 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
               const healthStatus = getHealthStatus(ppap, docProgress);
               const clarityTag = getStatusClarityTag(ppap.status);
               
+              // Phase 3H.8: Derive phase from status (single source of truth)
+              const derivedPhase = mapStatusToPhase(ppap.status);
+              const phaseLabel = WORKFLOW_PHASE_LABELS[derivedPhase] || derivedPhase;
+              
+              // Phase 3H.8: Format assigned engineer
+              const formattedEngineer = formatUserName(ppap.assigned_to);
+              
+              // Phase 3H.8: Validate plant
+              const validatedPlant = validatePlant(ppap.plant, ppap.id);
+              
+              // Phase 3H.8: Defensive logging for data integrity
+              console.log('📊 DASHBOARD ROW DATA', {
+                id: ppap.id,
+                ppap_number: ppap.ppap_number,
+                status: ppap.status,
+                plant: ppap.plant,
+                assigned_to: ppap.assigned_to,
+                derivedPhase,
+              });
+              
               return (
               <tr
                 key={ppap.id}
@@ -420,18 +479,25 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                     <span>{healthStatus}</span>
                   </span>
                 </td>
+                {/* Phase 3H.8: Phase Column - Derived from status */}
                 <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-700">
-                  {ppap.derivedPhase}
+                  {phaseLabel}
                 </td>
+                {/* Phase 3H.8: Assigned Engineer Column - Formatted user name */}
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                  {ppap.assigned_to ? (
-                    <span className="font-medium">{ppap.assigned_to}</span>
+                  {formattedEngineer === 'Unassigned' ? (
+                    <span className="text-gray-400">{formattedEngineer}</span>
                   ) : (
-                    <span className="text-gray-400">—</span>
+                    <span className="font-medium">{formattedEngineer}</span>
                   )}
                 </td>
+                {/* Phase 3H.8: Production Plant Column - Validated plant value */}
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                  {ppap.plant}
+                  {validatedPlant === '—' ? (
+                    <span className="text-gray-400">{validatedPlant}</span>
+                  ) : (
+                    <span className="font-medium">{validatedPlant}</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <span className={`text-sm font-medium ${
