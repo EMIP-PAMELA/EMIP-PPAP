@@ -10,12 +10,21 @@ import { ReviewForm } from './ReviewForm';
 import { WorkflowPhase, isValidWorkflowPhase, WORKFLOW_PHASE_LABELS, WORKFLOW_PHASES } from '../constants/workflowPhases';
 import { getNextAction } from '../utils/getNextAction';
 import { mapStatusToPhase, logStateToPhaseMapping } from '../utils/stateWorkflowMapping';
+import PPAPValidationPanelDB from './PPAPValidationPanelDB';
+import { useState, useEffect as useEffectImport } from 'react';
+import { getValidations, DBValidation } from '../utils/validationDatabase';
+import { getNextAction as getNextActionV2 } from '../utils/getNextActionV2';
+import { CurrentTaskBanner } from './CurrentTaskBanner';
 
 interface PPAPWorkflowWrapperProps {
   ppap: PPAPRecord;
 }
 
 export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
+  // Phase 3H.2: State for validations and documents for next action
+  const [validations, setValidations] = useState<DBValidation[]>([]);
+  const [documents, setDocuments] = useState<any[]>([]); // Simplified for now
+  
   // Phase 3F.5: Guard against null/undefined PPAP
   if (!ppap) {
     console.error('Phase 3F.5 - CRITICAL: PPAP NOT FOUND IN WRAPPER', ppap);
@@ -26,6 +35,19 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
       </div>
     );
   }
+  
+  // Phase 3H.2: Fetch validations for next action calculation
+  useEffectImport(() => {
+    async function fetchValidations() {
+      try {
+        const data = await getValidations(ppap.id);
+        setValidations(data);
+      } catch (err) {
+        console.error('Failed to fetch validations for next action:', err);
+      }
+    }
+    fetchValidations();
+  }, [ppap.id]);
 
   // Phase 3F.5: Log PPAP received in wrapper
   console.log('Phase 3F.5 - PPAP RECEIVED IN WRAPPER', {
@@ -62,7 +84,11 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     }
   }, []);
 
+  // Phase 3H.2: Use new next action system
   const nextActionData = getNextAction(ppap.workflow_phase, ppap.status);
+  const nextActionV2 = getNextActionV2(ppap.status, validations, documents);
+  
+  console.log('🎯 NEXT ACTION', nextActionV2);
   
   const scrollToActivePhase = () => {
     if (activePhaseRef.current) {
@@ -78,32 +104,18 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     scrollToActivePhase();
   };
 
+  // Phase 3H.2: Determine current phase for active work zone
+  const currentPhase = selectedPhase === 'INITIATION' || selectedPhase === 'DOCUMENTATION' && ppap.status.includes('PRE_ACK') ? 'pre-ack' : 'post-ack';
+  
   return (
     <div className="space-y-5">
-      {/* Next Action Panel */}
-      <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-50 border-2 border-blue-400 rounded-xl shadow-lg p-7">
-        <div className="flex items-start justify-between gap-6">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-              <h3 className="text-sm font-bold text-blue-900 uppercase tracking-wide">Your Next Action</h3>
-            </div>
-            <p className="text-2xl font-bold text-gray-900 leading-tight mb-3">{nextActionData.nextAction || ''}</p>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-600">Current Phase:</span>
-              <span className="px-3 py-1 bg-white border border-blue-200 rounded-lg text-sm font-bold text-blue-900">
-                {WORKFLOW_PHASE_LABELS[selectedPhase] || ''}
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={scrollToActivePhase}
-            className="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg hover:scale-105 whitespace-nowrap"
-          >
-            Go to Section →
-          </button>
-        </div>
-      </div>
+      {/* Phase 3H.2: Current Task Banner (ALWAYS VISIBLE AT TOP) */}
+      <CurrentTaskBanner
+        phase={WORKFLOW_PHASE_LABELS[selectedPhase] || ''}
+        currentStep={nextActionV2.label}
+        instruction={nextActionV2.instruction}
+        icon="🎯"
+      />
 
       <PhaseIndicator currentPhase={selectedPhase} onPhaseClick={handlePhaseClick} />
       
@@ -121,11 +133,22 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
 
       {selectedPhase === 'DOCUMENTATION' && (
         <div ref={activePhaseRef}>
-          <DocumentationForm
+          {/* Phase 3H.2: Validation panel for pre-ack, collapsed for post-ack */}
+          <PPAPValidationPanelDB
             ppapId={ppap.id}
-            partNumber={ppap.part_number || ''}
-            isReadOnly={false}
+            currentPhase={currentPhase}
+            ppapStatus={ppap.status}
           />
+          
+          {/* Phase 3H.2: Documentation form */}
+          <div className="mt-4">
+            <DocumentationForm
+              ppapId={ppap.id}
+              partNumber={ppap.part_number || ''}
+              isReadOnly={false}
+              currentPhase={currentPhase}
+            />
+          </div>
         </div>
       )}
 

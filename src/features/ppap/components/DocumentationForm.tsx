@@ -67,20 +67,25 @@ const REQUIRED_DOCUMENTS = [
   { key: 'tooling', label: 'Tooling Documentation' },
 ] as const;
 
-// Phase 3F.14: Document configuration with actions
+// Phase 3H.2: Document configuration with actions - ALL documents have upload + create for future template system
 const DOCUMENT_CONFIG: DocumentItem[] = [
   { id: 'ballooned_drawing', name: 'Ballooned Drawing', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
-  { id: 'design_record', name: 'Design Record', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
-  { id: 'dimensional_results', name: 'Dimensional Results', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
-  { id: 'dfmea', name: 'DFMEA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
-  { id: 'pfmea', name: 'PFMEA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
-  { id: 'control_plan', name: 'Control Plan', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
-  { id: 'msa', name: 'MSA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
-  { id: 'material_test_results', name: 'Material Test Results', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
-  { id: 'initial_process_studies', name: 'Initial Process Studies', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload'] },
-  { id: 'packaging', name: 'Packaging Specification', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload'] },
-  { id: 'tooling', name: 'Tooling Documentation', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload'] },
+  { id: 'design_record', name: 'Design Record', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
+  { id: 'dimensional_results', name: 'Dimensional Results', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
+  { id: 'dfmea', name: 'DFMEA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
+  { id: 'pfmea', name: 'PFMEA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
+  { id: 'control_plan', name: 'Control Plan', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
+  { id: 'msa', name: 'MSA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
+  { id: 'material_test_results', name: 'Material Test Results', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
+  { id: 'initial_process_studies', name: 'Initial Process Studies', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
+  { id: 'packaging', name: 'Packaging Specification', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload', 'create'] },
+  { id: 'tooling', name: 'Tooling Documentation', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload', 'create'] },
 ];
+
+// Phase 3H.2: Determine which documents can actually be created (vs coming soon)
+const canCreate = (docId: string): boolean => {
+  return ['ballooned_drawing'].includes(docId);
+};
 
 const SECTIONS = [
   { id: 'checklist', label: 'Required Documents' },
@@ -234,12 +239,18 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     }
   };
 
-  // Phase 3F.14: Create button handler (placeholder for future template engine)
+  // Phase 3H.2: Create button handler with balloon drawing routing
   const handleCreateDocument = (documentId: string) => {
-    console.log('🛠 CREATE DOCUMENT', {
-      documentType: documentId,
-    });
-    // TODO: Implement template-based document generation
+    console.log('� DOCUMENT ACTION CLICK', { docId: documentId, action: 'create' });
+    
+    // Phase 3H.2: Route to balloon drawing generator
+    if (documentId === 'ballooned_drawing') {
+      router.push(`/tools/balloon-drawing?ppapId=${ppapId}`);
+      return;
+    }
+    
+    // Future: Other template generators will be added here
+    console.log('🛠 Template coming soon for:', documentId);
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -692,9 +703,10 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                         {doc.actions.includes('create') && (
                           <button
                             onClick={() => handleCreateDocument(doc.id)}
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || !canCreate(doc.id)}
+                            title={!canCreate(doc.id) ? 'Template coming soon' : 'Create from template'}
                             className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
-                              isReadOnly
+                              isReadOnly || !canCreate(doc.id)
                                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                 : 'bg-purple-600 text-white hover:bg-purple-700'
                             }`}

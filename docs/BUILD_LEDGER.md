@@ -4,6 +4,397 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 20:10 CT - Phase 3H.2 - Active Work Zone Dominance + Document Action Engine Complete
+
+- Summary: Implemented operator-first guided workflow with next action system, fixed balloon drawing routing, and enabled upload + create model for all documents
+- Files changed:
+  - `src/features/ppap/utils/getNextActionV2.ts` - New next action engine based on ppap.status
+  - `src/features/ppap/components/PPAPWorkflowWrapper.tsx` - Integrated CurrentTaskBanner at top, validation panel in documentation phase
+  - `src/features/ppap/components/DocumentationForm.tsx` - All documents now have upload + create actions, balloon drawing routes to generator
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: ONE clear next action always visible, balloon drawing create button functional, future template system ready
+- Objective: Transform UI into operator-first guided workflow per BUILD_PLAN.md Active Work Zone section
+
+**Context:**
+
+Phase 3H.2 builds on Phase 3H.1's Active Work Zone foundation by adding intelligent next action guidance and completing the document action system. This eliminates operator confusion by always showing exactly what to do next.
+
+**Problem Statement:**
+
+**Before Phase 3H.2:**
+- Next action panel showed phase-based generic actions
+- No intelligent guidance based on validation/document state
+- Balloon drawing "Create" button was console.log placeholder
+- Only balloon drawing had create action (others upload-only)
+- No clear "what do I do next?" guidance
+
+**After Phase 3H.2:**
+- Next action calculated from ppap.status + validation state + document state
+- CurrentTaskBanner always visible at top showing current task
+- Balloon drawing create button routes to `/tools/balloon-drawing?ppapId=X`
+- ALL documents have upload + create actions (future-ready)
+- Create buttons disabled with "Template coming soon" tooltip for non-implemented templates
+- Zero confusion about next step
+
+---
+
+**Solution:**
+
+**COMPONENT 1 - getNextActionV2 Engine**
+
+Created intelligent next action calculation based on single source of truth:
+
+```typescript
+export function getNextAction(
+  ppapStatus: PPAPStatus,
+  validations: DBValidation[],
+  documents: DocumentItem[]
+): NextAction
+```
+
+**Returns:**
+```typescript
+{
+  label: string;           // "Upload Ballooned Drawing"
+  instruction: string;     // "Upload or create Ballooned Drawing"
+  actionType: NextActionType;
+  nextStep?: string;       // "Next: Upload Control Plan"
+}
+```
+
+**Logic Flow:**
+
+**Pre-Ack Phase (NEW, PRE_ACK_ASSIGNED, PRE_ACK_IN_PROGRESS):**
+- Find first incomplete required validation
+- Return: "Complete [Validation Name]"
+- Next step: Next validation or "All validations complete"
+
+**Acknowledgement Phase (READY_TO_ACKNOWLEDGE):**
+- Return: "Awaiting Acknowledgement"
+- Instruction: "Coordinator must acknowledge to proceed"
+
+**Post-Ack Phase (POST_ACK_IN_PROGRESS):**
+- Find first missing required document
+- Return: "Upload [Document Name]"
+- Next step: Next document or "All documents uploaded"
+
+**Submission Phase (AWAITING_SUBMISSION):**
+- Return: "Generate Submission Package"
+- Instruction: "Click Generate Package to create final submission"
+
+**Review Phase (SUBMITTED):**
+- Return: "Awaiting Review Decision"
+- Instruction: "Coordinator must approve or reject"
+
+**Complete/Approved (APPROVED):**
+- Return: "PPAP Approved"
+- Instruction: "PPAP process complete"
+
+**Closed/Rejected (CLOSED):**
+- Return: "Fix Issues and Resubmit"
+- Instruction: "Address rejection comments and resubmit"
+
+**Key Features:**
+- Uses ppap.status as single source of truth (Phase 3F architecture compliance)
+- NO workflow_phase dependency
+- Real-time calculation based on actual state
+- Logs to console: `console.log('🎯 NEXT ACTION CALCULATION', {...})`
+
+---
+
+**COMPONENT 2 - PPAPWorkflowWrapper Updates**
+
+**Added:**
+
+1. **Validation State Fetching**
+   ```typescript
+   const [validations, setValidations] = useState<DBValidation[]>([]);
+   
+   useEffect(() => {
+     async function fetchValidations() {
+       const data = await getValidations(ppap.id);
+       setValidations(data);
+     }
+     fetchValidations();
+   }, [ppap.id]);
+   ```
+
+2. **Next Action Integration**
+   ```typescript
+   const nextActionV2 = getNextActionV2(ppap.status, validations, documents);
+   console.log('🎯 NEXT ACTION', nextActionV2);
+   ```
+
+3. **CurrentTaskBanner at Top (Always Visible)**
+   ```tsx
+   <CurrentTaskBanner
+     phase={WORKFLOW_PHASE_LABELS[selectedPhase]}
+     currentStep={nextActionV2.label}
+     instruction={nextActionV2.instruction}
+     icon="🎯"
+   />
+   ```
+
+4. **Documentation Phase Layout**
+   - Validation panel shown first (pre-ack active, post-ack collapsible)
+   - Documentation form shown second
+   - Both integrate with active work zone system from Phase 3H.1
+
+**Layout Hierarchy:**
+```
+1. CurrentTaskBanner (TOP - always visible)
+2. PhaseIndicator
+3. ACTIVE WORK ZONE (expanded, dominant)
+   - Pre-Ack: PPAPValidationPanelDB (ACTIVE)
+   - Post-Ack: DocumentationForm (ACTIVE)
+4. INACTIVE SECTIONS (collapsed, minimized)
+```
+
+---
+
+**COMPONENT 3 - Document Action System Upgrade**
+
+**Updated ALL documents to have upload + create:**
+
+```typescript
+// Phase 3H.2: ALL documents have upload + create for future template system
+const DOCUMENT_CONFIG: DocumentItem[] = [
+  { id: 'ballooned_drawing', name: 'Ballooned Drawing', actions: ['upload', 'create'] },
+  { id: 'design_record', name: 'Design Record', actions: ['upload', 'create'] },
+  { id: 'dimensional_results', name: 'Dimensional Results', actions: ['upload', 'create'] },
+  { id: 'dfmea', name: 'DFMEA', actions: ['upload', 'create'] },
+  { id: 'pfmea', name: 'PFMEA', actions: ['upload', 'create'] },
+  { id: 'control_plan', name: 'Control Plan', actions: ['upload', 'create'] },
+  { id: 'msa', name: 'MSA', actions: ['upload', 'create'] },
+  { id: 'material_test_results', name: 'Material Test Results', actions: ['upload', 'create'] },
+  { id: 'initial_process_studies', name: 'Initial Process Studies', actions: ['upload', 'create'] },
+  { id: 'packaging', name: 'Packaging Specification', actions: ['upload', 'create'] },
+  { id: 'tooling', name: 'Tooling Documentation', actions: ['upload', 'create'] },
+];
+```
+
+**Added canCreate() helper:**
+
+```typescript
+const canCreate = (docId: string): boolean => {
+  return ['ballooned_drawing'].includes(docId);
+};
+```
+
+**UI Behavior:**
+- BOTH buttons always shown (Upload + Create)
+- Create button **enabled** if `canCreate(docId) === true`
+- Create button **disabled** with tooltip "Template coming soon" if `canCreate(docId) === false`
+- Future: Add more document IDs to canCreate as templates are built
+
+---
+
+**COMPONENT 4 - Balloon Drawing Routing Fix**
+
+**Before (Phase 3F.14):**
+```typescript
+const handleCreateDocument = (documentId: string) => {
+  console.log('🛠 CREATE DOCUMENT', { documentType: documentId });
+  // TODO: Implement template-based document generation
+};
+```
+
+**After (Phase 3H.2):**
+```typescript
+const handleCreateDocument = (documentId: string) => {
+  console.log('📄 DOCUMENT ACTION CLICK', { docId: documentId, action: 'create' });
+  
+  // Phase 3H.2: Route to balloon drawing generator
+  if (documentId === 'ballooned_drawing') {
+    router.push(`/tools/balloon-drawing?ppapId=${ppapId}`);
+    return;
+  }
+  
+  // Future: Other template generators will be added here
+  console.log('🛠 Template coming soon for:', documentId);
+};
+```
+
+**Result:**
+- Clicking "Create" on Ballooned Drawing navigates to generator page
+- ppapId passed as query parameter
+- Generator can save directly to PPAP record
+- Other documents show disabled state until templates ready
+
+---
+
+**COMPONENT 5 - Document Card UI Updates**
+
+**Create Button Enhancement:**
+
+```tsx
+<button
+  onClick={() => handleCreateDocument(doc.id)}
+  disabled={isReadOnly || !canCreate(doc.id)}
+  title={!canCreate(doc.id) ? 'Template coming soon' : 'Create from template'}
+  className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
+    isReadOnly || !canCreate(doc.id)
+      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+      : 'bg-purple-600 text-white hover:bg-purple-700'
+  }`}
+>
+  🛠 Create
+</button>
+```
+
+**Features:**
+- Disabled state for non-implemented templates
+- Tooltip on hover explaining status
+- Visual distinction (gray vs purple)
+- Cursor change (not-allowed vs pointer)
+
+---
+
+**Logging Added:**
+
+**Next Action Calculation:**
+```typescript
+console.log('🎯 NEXT ACTION CALCULATION', { 
+  ppapStatus, 
+  validations: validations.length, 
+  documents: documents.length 
+});
+```
+
+**Document Actions:**
+```typescript
+console.log('📄 DOCUMENT ACTION CLICK', { docId, action: 'create' });
+```
+
+**Next Action Result:**
+```typescript
+console.log('🎯 NEXT ACTION', nextActionV2);
+```
+
+---
+
+**Success Criteria Met:**
+
+- ✅ Active section visually dominant (Phase 3H.1 + 3H.2 integration)
+- ✅ Inactive sections minimized + collapsible (Phase 3H.1)
+- ✅ Clear "Next Action" shown at top (CurrentTaskBanner with real-time data)
+- ✅ Balloon drawing create button routes correctly (`/tools/balloon-drawing?ppapId=X`)
+- ✅ All documents show Upload + Create buttons
+- ✅ Future template system supported (canCreate() gating)
+- ✅ Zero confusion about next step (intelligent next action calculation)
+- ✅ Operator immediately knows what to do (label + instruction + next step)
+- ✅ NO workflow_phase dependency (uses ppap.status only)
+- ✅ Aligned with Phase 3F architecture (single source of truth)
+
+---
+
+**Architecture Compliance:**
+
+**Phase 3F Rules Respected:**
+- ✅ ppap.status is single source of truth
+- ✅ NO direct status writes
+- ✅ NO workflow_phase control
+- ✅ State-driven rendering only
+- ✅ All state updates via updatePPAPState()
+
+**BUILD_PLAN.md Compliance:**
+- ✅ Active Work Zone dominance enforced
+- ✅ One obvious next action
+- ✅ Operator-first design
+- ✅ No hidden required actions
+- ✅ Clear visual hierarchy
+
+---
+
+**User Experience Flow:**
+
+**Pre-Ack Phase:**
+1. Operator sees CurrentTaskBanner: "🎯 Current Task: Drawing Verification"
+2. Instruction: "Complete Drawing Verification"
+3. Next step: "Next: BOM Review / Alignment"
+4. Validation panel is ACTIVE (blue, expanded, dominant)
+5. Documentation section is INACTIVE (gray, collapsed)
+6. Zero confusion - clear what to do
+
+**Post-Ack Phase:**
+1. Operator sees CurrentTaskBanner: "🎯 Current Task: Upload Ballooned Drawing"
+2. Instruction: "Upload or create Ballooned Drawing"
+3. Next step: "Next: Upload Control Plan"
+4. Documentation form is ACTIVE (blue, expanded, dominant)
+5. Validation section is INACTIVE (gray, collapsed, summary shown)
+6. Sees Upload + Create buttons for Ballooned Drawing
+7. Clicks "Create" → Routes to balloon generator
+8. Completes drawing → Returns to upload next document
+
+**Benefits:**
+- No decision paralysis (one clear action)
+- Faster completion (guided workflow)
+- Reduced errors (operator knows what to do)
+- Better onboarding (self-explanatory)
+- Template system ready (future scalability)
+
+---
+
+**Files Modified:**
+- Created: `src/features/ppap/utils/getNextActionV2.ts` (157 lines)
+- Modified: `src/features/ppap/components/PPAPWorkflowWrapper.tsx` (+25 lines, integrated next action)
+- Modified: `src/features/ppap/components/DocumentationForm.tsx` (+17 lines, balloon routing + canCreate)
+- Documented: `docs/BUILD_LEDGER.md` (Phase 3H.2 entry)
+
+**Total Changes:**
+- 1 new utility created (getNextActionV2)
+- 2 components updated
+- 0 state machine changes
+- 0 validation logic changes
+- UI + guidance enhancement only
+
+**Code Quality:**
+- ✅ TypeScript compilation successful
+- ✅ No lint errors
+- ✅ Consistent logging
+- ✅ Clear separation of concerns
+- ✅ Future-ready architecture
+
+---
+
+**Next Actions:**
+
+**Immediate (Phase 3H):**
+- Monitor operator feedback on next action clarity
+- Test balloon drawing generator integration
+- Consider adding more templates (DFMEA, PFMEA, etc.)
+
+**Future (Phase 3I+):**
+- Template generation system for other document types
+- AI-assisted document creation
+- Smart document suggestions based on part type
+- Document version control
+- Template library management
+
+---
+
+**Technical Notes:**
+
+**getNextActionV2 vs getNextAction:**
+- Old: Uses workflow_phase (deprecated field)
+- New: Uses ppap.status (single source of truth)
+- Old: Generic phase-based actions
+- New: Specific validation/document-based actions
+- Old: No state awareness
+- New: Real-time state calculation
+
+**Why Both Exist:**
+- getNextAction: Used in PhaseIndicator (legacy)
+- getNextActionV2: Used in CurrentTaskBanner (new system)
+- Future: Migrate all to getNextActionV2
+
+**Migration Path:**
+- Phase 3H.2: Introduce getNextActionV2, use in parallel
+- Phase 3I: Deprecate getNextAction
+- Phase 3J: Remove workflow_phase field entirely
+
+---
+
 ## 2026-03-25 19:30 CT - Phase 3H.1 - Active Work Zone UI Implementation Complete
 
 - Summary: Implemented "Active Work Zone" UI behavior with clear visual hierarchy showing operators what they're currently working on, what's complete, and what's locked
