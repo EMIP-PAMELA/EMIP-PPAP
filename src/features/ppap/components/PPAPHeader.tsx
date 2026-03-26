@@ -90,12 +90,21 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
               {nextActionData.nextAction || ''}
             </p>
           </div>
-          {/* Phase 3H.12: Phase vs Status clarity */}
+          {/* Phase 3H.12/3H.13.5: Phase vs Status clarity with interpretation */}
           <div className="text-right">
             <div className="text-xs text-gray-500 uppercase tracking-wide">Phase (Derived)</div>
             <div className="text-sm font-semibold text-gray-700">{derivedPhase}</div>
             <div className="text-xs text-gray-500 uppercase tracking-wide mt-1">Status (Raw)</div>
             <div className="text-sm font-mono text-gray-700">{ppap.status}</div>
+            {/* Phase 3H.13.5: Interpreted guidance */}
+            <div className="text-xs text-gray-600 mt-2 italic max-w-xs">
+              {ppap.status === 'READY_TO_ACKNOWLEDGE' && 'Coordinator must acknowledge before work continues'}
+              {ppap.status === 'POST_ACK_IN_PROGRESS' && 'Work actively ongoing'}
+              {ppap.status === 'AWAITING_SUBMISSION' && 'Ready for submission to customer'}
+              {ppap.status === 'SUBMITTED' && 'Under customer review'}
+              {ppap.status === 'APPROVED' && 'Process complete'}
+              {ppap.status === 'PRE_ACK_IN_PROGRESS' && 'Pre-acknowledgement validations in progress'}
+            </div>
           </div>
         </div>
       </div>

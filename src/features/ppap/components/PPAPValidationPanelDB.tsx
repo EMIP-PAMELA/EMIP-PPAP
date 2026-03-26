@@ -54,6 +54,7 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [initializing, setInitializing] = useState(false);
   
   // Phase 3H.1: Collapsible state for active work zone
   const [isExpanded, setIsExpanded] = useState(true);
@@ -68,12 +69,23 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
   const showPreAckActive = derivedPhase === 'INITIATION';
   const showPostAckActive = derivedPhase === 'DOCUMENTATION';
 
-  // Fetch validations from database
+  // Phase 3H.13.5: Fetch validations with auto-retry (system handles failure)
   useEffect(() => {
     async function fetchValidations() {
       try {
         setLoading(true);
-        const data = await getValidations(ppapId);
+        setInitializing(true);
+        setError(null);
+        
+        // Phase 3H.13.5: Auto-retry on failure (ONE attempt)
+        let data: DBValidation[];
+        try {
+          data = await getValidations(ppapId);
+        } catch (firstError) {
+          console.warn('⚠️ Retrying validation initialization...', firstError);
+          // Auto-retry once
+          data = await getValidations(ppapId);
+        }
         
         // Phase 3H.11: Log validation data for debugging
         console.log('VALIDATION DATA CHECK', { 
@@ -83,9 +95,12 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
         });
         
         setValidations(data);
+        setInitializing(false);
       } catch (err) {
-        console.error('Failed to fetch validations:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load validations');
+        console.error('Failed to fetch validations after retry:', err);
+        // Phase 3H.13.5: System error (no user recovery needed)
+        setError('System error: Unable to initialize validation data. Please contact support.');
+        setInitializing(false);
       } finally {
         setLoading(false);
       }
@@ -256,14 +271,14 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
     const isEditable = category === 'pre-ack' ? canEditPreAck : canEditPostAck;
     const hasValidations = validationList.length > 0;
 
-    // Phase 3H.12: Show clear message if not initialized
+    // Phase 3H.13.5: System handles initialization (no user action needed)
     if (!hasValidations) {
       return (
         <div className="mb-4">
           <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
-          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-sm text-yellow-800 font-medium">⚠️ Validation data not initialized</p>
-            <p className="text-xs text-yellow-700 mt-1">Refresh the page to initialize validation tracking</p>
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800 font-medium">🔄 Validation requirements being initialized</p>
+            <p className="text-xs text-blue-700 mt-1">System is setting up validation tracking automatically</p>
           </div>
         </div>
       );
@@ -377,10 +392,20 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
     );
   };
 
+  // Phase 3H.13.5: Loading state with clear messaging
   if (loading) {
     return (
       <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-        <div className="text-center text-gray-500">Loading validations...</div>
+        <div className="text-center">
+          {initializing ? (
+            <div className="space-y-2">
+              <div className="text-gray-700 font-medium">⏳ Initializing validation requirements...</div>
+              <div className="text-sm text-gray-500">Setting up validation tracking for this PPAP</div>
+            </div>
+          ) : (
+            <div className="text-gray-500">Loading validations...</div>
+          )}
+        </div>
       </div>
     );
   }
@@ -446,7 +471,7 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
         </div>
       )}
 
-      {/* Phase 3H.11: Smart display based on phase */}
+      {/* Phase 3H.13.5: Smart display with action-driven guidance */}
       {(isActiveSection || isExpanded) && (
         <>
           {/* Pre-Ack Validations - always show, but with different labels */}
@@ -454,6 +479,13 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
             showPreAckActive ? 'Pre-Acknowledgement Validations' : 'Pre-Acknowledgement Validations (Completed)',
             'pre-ack',
             preAckValidations
+          )}
+          
+          {/* Phase 3H.13.5: Context-aware guidance */}
+          {showPreAckActive && preAckValidations.length > 0 && (
+            <div className="text-sm text-gray-600 mt-2 mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              📌 Complete all validation steps above to enable acknowledgement and proceed to document preparation
+            </div>
           )}
           
           {/* Post-Ack Validations - only show if acknowledged */}
@@ -464,6 +496,12 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
                 'Post-Acknowledgement Validations (In Progress)',
                 'post-ack',
                 postAckValidations
+              )}
+              {/* Phase 3H.13.5: Context for post-ack phase */}
+              {postAckValidations.length > 0 && (
+                <div className="text-sm text-gray-600 mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  ✅ Pre-acknowledgement complete. Continue with document preparation and post-ack validations.
+                </div>
               )}
             </>
           )}

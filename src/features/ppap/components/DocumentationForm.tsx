@@ -22,8 +22,8 @@ import { updatePPAPState } from '../utils/updatePPAPState';
 import { currentUser } from '@/src/lib/mockUser';
 import { uploadPPAPDocument } from '../utils/uploadFile';
 import { getPPAPDocuments } from '../utils/getPPAPDocuments';
-import { MarkupTool } from './MarkupTool';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
+import { openBalloonTool } from '../utils/documentHelpers';
 
 interface DocumentationFormProps {
   ppapId: string;
@@ -88,7 +88,6 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState('');
-  const [showMarkupTool, setShowMarkupTool] = useState(false);
   
   // Phase 3H.14: Submission gate data (simplified)
   const [suggestedDate, setSuggestedDate] = useState('');
@@ -200,17 +199,17 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     }
   };
 
-  // Phase 3H.15: Create document handler - reuses markup tool for balloon drawing
+  // Phase 3H.13.5: Unified create document handler with consistent routing
   const handleCreateDocument = (documentId: string) => {
     console.log('🛠 DOCUMENT ACTION CLICK', { docId: documentId, action: 'create' });
     
-    // Phase 3H.15: Balloon drawing opens markup tool (reuse existing function)
+    // Phase 3H.13.5: Balloon drawing uses unified helper (ONE system)
     if (documentId === 'ballooned_drawing') {
-      setShowMarkupTool(true);
+      openBalloonTool(ppapId);
       return;
     }
     
-    // Phase 3H.15: Check if template is available
+    // Check if template is available
     if (!canCreate(documentId)) {
       console.warn('⚠️ TEMPLATE NOT AVAILABLE', { docType: documentId });
       alert('Template coming soon — you can upload a document instead');
@@ -306,14 +305,6 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
         </div>
       )}
 
-      {showMarkupTool && (
-        <MarkupTool
-          ppapId={ppapId}
-          partNumber={partNumber}
-          onClose={() => setShowMarkupTool(false)}
-        />
-      )}
-
       <div className={`bg-white rounded-lg shadow-sm border transition-all ${
         isActiveWorkZone 
           ? 'border-2 border-blue-400' 
@@ -385,11 +376,12 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                   </p>
                 </div>
                 <button
-                  onClick={() => setShowMarkupTool(true)}
+                  onClick={() => openBalloonTool(ppapId)}
                   disabled={isReadOnly}
+                  title={isReadOnly ? 'View-only mode — contact coordinator to make changes' : 'Open balloon drawing markup tool'}
                   className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
                 >
-                  🖊️ Open Markup Tool
+                  🖊️ Open Balloon Drawing Tool
                 </button>
               </div>
 
@@ -447,16 +439,16 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
 
                     {/* Phase 3H.15: Actions Row - all buttons actionable */}
                     <div className="flex gap-2">
-                      {/* Phase 3H.12: Create Button - clear state explanations */}
+                      {/* Phase 3H.13.5: Create Button - WHY + WHAT NEXT */}
                       <button
                         onClick={() => handleCreateDocument(doc.id)}
                         disabled={isReadOnly}
                         title={
                           isReadOnly
-                            ? 'View-only mode - editing disabled'
+                            ? 'View-only mode — contact coordinator to make changes'
                             : canCreate(doc.id)
                             ? `Create ${doc.name} from template`
-                            : `Template for ${doc.name} coming soon — click to see options`
+                            : `Template for ${doc.name} coming soon — upload a file to continue`
                         }
                         className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
                           isReadOnly
@@ -467,16 +459,16 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                         🛠 {canCreate(doc.id) ? 'Create' : 'Create (Soon)'}
                       </button>
                       
-                      {/* Phase 3H.12: Upload Button - clear state explanations */}
+                      {/* Phase 3H.13.5: Upload Button - WHY + WHAT NEXT */}
                       <label
                         title={
                           isReadOnly
-                            ? 'View-only mode - uploading disabled'
+                            ? 'View-only mode — contact coordinator to make changes'
                             : uploading
-                            ? 'Upload in progress...'
+                            ? 'Upload in progress — please wait'
                             : doc.status === 'ready'
                             ? `Replace existing ${doc.name} file`
-                            : `Upload ${doc.name} file (PDF, Word, Excel)`
+                            : `Upload ${doc.name} file (PDF, Word, Excel) to mark as ready`
                         }
                         className={`flex-1 px-4 py-2 text-sm font-medium text-center rounded transition-colors ${
                           isReadOnly || uploading

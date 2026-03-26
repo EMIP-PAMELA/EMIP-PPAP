@@ -12,7 +12,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { PPAPRecord } from '@/src/types/database.types';
 import { currentUser } from '@/src/lib/mockUser';
-import { calculateDocumentProgress, getHealthStatus, getHealthBadgeStyle, getHealthBadgeIcon, getStatusClarityTag } from '../utils/documentHelpers';
+import { calculateDocumentProgress, getHealthStatus, getHealthBadgeStyle, getHealthBadgeIcon, getStatusClarityTag, openBalloonTool } from '../utils/documentHelpers';
 import { getPPAPDocuments, PPAPDocument } from '../utils/getPPAPDocuments';
 import { uploadPPAPDocument } from '../utils/uploadFile';
 import { updatePPAPState } from '../utils/updatePPAPState';
@@ -115,8 +115,13 @@ export function PPAPControlPanel({ ppap }: PPAPControlPanelProps) {
     
     console.log('🛠 CREATE DOCUMENT', { docType, ppapId: ppap.id });
     
+    // Phase 3H.13.5: Use unified balloon tool helper (ONE system)
+    if (docType === 'ballooned_drawing') {
+      openBalloonTool(ppap.id);
+      return;
+    }
+    
     const routes: Record<string, string> = {
-      ballooned_drawing: `/tools/balloon-drawing?ppapId=${ppap.id}`,
       control_plan: `/tools/control-plan?ppapId=${ppap.id}`,
       dfmea: `/tools/dfmea?ppapId=${ppap.id}`,
       pfmea: `/tools/pfmea?ppapId=${ppap.id}`,
@@ -128,7 +133,7 @@ export function PPAPControlPanel({ ppap }: PPAPControlPanelProps) {
       router.push(routes[docType]);
     } else {
       console.warn('⚠️ TEMPLATE NOT AVAILABLE', { docType });
-      alert('Template coming soon');
+      alert('Template coming soon — you can upload a document instead');
     }
   };
   

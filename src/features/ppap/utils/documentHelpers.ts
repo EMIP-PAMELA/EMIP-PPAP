@@ -125,3 +125,12 @@ export function getStatusClarityTag(status: string): string {
   
   return statusMap[status] || status;
 }
+
+/**
+ * Phase 3H.13.5: Unified balloon drawing system
+ * ONE entry point for all balloon drawing actions
+ * Ensures consistency across DocumentationForm and PPAPControlPanel
+ */
+export function openBalloonTool(ppapId: string): void {
+  window.location.href = `/tools/balloon-drawing?ppapId=${ppapId}`;
+}
