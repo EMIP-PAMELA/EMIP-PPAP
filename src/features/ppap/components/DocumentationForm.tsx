@@ -1,5 +1,20 @@
 'use client';
 
+/**
+ * Phase 3H.14: Simplified Document Workflow
+ * 
+ * REMOVED:
+ * - Required Documents Checklist (user should not select requirements)
+ * - Sidebar navigation (checklist/upload/readiness/confirmation)
+ * - Fake checkboxes (docs_ready, can_meet_date)
+ * - Duplicate upload sections
+ * 
+ * NEW STRUCTURE:
+ * - Unified Document Execution panel (system-driven)
+ * - Submission Gate (merged readiness + confirmation)
+ * - System-calculated readiness
+ */
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { logEvent } from '@/src/features/events/mutations';
@@ -7,21 +22,17 @@ import { updatePPAPState } from '../utils/updatePPAPState';
 import { currentUser } from '@/src/lib/mockUser';
 import { uploadPPAPDocument } from '../utils/uploadFile';
 import { getPPAPDocuments } from '../utils/getPPAPDocuments';
-import { supabase } from '@/src/lib/supabaseClient';
 import { MarkupTool } from './MarkupTool';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
 
 interface DocumentationFormProps {
   ppapId: string;
   partNumber: string;
-  initialSection?: Section;
+  initialSection?: string; // Phase 3H.14: Deprecated, kept for compatibility
   isReadOnly?: boolean;
-  currentPhase?: 'pre-ack' | 'post-ack'; // Phase 3H.1: For active work zone
+  currentPhase?: 'pre-ack' | 'post-ack';
 }
 
-type Section = 'checklist' | 'upload' | 'readiness' | 'confirmation';
-
-// Phase 3F.14: Document Action System
 type DocumentAction = 'upload' | 'create';
 
 interface DocumentItem {
@@ -36,77 +47,14 @@ interface DocumentItem {
   };
 }
 
-interface DocumentationData {
-  suggested_date: string;
-  can_meet_date: boolean;
-  docs_ready: boolean;
-  comments: string;
-  design_record: boolean;
-  dimensional_results: boolean;
-  dfmea: boolean;
-  pfmea: boolean;
-  control_plan: boolean;
-  msa: boolean;
-  material_test_results: boolean;
-  initial_process_studies: boolean;
-  packaging: boolean;
-  tooling: boolean;
-  acknowledgement: boolean;
+interface UploadedFile {
+  file_name: string;
+  file_path: string;
+  document_type: string;
+  uploaded_at: string;
 }
 
-const REQUIRED_DOCUMENTS = [
-  { key: 'design_record', label: 'Design Record' },
-  { key: 'dimensional_results', label: 'Dimensional Results' },
-  { key: 'dfmea', label: 'Design Failure Mode and Effects Analysis (DFMEA)' },
-  { key: 'pfmea', label: 'Process Failure Mode and Effects Analysis (PFMEA)' },
-  { key: 'control_plan', label: 'Control Plan' },
-  { key: 'msa', label: 'MSA (Measurement System Analysis)' },
-  { key: 'material_test_results', label: 'Material Test Results' },
-  { key: 'initial_process_studies', label: 'Initial Process Studies' },
-  { key: 'packaging', label: 'Packaging Specification' },
-  { key: 'tooling', label: 'Tooling Documentation' },
-] as const;
-
-// Phase 3H.3: Document sections for soft-gated workflow
-interface DocumentSection {
-  id: string;
-  title: string;
-  documents: string[];
-}
-
-const DOCUMENT_SECTIONS: DocumentSection[] = [
-  {
-    id: 'core_engineering',
-    title: 'Core Engineering Documents',
-    documents: [
-      'ballooned_drawing',
-      'design_record',
-      'dimensional_results'
-    ]
-  },
-  {
-    id: 'process_docs',
-    title: 'Process Documentation',
-    documents: [
-      'dfmea',
-      'pfmea',
-      'control_plan',
-      'msa'
-    ]
-  },
-  {
-    id: 'supporting_docs',
-    title: 'Supporting Documentation',
-    documents: [
-      'material_test_results',
-      'initial_process_studies',
-      'packaging',
-      'tooling'
-    ]
-  }
-];
-
-// Phase 3H.3: Document configuration with actions - ALL documents have upload + create for future template system
+// Phase 3H.14: Document configuration - system determines requirements
 const DOCUMENT_CONFIG: DocumentItem[] = [
   { id: 'ballooned_drawing', name: 'Ballooned Drawing', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
   { id: 'design_record', name: 'Design Record', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
@@ -121,126 +69,47 @@ const DOCUMENT_CONFIG: DocumentItem[] = [
   { id: 'tooling', name: 'Tooling Documentation', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload', 'create'] },
 ];
 
-// Phase 3H.2: Determine which documents can actually be created (vs coming soon)
+// Phase 3H.14: Template availability check
 const canCreate = (docId: string): boolean => {
-  return ['ballooned_drawing'].includes(docId);
+  return [
+    'ballooned_drawing',
+    'control_plan',
+    'dfmea',
+    'pfmea',
+    'msa',
+    'dimensional_results',
+  ].includes(docId);
 };
-
-const SECTIONS = [
-  { id: 'checklist', label: 'Required Documents' },
-  { id: 'upload', label: 'Upload Documents' },
-  { id: 'readiness', label: 'Submission Readiness' },
-  { id: 'confirmation', label: 'Confirmation' },
-] as const;
-
-interface UploadedFile {
-  file_name: string;
-  file_path: string;
-  document_type: string;
-  uploaded_at: string;
-}
 
 export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOnly = false, currentPhase = 'post-ack' }: DocumentationFormProps) {
   const router = useRouter();
-  const [activeSection, setActiveSection] = useState<Section>(initialSection || 'checklist');
-  const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
-  
-  // Phase 3H.1: Active work zone - collapsible when not active
-  const [isSectionExpanded, setIsSectionExpanded] = useState(true);
-  const isActiveWorkZone = currentPhase === 'post-ack';
-  
-  // Phase 3H.3: Section collapse state
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [documents, setDocuments] = useState<DocumentItem[]>(DOCUMENT_CONFIG);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState('');
   const [showMarkupTool, setShowMarkupTool] = useState(false);
   
-  // Phase 3F.14: Document state with actions
-  const [documents, setDocuments] = useState<DocumentItem[]>(DOCUMENT_CONFIG);
+  // Phase 3H.14: Submission gate data (simplified)
+  const [suggestedDate, setSuggestedDate] = useState('');
+  const [comments, setComments] = useState('');
+  const [acknowledged, setAcknowledged] = useState(false);
   
-  // Phase 3H.3: Section state logic
-  const getDocumentStatus = (docId: string): 'ready' | 'missing' => {
-    const doc = documents.find(d => d.id === docId);
-    return doc?.status || 'missing';
-  };
-  
-  const isSectionComplete = (section: DocumentSection): boolean => {
-    return section.documents.every(docId => getDocumentStatus(docId) === 'ready');
-  };
-  
-  const isSectionUnlocked = (sectionIndex: number): boolean => {
-    if (sectionIndex === 0) return true;
-    const previousSection = DOCUMENT_SECTIONS[sectionIndex - 1];
-    return isSectionComplete(previousSection);
-  };
-  
-  const isActiveSection = (sectionIndex: number): boolean => {
-    const section = DOCUMENT_SECTIONS[sectionIndex];
-    return isSectionUnlocked(sectionIndex) && !isSectionComplete(section);
-  };
-  
-  const getSectionProgress = (section: DocumentSection): { complete: number; total: number } => {
-    const complete = section.documents.filter(docId => getDocumentStatus(docId) === 'ready').length;
-    return { complete, total: section.documents.length };
-  };
-  
-  const getActiveSectionIndex = (): number => {
-    return DOCUMENT_SECTIONS.findIndex((_, idx) => isActiveSection(idx));
-  };
-  
-  const toggleSectionCollapse = (sectionId: string) => {
-    setCollapsedSections(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(sectionId)) {
-        newSet.delete(sectionId);
-      } else {
-        newSet.add(sectionId);
-      }
-      return newSet;
-    });
-  };
+  // Phase 3H.1: Active work zone
+  const [isSectionExpanded, setIsSectionExpanded] = useState(true);
+  const isActiveWorkZone = currentPhase === 'post-ack';
 
-  const [formData, setFormData] = useState<DocumentationData>({
-    suggested_date: '',
-    can_meet_date: false,
-    docs_ready: false,
-    comments: '',
-    design_record: false,
-    dimensional_results: false,
-    dfmea: false,
-    pfmea: false,
-    control_plan: false,
-    msa: false,
-    material_test_results: false,
-    initial_process_studies: false,
-    packaging: false,
-    tooling: false,
-    acknowledgement: false,
-  });
+  // Phase 3H.14: System-calculated readiness
+  const allDocsReady = documents.filter(d => d.requirement_level === 'REQUIRED').every(d => d.status === 'ready');
+  const readyCount = documents.filter(d => d.status === 'ready').length;
+  const totalRequired = documents.filter(d => d.requirement_level === 'REQUIRED').length;
 
-  // Phase 3H.3: Logging for section flow
-  useEffect(() => {
-    const activeSectionIdx = getActiveSectionIndex();
-    const completedSections = DOCUMENT_SECTIONS.filter((_, idx) => 
-      isSectionComplete(DOCUMENT_SECTIONS[idx])
-    ).length;
-    
-    console.log('📂 DOCUMENT SECTION FLOW', {
-      activeSection: activeSectionIdx >= 0 ? DOCUMENT_SECTIONS[activeSectionIdx].id : 'none',
-      completedSections,
-      totalSections: DOCUMENT_SECTIONS.length
-    });
-  }, [documents]);
-
-  // Phase 3F.14: Fetch uploaded files and sync with document state
+  // Fetch uploaded files and sync with document state
   useEffect(() => {
     const fetchUploadedFiles = async () => {
       try {
         const docs = await getPPAPDocuments(ppapId);
-        console.log('Documents loaded in DocumentationForm:', docs);
+        console.log('📂 Documents loaded:', docs.length);
         
         const files = docs.map(doc => ({
           file_name: doc.file_name,
@@ -249,9 +118,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
           uploaded_at: new Date().toISOString(),
         }));
 
-        setUploadedFiles(files);
-        
-        // Phase 3F.14: Update document status based on uploaded files
+        // Update document status based on uploaded files
         setDocuments(prevDocs => 
           prevDocs.map(doc => {
             const uploadedFile = files.find(f => f.document_type === doc.id);
@@ -276,7 +143,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     fetchUploadedFiles();
   }, [ppapId]);
 
-  // Phase 3F.14: Document-specific upload handler
+  // Document upload handler
   const handleDocumentUpload = async (documentId: string, event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -285,19 +152,16 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     setErrors({});
 
     try {
-      const file = files[0]; // Single file per document
+      const file = files[0];
       
-      // Phase 3F.14: Document upload logging
       console.log('📄 DOCUMENT UPLOADED', {
         documentType: documentId,
         fileName: file.name,
         timestamp: new Date().toISOString(),
       });
 
-      // Upload file to Supabase Storage
       const filePath = await uploadPPAPDocument(file, ppapId);
 
-      // Log upload event
       await logEvent({
         ppap_id: ppapId,
         event_type: 'DOCUMENT_ADDED',
@@ -310,7 +174,6 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
         actor_role: currentUser.role,
       });
 
-      // Update document state
       setDocuments(prevDocs =>
         prevDocs.map(doc =>
           doc.id === documentId
@@ -337,144 +200,68 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     }
   };
 
-  // Phase 3H.2: Create button handler with balloon drawing routing
+  // Create document handler
   const handleCreateDocument = (documentId: string) => {
-    console.log('� DOCUMENT ACTION CLICK', { docId: documentId, action: 'create' });
+    console.log('🛠 DOCUMENT ACTION CLICK', { docId: documentId, action: 'create' });
     
-    // Phase 3H.2: Route to balloon drawing generator
-    if (documentId === 'ballooned_drawing') {
-      router.push(`/tools/balloon-drawing?ppapId=${ppapId}`);
-      return;
-    }
+    const routes: Record<string, string> = {
+      ballooned_drawing: `/tools/balloon-drawing?ppapId=${ppapId}`,
+      control_plan: `/tools/control-plan?ppapId=${ppapId}`,
+      dfmea: `/tools/dfmea?ppapId=${ppapId}`,
+      pfmea: `/tools/pfmea?ppapId=${ppapId}`,
+      msa: `/tools/msa?ppapId=${ppapId}`,
+      dimensional_results: `/tools/dimensional-results?ppapId=${ppapId}`,
+    };
     
-    // Future: Other template generators will be added here
-    console.log('🛠 Template coming soon for:', documentId);
-  };
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    setUploading(true);
-    setErrors({});
-
-    try {
-      // Guard: ensure ppapId is valid before event logging
-      if (!ppapId || typeof ppapId !== 'string') {
-        throw new Error('Cannot log document event without valid PPAP id');
-      }
-
-      for (const file of Array.from(files)) {
-        // Upload file to Supabase Storage
-        const filePath = await uploadPPAPDocument(file, ppapId);
-
-        console.log('DOCUMENT_ADDED write', {
-          ppapId,
-          fileName: file.name,
-          filePath,
-        });
-
-        // Log upload event
-        await logEvent({
-          ppap_id: ppapId,
-          event_type: 'DOCUMENT_ADDED',
-          event_data: {
-            file_name: file.name,
-            file_path: filePath,
-            document_type: 'general',
-          },
-          actor: 'System User',
-          actor_role: 'Engineer',
-        });
-      }
-
-      // Refresh uploaded files list using shared utility
-      const docs = await getPPAPDocuments(ppapId);
-      const refreshedFiles: UploadedFile[] = docs.map(doc => ({
-        file_name: doc.file_name,
-        file_path: doc.file_path,
-        document_type: doc.document_type || 'general',
-        uploaded_at: new Date().toISOString(),
-      }));
-      setUploadedFiles(refreshedFiles);
-
-      setSuccessMessage(`Successfully uploaded ${files.length} file(s)`);
-      setTimeout(() => setSuccessMessage(''), 3000);
-    } catch (error) {
-      console.error('Upload failed:', error);
-      setErrors({ upload: error instanceof Error ? error.message : 'Upload failed' });
-    } finally {
-      setUploading(false);
-      // Reset input
-      event.target.value = '';
+    if (routes[documentId]) {
+      router.push(routes[documentId]);
+    } else {
+      console.log('🛠 Template coming soon for:', documentId);
+      alert('Template coming soon');
     }
   };
 
-  const getMissingDocuments = (): string[] => {
-    return REQUIRED_DOCUMENTS
-      .filter(doc => !formData[doc.key as keyof DocumentationData])
-      .map(doc => doc.label);
-  };
-
-  const getCheckedButNotUploaded = (): string[] => {
-    return REQUIRED_DOCUMENTS
-      .filter(doc => {
-        const isChecked = !!formData[doc.key as keyof DocumentationData];
-        const isUploaded = uploadedDocs[doc.key];
-        return isChecked && !isUploaded;
-      })
-      .map(doc => doc.label);
-  };
-
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
-
-    if (!formData.suggested_date) {
-      newErrors.suggested_date = 'Suggested submission date is required';
-    }
-
-    if (!formData.acknowledgement) {
-      newErrors.acknowledgement = 'You must acknowledge the submission';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
+  // Submit handler
   const handleSubmit = async () => {
     setErrors({});
     setSuccessMessage('');
 
-    if (!validateForm()) {
-      setErrors(prev => ({
-        ...prev,
-        _form: 'Please complete all required fields',
-      }));
+    // Phase 3H.14: Validation
+    const newErrors: Record<string, string> = {};
+    
+    if (!suggestedDate) {
+      newErrors.suggested_date = 'Suggested submission date is required';
+    }
+    
+    if (!acknowledged) {
+      newErrors.acknowledgement = 'You must acknowledge the submission';
+    }
+    
+    if (!allDocsReady) {
+      newErrors._form = 'All required documents must be uploaded before submission';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
 
     setLoading(true);
 
     try {
-      // Log DOCUMENTATION_SUBMITTED event
       await logEvent({
         ppap_id: ppapId,
         event_type: 'DOCUMENTATION_SUBMITTED',
         event_data: {
-          submission_date: formData.suggested_date,
-          can_meet_date: formData.can_meet_date,
-          docs_ready: formData.docs_ready,
-          checked_documents: REQUIRED_DOCUMENTS.filter(doc => 
-            formData[doc.key as keyof DocumentationData]
-          ).map(doc => doc.label),
-          comments: formData.comments,
-          all_form_data: formData,
+          submission_date: suggestedDate,
+          comments: comments,
+          documents_ready: readyCount,
+          total_documents: documents.length,
         },
-        actor: 'Matt',
-        actor_role: 'Engineer',
+        actor: currentUser.name,
+        actor_role: currentUser.role,
       });
 
-      // Phase 3F.8: ALL status updates go through updatePPAPState()
       const result = await updatePPAPState(
         ppapId,
         'AWAITING_SUBMISSION',
@@ -487,12 +274,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
       }
 
       setSuccessMessage('✓ Documentation phase completed! Advancing to Sample phase...');
-      
-      // Refresh UI to reflect status/phase change
       router.refresh();
-      
-      // Phase 3F: Phase is now derived from state, no manual phase setting
-      // The workflow bar will automatically update when state changes
     } catch (error) {
       console.error('Failed to submit documentation:', error);
       setErrors({ 
@@ -505,29 +287,12 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     }
   };
 
-  const updateField = (field: keyof DocumentationData, value: string | boolean) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
-    }
-  };
-
-  const countCheckedDocuments = (): number => {
-    return REQUIRED_DOCUMENTS.filter(doc => 
-      formData[doc.key as keyof DocumentationData]
-    ).length;
-  };
-
   return (
     <>
-      {/* Phase 3H.1: Collapsed summary */}
+      {/* Collapsed summary */}
       {!isActiveWorkZone && !isSectionExpanded && (
         <div className="px-6 py-4 text-sm text-gray-600">
-          <p>Documents: {documents.filter(d => d.status === 'ready').length}/{documents.length} ready</p>
+          <p>Documents: {readyCount}/{documents.length} ready</p>
         </div>
       )}
 
@@ -544,7 +309,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
           ? 'border-2 border-blue-400' 
           : 'border border-gray-300'
       }`}>
-        {/* Phase 3H.1: Header with collapse toggle */}
+        {/* Header */}
         <div className="border-b border-gray-200 px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -566,12 +331,12 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
           </div>
         </div>
         
-        {/* Phase 3H.1: Current Task Banner for active work zone */}
-        {isActiveWorkZone && activeSection === 'upload' && (
+        {/* Current Task Banner */}
+        {isActiveWorkZone && (
           <div className="px-6 pt-4">
             <CurrentTaskBanner
               phase="Post-Acknowledgement"
-              currentStep="Document Upload & Creation"
+              currentStep="Document Execution"
               instruction="Upload required documents or create from templates"
               icon="📄"
             />
@@ -590,486 +355,220 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
           </div>
         )}
 
-      {/* Phase 3H.1: Collapsible content */}
-      {(isActiveWorkZone || isSectionExpanded) && (
-      <div className="flex">
-        {/* Sidebar Navigation */}
-        <div className="w-64 border-r border-gray-200 bg-gray-50">
-          <div className="p-8 space-y-8">
-            {SECTIONS.map(section => (
-              <button
-                key={section.id}
-                onClick={() => {
-                  setActiveSection(section.id as Section);
-                  setErrors({});
-                }}
-                className={`w-full text-left px-4 py-2 rounded text-sm font-medium transition-colors ${
-                  activeSection === section.id
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                {section.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Form Content */}
-        <div className="flex-1 p-6">
-          {errors._form && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800 font-medium">
-              {errors._form || ''}
-            </div>
-          )}
-
-          {/* Guidance Warnings - Non-blocking */}
-          {getMissingDocuments().length > 0 && activeSection === 'checklist' && (
-            <div className="mb-6 p-4 bg-blue-50 border border-blue-300 rounded-lg text-sm text-blue-800 font-medium">
-              <p className="font-bold">ℹ️ Document Guidance</p>
-              <p className="mt-1">Consider checking these documents:</p>
-              <div className="mt-2">
-                <ul className="mt-1 ml-4 list-disc text-xs">
-                  {getMissingDocuments().map(doc => (
-                    <li key={doc}>{doc || ''}</li>
-                  ))}
-                </ul>
+        {/* Collapsible content */}
+        {(isActiveWorkZone || isSectionExpanded) && (
+          <div className="p-6 space-y-8">
+            {/* Error display */}
+            {errors._form && (
+              <div className="p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800 font-medium">
+                {errors._form}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Required Documents Checklist Section - NOW FIRST */}
-          {activeSection === 'checklist' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-2">Required Documents Checklist</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Review and check the documents you have prepared for this PPAP submission.
-                  <span className="block mt-2 text-xs text-gray-500">
-                    ✓ = Document prepared and ready
-                  </span>
-                </p>
-
-                {/* Markup Tool Mode Switch */}
-                <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                  <h4 className="text-sm font-semibold text-purple-900 mb-3">Drawing Markup</h4>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => setShowMarkupTool(true)}
-                      disabled={isReadOnly}
-                      className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-                    >
-                      🖊️ Open Markup Tool
-                    </button>
-                    <button
-                      disabled={isReadOnly}
-                      className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-                      onClick={() => document.getElementById('file-upload')?.click()}
-                    >
-                      📤 Upload Markup File
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-600 mt-2">
-                    Create markup annotations in-tool or upload pre-marked drawings
+            {/* Phase 3H.14: UNIFIED DOCUMENT EXECUTION PANEL */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Document Execution</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    System-determined required documents • {readyCount} of {totalRequired} required documents ready
                   </p>
                 </div>
-                
-                <div className="space-y-3">
-                  {REQUIRED_DOCUMENTS.map(doc => {
-                    const isUploaded = uploadedDocs[doc.key];
-                    const isChecked = !!formData[doc.key as keyof DocumentationData];
-                    return (
-                      <div key={doc.key} className="flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-200">
-                        <div className="flex items-start flex-1">
-                          <input
-                            type="checkbox"
-                            id={doc.key}
-                            checked={isChecked}
-                            onChange={(e) => updateField(doc.key as keyof DocumentationData, e.target.checked)}
-                            className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <label htmlFor={doc.key} className="ml-3 text-sm text-gray-700">
-                            {doc.label}
-                          </label>
-                        </div>
-                        <div className="ml-4">
-                          {isUploaded ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                              ✓ Uploaded
-                            </span>
-                          ) : isChecked ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                              ⚠ Missing
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <button
+                  onClick={() => setShowMarkupTool(true)}
+                  disabled={isReadOnly}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                >
+                  🖊️ Open Markup Tool
+                </button>
               </div>
-            </div>
-          )}
 
-          {/* Phase 3H.3: Section-Based Document Workflow */}
-          {activeSection === 'upload' && (
-            <div className="space-y-6">
-              {DOCUMENT_SECTIONS.map((section, sectionIdx) => {
-                const sectionComplete = isSectionComplete(section);
-                const sectionUnlocked = isSectionUnlocked(sectionIdx);
-                const sectionActive = isActiveSection(sectionIdx);
-                const progress = getSectionProgress(section);
-                const isCollapsed = collapsedSections.has(section.id);
-                const sectionDocs = documents.filter(doc => section.documents.includes(doc.id));
-
-                // Phase 3H.4: UX Polish logging
-                if (sectionActive) {
-                  console.log('🎯 UX POLISH ACTIVE SECTION', section.id);
-                }
-
-                return (
+              {/* Document cards */}
+              <div className="grid grid-cols-1 gap-4">
+                {documents.map((doc) => (
                   <div
-                    key={section.id}
-                    className={`border rounded-lg transition-all ${
-                      sectionActive
-                        ? 'border-2 border-blue-500 bg-white shadow-lg'
-                        : sectionComplete
-                        ? 'border border-green-300 bg-green-50'
-                        : 'border border-gray-300 bg-gray-50 opacity-40'
+                    key={doc.id}
+                    className={`border rounded-lg p-4 transition-all ${
+                      doc.status === 'ready'
+                        ? 'border-green-300 bg-green-50'
+                        : 'border-gray-300 bg-white'
                     }`}
                   >
-                    {/* Phase 3H.4: Enhanced Section Header */}
-                    <div className={`border-b border-gray-200 ${
-                      sectionActive ? 'p-6 bg-gradient-to-r from-blue-50 to-blue-100' : 'p-4'
-                    }`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          {/* Phase 3H.4: Active Work Section Indicator */}
-                          {sectionActive && (
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="text-lg">🟦</span>
-                              <p className="text-xs font-bold text-blue-700 uppercase tracking-wider">
-                                Active Work Section
-                              </p>
-                            </div>
-                          )}
-                          <div className="flex items-center gap-3 mb-1">
-                            <h3 className={`${
-                              sectionActive ? 'text-2xl' : 'text-lg'
-                            } font-bold ${
-                              sectionActive ? 'text-blue-900' : sectionComplete ? 'text-green-900' : 'text-gray-600'
-                            }`}>
-                              {section.title}
-                            </h3>
-                            <span
-                              className={`px-2 py-0.5 text-xs font-bold uppercase rounded ${
-                                sectionActive
-                                  ? 'bg-blue-600 text-white'
-                                  : sectionComplete
-                                  ? 'bg-green-600 text-white'
-                                  : 'bg-gray-400 text-white'
-                              }`}
-                            >
-                              {sectionActive ? 'ACTIVE' : sectionComplete ? '✓ COMPLETE' : 'LOCKED'}
-                            </span>
-                          </div>
-                          {/* Phase 3H.4: Compact summary for complete sections */}
-                          {!sectionActive && (
-                            <p className="text-sm text-gray-600">
-                              {sectionComplete ? `✓ ${section.title} (${progress.total}/${progress.total})` : `(${progress.complete} / ${progress.total} Complete)`}
-                            </p>
-                          )}
-                          {/* Phase 3H.4: Improved microcopy for active section */}
-                          {sectionActive && (
-                            <p className="text-sm text-blue-700 mt-1 font-medium">
-                              Complete any of the remaining {progress.total - progress.complete} document{progress.total - progress.complete !== 1 ? 's' : ''} below
-                            </p>
-                          )}
-                        </div>
-                        
-                        {/* Collapse Toggle (only for complete or locked sections) */}
-                        {!sectionActive && (
-                          <button
-                            onClick={() => toggleSectionCollapse(section.id)}
-                            className="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
-                          >
-                            {isCollapsed ? '▶ Expand' : '▼ Collapse'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Phase 3H.4: Enhanced Section Content */}
-                    {(!isCollapsed || sectionActive) && (
-                      <div className={`space-y-4 ${
-                        sectionActive ? 'p-8' : 'p-4'
-                      }`}>
-                        {sectionDocs.map((doc, docIdx) => {
-                          // Phase 3H.4: Highlight first incomplete document in active section
-                          const isFirstIncomplete = sectionActive && doc.status === 'missing' && 
-                            sectionDocs.findIndex(d => d.status === 'missing') === docIdx;
-                          
-                          return (
-                    <div
-                      key={doc.id}
-                      className={`border rounded-lg p-4 transition-all ${
-                        doc.status === 'ready'
-                          ? 'border-green-300 bg-green-50'
-                          : isFirstIncomplete
-                          ? 'border-2 border-blue-400 bg-blue-50 shadow-md'
-                          : 'border-gray-300 bg-white'
-                      }`}
-                    >
-                      {/* Title Row */}
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <h4 className="text-sm font-semibold text-gray-900">{doc.name}</h4>
-                          <span
-                            className={`px-2 py-0.5 text-xs font-semibold rounded ${
-                              doc.requirement_level === 'REQUIRED'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}
-                          >
-                            {doc.requirement_level}
-                          </span>
-                        </div>
+                    {/* Title Row */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <h4 className="text-sm font-semibold text-gray-900">{doc.name}</h4>
                         <span
-                          className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                            doc.status === 'ready'
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-gray-100 text-gray-600'
+                          className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                            doc.requirement_level === 'REQUIRED'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-yellow-100 text-yellow-800'
                           }`}
                         >
-                          {doc.status === 'ready' ? '✓ Ready' : 'Missing'}
+                          {doc.requirement_level}
                         </span>
                       </div>
-
-                      {/* File Info (if uploaded) */}
-                      {doc.file && (
-                        <div className="mb-3 p-2 bg-white border border-green-200 rounded text-xs">
-                          <p className="font-medium text-gray-900">{doc.file.name}</p>
-                          <p className="text-gray-600">
-                            Uploaded {new Date(doc.file.uploaded_at).toLocaleString()}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Actions Row */}
-                      <div className="flex gap-2 mb-2">
-                        {doc.actions.includes('upload') && (
-                          <div className="flex-1">
-                            <label
-                              htmlFor={`upload-${doc.id}`}
-                              className={`block w-full px-4 py-2 text-sm font-medium text-center rounded transition-colors ${
-                                isReadOnly || uploading || !sectionUnlocked
-                                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                  : doc.status === 'ready'
-                                  ? 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
-                                  : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
-                              }`}
-                            >
-                              {doc.status === 'ready' ? '📤 Replace File' : '📤 Upload'}
-                              <input
-                                id={`upload-${doc.id}`}
-                                type="file"
-                                className="sr-only"
-                                onChange={(e) => handleDocumentUpload(doc.id, e)}
-                                disabled={isReadOnly || uploading || !sectionUnlocked}
-                                accept=".pdf,.doc,.docx,.xls,.xlsx"
-                              />
-                            </label>
-                          </div>
-                        )}
-                        {doc.actions.includes('create') && (
-                          <button
-                            onClick={() => handleCreateDocument(doc.id)}
-                            disabled={isReadOnly || !canCreate(doc.id) || !sectionUnlocked}
-                            title={!sectionUnlocked ? 'Complete previous section first' : !canCreate(doc.id) ? 'Template coming soon' : 'Create from template'}
-                            className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
-                              isReadOnly || !canCreate(doc.id) || !sectionUnlocked
-                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                : 'bg-purple-600 text-white hover:bg-purple-700'
-                            }`}
-                          >
-                            🛠 Create
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Dropzone (always visible when upload allowed) */}
-                      {doc.actions.includes('upload') && !isReadOnly && (
-                        <div className="border-2 border-dashed border-gray-300 rounded p-4 text-center text-xs text-gray-500 hover:border-gray-400 transition-colors">
-                          <label htmlFor={`upload-${doc.id}`} className="cursor-pointer">
-                            Drag & drop file here or click Upload button
-                          </label>
-                        </div>
-                      )}
-
-                      {/* Error Message */}
-                      {errors[doc.id] && (
-                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
-                          {errors[doc.id]}
-                        </div>
-                      )}
+                      <span
+                        className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                          doc.status === 'ready'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {doc.status === 'ready' ? '✓ Ready' : 'Missing'}
+                      </span>
                     </div>
-                          );
-                        })}
+
+                    {/* File Info */}
+                    {doc.file && (
+                      <div className="mb-3 p-2 bg-white border border-green-200 rounded text-xs">
+                        <p className="font-medium text-gray-900">{doc.file.name}</p>
+                        <p className="text-gray-600">
+                          Uploaded {new Date(doc.file.uploaded_at).toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Actions Row */}
+                    <div className="flex gap-2">
+                      {/* Create Button */}
+                      <button
+                        onClick={() => handleCreateDocument(doc.id)}
+                        disabled={isReadOnly || !canCreate(doc.id)}
+                        title={!canCreate(doc.id) ? 'Template coming soon' : 'Create from template'}
+                        className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
+                          isReadOnly || !canCreate(doc.id)
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                      >
+                        🛠 Create
+                      </button>
+                      
+                      {/* Upload Button */}
+                      <label
+                        className={`flex-1 px-4 py-2 text-sm font-medium text-center rounded transition-colors ${
+                          isReadOnly || uploading
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300 cursor-pointer'
+                        }`}
+                      >
+                        {doc.status === 'ready' ? '📤 Replace' : '📤 Upload'}
+                        <input
+                          type="file"
+                          className="sr-only"
+                          onChange={(e) => handleDocumentUpload(doc.id, e)}
+                          disabled={isReadOnly || uploading}
+                          accept=".pdf,.doc,.docx,.xls,.xlsx"
+                        />
+                      </label>
+                    </div>
+
+                    {/* Error Message */}
+                    {errors[doc.id] && (
+                      <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
+                        {errors[doc.id]}
                       </div>
                     )}
                   </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Submission Readiness Section - NOW THIRD */}
-          {activeSection === 'readiness' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-4">Submission Readiness</h3>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Suggested Submission Date <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.suggested_date || ''}
-                      onChange={(e) => updateField('suggested_date', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    {errors.suggested_date && (
-                      <p className="mt-1 text-sm text-red-600">{errors.suggested_date || ''}</p>
-                    )}
-                  </div>
-
-                  <div className="flex items-start">
-                    <input
-                      type="checkbox"
-                      id="can_meet_date"
-                      checked={!!formData.can_meet_date}
-                      onChange={(e) => updateField('can_meet_date', e.target.checked)}
-                      className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="can_meet_date" className="ml-2 text-sm text-gray-700">
-                      Can meet suggested date
-                    </label>
-                  </div>
-
-                  <div className="flex items-start">
-                    <input
-                      type="checkbox"
-                      id="docs_ready"
-                      checked={!!formData.docs_ready}
-                      onChange={(e) => updateField('docs_ready', e.target.checked)}
-                      className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="docs_ready" className="ml-2 text-sm text-gray-700">
-                      All required documents are ready
-                    </label>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Comments / Notes
-                    </label>
-                    <textarea
-                      value={formData.comments || ''}
-                      onChange={(e) => updateField('comments', e.target.value)}
-                      rows={4}
-                      placeholder="Add any relevant notes about the documentation submission..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
-          )}
 
-
-          {/* Confirmation Section - NOW LAST */}
-          {activeSection === 'confirmation' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-4">Confirmation</h3>
-                
-                <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
-                  <h4 className="font-medium text-blue-900 mb-2">Submission Summary</h4>
-                  <dl className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <dt className="text-blue-700">Suggested Date:</dt>
-                      <dd className="font-medium text-blue-900">
-                        {formData.suggested_date || 'Not set'}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt className="text-blue-700">Documents Checked:</dt>
-                      <dd className="font-medium text-blue-900">
-                        {countCheckedDocuments()} of {REQUIRED_DOCUMENTS.length}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt className="text-blue-700">Can Meet Date:</dt>
-                      <dd className="font-medium text-blue-900">
-                        {formData.can_meet_date ? 'Yes' : 'No'}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt className="text-blue-700">Docs Ready:</dt>
-                      <dd className="font-medium text-blue-900">
-                        {formData.docs_ready ? 'Yes' : 'No'}
-                      </dd>
-                    </div>
-                  </dl>
+            {/* Phase 3H.14: SUBMISSION GATE (merged readiness + confirmation) */}
+            <div className={`border-2 rounded-lg p-6 transition-all ${
+              allDocsReady 
+                ? 'border-green-400 bg-green-50' 
+                : 'border-gray-300 bg-gray-50'
+            }`}>
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-2xl">{allDocsReady ? '🟢' : '🔴'}</span>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Submission Gate</h3>
+                  <p className="text-sm text-gray-600">
+                    {allDocsReady 
+                      ? 'Ready for submission - all required documents uploaded' 
+                      : `Not ready - ${totalRequired - readyCount} required document(s) missing`}
+                  </p>
                 </div>
+              </div>
 
-                <div className="flex items-start p-4 bg-gray-50 border border-gray-200 rounded">
-                  <input
-                    type="checkbox"
-                    id="acknowledgement"
-                    checked={!!formData.acknowledgement}
-                    onChange={(e) => updateField('acknowledgement', e.target.checked)}
-                    className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <label htmlFor="acknowledgement" className="ml-2 text-sm text-gray-700">
-                    <span className="font-medium">I acknowledge</span> that the documentation information provided is accurate
-                    and complete to the best of my knowledge. <span className="text-red-500">*</span>
-                  </label>
-                </div>
-                {errors.acknowledgement && (
-                  <p className="mt-1 text-sm text-red-600">{errors.acknowledgement || ''}</p>
+              {/* Suggested Date */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Suggested Submission Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={suggestedDate}
+                  onChange={(e) => setSuggestedDate(e.target.value)}
+                  disabled={isReadOnly}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                />
+                {errors.suggested_date && (
+                  <p className="mt-1 text-sm text-red-600">{errors.suggested_date}</p>
                 )}
               </div>
-            </div>
-          )}
 
-          {/* Action Buttons */}
-          <div className="mt-8 pt-6 border-t border-gray-200 flex justify-between items-center">
-            <div className="flex gap-4">
-              {successMessage && (
-                <div className="text-sm font-semibold text-green-800 bg-green-100 border border-green-300 px-6 py-3 rounded-lg shadow-sm">
-                  {successMessage || ''}
-                </div>
-              )}
-              {uploading && (
-                <div className="text-sm font-semibold text-blue-800 bg-blue-100 border border-blue-300 px-6 py-3 rounded-lg shadow-sm">
-                  📤 Uploading files...
-                </div>
+              {/* Comments */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Comments / Notes
+                </label>
+                <textarea
+                  value={comments}
+                  onChange={(e) => setComments(e.target.value)}
+                  disabled={isReadOnly}
+                  rows={3}
+                  placeholder="Add any relevant notes about the documentation submission..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                />
+              </div>
+
+              {/* Acknowledgement */}
+              <div className="flex items-start p-4 bg-white border border-gray-300 rounded">
+                <input
+                  type="checkbox"
+                  id="acknowledgement"
+                  checked={acknowledged}
+                  onChange={(e) => setAcknowledged(e.target.checked)}
+                  disabled={isReadOnly}
+                  className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
+                />
+                <label htmlFor="acknowledgement" className="ml-2 text-sm text-gray-700">
+                  <span className="font-medium">I acknowledge</span> that the documentation information provided is accurate
+                  and complete to the best of my knowledge. <span className="text-red-500">*</span>
+                </label>
+              </div>
+              {errors.acknowledgement && (
+                <p className="mt-1 text-sm text-red-600">{errors.acknowledgement}</p>
               )}
             </div>
-            <button
-              onClick={handleSubmit}
-              disabled={loading || isReadOnly}
-              className="px-6 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-            >
-              {loading ? 'Submitting...' : isReadOnly ? '🔒 Preview Mode - Cannot Submit' : 'Submit Documentation & Advance to Sample →'}
-            </button>
+
+            {/* Action Buttons */}
+            <div className="pt-6 border-t border-gray-200 flex justify-between items-center">
+              <div className="flex gap-4">
+                {successMessage && (
+                  <div className="text-sm font-semibold text-green-800 bg-green-100 border border-green-300 px-6 py-3 rounded-lg shadow-sm">
+                    {successMessage}
+                  </div>
+                )}
+                {uploading && (
+                  <div className="text-sm font-semibold text-blue-800 bg-blue-100 border border-blue-300 px-6 py-3 rounded-lg shadow-sm">
+                    📤 Uploading files...
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={handleSubmit}
+                disabled={loading || isReadOnly || !allDocsReady || !acknowledged || !suggestedDate}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm"
+              >
+                {loading ? 'Submitting...' : isReadOnly ? '🔒 Preview Mode' : 'Submit Documentation & Advance to Sample →'}
+              </button>
+            </div>
           </div>
-        </div>
-      </div>
-      )}
+        )}
       </div>
     </>
   );
