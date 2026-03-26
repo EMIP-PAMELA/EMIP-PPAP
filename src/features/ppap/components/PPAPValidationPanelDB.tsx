@@ -19,9 +19,11 @@ import { PPAPStatus } from '@/src/types/database.types';
 import { mapStatusToState } from '../utils/ppapTableHelpers';
 import { canEditPreAckValidations, canEditPostAckValidations } from '../utils/stateWorkflowMapping';
 import { updatePPAPState } from '../utils/updatePPAPState';
+import { CurrentTaskBanner } from './CurrentTaskBanner';
 
 /**
  * Phase 3H - Persistent Validation Engine
+ * Phase 3H.1 - Active Work Zone with collapsible sections
  * 
  * Database-backed validation panel with auto state transitions.
  */
@@ -52,6 +54,9 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Phase 3H.1: Collapsible state for active work zone
+  const [isExpanded, setIsExpanded] = useState(true);
   
   // Phase 3F: Determine editability based on state
   const derivedState = ppapStatus ? mapStatusToState(ppapStatus) : 'INITIATED';
@@ -348,9 +353,31 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
   const preAckReady = isPreAckReady(validations);
   const postAckReady = isPostAckReady(validations);
 
+  // Phase 3H.1: Determine if this section is currently active
+  const isActiveSection = currentPhase === 'pre-ack';
+  
   return (
-    <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-      <h2 className="text-xl font-bold text-gray-900 mb-4">Validation Checklist</h2>
+    <div className={`bg-white rounded-lg border shadow-sm transition-all ${
+      isActiveSection 
+        ? 'p-6 border-2 border-blue-400' 
+        : 'p-4 border border-gray-300'
+    }`}>
+      {/* Phase 3H.1: Section Header with Collapse Toggle */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className={`text-xl font-bold ${
+          isActiveSection ? 'text-blue-900' : 'text-gray-600'
+        }`}>
+          {isActiveSection ? '📋 ' : ''}Validation Checklist
+        </h2>
+        {!isActiveSection && (
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+          >
+            {isExpanded ? '▼ Collapse' : '▶ Expand'}
+          </button>
+        )}
+      </div>
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
@@ -358,30 +385,21 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
         </div>
       )}
 
-      {/* Phase 3F.13: Next Action Panel */}
-      {activeStep && (
-        <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-300 rounded-lg">
-          <div className="flex items-start space-x-3">
-            <span className="text-2xl">🎯</span>
-            <div>
-              <h3 className="font-semibold text-blue-900 mb-1">Current Step</h3>
-              <p className="text-sm text-blue-800 font-medium">{activeStep.name}</p>
-              {preAckValidations[activeStepIndex + 1] && (
-                <p className="text-xs text-blue-700 mt-2">
-                  Next: {preAckValidations[activeStepIndex + 1].name}
-                </p>
-              )}
-              {!preAckValidations[activeStepIndex + 1] && activeStepIndex === preAckValidations.length - 1 && (
-                <p className="text-xs text-green-700 mt-2 font-semibold">
-                  ✓ Final step - Complete to enable acknowledgement
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* Phase 3H.1: Current Task Banner (replaces Next Action Panel) */}
+      {isActiveSection && activeStep && (
+        <CurrentTaskBanner
+          phase="Pre-Acknowledgement"
+          currentStep={activeStep.name}
+          instruction={
+            preAckValidations[activeStepIndex + 1]
+              ? `Next: ${preAckValidations[activeStepIndex + 1].name}`
+              : 'Final step - Complete to enable acknowledgement'
+          }
+        />
       )}
 
-      {!activeStep && preAckReady && (
+      {/* Phase 3H.1: All Complete Banner */}
+      {isActiveSection && !activeStep && preAckReady && (
         <div className="mb-6 p-4 bg-green-50 border-2 border-green-300 rounded-lg">
           <div className="flex items-start space-x-3">
             <span className="text-2xl">✅</span>
@@ -393,8 +411,21 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
         </div>
       )}
 
-      {renderValidationSection('Pre-Acknowledgement Validations', 'pre-ack', preAckValidations)}
-      {renderValidationSection('Post-Acknowledgement Validations', 'post-ack', postAckValidations)}
+      {/* Phase 3H.1: Collapsible Content */}
+      {(isActiveSection || isExpanded) && (
+        <>
+          {renderValidationSection('Pre-Acknowledgement Validations', 'pre-ack', preAckValidations)}
+          {renderValidationSection('Post-Acknowledgement Validations', 'post-ack', postAckValidations)}
+        </>
+      )}
+      
+      {/* Phase 3H.1: Collapsed Summary */}
+      {!isActiveSection && !isExpanded && (
+        <div className="text-sm text-gray-600">
+          <p className="mb-2">Pre-Ack: {preAckReady ? '✓ Complete' : `${completedSteps}/${preAckValidations.length} complete`}</p>
+          <p>Post-Ack: {postAckReady ? '✓ Complete' : 'In Progress'}</p>
+        </div>
+      )}
 
       <div className="mt-6 pt-4 border-t border-gray-200">
         <div className="flex items-center justify-between text-sm">

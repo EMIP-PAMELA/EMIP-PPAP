@@ -9,12 +9,14 @@ import { uploadPPAPDocument } from '../utils/uploadFile';
 import { getPPAPDocuments } from '../utils/getPPAPDocuments';
 import { supabase } from '@/src/lib/supabaseClient';
 import { MarkupTool } from './MarkupTool';
+import { CurrentTaskBanner } from './CurrentTaskBanner';
 
 interface DocumentationFormProps {
   ppapId: string;
   partNumber: string;
   initialSection?: Section;
   isReadOnly?: boolean;
+  currentPhase?: 'pre-ack' | 'post-ack'; // Phase 3H.1: For active work zone
 }
 
 type Section = 'checklist' | 'upload' | 'readiness' | 'confirmation';
@@ -94,10 +96,14 @@ interface UploadedFile {
   uploaded_at: string;
 }
 
-export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOnly = false }: DocumentationFormProps) {
+export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOnly = false, currentPhase = 'post-ack' }: DocumentationFormProps) {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>(initialSection || 'checklist');
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
+  
+  // Phase 3H.1: Active work zone - collapsible when not active
+  const [isSectionExpanded, setIsSectionExpanded] = useState(true);
+  const isActiveWorkZone = currentPhase === 'post-ack';
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -409,6 +415,13 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
 
   return (
     <>
+      {/* Phase 3H.1: Collapsed summary */}
+      {!isActiveWorkZone && !isSectionExpanded && (
+        <div className="px-6 py-4 text-sm text-gray-600">
+          <p>Documents: {documents.filter(d => d.status === 'ready').length}/{documents.length} ready</p>
+        </div>
+      )}
+
       {showMarkupTool && (
         <MarkupTool
           ppapId={ppapId}
@@ -417,27 +430,59 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
         />
       )}
 
-      <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-300 rounded-xl shadow-sm">
-      <div className="border-b border-gray-200 px-8 py-6">
-        <h2 className="text-2xl font-bold text-gray-900">Documentation Phase</h2>
-        <p className="text-sm text-gray-600 mt-1">
-          Part Number: <span className="font-medium">{partNumber || ''}</span>
-        </p>
-      </div>
-
-      {/* Read-Only Banner */}
-      {isReadOnly && (
-        <div className="px-6 py-4 bg-yellow-50 border-b-2 border-yellow-300">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🔒</span>
+      <div className={`bg-white rounded-lg shadow-sm border transition-all ${
+        isActiveWorkZone 
+          ? 'border-2 border-blue-400' 
+          : 'border border-gray-300'
+      }`}>
+        {/* Phase 3H.1: Header with collapse toggle */}
+        <div className="border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-bold text-yellow-900 uppercase tracking-wide">Preview Mode</p>
-              <p className="text-sm text-yellow-800">Complete previous phases to unlock this section</p>
+              <h2 className={`text-lg font-semibold ${
+                isActiveWorkZone ? 'text-blue-900' : 'text-gray-600'
+              }`}>
+                {isActiveWorkZone ? '📄 ' : ''}Documentation Phase
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">Prepare and upload required PPAP documentation</p>
             </div>
+            {!isActiveWorkZone && (
+              <button
+                onClick={() => setIsSectionExpanded(!isSectionExpanded)}
+                className="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+              >
+                {isSectionExpanded ? '▼ Collapse' : '▶ Expand'}
+              </button>
+            )}
           </div>
         </div>
-      )}
+        
+        {/* Phase 3H.1: Current Task Banner for active work zone */}
+        {isActiveWorkZone && activeSection === 'upload' && (
+          <div className="px-6 pt-4">
+            <CurrentTaskBanner
+              phase="Post-Acknowledgement"
+              currentStep="Document Upload & Creation"
+              instruction="Upload required documents or create from templates"
+              icon="📄"
+            />
+          </div>
+        )}
+        
+        {isReadOnly && (
+          <div className="px-6 py-4 bg-yellow-50 border-b-2 border-yellow-300">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🔒</span>
+              <div>
+                <p className="text-sm font-bold text-yellow-900 uppercase tracking-wide">Preview Mode</p>
+                <p className="text-sm text-yellow-800">Complete previous phases to unlock this section</p>
+              </div>
+            </div>
+          </div>
+        )}
 
+      {/* Phase 3H.1: Collapsible content */}
+      {(isActiveWorkZone || isSectionExpanded) && (
       <div className="flex">
         {/* Sidebar Navigation */}
         <div className="w-64 border-r border-gray-200 bg-gray-50">

@@ -4,6 +4,399 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 19:30 CT - Phase 3H.1 - Active Work Zone UI Implementation Complete
+
+- Summary: Implemented "Active Work Zone" UI behavior with clear visual hierarchy showing operators what they're currently working on, what's complete, and what's locked
+- Files changed:
+  - `src/features/ppap/components/CurrentTaskBanner.tsx` - New component for "You Are Here" indicator
+  - `src/features/ppap/components/PPAPValidationPanelDB.tsx` - Added collapsible behavior and active work zone styling
+  - `src/features/ppap/components/DocumentationForm.tsx` - Added collapsible behavior and active work zone styling
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Operators immediately see current task, only one section feels "active", reduced cognitive overload, no workflow confusion
+- Objective: Implement visual hierarchy system per BUILD_PLAN.md Active Work Zone section
+
+**Context:**
+
+Phase 3H.1 is a **UI clarity pass only** that implements the Active Work Zone concept documented in BUILD_PLAN.md. This transforms the UI from showing all sections equally (causing cognitive overload) to a clear hierarchy where operators always know what to do next.
+
+**Problem Statement:**
+
+**Before Phase 3H.1:**
+- All sections displayed with equal visual weight
+- Validations + documents + submission all shown simultaneously
+- No clear indication of current task
+- Cognitive overload from too many options
+- User had to decide what to work on
+- Pre-ack and post-ack sections competing for attention
+
+**After Phase 3H.1:**
+- Active section emphasized with blue border, shadow, icon
+- Inactive sections de-emphasized with gray styling
+- Current Task Banner shows "You Are Here" indicator
+- Collapsible behavior for inactive sections
+- Only ONE section feels primary at a time
+- Clear visual hierarchy: ACTIVE → COMPLETE → UPCOMING → LOCKED
+
+---
+
+**Solution:**
+
+**COMPONENT 1 - CurrentTaskBanner**
+
+Created new banner component for prominent "You Are Here" display:
+
+```typescript
+interface CurrentTaskBannerProps {
+  phase: string;
+  currentStep?: string;
+  instruction?: string;
+  icon?: string;
+}
+```
+
+**Features:**
+- Blue background with strong border (bg-blue-50 border-2 border-blue-400)
+- Large icon (default 🎯)
+- Bold "Current Task" heading
+- Current step name in semibold
+- Instruction text
+- Phase label
+
+**Display Example:**
+```
+┌─────────────────────────────────────────┐
+│ 🎯 Current Task                         │
+│    Drawing Verification                 │
+│    Next: BOM Review / Alignment         │
+│    Phase: Pre-Acknowledgement           │
+└─────────────────────────────────────────┘
+```
+
+---
+
+**COMPONENT 2 - PPAPValidationPanelDB Updates**
+
+**Added:**
+1. **Active Work Zone Detection**
+   ```typescript
+   const isActiveSection = currentPhase === 'pre-ack';
+   ```
+
+2. **Collapsible State**
+   ```typescript
+   const [isExpanded, setIsExpanded] = useState(true);
+   ```
+
+3. **Visual Hierarchy**
+   - **Active (pre-ack):** Blue border-2, blue text, 📋 icon
+   - **Inactive (post-ack):** Gray border, gray text, no icon
+   - Collapse button shown only when inactive
+
+4. **Current Task Banner Integration**
+   - Replaces old "Next Action Panel"
+   - Shows only when section is active
+   - Displays active step from guided validation flow
+
+5. **Collapsible Content**
+   - Full content shown when active OR expanded
+   - Collapsed summary when inactive AND collapsed
+   - Summary shows: "Pre-Ack: 3/6 complete" or "✓ Complete"
+
+**Visual States:**
+
+**Active (Pre-Ack Phase):**
+```
+┌─────────────────────────────────────────┐ border-2 border-blue-400
+│ 📋 Validation Checklist                 │ text-blue-900
+│                                         │
+│ ┌───────────────────────────────────┐   │
+│ │ 🎯 Current Task                   │   │ CurrentTaskBanner
+│ │    Drawing Verification           │   │
+│ └───────────────────────────────────┘   │
+│                                         │
+│ [Full validation list shown]            │
+└─────────────────────────────────────────┘
+```
+
+**Inactive (Post-Ack Phase, Expanded):**
+```
+┌─────────────────────────────────────────┐ border border-gray-300
+│ Validation Checklist    [▼ Collapse]    │ text-gray-600
+│                                         │
+│ [Full validation list shown]            │
+└─────────────────────────────────────────┘
+```
+
+**Inactive (Post-Ack Phase, Collapsed):**
+```
+┌─────────────────────────────────────────┐ border border-gray-300
+│ Validation Checklist    [▶ Expand]      │ text-gray-600
+│                                         │
+│ Pre-Ack: 6/6 complete                   │ Collapsed summary
+│ Post-Ack: In Progress                   │
+└─────────────────────────────────────────┘
+```
+
+---
+
+**COMPONENT 3 - DocumentationForm Updates**
+
+**Added:**
+1. **currentPhase Prop**
+   ```typescript
+   currentPhase?: 'pre-ack' | 'post-ack'; // Phase 3H.1
+   ```
+
+2. **Active Work Zone Detection**
+   ```typescript
+   const isActiveWorkZone = currentPhase === 'post-ack';
+   ```
+
+3. **Collapsible State**
+   ```typescript
+   const [isSectionExpanded, setIsSectionExpanded] = useState(true);
+   ```
+
+4. **Visual Hierarchy**
+   - **Active (post-ack):** Blue border-2, blue text, 📄 icon
+   - **Inactive (pre-ack):** Gray border, gray text, no icon
+   - Collapse button shown only when inactive
+
+5. **Current Task Banner Integration**
+   - Shows when active AND on upload section
+   - "Document Upload & Creation" task
+   - "Upload required documents or create from templates"
+
+6. **Collapsible Content**
+   - Full sidebar + content when active OR expanded
+   - Collapsed summary when inactive AND collapsed
+   - Summary shows: "Documents: 3/11 ready"
+
+**Visual States:**
+
+**Active (Post-Ack Phase):**
+```
+┌─────────────────────────────────────────┐ border-2 border-blue-400
+│ 📄 Documentation Phase                  │ text-blue-900
+│ Prepare and upload required PPAP docs   │
+│                                         │
+│ ┌───────────────────────────────────┐   │
+│ │ 📄 Current Task                   │   │ CurrentTaskBanner
+│ │    Document Upload & Creation     │   │ (on upload section)
+│ └───────────────────────────────────┘   │
+│                                         │
+│ [Sidebar + Document Cards shown]        │
+└─────────────────────────────────────────┘
+```
+
+**Inactive (Pre-Ack Phase, Collapsed):**
+```
+┌─────────────────────────────────────────┐ border border-gray-300
+│ Documentation Phase     [▶ Expand]      │ text-gray-600
+│                                         │
+│ Documents: 3/11 ready                   │ Collapsed summary
+└─────────────────────────────────────────┘
+```
+
+---
+
+**Visual Hierarchy Rules (Per BUILD_PLAN.md):**
+
+**ACTIVE Section:**
+- High contrast (blue, bold)
+- Prominent placement
+- Clear "You Are Here" indicator (CurrentTaskBanner)
+- Action buttons enabled
+- border-2 border-blue-400
+- text-blue-900
+- Icon shown (📋 or 📄)
+
+**COMPLETE Section:**
+- Green indication (already implemented in Phase 3F.13)
+- Collapsed or secondary placement
+- ✓ checkmark icons
+
+**LOCKED Section:**
+- Very muted (gray, low opacity)
+- Clear lock icon or "LOCKED" label (already implemented in Phase 3F.13)
+- Tooltip explaining why locked
+
+**INFORMATIONAL Section (Inactive but not locked):**
+- Neutral colors (gray)
+- Minimal visual weight
+- Collapse button available
+- border border-gray-300
+- text-gray-600
+
+---
+
+**Behavioral Rules:**
+
+**Pre-Ack Phase:**
+- PPAPValidationPanelDB is ACTIVE (blue, expanded, banner shown)
+- DocumentationForm is INACTIVE (gray, collapsible)
+- Current task: Active validation from guided flow
+- Only validation workflow feels primary
+
+**Post-Ack Phase:**
+- DocumentationForm is ACTIVE (blue, expanded, banner shown)
+- PPAPValidationPanelDB is INACTIVE (gray, collapsible)
+- Current task: Document upload/creation
+- Only document cards feel primary
+
+**Collapsible Behavior:**
+- Active section: CANNOT be collapsed (always expanded)
+- Inactive section: CAN be collapsed via toggle button
+- Collapsed state shows summary only
+- Expanded state shows full content
+
+---
+
+**Implementation Details:**
+
+**1. No State Machine Changes**
+- Did NOT modify status transitions
+- Did NOT change validation logic
+- Did NOT modify workflow rules
+- This is UI clarity pass ONLY
+
+**2. Phase Detection**
+- Uses existing `currentPhase` prop ('pre-ack' | 'post-ack')
+- Derived from PPAP status via existing state mapping
+- No new state introduced
+
+**3. Collapsible State**
+- Local React state only (`useState`)
+- No database persistence
+- Resets on page reload (acceptable for UI preference)
+
+**4. Current Task Banner**
+- Reuses data from guided validation flow (Phase 3F.13)
+- Shows activeStep.name for pre-ack
+- Shows "Document Upload & Creation" for post-ack
+- No new data fetching required
+
+---
+
+**Success Criteria Met:**
+
+- ✅ User immediately knows what to do (CurrentTaskBanner + active styling)
+- ✅ Only one section feels "active" (blue border vs gray border)
+- ✅ Other sections are clearly secondary (collapsible, muted colors)
+- ✅ No cognitive overload (only one primary section at a time)
+- ✅ No workflow confusion (clear visual hierarchy)
+- ✅ Pre-ack section emphasized during pre-ack phase
+- ✅ Post-ack section emphasized during post-ack phase
+- ✅ Collapsible inactive sections reduce visual clutter
+- ✅ Collapsed summary provides context without overwhelming
+
+---
+
+**Visual Hierarchy System:**
+
+**Color Coding:**
+- **Blue** = Active, current work (border-2 border-blue-400, text-blue-900)
+- **Green** = Complete (bg-green-50, border-green-300)
+- **Gray** = Inactive/Informational (border-gray-300, text-gray-600)
+- **Yellow** = Warning/Conditional (bg-yellow-50, border-yellow-200)
+- **Red** = Required/Error (bg-red-100, text-red-800)
+
+**Border Weight:**
+- **border-2** = Active section (high emphasis)
+- **border** = Inactive section (normal weight)
+
+**Text Weight:**
+- **font-bold** = Active headings
+- **font-semibold** = Secondary headings
+- **font-medium** = Labels
+
+**Icons:**
+- **📋** = Validation Checklist (pre-ack)
+- **📄** = Documentation (post-ack)
+- **🎯** = Current Task
+- **✓** = Complete
+- **🔒** = Locked
+
+---
+
+**User Experience Flow:**
+
+**Pre-Ack Phase:**
+1. User sees Validation Checklist with blue border (ACTIVE)
+2. CurrentTaskBanner shows "🎯 Current Task: Drawing Verification"
+3. Active validation highlighted in blue
+4. Documentation section below is gray and collapsed
+5. User focuses ONLY on validation work
+6. No distraction from document cards
+
+**Post-Ack Phase:**
+1. User sees Documentation Phase with blue border (ACTIVE)
+2. CurrentTaskBanner shows "📄 Current Task: Document Upload & Creation"
+3. Document cards with Upload/Create buttons prominent
+4. Validation section above is gray and collapsed
+5. User focuses ONLY on document work
+6. No distraction from completed validations
+
+**Benefits:**
+- Clear guidance ("You Are Here")
+- Reduced decision paralysis (one obvious action)
+- Faster onboarding (new users see current task immediately)
+- Less cognitive load (only active work shown prominently)
+- Context preservation (collapsed sections still accessible)
+
+---
+
+**Files:**
+- Created: CurrentTaskBanner.tsx (new component)
+- Modified: PPAPValidationPanelDB.tsx (collapsible + active styling)
+- Modified: DocumentationForm.tsx (collapsible + active styling)
+- Documented: BUILD_LEDGER.md (Phase 3H.1 entry)
+
+**Total Changes:**
+- 1 new component created
+- 2 existing components modified
+- 0 state machine changes
+- 0 validation logic changes
+- UI clarity pass only
+
+**Code Changes:**
+- Added: CurrentTaskBanner component (53 lines)
+- Added: isExpanded state to PPAPValidationPanelDB
+- Added: isActiveSection logic to PPAPValidationPanelDB
+- Added: Collapse button to PPAPValidationPanelDB header
+- Added: Collapsed summary view to PPAPValidationPanelDB
+- Added: currentPhase prop to DocumentationForm
+- Added: isActiveWorkZone state to DocumentationForm
+- Added: isSectionExpanded state to DocumentationForm
+- Added: Collapse button to DocumentationForm header
+- Added: Collapsed summary view to DocumentationForm
+- Replaced: "Next Action Panel" with CurrentTaskBanner in PPAPValidationPanelDB
+
+---
+
+**Alignment with BUILD_PLAN.md:**
+
+Phase 3H.1 implements exactly what was specified in BUILD_PLAN.md → Active Work Zone / Operator Clarity section:
+
+✅ "You Are Here" indicators (CurrentTaskBanner)
+✅ Current task banner at top of page/section
+✅ Active section emphasis (blue, bold, prominent)
+✅ Reduced visual competition (collapse inactive sections)
+✅ Clear visual distinction between ACTIVE, COMPLETE, LOCKED, INFORMATIONAL
+✅ One obvious next action
+✅ Better onboarding for new users
+
+---
+
+**Next Actions:**
+
+- Monitor user feedback on Active Work Zone clarity
+- Consider adding keyboard shortcuts for expand/collapse
+- Consider adding animation for collapse/expand transitions
+- Consider persisting collapse state in user preferences (future)
+
+---
+
 ## 2026-03-25 19:15 CT - Phase 3F.15 - BUILD_PLAN Expansion to Implementation-Grade Source of Truth Complete
 
 - Summary: Rewrote and expanded BUILD_PLAN.md from high-level overview to implementation-grade architectural blueprint
