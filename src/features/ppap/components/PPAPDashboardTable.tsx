@@ -332,6 +332,12 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
               >
                 Current State{getSortIndicator('state')}
               </th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Document Progress
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Health
+              </th>
               <th 
                 onClick={() => handleSort('phase')}
                 className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
@@ -354,16 +360,10 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                 Template
               </th>
               <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Current State{getSortIndicator('state')}
+                Coordinator
               </th>
               <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Document Progress
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Health
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Validation (Phase 3D)
+                Validation
               </th>
               <th 
                 onClick={() => handleSort('acknowledgement')}
@@ -390,6 +390,17 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {paginatedPPAPs.map((ppap) => {
+              // Phase 3H.10: RAW DATA AUDIT - Log before ANY transformations
+              console.log('📦 RAW PPAP DATA', {
+                id: ppap.id,
+                ppap_number: ppap.ppap_number,
+                plant: ppap.plant,
+                assigned_to: ppap.assigned_to,
+                status: ppap.status,
+                derivedState: ppap.derivedState,
+                derivedPhase: ppap.derivedPhase,
+              });
+              
               const statusIndicator = getStatusIndicator(ppap.derivedState);
               const rowBgClass = getRowBackgroundStyle(ppap.derivedPhase, ppap.derivedState);
               
@@ -410,14 +421,13 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
               // Phase 3H.9: Validate plant for display
               const validatedPlant = validatePlantForDisplay(ppap.plant, ppap.id);
               
-              // Phase 3H.9: Final validation logging
-              console.log('📊 DASHBOARD ROW FINAL', {
+              // Phase 3H.10: COLUMN MAPPING CHECK - Verify final render values
+              console.log('🧾 COLUMN MAPPING CHECK', {
                 id: ppap.id,
-                ppap_number: ppap.ppap_number,
-                status: ppap.status,
                 plant: ppap.plant,
-                assigned_to: ppap.assigned_to,
-                derivedPhase,
+                assigned: ppap.assigned_to,
+                status: ppap.status,
+                phase: derivedPhase,
                 formattedEngineer,
                 validatedPlant,
               });

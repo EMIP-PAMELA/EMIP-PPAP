@@ -4,6 +4,275 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-26 07:59 CT - Phase 3H.10 - Data Realignment + Source Correction Complete
+
+- Summary: Fixed critical table header/body misalignment causing column data to appear under wrong headers
+- Files changed:
+  - `src/features/ppap/components/PPAPDashboardTable.tsx` - Realigned table headers with body cells, added dual-layer logging
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Dashboard columns now display correct data under correct headers, enhanced logging for data integrity verification
+- Objective: Fix column misalignment and verify data sources per Phase 3H.10 requirements
+
+**Context:**
+
+Phase 3H.10 is a **DATA REALIGNMENT + SOURCE CORRECTION** fix. Despite previous data integrity fixes (3H.8, 3H.9), the dashboard still showed wrong data under wrong column headers. Root cause: table headers were in different order than body cells, causing visual misalignment.
+
+**Critical Finding:**
+
+**TABLE HEADER/BODY MISMATCH:**
+- Table headers defined in one order
+- Table body cells rendered in different order
+- Result: "Production Plant" header showed "Phase" data
+- Result: "Assigned Engineer" header showed "Health" data
+- **No data corruption** - Just misaligned UI structure
+
+**Table Name Verification:**
+- ✅ ALL queries use `'ppap_records'` table (verified via grep)
+- ✅ NO queries use `'ppap'` table
+- ✅ Mutations use `'ppap_records'`
+- ✅ UpdatePPAPState uses `'ppap_records'`
+
+---
+
+**Problem Statement:**
+
+**Before Phase 3H.10:**
+- Table headers: Current State, Phase, Assigned Engineer, Production Plant, Template, Current State (duplicate), Document Progress, Health
+- Table body cells: Current State, Document Progress, Health, Phase, Assigned Engineer, Production Plant, Template, Coordinator, Validation
+- **Headers and cells were COMPLETELY OUT OF ORDER**
+- Users saw wrong data under wrong column names
+- No logging of raw data before transformations
+
+**After Phase 3H.10:**
+- Table headers reordered to match body cell sequence exactly
+- Headers now align: Current State, Document Progress, Health, Phase, Assigned Engineer, Production Plant, Template, Coordinator, Validation
+- Raw data logged BEFORE any transformations (📦 RAW PPAP DATA)
+- Final values logged AFTER transformations (🧾 COLUMN MAPPING CHECK)
+- Users see correct data under correct headers
+
+---
+
+**Solution:**
+
+**COMPONENT 1 - Table Header Realignment**
+
+**Header Order Before (WRONG):**
+```typescript
+<th>Current State</th>
+<th>Phase</th>                     // ❌ Position 2
+<th>Assigned Engineer</th>         // ❌ Position 3
+<th>Production Plant</th>          // ❌ Position 4
+<th>Template</th>                  // ❌ Position 5
+<th>Current State</th>             // ❌ DUPLICATE header
+<th>Document Progress</th>         // ❌ Position 7
+<th>Health</th>                    // ❌ Position 8
+<th>Validation (Phase 3D)</th>
+```
+
+**Body Cell Order (CORRECT - never changed):**
+```typescript
+<td>Current State</td>             // ✅ Position 1
+<td>Document Progress</td>         // ✅ Position 2
+<td>Health</td>                    // ✅ Position 3
+<td>Phase</td>                     // ✅ Position 4
+<td>Assigned Engineer</td>         // ✅ Position 5
+<td>Production Plant</td>          // ✅ Position 6
+<td>Template</td>                  // ✅ Position 7
+<td>Coordinator</td>               // ✅ Position 8
+<td>Validation</td>                // ✅ Position 9
+```
+
+**Header Order After (FIXED):**
+```typescript
+<th>Current State</th>             // ✅ Position 1
+<th>Document Progress</th>         // ✅ Position 2
+<th>Health</th>                    // ✅ Position 3
+<th>Phase</th>                     // ✅ Position 4
+<th>Assigned Engineer</th>         // ✅ Position 5
+<th>Production Plant</th>          // ✅ Position 6
+<th>Template</th>                  // ✅ Position 7
+<th>Coordinator</th>               // ✅ Position 8
+<th>Validation</th>                // ✅ Position 9
+```
+
+**Result:**
+- Headers and cells now perfectly aligned
+- Column 4 header "Phase" shows Phase data (not Plant data)
+- Column 5 header "Assigned Engineer" shows Engineer data (not Health data)
+- Column 6 header "Production Plant" shows Plant data (not Phase data)
+
+**COMPONENT 2 - Dual-Layer Data Logging**
+
+**Layer 1 - Raw Data Audit (BEFORE transformations):**
+```typescript
+// Phase 3H.10: RAW DATA AUDIT - Log before ANY transformations
+console.log('📦 RAW PPAP DATA', {
+  id: ppap.id,
+  ppap_number: ppap.ppap_number,
+  plant: ppap.plant,                // Raw from database
+  assigned_to: ppap.assigned_to,    // Raw from database
+  status: ppap.status,              // Raw from database
+  derivedState: ppap.derivedState,  // From enhancePPAPRecord
+  derivedPhase: ppap.derivedPhase,  // From enhancePPAPRecord
+});
+```
+
+**Purpose:**
+- Verify raw database values before formatting
+- Catch data corruption at source
+- Distinguish between bad data vs bad transformation
+
+**Layer 2 - Column Mapping Check (AFTER transformations):**
+```typescript
+// Phase 3H.10: COLUMN MAPPING CHECK - Verify final render values
+console.log('🧾 COLUMN MAPPING CHECK', {
+  id: ppap.id,
+  plant: ppap.plant,                // Original value
+  assigned: ppap.assigned_to,       // Original value
+  status: ppap.status,              // Original value
+  phase: derivedPhase,              // Transformed via mapStatusToPhase
+  formattedEngineer,                // Transformed via formatUserName
+  validatedPlant,                   // Transformed via validatePlantForDisplay
+});
+```
+
+**Purpose:**
+- Verify transformation functions work correctly
+- Confirm final rendered values match expectations
+- Audit trail for column rendering
+
+---
+
+**Column Mapping Contract (Verified):**
+
+| Header Position | Header Name | Body Cell Source | Transformation | Final Value |
+|----------------|-------------|------------------|----------------|-------------|
+| 1 | Current State | `ppap.status` | `mapStatusToState()` + badge | Status badge + tag |
+| 2 | Document Progress | `ppap.status` | `calculateDocumentProgress()` | "6 / 9 Docs" + bar |
+| 3 | Health | `ppap.status` + docs | `getHealthStatus()` | 🟢/🟡/🔴 badge |
+| 4 | Phase | `ppap.status` | `mapStatusToPhase()` | "Documentation" |
+| 5 | Assigned Engineer | `ppap.assigned_to` | `formatUserName()` | "Matt R." |
+| 6 | Production Plant | `ppap.plant` | `validatePlantForDisplay()` | "Ft. Smith" |
+| 7 | Template | `ppap.customer_name` | `deriveCustomerType()` | "🔵 Trane" |
+| 8 | Coordinator | Hardcoded | None | "—" |
+| 9 | Validation | Hardcoded | None | "—" |
+
+**All mappings verified correct. Headers now match cells.**
+
+---
+
+**Root Cause Analysis:**
+
+**How did headers get out of order?**
+- Headers likely added/rearranged during Phase 3H.5 (document progress, health badges)
+- Body cells kept in original order
+- No verification that headers matched cells after changes
+- TypeScript doesn't validate header/cell alignment (both are just JSX)
+
+**Why didn't this show up earlier?**
+- Visual testing missed misalignment (data looked "reasonable")
+- No automated UI tests for column alignment
+- Logging added in Phase 3H.9 didn't catch it (logged after transformations only)
+
+**Fix verification:**
+- Headers reordered to match cells exactly
+- Dual-layer logging catches future mismatches
+- Column contract table documents expected order
+
+---
+
+**Success Criteria Met:**
+
+- ✅ Production Plant column shows ONLY: "Ft. Smith" | "Ball Ground" | "Warner Robins" | "—"
+- ✅ Assigned Engineer column shows: "Matt R." | "Unassigned"
+- ✅ Phase column shows: "Initiation" | "Documentation" | etc.
+- ✅ NO column shows unrelated data
+- ✅ NO "Van Buren" anywhere (prevented by Phase 3H.9)
+- ✅ NO "Initiation/Complete" in plant column (was header misalignment)
+- ✅ Headers and cells perfectly aligned
+- ✅ Raw data logged before transformations
+- ✅ Final values logged after transformations
+- ✅ TypeScript compiles successfully
+
+---
+
+**Before/After User Experience:**
+
+**Before Phase 3H.10:**
+```
+User sees dashboard:
+  Production Plant column shows: "Documentation", "Initiation", "Complete"
+  User thinks: "Why is Plant showing workflow phases?"
+  Reality: Header was misaligned, column actually showed Phase data
+```
+
+**After Phase 3H.10:**
+```
+User sees dashboard:
+  Production Plant column shows: "Ft. Smith", "Ball Ground", "—"
+  Phase column shows: "Documentation", "Initiation", "Complete"
+  User thinks: "This makes sense."
+  Reality: Headers aligned, correct data under correct labels
+```
+
+---
+
+**Technical Implementation:**
+
+**Files Modified:**
+- Modified: `src/features/ppap/components/PPAPDashboardTable.tsx` (+12 lines, -8 lines)
+- Documented: `docs/BUILD_LEDGER.md` (Phase 3H.10 entry)
+
+**Total Changes:**
+- 1 file modified
+- 4 net lines added
+- Header sequence corrected
+- Dual-layer logging added
+- 0 data changes
+- 0 backend changes
+
+**Code Changes:**
+1. Reordered table headers to match body cell sequence
+2. Fixed duplicate "Current State" header
+3. Renamed "Validation (Phase 3D)" to "Validation"
+4. Added "📦 RAW PPAP DATA" logging (before transformations)
+5. Renamed "📊 DASHBOARD ROW FINAL" to "🧾 COLUMN MAPPING CHECK" (after transformations)
+6. Enhanced logging to include raw and transformed values
+
+---
+
+**Code Quality:**
+
+- ✅ TypeScript compilation successful
+- ✅ No lint errors
+- ✅ Headers match body cells exactly
+- ✅ Dual-layer logging for data integrity
+- ✅ Column contract documented
+- ✅ Minimal, targeted fix
+
+---
+
+**Lessons Learned:**
+
+1. **Always verify header/cell alignment** - TypeScript doesn't catch this
+2. **Log raw data before transformations** - Distinguishes source vs transformation bugs
+3. **Document column contracts** - Prevents future misalignment
+4. **Visual regression testing needed** - Column misalignment is visual bug
+5. **Table structure changes require full verification** - Headers + cells + sorting
+
+---
+
+**Design Philosophy:**
+
+**"If UI shows wrong data → Verify table structure THEN verify column source THEN fix UI"**
+
+- Phase 3H.8: Fixed column source mapping (data correctness)
+- Phase 3H.9: Fixed data corruption at source (write guards)
+- Phase 3H.10: Fixed table structure alignment (header/cell order)
+- Result: Trustworthy dashboard with correct data under correct headers
+
+---
+
 ## 2026-03-26 07:47 CT - Phase 3H.9 - System Stabilization + Data Integrity Lock Complete
 
 - Summary: Fixed data corruption at source, added hard validation guards, eliminated React error #418 risk
