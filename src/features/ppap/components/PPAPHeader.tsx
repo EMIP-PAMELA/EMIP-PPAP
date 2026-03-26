@@ -6,6 +6,7 @@ import { formatDate } from '@/src/lib/utils';
 import Link from 'next/link';
 import { StatusUpdateControl } from './StatusUpdateControl';
 import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils/getNextAction';
+import { mapStatusToPhase } from '../utils/stateWorkflowMapping';
 import { supabase } from '@/src/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { logEvent } from '@/src/features/events/mutations';
@@ -19,8 +20,18 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
   const router = useRouter();
   const [assignedTo, setAssignedTo] = useState(ppap.assigned_to || null);
   const [takingOwnership, setTakingOwnership] = useState(false);
-  const nextActionData = getNextAction(ppap.workflow_phase, ppap.status);
+  
+  // Phase sync fix: Derive phase from status (single source of truth)
+  const derivedPhase = mapStatusToPhase(ppap.status);
+  const nextActionData = getNextAction(derivedPhase, ppap.status);
   const customerType = deriveCustomerType(ppap.customer_name);
+  
+  // Debug logging for phase sync
+  console.log('🧭 PHASE SYNC CHECK', {
+    status: ppap.status,
+    derivedPhase,
+    nextAction: nextActionData.nextAction,
+  });
   
   const handleTakeOwnership = async () => {
     setTakingOwnership(true);
@@ -69,14 +80,14 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
 
   return (
     <div className="bg-white border border-gray-300 rounded-xl shadow-sm">
-      {/* You Are Here Banner */}
+      {/* Phase sync fix: Banner derived from ppap.status */}
       <div className={`px-6 py-4 border-b-2 ${getBannerColor()}`}>
         <div className="flex items-center gap-3">
           <span className="text-2xl">📍</span>
           <div>
-            <p className="text-sm font-bold uppercase tracking-wide">You Are Here</p>
+            <p className="text-sm font-bold uppercase tracking-wide">You Are Here — {derivedPhase} Phase</p>
             <p className="text-base font-semibold">
-              Next Step: <span className="font-bold">{nextActionData.nextAction || ''}</span> to continue this PPAP
+              {nextActionData.nextAction || ''}
             </p>
           </div>
         </div>

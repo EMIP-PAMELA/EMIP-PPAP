@@ -88,8 +88,8 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     }
   }, []);
 
-  // Phase 3H.2: Use new next action system
-  const nextActionData = getNextAction(ppap.workflow_phase, ppap.status);
+  // Phase sync fix: Use derived phase from status (NOT ppap.workflow_phase)
+  const nextActionData = getNextAction(selectedPhase, ppap.status);
   const nextActionV2 = getNextActionV2(ppap.status, validations, documents);
   
   console.log('🎯 NEXT ACTION', nextActionV2);

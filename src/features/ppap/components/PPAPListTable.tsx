@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { formatDate } from '@/src/lib/utils';
 import { useMemo } from 'react';
 import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils/getNextAction';
+import { mapStatusToPhase } from '../utils/stateWorkflowMapping';
 
 interface PPAPListTableProps {
   ppaps: PPAPRecord[];
@@ -15,10 +16,14 @@ export function PPAPListTable({ ppaps }: PPAPListTableProps) {
 
   // Memoize next action calculations
   const ppapsWithActions = useMemo(() => {
-    return ppaps.map(ppap => ({
-      ...ppap,
-      nextActionData: getNextAction(ppap.workflow_phase, ppap.status),
-    }));
+    return ppaps.map(ppap => {
+      // Phase sync fix: Derive phase from status
+      const derivedPhase = mapStatusToPhase(ppap.status);
+      return {
+        ...ppap,
+        nextActionData: getNextAction(derivedPhase, ppap.status),
+      };
+    });
   }, [ppaps]);
 
   const handleRowClick = (ppapId: string) => {

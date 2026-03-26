@@ -21,6 +21,7 @@ import { logEvent } from '@/src/features/events/mutations';
 import { formatDate } from '@/src/lib/utils';
 import { WORKFLOW_PHASE_LABELS, WORKFLOW_PHASES } from '../constants/workflowPhases';
 import { getNextAction, getPriorityColor, getPriorityBackground } from '../utils/getNextAction';
+import { mapStatusToPhase } from '../utils/stateWorkflowMapping';
 import Link from 'next/link';
 
 interface PPAPOperationsDashboardProps {
@@ -63,7 +64,8 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
   const filteredPpaps = ppaps.filter(ppap => {
     if (filterCustomer && ppap.customer_name !== filterCustomer) return false;
     if (filterStatus && ppap.status !== filterStatus) return false;
-    if (filterPhase && ppap.workflow_phase !== filterPhase) return false;
+    // Phase sync fix: Derive phase from status for filtering
+    if (filterPhase && mapStatusToPhase(ppap.status) !== filterPhase) return false;
     return true;
   });
 
@@ -351,7 +353,9 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
         
         <div className="space-y-3">
           {activePpaps.map(ppap => {
-            const nextAction = getNextAction(ppap.workflow_phase, ppap.status);
+            // Phase sync fix: Derive phase from status
+            const derivedPhase = mapStatusToPhase(ppap.status);
+            const nextAction = getNextAction(derivedPhase, ppap.status);
             const stagnant = isStagnant(ppap);
             
             return (
@@ -384,15 +388,15 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
                       {ppap.status}
                     </span>
                     <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded">
-                      {WORKFLOW_PHASE_LABELS[ppap.workflow_phase as keyof typeof WORKFLOW_PHASE_LABELS] || ppap.workflow_phase}
+                      {WORKFLOW_PHASE_LABELS[derivedPhase as keyof typeof WORKFLOW_PHASE_LABELS] || derivedPhase}
                     </span>
                   </div>
                   
                   {/* Phase Progress Visual */}
                   <div className="mb-3 flex items-center gap-2">
                     {WORKFLOW_PHASES.filter(p => p !== 'COMPLETE').map((phase, idx) => {
-                      const isActive = phase === ppap.workflow_phase;
-                      const currentPhaseIndex = WORKFLOW_PHASES.findIndex(p => p === ppap.workflow_phase);
+                      const isActive = phase === derivedPhase;
+                      const currentPhaseIndex = WORKFLOW_PHASES.findIndex(p => p === derivedPhase);
                       const thisPhaseIndex = WORKFLOW_PHASES.indexOf(phase);
                       const isPast = thisPhaseIndex < currentPhaseIndex && currentPhaseIndex >= 0;
                       
@@ -415,7 +419,7 @@ export function PPAPOperationsDashboard({ ppaps: initialPpaps }: PPAPOperationsD
                         </div>
                       );
                     })}
-                    {ppap.workflow_phase === 'COMPLETE' && (
+                    {derivedPhase === 'COMPLETE' && (
                       <div className="px-2 py-1 text-xs font-semibold rounded bg-green-600 text-white">
                         COMPLETE
                       </div>
