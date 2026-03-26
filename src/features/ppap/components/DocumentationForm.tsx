@@ -200,12 +200,25 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     }
   };
 
-  // Create document handler
+  // Phase 3H.15: Create document handler - reuses markup tool for balloon drawing
   const handleCreateDocument = (documentId: string) => {
     console.log('🛠 DOCUMENT ACTION CLICK', { docId: documentId, action: 'create' });
     
+    // Phase 3H.15: Balloon drawing opens markup tool (reuse existing function)
+    if (documentId === 'ballooned_drawing') {
+      setShowMarkupTool(true);
+      return;
+    }
+    
+    // Phase 3H.15: Check if template is available
+    if (!canCreate(documentId)) {
+      console.warn('⚠️ TEMPLATE NOT AVAILABLE', { docType: documentId });
+      alert('Template coming soon — you can upload a document instead');
+      return;
+    }
+    
+    // Routes for available templates
     const routes: Record<string, string> = {
-      ballooned_drawing: `/tools/balloon-drawing?ppapId=${ppapId}`,
       control_plan: `/tools/control-plan?ppapId=${ppapId}`,
       dfmea: `/tools/dfmea?ppapId=${ppapId}`,
       pfmea: `/tools/pfmea?ppapId=${ppapId}`,
@@ -215,9 +228,6 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     
     if (routes[documentId]) {
       router.push(routes[documentId]);
-    } else {
-      console.log('🛠 Template coming soon for:', documentId);
-      alert('Template coming soon');
     }
   };
 
@@ -396,7 +406,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                   >
                     {/* Title Row */}
                     <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="text-sm font-semibold text-gray-900">{doc.name}</h4>
                         <span
                           className={`px-2 py-0.5 text-xs font-semibold rounded ${
@@ -407,6 +417,12 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                         >
                           {doc.requirement_level}
                         </span>
+                        {/* Phase 3H.15: Template availability badge */}
+                        {!canCreate(doc.id) && (
+                          <span className="px-2 py-0.5 text-xs font-medium rounded bg-yellow-100 text-yellow-700">
+                            Template Coming Soon
+                          </span>
+                        )}
                       </div>
                       <span
                         className={`px-3 py-1 text-xs font-semibold rounded-full ${
@@ -429,15 +445,15 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                       </div>
                     )}
 
-                    {/* Actions Row */}
+                    {/* Phase 3H.15: Actions Row - all buttons actionable */}
                     <div className="flex gap-2">
-                      {/* Create Button */}
+                      {/* Create Button - always enabled, shows alert if template not ready */}
                       <button
                         onClick={() => handleCreateDocument(doc.id)}
-                        disabled={isReadOnly || !canCreate(doc.id)}
-                        title={!canCreate(doc.id) ? 'Template coming soon' : 'Create from template'}
+                        disabled={isReadOnly}
+                        title={canCreate(doc.id) ? 'Create from template' : 'Template coming soon — click for details'}
                         className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
-                          isReadOnly || !canCreate(doc.id)
+                          isReadOnly
                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             : 'bg-blue-600 text-white hover:bg-blue-700'
                         }`}
