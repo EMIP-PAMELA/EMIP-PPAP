@@ -2,12 +2,14 @@
 
 /**
  * Phase 3H.6: PPAP Control Panel
+ * Phase 3H.13: Document editing enabled for all users + Create action system
  * 
  * Full system visibility + management for ONE PPAP
  * Manager-focused control interface (vs operator-focused workflow)
  */
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { PPAPRecord } from '@/src/types/database.types';
 import { currentUser } from '@/src/lib/mockUser';
 import { calculateDocumentProgress, getHealthStatus, getHealthBadgeStyle, getHealthBadgeIcon, getStatusClarityTag } from '../utils/documentHelpers';
@@ -37,12 +39,14 @@ const ALL_DOCUMENTS = [
 ];
 
 export function PPAPControlPanel({ ppap }: PPAPControlPanelProps) {
+  const router = useRouter();
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, any>>({});
   const [uploading, setUploading] = useState<string | null>(null);
   const [validationSummary, setValidationSummary] = useState({ preAck: { complete: 0, total: 0 }, postAck: { complete: 0, total: 0 } });
   
-  // Phase 3H.6: Role-based action control
-  const canEdit = currentUser.role === 'coordinator' || currentUser.role === 'admin';
+  // Phase 3H.13: Split permissions - workflow vs document editing
+  const canManageWorkflow = currentUser.role === 'coordinator' || currentUser.role === 'admin';
+  const canEditDocuments = true; // ALL USERS can edit documents
   
   // Fetch uploaded documents
   useEffect(() => {
@@ -88,9 +92,56 @@ export function PPAPControlPanel({ ppap }: PPAPControlPanelProps) {
     fetchValidations();
   }, [ppap.id]);
   
+  // Phase 3H.13: Template availability check
+  const canCreate = (docType: string): boolean => {
+    return [
+      'ballooned_drawing',
+      'control_plan',
+      'dfmea',
+      'pfmea',
+      'msa',
+      'dimensional_results',
+    ].includes(docType);
+  };
+  
+  // Phase 3H.13: Create document routing
+  const handleCreateDocument = (docType: string) => {
+    // Phase 3H.13: Log document action
+    console.log('📄 DOCUMENT ACTION CLICK', {
+      docType,
+      action: 'create',
+      userRole: currentUser.role,
+    });
+    
+    console.log('🛠 CREATE DOCUMENT', { docType, ppapId: ppap.id });
+    
+    const routes: Record<string, string> = {
+      ballooned_drawing: `/tools/balloon-drawing?ppapId=${ppap.id}`,
+      control_plan: `/tools/control-plan?ppapId=${ppap.id}`,
+      dfmea: `/tools/dfmea?ppapId=${ppap.id}`,
+      pfmea: `/tools/pfmea?ppapId=${ppap.id}`,
+      msa: `/tools/msa?ppapId=${ppap.id}`,
+      dimensional_results: `/tools/dimensional-results?ppapId=${ppap.id}`,
+    };
+    
+    if (routes[docType]) {
+      router.push(routes[docType]);
+    } else {
+      console.warn('⚠️ TEMPLATE NOT AVAILABLE', { docType });
+      alert('Template coming soon');
+    }
+  };
+  
   const handleUpload = async (docId: string, event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    
+    // Phase 3H.13: Log document action
+    console.log('📄 DOCUMENT ACTION CLICK', {
+      docType: docId,
+      action: 'upload',
+      userRole: currentUser.role,
+    });
     
     setUploading(docId);
     try {
@@ -299,21 +350,35 @@ export function PPAPControlPanel({ ppap }: PPAPControlPanelProps) {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
+                        {/* Phase 3H.13: Create Action */}
+                        <button
+                          onClick={() => handleCreateDocument(doc.id)}
+                          disabled={!canCreate(doc.id)}
+                          className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                            canCreate(doc.id)
+                              ? 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
+                              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          }`}
+                          title={canCreate(doc.id) ? 'Create from template' : 'Template coming soon'}
+                        >
+                          🛠 Create
+                        </button>
+                        
                         {/* Upload Action */}
                         <label
                           className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
-                            !canEdit || isUploading
+                            isUploading
                               ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                              : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300 cursor-pointer'
                           }`}
-                          title={!canEdit ? 'View Only' : isUploaded ? 'Replace File' : 'Upload'}
+                          title={isUploaded ? 'Replace File' : 'Upload'}
                         >
                           {isUploading ? '⏳ Uploading...' : isUploaded ? '📤 Replace' : '📤 Upload'}
                           <input
                             type="file"
                             className="sr-only"
                             onChange={(e) => handleUpload(doc.id, e)}
-                            disabled={!canEdit || isUploading}
+                            disabled={isUploading}
                             accept=".pdf,.doc,.docx,.xls,.xlsx"
                           />
                         </label>
@@ -340,7 +405,7 @@ export function PPAPControlPanel({ ppap }: PPAPControlPanelProps) {
       </div>
       
       {/* Phase 3H.6: Action Bar (Manager Controls) */}
-      {canEdit && (
+      {canManageWorkflow && (
         <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-lg shadow-md p-6">
           <h2 className="text-lg font-bold text-amber-900 mb-4">🎛️ Manager Controls</h2>
           <div className="flex gap-3">
@@ -369,10 +434,11 @@ export function PPAPControlPanel({ ppap }: PPAPControlPanelProps) {
         </div>
       )}
       
-      {!canEdit && (
-        <div className="bg-gray-50 border border-gray-300 rounded-lg p-4 text-center">
-          <p className="text-sm text-gray-600">
-            👁️ <strong>View Only Mode</strong> — Manager actions are disabled for your role
+      {/* Phase 3H.13: Updated permission banner */}
+      {!canManageWorkflow && (
+        <div className="bg-blue-50 border border-blue-300 rounded-lg p-4 text-center">
+          <p className="text-sm text-blue-800">
+            � <strong>Document Editing Enabled</strong> — All users can upload and create documents. Workflow actions are restricted to coordinators.
           </p>
         </div>
       )}
