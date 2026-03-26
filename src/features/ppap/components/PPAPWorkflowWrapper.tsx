@@ -15,12 +15,16 @@ import { useState, useEffect as useEffectImport } from 'react';
 import { getValidations, DBValidation } from '../utils/validationDatabase';
 import { getNextAction as getNextActionV2 } from '../utils/getNextActionV2';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
+import { PPAPControlPanel } from './PPAPControlPanel';
 
 interface PPAPWorkflowWrapperProps {
   ppap: PPAPRecord;
 }
 
 export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
+  // Phase 3H.6: View mode toggle (workflow vs control)
+  const [viewMode, setViewMode] = useState<'workflow' | 'control'>('workflow');
+  
   // Phase 3H.2: State for validations and documents for next action
   const [validations, setValidations] = useState<DBValidation[]>([]);
   const [documents, setDocuments] = useState<any[]>([]); // Simplified for now
@@ -107,17 +111,53 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   // Phase 3H.2: Determine current phase for active work zone
   const currentPhase = selectedPhase === 'INITIATION' || selectedPhase === 'DOCUMENTATION' && ppap.status.includes('PRE_ACK') ? 'pre-ack' : 'post-ack';
   
+  // Phase 3H.6: Logging
+  console.log('🧑‍💼 CONTROL PANEL VIEW', {
+    ppapId: ppap.id,
+    status: ppap.status,
+    viewMode,
+  });
+  
   return (
     <div className="space-y-5">
-      {/* Phase 3H.2: Current Task Banner (ALWAYS VISIBLE AT TOP) */}
-      <CurrentTaskBanner
-        phase={WORKFLOW_PHASE_LABELS[selectedPhase] || ''}
-        currentStep={nextActionV2.label}
-        instruction={nextActionV2.instruction}
-        icon="🎯"
-      />
+      {/* Phase 3H.6: View Mode Toggle */}
+      <div className="bg-white border border-gray-300 rounded-lg p-2 shadow-sm">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setViewMode('workflow')}
+            className={`flex-1 px-4 py-2 text-sm font-semibold rounded transition-colors ${
+              viewMode === 'workflow'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            📋 Workflow View
+          </button>
+          <button
+            onClick={() => setViewMode('control')}
+            className={`flex-1 px-4 py-2 text-sm font-semibold rounded transition-colors ${
+              viewMode === 'control'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            🎛️ Control Panel
+          </button>
+        </div>
+      </div>
 
-      <PhaseIndicator currentPhase={selectedPhase} onPhaseClick={handlePhaseClick} />
+      {/* Phase 3H.6: Conditional Rendering Based on View Mode */}
+      {viewMode === 'workflow' ? (
+        <>
+          {/* Phase 3H.2: Current Task Banner (ALWAYS VISIBLE AT TOP) */}
+          <CurrentTaskBanner
+            phase={WORKFLOW_PHASE_LABELS[selectedPhase] || ''}
+            currentStep={nextActionV2.label}
+            instruction={nextActionV2.instruction}
+            icon="🎯"
+          />
+
+          <PhaseIndicator currentPhase={selectedPhase} onPhaseClick={handlePhaseClick} />
       
       {/* Phase 3F UI Fix: State-based rendering with safety fallback */}
       {selectedPhase === 'INITIATION' && (
@@ -189,6 +229,11 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             isReadOnly={false}
           />
         </div>
+      )}
+        </>
+      ) : (
+        /* Phase 3H.6: Control Panel View */
+        <PPAPControlPanel ppap={ppap} />
       )}
     </div>
   );

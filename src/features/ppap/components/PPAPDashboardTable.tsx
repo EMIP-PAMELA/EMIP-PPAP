@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { enhancePPAPRecord, sortPPAPs, filterPPAPs, searchPPAPs, paginatePPAPs, getStateBadgeStyle, getRowBackgroundStyle, getStatusIndicator, getAttentionColor, SortConfig, SortField, FilterConfig, PhaseFilter, PaginationConfig } from '../utils/ppapTableHelpers';
 import { currentUser } from '@/src/lib/mockUser';
 import { isReadOnly } from '../utils/permissions';
+import { calculateDocumentProgress, getHealthStatus, getHealthBadgeStyle, getHealthBadgeIcon, getStatusClarityTag } from '../utils/documentHelpers';
 
 interface PPAPDashboardTableProps {
   ppaps: PPAPRecord[];
@@ -322,7 +323,13 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                 Template
               </th>
               <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Coordinator (TBD)
+                Current State{getSortIndicator('state')}
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Document Progress
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Health
               </th>
               <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 Validation (Phase 3D)
@@ -357,6 +364,11 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
               
               const isClickable = !isReadOnly(currentUser.role);
               
+              // Phase 3H.5: Calculate document progress and health
+              const docProgress = calculateDocumentProgress(ppap);
+              const healthStatus = getHealthStatus(ppap, docProgress);
+              const clarityTag = getStatusClarityTag(ppap.status);
+              
               return (
               <tr
                 key={ppap.id}
@@ -373,12 +385,40 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                   {ppap.customer_name}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
-                  <div className="flex items-center gap-1">
-                    {statusIndicator && <span className="text-base">{statusIndicator}</span>}
-                    <span className={getStateBadgeStyle(ppap.derivedState)}>
-                      {ppap.derivedState.replace(/_/g, ' ')}
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1">
+                      {statusIndicator && <span className="text-base">{statusIndicator}</span>}
+                      <span className={getStateBadgeStyle(ppap.derivedState)}>
+                        {ppap.derivedState.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    {/* Phase 3H.5: Status Clarity Tag */}
+                    <span className="text-xs text-gray-600 italic">
+                      {clarityTag}
                     </span>
                   </div>
+                </td>
+                {/* Phase 3H.5: Document Progress */}
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-gray-700">
+                      {docProgress.complete} / {docProgress.total} Docs Complete
+                    </span>
+                    {/* Progress Bar */}
+                    <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-blue-600 transition-all"
+                        style={{ width: `${docProgress.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                </td>
+                {/* Phase 3H.5: Health Indicator Badge */}
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold border ${getHealthBadgeStyle(healthStatus)}`}>
+                    <span>{getHealthBadgeIcon(healthStatus)}</span>
+                    <span>{healthStatus}</span>
+                  </span>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-700">
                   {ppap.derivedPhase}
