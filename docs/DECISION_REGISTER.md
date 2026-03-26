@@ -4,6 +4,51 @@ Important architectural and design decisions for EMIP-PPAP.
 
 ---
 
+## DEC-016: BUILD_PLAN Expansion and Architectural Governance Framework
+- Date: 2026-03-25
+- Status: Accepted
+- Context: After implementing multiple architectural improvements (state machine truth model, guided validation flow, document action system), the BUILD_PLAN.md document was a high-level overview that lacked implementation-grade detail. Future development required architectural re-discovery on each session. System needed explicit governance rules to prevent regression and architectural drift. BOM comparison workflow, build site determination, document intelligence strategy, and role authority boundaries needed to be locked in documentation.
+- Decision: Expand BUILD_PLAN.md from high-level plan to implementation-grade architectural blueprint. Document all current architectural knowledge including: (1) Core system identity (controlled execution system, NOT tracker), (2) Single source of truth architecture (`ppap.status` only, no direct writes), (3) 5-layer process model (Intake → Pre-Ack → Ack Gate → Post-Ack → Submission), (4) Pre-ack/post-ack boundary as foundational design rule, (5) BOM comparison workflow (NOT single upload), (6) Build site determination logic (Ball Ground vs Warner Robins), (7) Guided validation flow with progressive gating, (8) Document action system with upload/create/generate extensibility, (9) Document intelligence/template strategy for future, (10) Role model and authority (coordinator vs engineer), (11) Governance rules (hard enforcement), (12) Bootstrap protocol for future implementation, (13) Phased execution roadmap.
+- Consequences:
+  - ✅ BUILD_PLAN.md is now 1200+ lines of implementation-grade detail
+  - ✅ All current architectural knowledge locked in single document
+  - ✅ Governance rules explicitly stated (6 hard rules)
+  - ✅ BOM comparison workflow documented (validates alignment, buildability)
+  - ✅ Build site determination logic documented (>6 AWG wire, 5-ton press → Ball Ground)
+  - ✅ Guided validation flow locked in (sequential, progressive gating, UI states)
+  - ✅ Document action system documented (actions array, not hardcoded)
+  - ✅ Document intelligence strategy defined (template generation, auto-fill)
+  - ✅ Role boundaries clarified (coordinator = workflow control, engineer = execution)
+  - ✅ Pre-ack/post-ack boundary defined as foundational rule
+  - ✅ Future implementation can reference plan (no architectural re-discovery)
+  - ✅ Repository agents can execute by consulting plan
+  - ✅ Governance violations preventable (explicit rules)
+  - ✅ Knowledge transfer simplified (one source of truth)
+  - ✅ Technical debt prevention (rules prevent regression)
+  - ⚠️ BUILD_PLAN.md must be updated as system evolves (living document)
+  - ⚠️ Team must commit to bootstrapping against plan before changes
+  - ⚠️ Plan maintenance required (keep in sync with implementation)
+- Hard Governance Rules Established:
+  1. **All status writes through `updatePPAPState()` ONLY** - Direct DB writes prohibited, bypassing state machine prohibited, guards enforce
+  2. **Workflow progression must be state-driven** - UI renders based on `ppap.status`, React state cannot override DB, phases derived from status
+  3. **Bootstrap against planning documents** - Read BUILD_PLAN before changes, check BUILD_LEDGER for recent work, check DECISION_REGISTER for decisions
+  4. **Preserve pre-ack/post-ack boundary** - Pre-ack = validation/readiness, Post-ack = execution/creation, boundary is foundational
+  5. **Prefer guided workflow over passive checklists** - Sequential flow, one active task emphasis, progressive gating
+  6. **Preserve upload/create/generate extensibility** - Actions array drives UI, no hardcoded logic, system ready for template generation
+- Architectural Locks:
+  - **Workflow Architecture**: 5-layer process model, pre-ack/post-ack boundary foundational, acknowledgement gate is hard control point (coordinator-only)
+  - **BOM Handling**: BOM is comparison workflow (customer BOM vs Visual BOM), validates alignment/buildability/completeness, pre-ack requirement
+  - **Build Site Logic**: Ball Ground (>6 AWG wire OR 5-ton press), Warner Robins (standard work), determined during pre-ack
+  - **Guided Validation**: Sequential ordered flow, progressive gating (one active task), UI states (ACTIVE/COMPLETE/LOCKED), override flexibility preserved
+  - **Document System**: Actions array drives UI (`['upload', 'create']`), NOT hardcoded, template strategy defined, Ballooned Drawing has Upload+Create
+  - **Document Intelligence**: Future documents generated from templates, auto-fill known fields (PPAP #, part #, BOM data), user-entry for analysis
+  - **Role Authority**: Admin (override, NOT primary), Coordinator (workflow control, ack authority), Engineer (execution, no workflow control), Viewer (read-only)
+  - **Single Source of Truth**: `ppap.status` is ONLY truth, all updates through `updatePPAPState()`, no direct DB writes, state-driven rendering
+- Implementation: BUILD_PLAN.md expanded from ~1000 lines to 1200+ lines. Previous version archived to BUILD_PLAN_ARCHIVE_20260325.md. Phased execution roadmap added (Phase 3G-3N defined). Bootstrap protocol documented. Success criteria and governance rules made explicit.
+- Rationale: Implementation-grade documentation enables autonomous execution, prevents architectural drift, simplifies knowledge transfer, accelerates future development, and prevents technical debt through explicit governance rules.
+
+---
+
 ## DEC-015: Persist Workflow Phase in Database
 - Date: 2026-03-20
 - Status: Accepted

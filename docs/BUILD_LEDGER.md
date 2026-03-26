@@ -4,6 +4,329 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 19:15 CT - Phase 3F.15 - BUILD_PLAN Expansion to Implementation-Grade Source of Truth Complete
+
+- Summary: Rewrote and expanded BUILD_PLAN.md from high-level overview to implementation-grade architectural blueprint
+- Files changed:
+  - `docs/BUILD_PLAN.md` - Complete rewrite with comprehensive workflow architecture, governance rules, and execution roadmap
+  - `docs/BUILD_PLAN_ARCHIVE_20260325.md` - Archived previous version
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: BUILD_PLAN.md now serves as single source of truth for system architecture, detailed enough for autonomous repository agent execution
+- Objective: Lock in architectural knowledge, establish governance rules, enable future implementation by plan reference
+
+**Context:**
+
+Phase 3F.15 is a **documentation and governance task** that transforms BUILD_PLAN.md from a high-level plan into a deeply structured execution blueprint. This enables future build chunks to be executed by consulting the plan directly, without requiring architectural re-discovery.
+
+**Problem Statement:**
+
+**Before Phase 3F.15:**
+- BUILD_PLAN.md was high-level architectural overview
+- Missing critical implementation details
+- No explicit governance rules
+- BOM comparison logic not documented
+- Build site determination not documented
+- Guided validation flow not locked in
+- Document intelligence strategy not documented
+- Role boundaries not clearly defined
+- Future roadmap too vague
+
+**After Phase 3F.15:**
+- BUILD_PLAN.md is implementation-grade source of truth
+- All current architectural knowledge locked in
+- Governance rules explicitly stated
+- BOM comparison model documented
+- Build site determination logic documented
+- Guided validation flow documented
+- Document intelligence / template strategy defined
+- Role model and authority clearly defined
+- Phased execution roadmap with implementation-grade detail
+
+---
+
+**Solution:**
+
+**DOCUMENTATION STRUCTURE:**
+
+The expanded BUILD_PLAN.md now includes:
+
+**1. Core System Identity**
+- What EMIP-PPAP IS (controlled execution system)
+- What EMIP-PPAP is NOT (passive tracker)
+- System must do / must not do
+
+**2. Single Source of Truth Architecture**
+- `ppap.status` is ONLY workflow truth
+- All status updates through `updatePPAPState()` only
+- No direct DB writes to status
+- No UI-only phase mutation
+- Hard enforcement rules
+
+**3. High-Level Process Model (5 Layers)**
+- Layer 1: Intake / Coordinator Layer
+- Layer 2: Pre-Acknowledgement Readiness Layer
+- Layer 3: Acknowledgement Gate (Control Point)
+- Layer 4: Post-Acknowledgement Build Layer
+- Layer 5: Submission / Closeout Layer
+
+**4. Pre-Ack / Post-Ack Boundary**
+- Foundational design rule
+- Pre-ack = validation / readiness / comparison
+- Post-ack = execution / document creation / build
+- Must be preserved in all future implementation
+
+**5. BOM Model (Comparison Workflow)**
+- NOT a single upload item
+- Comparison between customer BOM and Visual BOM
+- Validates alignment, buildability, component completeness
+- Pre-ack validation requirement
+
+**6. Build Site Determination**
+- Ball Ground: >6 AWG wire, 5-ton press requirements
+- Warner Robins: Standard work, majority of assemblies
+- Determined during pre-ack readiness
+- Business rule subject to confirmation
+
+**7. Guided Validation Flow**
+- Pre-ack is guided workflow, not passive checklist
+- Progressive gating (one active task at a time)
+- Ordered validation sequence documented
+- UI states defined (ACTIVE, COMPLETE, LOCKED)
+- Override flexibility preserved
+
+**8. Document Action System**
+- Documents are actionable units
+- Actions array drives UI (not hardcoded)
+- Upload + Create + future Generate
+- Ballooned Drawing has Upload + Create
+- Template generation strategy documented
+
+**9. REQUIRED / CONDITIONAL / OPTIONAL Document Model**
+- 9 REQUIRED documents (PSW, FAIR, Control Plan, etc.)
+- 2+ CONDITIONAL documents (Packaging, Appearance, etc.)
+- Documented as working assumptions pending confirmation
+
+**10. Document Intelligence / Template Strategy (FUTURE)**
+- Documents should be generated, not just uploaded
+- Template structure + auto-fill fields + user-entry fields
+- Known data for auto-fill (PPAP #, part #, BOM, measurements)
+- Document-specific template examples (PSW, Control Plan, FAIR, FMEA)
+- Future implementation path defined
+
+**11. Active Work Zone / Operator Clarity**
+- Visual distinction: ACTIVE, COMPLETE, UPCOMING, LOCKED, INFORMATIONAL
+- "You Are Here" indicators
+- Current task banner, next task preview
+- Reduced visual competition from non-active sections
+
+**12. Role Model / Perspective Model**
+- Admin: Supervisory / override (NOT primary operator)
+- Coordinator: Process controller (primary operator)
+- Engineer: Execution role (no workflow control)
+- Viewer: Read-only oversight
+- One workflow, different role-aware views (NOT separate systems)
+
+**13. Review Gate Authority**
+- Review decisions restricted to coordinator/admin
+- Engineers can submit for review, cannot approve/reject
+- Enforcement via role-based guards
+
+**14. Governance / Implementation Rules**
+- All status writes through `updatePPAPState()` (REQUIRED)
+- Workflow progression must be state-driven (REQUIRED)
+- Bootstrap against planning documents (REQUIRED)
+- Preserve pre-ack / post-ack boundary (REQUIRED)
+- Prefer guided workflow over passive checklists
+- Preserve upload/create/generate extensibility
+
+**15. Bootstrap Protocol for Future Implementation**
+- Required reading before any change
+- Validation checklist
+- Post-implementation requirements
+- BUILD_LEDGER and DECISION_REGISTER updates
+
+**16. Execution Roadmap (Phased Implementation)**
+- Phase 3G: Near-Term Stabilization
+- Phase 3H: Workflow Clarity Enhancement
+- Phase 3I: Document System Evolution
+- Phase 3J: Validation Evolution
+- Phase 3K: Coordinator Workspace Evolution
+- Phase 3L: Engineer Workspace Evolution
+- Phase 3M: Document Intelligence Layer (future)
+- Phase 3N: Integration Layer (future)
+
+---
+
+**Key Architectural Locks:**
+
+**Workflow Architecture:**
+- 5-layer process model (Intake → Pre-Ack → Ack Gate → Post-Ack → Submission)
+- Pre-ack / post-ack boundary is foundational (MUST be preserved)
+- Acknowledgement gate is hard control point (coordinator-only authority)
+
+**BOM Handling:**
+- BOM is comparison workflow, not upload task
+- Customer BOM vs Visual BOM alignment validation
+- Pre-ack requirement (validates buildability)
+
+**Build Site Logic:**
+- Ball Ground: >6 AWG wire OR 5-ton press
+- Warner Robins: Standard work
+- Determined during pre-ack, affects routing
+
+**Guided Validation:**
+- Sequential ordered flow (not flat checklist)
+- Progressive gating (one active task)
+- UI states: ACTIVE (blue), COMPLETE (green), LOCKED (gray)
+- Override flexibility (can edit completed work)
+
+**Document System:**
+- Actions array drives UI (`['upload', 'create']`)
+- NOT hardcoded logic
+- Template generation strategy defined
+- Ballooned Drawing: Upload + Create
+- Others: Upload only (for now)
+
+**Document Intelligence (Future):**
+- Documents should be generated from templates
+- Auto-fill known fields (PPAP #, part #, dates, BOM data)
+- User-entry for narrative/analysis
+- Template-specific strategies (PSW, Control Plan, FAIR, FMEA)
+
+**Role Authority:**
+- Admin: Override (NOT primary operator)
+- Coordinator: Workflow control (primary operator, ack authority)
+- Engineer: Execution (no workflow control, no ack authority)
+- Viewer: Read-only
+
+**Single Source of Truth:**
+- `ppap.status` is ONLY truth
+- All updates through `updatePPAPState()` ONLY
+- No direct DB writes
+- No UI-only state
+- State-driven rendering
+
+---
+
+**Governance Rules Locked:**
+
+**HARD RULES (MUST NEVER BE VIOLATED):**
+
+1. **All status writes through `updatePPAPState()`**
+   - Direct DB writes PROHIBITED
+   - Bypassing state machine PROHIBITED
+   - Guards enforce this rule
+
+2. **Workflow progression must be state-driven**
+   - UI renders based on `ppap.status`
+   - React state cannot override DB status
+   - Phases derived from status
+
+3. **Bootstrap against planning documents**
+   - Read BUILD_PLAN.md before changes
+   - Check BUILD_LEDGER.md for recent work
+   - Check DECISION_REGISTER.md for decisions
+
+4. **Preserve pre-ack / post-ack boundary**
+   - Pre-ack = validation/readiness
+   - Post-ack = execution/creation
+   - Boundary is foundational design rule
+
+5. **Prefer guided workflow over passive checklists**
+   - Sequential guided flow preferred
+   - One active task emphasis
+   - Progressive gating
+
+6. **Preserve upload/create/generate extensibility**
+   - Actions array drives UI
+   - No hardcoded "upload only" logic
+   - System ready for template generation
+
+---
+
+**Execution Roadmap Overview:**
+
+**Current State (Phase 3F.15):**
+- ✅ State machine truth model
+- ✅ Single source of truth enforcement
+- ✅ Role-based access control
+- ✅ Guided validation workflow (Phase 3F.13)
+- ✅ Document action system (Phase 3F.14)
+- ✅ Pre-ack validation database
+- ✅ Demo mode removed
+- ✅ Architectural documentation locked
+
+**Near-Term (Phase 3G - Stabilization):**
+- Eliminate legacy workflow paths
+- Fix React/render stability
+- Validate phase transitions end-to-end
+- Confirm status persistence
+
+**Next (Phase 3H - Workflow Clarity):**
+- Active work zone redesign
+- Role-based emphasis
+- Hide/de-emphasize irrelevant sections
+- Cleaner current task presentation
+
+**Future Phases:**
+- 3I: Document System Evolution
+- 3J: Validation Evolution
+- 3K: Coordinator Workspace Evolution
+- 3L: Engineer Workspace Evolution
+- 3M: Document Intelligence Layer
+- 3N: Integration Layer
+
+---
+
+**Impact:**
+
+**Documentation Impact:**
+- BUILD_PLAN.md is now 1200+ lines of implementation-grade detail
+- All current architectural knowledge locked in place
+- Governance rules explicitly stated
+- Future implementation path clearly defined
+
+**Operational Impact:**
+- Repository agents can now execute build chunks by consulting plan
+- Architectural re-discovery no longer required
+- Governance violations preventable (rules are explicit)
+- Knowledge transfer simplified (one source of truth document)
+
+**Strategic Impact:**
+- System direction locked (guided workflow, document intelligence)
+- Role boundaries clarified (coordinator vs engineer authority)
+- Technical debt prevention (governance rules prevent regression)
+- Future implementation accelerated (roadmap is implementation-grade)
+
+---
+
+**Success Criteria Met:**
+
+- ✅ BUILD_PLAN.md is implementation-grade (detailed enough for autonomous execution)
+- ✅ System identity clearly defined (controlled execution system, NOT tracker)
+- ✅ Workflow architecture locked (5 layers, pre-ack/post-ack boundary)
+- ✅ BOM comparison model documented
+- ✅ Build site determination logic documented
+- ✅ Guided validation flow documented
+- ✅ Document action system documented
+- ✅ Document intelligence strategy defined
+- ✅ Role model and authority clearly defined
+- ✅ Governance rules explicitly stated
+- ✅ Bootstrap protocol defined
+- ✅ Execution roadmap is implementation-grade
+
+---
+
+**Next Actions:**
+
+- Reference BUILD_PLAN.md for all future implementation
+- Bootstrap against plan before any architectural change
+- Update BUILD_PLAN.md as system evolves
+- Use plan as onboarding document for new developers
+- Validate implementation against governance rules
+
+---
+
 ## 2026-03-25 18:45 CT - Phase 3F.14 - Document Action System with Upload + Create Capability Complete
 
 - Summary: Implemented document action system with inline Upload + Create capability in DocumentationForm
