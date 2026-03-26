@@ -872,6 +872,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
           </div>
         </div>
       </div>
+      )}
       </div>
     </>
   );
