@@ -27,16 +27,16 @@ export function CurrentTaskBanner({
   actionLabel
 }: CurrentTaskBannerProps) {
   return (
-    <div className="mb-6 p-6 bg-gradient-to-r from-blue-600 to-blue-700 border-2 border-blue-800 rounded-xl shadow-lg">
+    <div className="mb-3 p-4 bg-gradient-to-r from-blue-600 to-blue-700 border-2 border-blue-800 rounded-xl shadow-lg">
       <div className="flex items-center justify-between">
         <div className="flex items-start space-x-4 flex-1">
           <span className="text-4xl">{icon}</span>
           <div className="flex-1">
-            <h3 className="text-sm font-bold text-blue-100 uppercase tracking-wider mb-2">
+            <h3 className="text-sm font-bold text-blue-100 uppercase tracking-wider mb-1">
               🎯 CURRENT TASK
             </h3>
             {currentStep && (
-              <p className="text-2xl font-bold text-white mb-2">
+              <p className="text-2xl font-bold text-white mb-1">
                 {currentStep}
               </p>
             )}

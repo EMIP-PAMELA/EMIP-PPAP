@@ -16,8 +16,8 @@ export function PhaseIndicator({ currentPhase, onPhaseClick }: PhaseIndicatorPro
   const currentIndex = PHASES.findIndex(p => p.key === currentPhase);
 
   return (
-    <div className="bg-gradient-to-br from-gray-50 to-white border border-gray-300 rounded-xl shadow-sm p-8 mb-8">
-      <h3 className="text-base font-semibold text-gray-900 mb-6">Workflow Progress</h3>
+    <div className="bg-gradient-to-br from-gray-50 to-white border border-gray-300 rounded-xl shadow-sm p-4 mb-3">
+      <h3 className="text-base font-semibold text-gray-900 mb-3">Workflow Progress</h3>
       <div className="flex items-center justify-between">
         {PHASES.map((phase, index) => {
           const isActive = index === currentIndex;
@@ -31,7 +31,7 @@ export function PhaseIndicator({ currentPhase, onPhaseClick }: PhaseIndicatorPro
               <div className="flex flex-col items-center flex-1">
                 <div
                   onClick={() => isClickable && onPhaseClick && onPhaseClick(phase.key)}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-base transition-all shadow-lg ${
+                  className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm transition-all shadow-lg ${
                     isActive
                       ? 'bg-blue-600 text-white ring-4 ring-blue-300 animate-pulse'
                       : isCompleted
@@ -43,7 +43,7 @@ export function PhaseIndicator({ currentPhase, onPhaseClick }: PhaseIndicatorPro
                   {isCompleted ? '✓' : index + 1}
                 </div>
                 <span
-                  className={`mt-3 text-sm font-semibold text-center ${
+                  className={`mt-2 text-xs font-semibold text-center ${
                     isActive
                       ? 'text-blue-800'
                       : isCompleted

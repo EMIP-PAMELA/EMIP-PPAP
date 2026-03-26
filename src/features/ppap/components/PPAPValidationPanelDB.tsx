@@ -69,6 +69,14 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
       try {
         setLoading(true);
         const data = await getValidations(ppapId);
+        
+        // Phase 3H.11: Log validation data for debugging
+        console.log('VALIDATION DATA CHECK', { 
+          ppapId, 
+          validations: data,
+          count: data.length 
+        });
+        
         setValidations(data);
       } catch (err) {
         console.error('Failed to fetch validations:', err);
@@ -91,6 +99,7 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
     'discrepancy_resolution',
   ];
 
+  // Phase 3H.11: Filter validations by category
   const preAckValidations = validations
     .filter((v) => v.category === 'pre-ack')
     .sort((a, b) => {
@@ -238,12 +247,24 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
     category: ValidationCategory,
     validationList: DBValidation[]
   ) => {
+    // Phase 3H.11: Fix 0/0 count issue - only show summary if validations exist
     const summary = getValidationSummary(validations, category);
     const isEditable = category === 'pre-ack' ? canEditPreAck : canEditPostAck;
+    const hasValidations = validationList.length > 0;
+
+    // Phase 3H.11: Don't render section if no validations
+    if (!hasValidations) {
+      return (
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
+          <p className="text-sm text-gray-500 italic">No validations defined yet</p>
+        </div>
+      );
+    }
 
     return (
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-3">
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-2">
           <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
           <span className="text-sm font-medium text-gray-600">{summary} Complete</span>
         </div>
@@ -359,11 +380,11 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
   return (
     <div className={`bg-white rounded-lg border shadow-sm transition-all ${
       isActiveSection 
-        ? 'p-6 border-2 border-blue-400' 
-        : 'p-4 border border-gray-300'
+        ? 'p-4 border-2 border-blue-400' 
+        : 'p-3 border border-gray-300'
     }`}>
       {/* Phase 3H.1: Section Header with Collapse Toggle */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <h2 className={`text-xl font-bold ${
           isActiveSection ? 'text-blue-900' : 'text-gray-600'
         }`}>
@@ -400,7 +421,7 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
 
       {/* Phase 3H.1: All Complete Banner */}
       {isActiveSection && !activeStep && preAckReady && (
-        <div className="mb-6 p-4 bg-green-50 border-2 border-green-300 rounded-lg">
+        <div className="mb-3 p-3 bg-green-50 border-2 border-green-300 rounded-lg">
           <div className="flex items-start space-x-3">
             <span className="text-2xl">✅</span>
             <div>
@@ -427,21 +448,7 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
         </div>
       )}
 
-      <div className="mt-6 pt-4 border-t border-gray-200">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">
-            Phase 3H: Database-backed validation tracking with auto state transitions
-          </span>
-          <div className="flex items-center space-x-4">
-            <span className={`font-medium ${preAckReady ? 'text-green-600' : 'text-gray-400'}`}>
-              Pre-Ack: {preAckReady ? '✓ Ready' : 'In Progress'}
-            </span>
-            <span className={`font-medium ${postAckReady ? 'text-green-600' : 'text-gray-400'}`}>
-              Post-Ack: {postAckReady ? '✓ Ready' : 'In Progress'}
-            </span>
-          </div>
-        </div>
-      </div>
+      {/* Phase 3H.11: Removed redundant summary footer */}
     </div>
   );
 }

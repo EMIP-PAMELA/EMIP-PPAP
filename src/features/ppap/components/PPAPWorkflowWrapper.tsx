@@ -119,9 +119,9 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   });
   
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       {/* Phase 3H.6: View Mode Toggle */}
-      <div className="bg-white border border-gray-300 rounded-lg p-2 shadow-sm">
+      <div className="bg-white border border-gray-300 rounded-lg p-2 shadow-sm mb-3">
         <div className="flex gap-2">
           <button
             onClick={() => setViewMode('workflow')}
@@ -181,7 +181,7 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
           />
           
           {/* Phase 3H.2: Documentation form */}
-          <div className="mt-4">
+          <div className="mt-3">
             <DocumentationForm
               ppapId={ppap.id}
               partNumber={ppap.part_number || ''}
@@ -213,7 +213,7 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
       )}
 
       {selectedPhase === 'COMPLETE' && (
-        <div ref={activePhaseRef} className="bg-white border border-gray-200 rounded-lg p-6">
+        <div ref={activePhaseRef} className="bg-white border border-gray-200 rounded-lg p-4">
           <h2 className="text-xl font-bold text-gray-900 mb-4">COMPLETE Phase</h2>
           <p className="text-green-700 font-medium">✓ PPAP workflow complete!</p>
         </div>
