@@ -252,26 +252,35 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
     category: ValidationCategory,
     validationList: DBValidation[]
   ) => {
-    // Phase 3H.11: Fix 0/0 count issue - only show summary if validations exist
-    const summary = getValidationSummary(validations, category);
+    // Phase 3H.11/3H.12: Enhanced validation display - clear messaging, no confusing 0/0
     const isEditable = category === 'pre-ack' ? canEditPreAck : canEditPostAck;
     const hasValidations = validationList.length > 0;
 
-    // Phase 3H.11: Don't render section if no validations
+    // Phase 3H.12: Show clear message if not initialized
     if (!hasValidations) {
       return (
         <div className="mb-4">
           <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
-          <p className="text-sm text-gray-500 italic">No validations defined yet</p>
+          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-800 font-medium">⚠️ Validation data not initialized</p>
+            <p className="text-xs text-yellow-700 mt-1">Refresh the page to initialize validation tracking</p>
+          </div>
         </div>
       );
     }
+
+    // Phase 3H.12: Smart summary display
+    const completedCount = validationList.filter(
+      v => v.status === 'complete' || v.status === 'approved'
+    ).length;
+    const totalCount = validationList.filter(v => v.required).length;
+    const summaryText = totalCount === 0 ? 'No required items' : `${completedCount} of ${totalCount} Complete`;
 
     return (
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-          <span className="text-sm font-medium text-gray-600">{summary} Complete</span>
+          <span className="text-sm font-medium text-gray-600">{summaryText}</span>
         </div>
 
         <div className="space-y-2">

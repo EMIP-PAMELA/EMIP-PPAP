@@ -390,17 +390,6 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {paginatedPPAPs.map((ppap) => {
-              // Phase 3H.10: RAW DATA AUDIT - Log before ANY transformations
-              console.log('📦 RAW PPAP DATA', {
-                id: ppap.id,
-                ppap_number: ppap.ppap_number,
-                plant: ppap.plant,
-                assigned_to: ppap.assigned_to,
-                status: ppap.status,
-                derivedState: ppap.derivedState,
-                derivedPhase: ppap.derivedPhase,
-              });
-              
               const statusIndicator = getStatusIndicator(ppap.derivedState);
               const rowBgClass = getRowBackgroundStyle(ppap.derivedPhase, ppap.derivedState);
               
@@ -420,17 +409,6 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
               
               // Phase 3H.9: Validate plant for display
               const validatedPlant = validatePlantForDisplay(ppap.plant, ppap.id);
-              
-              // Phase 3H.10: COLUMN MAPPING CHECK - Verify final render values
-              console.log('🧾 COLUMN MAPPING CHECK', {
-                id: ppap.id,
-                plant: ppap.plant,
-                assigned: ppap.assigned_to,
-                status: ppap.status,
-                phase: derivedPhase,
-                formattedEngineer,
-                validatedPlant,
-              });
               
               return (
               <tr

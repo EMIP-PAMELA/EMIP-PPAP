@@ -447,29 +447,44 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
 
                     {/* Phase 3H.15: Actions Row - all buttons actionable */}
                     <div className="flex gap-2">
-                      {/* Create Button - always enabled, shows alert if template not ready */}
+                      {/* Phase 3H.12: Create Button - clear state explanations */}
                       <button
                         onClick={() => handleCreateDocument(doc.id)}
                         disabled={isReadOnly}
-                        title={canCreate(doc.id) ? 'Create from template' : 'Template coming soon — click for details'}
+                        title={
+                          isReadOnly
+                            ? 'View-only mode - editing disabled'
+                            : canCreate(doc.id)
+                            ? `Create ${doc.name} from template`
+                            : `Template for ${doc.name} coming soon — click to see options`
+                        }
                         className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
                           isReadOnly
                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             : 'bg-blue-600 text-white hover:bg-blue-700'
                         }`}
                       >
-                        🛠 Create
+                        🛠 {canCreate(doc.id) ? 'Create' : 'Create (Soon)'}
                       </button>
                       
-                      {/* Upload Button */}
+                      {/* Phase 3H.12: Upload Button - clear state explanations */}
                       <label
+                        title={
+                          isReadOnly
+                            ? 'View-only mode - uploading disabled'
+                            : uploading
+                            ? 'Upload in progress...'
+                            : doc.status === 'ready'
+                            ? `Replace existing ${doc.name} file`
+                            : `Upload ${doc.name} file (PDF, Word, Excel)`
+                        }
                         className={`flex-1 px-4 py-2 text-sm font-medium text-center rounded transition-colors ${
                           isReadOnly || uploading
                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             : 'bg-gray-200 text-gray-700 hover:bg-gray-300 cursor-pointer'
                         }`}
                       >
-                        {doc.status === 'ready' ? '📤 Replace' : '📤 Upload'}
+                        {uploading ? '⏳ Uploading...' : doc.status === 'ready' ? '📤 Replace' : '📤 Upload'}
                         <input
                           type="file"
                           className="sr-only"

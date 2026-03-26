@@ -114,9 +114,20 @@ export async function getValidations(ppapId: string): Promise<DBValidation[]> {
   }
 
   // Phase 3H.11: Auto-seed if no validations exist
+  // Phase 3H.12: Enhanced error handling - fail loudly, not silently
   if (!data || data.length === 0) {
     console.warn('⚠️ NO VALIDATIONS FOUND - AUTO-SEEDING DEFAULT SET', { ppapId });
-    await initializeValidations(ppapId);
+    
+    try {
+      await initializeValidations(ppapId);
+    } catch (seedError) {
+      console.error('🚨 VALIDATION SEED FAILED', seedError);
+      throw new Error(
+        `Validation initialization failed for PPAP ${ppapId}. ` +
+        `Error: ${seedError instanceof Error ? seedError.message : 'Unknown error'}. ` +
+        `Please contact system administrator.`
+      );
+    }
     
     // Re-fetch after seeding
     const { data: seededData, error: refetchError } = await supabase
@@ -126,10 +137,16 @@ export async function getValidations(ppapId: string): Promise<DBValidation[]> {
       .order('created_at', { ascending: true });
     
     if (refetchError) {
+      console.error('🚨 VALIDATION RE-FETCH FAILED', refetchError);
       throw new Error(`Failed to fetch seeded validations: ${refetchError.message}`);
     }
     
-    console.log('✅ VALIDATIONS SEEDED', { count: seededData?.length || 0 });
+    if (!seededData || seededData.length === 0) {
+      console.error('🚨 VALIDATION SEED PRODUCED NO DATA', { ppapId });
+      throw new Error('Validation seeding completed but no data returned. Contact system administrator.');
+    }
+    
+    console.log('✅ VALIDATIONS SEEDED', { count: seededData.length });
     return seededData as DBValidation[];
   }
 

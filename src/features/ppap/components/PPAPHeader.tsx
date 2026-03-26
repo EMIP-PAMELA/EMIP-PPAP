@@ -84,11 +84,18 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
       <div className={`px-6 py-4 border-b-2 ${getBannerColor()}`}>
         <div className="flex items-center gap-3">
           <span className="text-2xl">📍</span>
-          <div>
+          <div className="flex-1">
             <p className="text-sm font-bold uppercase tracking-wide">You Are Here — {derivedPhase} Phase</p>
             <p className="text-base font-semibold">
               {nextActionData.nextAction || ''}
             </p>
+          </div>
+          {/* Phase 3H.12: Phase vs Status clarity */}
+          <div className="text-right">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Phase (Derived)</div>
+            <div className="text-sm font-semibold text-gray-700">{derivedPhase}</div>
+            <div className="text-xs text-gray-500 uppercase tracking-wide mt-1">Status (Raw)</div>
+            <div className="text-sm font-mono text-gray-700">{ppap.status}</div>
           </div>
         </div>
       </div>
