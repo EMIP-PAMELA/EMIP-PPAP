@@ -4,6 +4,477 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-25 21:00 CT - Phase 3H.4 - Final UX Polish (Command Center + Visual Dominance) Complete
+
+- Summary: Transformed UI from "clear" to "immediately obvious and satisfying" through visual hierarchy enhancements, primary CTA buttons, and reduced cognitive noise
+- Files changed:
+  - `src/features/ppap/components/CurrentTaskBanner.tsx` - Command center upgrade with primary CTA button
+  - `src/features/ppap/components/DocumentationForm.tsx` - Enhanced active section dominance, reduced non-active noise
+  - `docs/BUILD_LEDGER.md` - This entry
+- Impact: Immediate visual clarity, satisfying completion feedback, zero confusion about next action, guided system feel
+- Objective: Final UX polish to make correct behavior feel obvious per Phase 3H.4 requirements
+
+**Context:**
+
+Phase 3H.4 is the final UX polish pass on top of Phase 3H.1 (Active Work Zone), 3H.2 (Next Action Engine), and 3H.3 (Soft-Gated Workflow). This transforms the system from functional to delightful by making the correct action immediately obvious through visual hierarchy and interaction design.
+
+**Problem Statement:**
+
+**Before Phase 3H.4:**
+- CurrentTaskBanner was passive (just displayed information)
+- Active sections clear but not visually dominant enough
+- No primary call-to-action button
+- Non-active sections created visual noise
+- First incomplete document not highlighted
+- Generic microcopy ("Upload or create any required document")
+- Completion feedback minimal
+
+**After Phase 3H.4:**
+- CurrentTaskBanner is command center (bold, gradient, primary CTA button)
+- Active section visually dominates (larger padding, stronger shadow, gradient header)
+- Primary action button guides user ("Upload Ballooned Drawing")
+- Non-active sections reduced to minimal noise (opacity-40, compact)
+- First incomplete document highlighted (blue glow)
+- Specific microcopy ("Complete any of the remaining 2 documents below")
+- Satisfying visual feedback system
+
+---
+
+**Solution:**
+
+**COMPONENT 1 - Command Center Upgrade (CurrentTaskBanner)**
+
+**Before:**
+```tsx
+<div className="mb-6 p-4 bg-blue-50 border-2 border-blue-400">
+  <h3>Current Task</h3>
+  <p>{currentStep}</p>
+  <p>{instruction}</p>
+</div>
+```
+
+**After (Phase 3H.4):**
+```tsx
+<div className="mb-6 p-6 bg-gradient-to-r from-blue-600 to-blue-700 border-2 border-blue-800 rounded-xl shadow-lg">
+  <h3 className="text-sm font-bold text-blue-100 uppercase tracking-wider">
+    🎯 CURRENT TASK
+  </h3>
+  <p className="text-2xl font-bold text-white">
+    {currentStep}
+  </p>
+  <p className="text-base text-blue-100">
+    {instruction}
+  </p>
+  <p className="text-sm text-blue-200">
+    Next: {nextStep}
+  </p>
+  
+  {/* Primary CTA Button */}
+  <button className="px-8 py-4 bg-white text-blue-700 font-bold text-lg">
+    {actionLabel}
+  </button>
+</div>
+```
+
+**Visual Changes:**
+- Background: `bg-blue-50` → `bg-gradient-to-r from-blue-600 to-blue-700`
+- Text: Dark blue → **White** (high contrast)
+- Padding: `p-4` → `p-6` (more breathing room)
+- Border: `border-blue-400` → `border-blue-800` (stronger)
+- Shadow: `shadow-sm` → `shadow-lg` (more prominent)
+- Current step: `text-base` → `text-2xl font-bold` (larger)
+- **NEW:** Primary CTA button (white on blue, hover effects)
+
+**Props Added:**
+```typescript
+interface CurrentTaskBannerProps {
+  // ... existing props
+  nextStep?: string;           // "Next: Control Plan"
+  onActionClick?: () => void;  // Primary action handler
+  actionLabel?: string;        // "Upload Ballooned Drawing"
+}
+```
+
+**CTA Button Features:**
+- White background (stands out against blue gradient)
+- Large size (`px-8 py-4`)
+- Bold text (`text-lg font-bold`)
+- Hover effects (scale, shadow increase)
+- Triggers correct action based on context
+
+---
+
+**COMPONENT 2 - Active Section Visual Dominance**
+
+**Enhanced Styling:**
+
+**Before:**
+```tsx
+className={sectionActive 
+  ? 'border-2 border-blue-400 bg-white shadow-md'
+  : ...
+}
+```
+
+**After:**
+```tsx
+className={sectionActive 
+  ? 'border-2 border-blue-500 bg-white shadow-lg'
+  : ...
+}
+```
+
+**Section Header Enhancement:**
+
+**Active Section Header:**
+```tsx
+<div className="p-6 bg-gradient-to-r from-blue-50 to-blue-100">
+  {/* Active Work Section Indicator */}
+  <div className="flex items-center gap-2 mb-2">
+    <span className="text-lg">🟦</span>
+    <p className="text-xs font-bold text-blue-700 uppercase">
+      Active Work Section
+    </p>
+  </div>
+  
+  <h3 className="text-2xl font-bold text-blue-900">
+    {section.title}
+  </h3>
+  
+  <span className="bg-blue-600 text-white">
+    ACTIVE
+  </span>
+  
+  <p className="text-sm text-blue-700 mt-1 font-medium">
+    Complete any of the remaining 2 documents below
+  </p>
+</div>
+```
+
+**Non-Active Section Header:**
+```tsx
+<div className="p-4">
+  <h3 className="text-lg font-bold text-gray-600">
+    {section.title}
+  </h3>
+  
+  <span className="bg-gray-400 text-white">
+    LOCKED
+  </span>
+  
+  <p className="text-sm text-gray-600">
+    (0 / 3 Complete)
+  </p>
+</div>
+```
+
+**Key Differences:**
+- Padding: `p-4` → `p-6` (active only)
+- Background: None → `bg-gradient-to-r from-blue-50 to-blue-100` (active only)
+- Title size: `text-lg` → `text-2xl` (active only)
+- Badge color: `bg-blue-100` → `bg-blue-600 text-white` (stronger)
+- **NEW:** "🟦 Active Work Section" indicator
+- **NEW:** Improved microcopy with exact count
+
+---
+
+**COMPONENT 3 - Reduced Non-Active Visual Noise**
+
+**Locked Sections:**
+
+**Before:**
+```tsx
+opacity-60
+```
+
+**After:**
+```tsx
+opacity-40  // Even more faded
+```
+
+**Complete Sections - Compact Summary:**
+
+**Before:**
+```tsx
+<p>(3 / 3 Complete)</p>
+```
+
+**After:**
+```tsx
+<p>✓ Core Engineering Documents (3/3)</p>
+```
+
+**Benefits:**
+- Locked sections fade into background (don't compete for attention)
+- Complete sections show concise summary (less visual clutter)
+- Eye naturally drawn to active section (only high contrast area)
+
+---
+
+**COMPONENT 4 - First Incomplete Document Highlight**
+
+**Logic:**
+```typescript
+const isFirstIncomplete = sectionActive && doc.status === 'missing' && 
+  sectionDocs.findIndex(d => d.status === 'missing') === docIdx;
+```
+
+**Styling:**
+```tsx
+className={
+  doc.status === 'ready'
+    ? 'border-green-300 bg-green-50'
+    : isFirstIncomplete
+    ? 'border-2 border-blue-400 bg-blue-50 shadow-md'  // HIGHLIGHTED
+    : 'border-gray-300 bg-white'
+}
+```
+
+**Result:**
+- First incomplete document in active section gets blue glow
+- Subtle guidance to operator ("start here")
+- Still allows freedom (can click any document)
+- Visual hierarchy: highlighted > incomplete > complete
+
+---
+
+**COMPONENT 5 - Microcopy Improvements**
+
+**Before (Generic):**
+```
+"Upload or create any required document"
+```
+
+**After (Specific):**
+```typescript
+Complete any of the remaining {progress.total - progress.complete} 
+document{progress.total - progress.complete !== 1 ? 's' : ''} below
+```
+
+**Examples:**
+- "Complete any of the remaining 2 documents below"
+- "Complete any of the remaining 1 document below"
+- Dynamic pluralization
+- Exact count (no guessing)
+
+---
+
+**COMPONENT 6 - Enhanced Section Content Padding**
+
+**Before:**
+```tsx
+<div className="p-4 space-y-4">
+```
+
+**After:**
+```tsx
+<div className={`space-y-4 ${sectionActive ? 'p-8' : 'p-4'}`}>
+```
+
+**Benefit:**
+- Active section has more breathing room (`p-8`)
+- Documents feel less cramped
+- Reinforces visual dominance
+- Non-active sections stay compact (`p-4`)
+
+---
+
+**COMPONENT 7 - Logging**
+
+Added minimal UX polish logging:
+
+```typescript
+if (sectionActive) {
+  console.log('🎯 UX POLISH ACTIVE SECTION', section.id);
+}
+```
+
+**Logs:**
+```
+🎯 UX POLISH ACTIVE SECTION core_engineering
+```
+
+---
+
+**Visual Hierarchy Summary:**
+
+**Level 1 (MOST PROMINENT):**
+- CurrentTaskBanner: Gradient blue background, white text, large CTA button
+- Active section header: Gradient background, text-2xl, blue badge
+
+**Level 2 (SECONDARY):**
+- First incomplete document in active section: Blue border-2, blue background
+- Other incomplete documents in active section: Gray border
+
+**Level 3 (TERTIARY):**
+- Complete sections: Green background, compact summary
+- Complete documents: Green background
+
+**Level 4 (MINIMAL):**
+- Locked sections: opacity-40, collapsed
+- Non-active content: Faded, small text
+
+---
+
+**Success Criteria Met:**
+
+- ✅ User sees EXACT action immediately (CurrentTaskBanner CTA)
+- ✅ Eye drawn to one location instantly (active section dominates)
+- ✅ Completing work feels rewarding (green feedback, section unlock)
+- ✅ No confusion about next step (highlighted first incomplete doc)
+- ✅ UI feels like guided system, not a form (command center approach)
+- ✅ No added complexity (polish only, no new features)
+- ✅ Correct behavior feels obvious (visual hierarchy guides)
+
+---
+
+**User Experience Flow:**
+
+**Scenario: Operator enters Documentation Phase**
+
+1. **Eyes immediately drawn to:**
+   - CurrentTaskBanner (gradient blue, white text, largest element)
+   - Reads: "🎯 CURRENT TASK: Complete: Core Engineering Documents"
+   - Sees: Large white button "Upload Ballooned Drawing"
+
+2. **Scans down:**
+   - Core Engineering section: **Bright blue header** with "🟦 Active Work Section"
+   - Process Documentation: **Faded gray** (opacity-40)
+   - Supporting Documentation: **Faded gray** (opacity-40)
+
+3. **Within active section:**
+   - Sees: "Complete any of the remaining 3 documents below"
+   - First document (Ballooned Drawing): **Blue highlighted border**
+   - Other documents: Normal gray borders
+
+4. **Action taken:**
+   - Clicks "Upload" on ballooned drawing
+   - Uploads file
+   - Document card turns **green**
+   - Section progress updates: "(1 / 3 Complete)"
+
+5. **Continues:**
+   - Next incomplete document auto-highlights
+   - Works through section
+   - When section complete: Section turns **green**, next section **unlocks blue**
+
+---
+
+**Before/After Comparison:**
+
+| Aspect | Before 3H.4 | After 3H.4 |
+|--------|-------------|------------|
+| CurrentTaskBanner | Passive info display | Command center with CTA |
+| Banner Background | Light blue-50 | Gradient blue-600 to blue-700 |
+| Banner Text | Dark blue | **White** (high contrast) |
+| Primary Action | None | Large white CTA button |
+| Active Section Header | Blue border | Blue border + gradient bg + indicator |
+| Section Title Size | text-lg | text-2xl (active) |
+| Active Section Padding | p-4 | p-8 |
+| Locked Section Opacity | 60% | 40% (more faded) |
+| First Incomplete Doc | No highlight | Blue border + shadow |
+| Microcopy | Generic | Specific with count |
+| Complete Section Summary | Progress only | ✓ Title (3/3) |
+
+---
+
+**Benefits:**
+
+**For Operators:**
+- Immediate clarity (no reading required)
+- One obvious next action (CTA button)
+- Visual guidance (highlights, dominance)
+- Satisfying feedback (green transitions)
+- Reduced cognitive load (clear hierarchy)
+
+**For System:**
+- No logic changes (UI polish only)
+- Maintains all existing functionality
+- Easy to understand visual rules
+- Consistent design language
+
+**For Business:**
+- Faster operator training (self-explanatory)
+- Reduced errors (guided workflow)
+- Higher completion rates (clear path)
+- Better user satisfaction (feels polished)
+
+---
+
+**Files Modified:**
+- Modified: `src/features/ppap/components/CurrentTaskBanner.tsx` (+20 lines, command center upgrade)
+- Modified: `src/features/ppap/components/DocumentationForm.tsx` (+60 lines, visual dominance)
+- Documented: `docs/BUILD_LEDGER.md` (Phase 3H.4 entry)
+
+**Total Changes:**
+- 0 backend changes
+- 0 logic changes  
+- UI polish ONLY
+
+**Code Quality:**
+- ✅ TypeScript compilation successful
+- ✅ No lint errors
+- ✅ Clean visual hierarchy
+- ✅ Consistent design system
+- ✅ Accessibility maintained
+
+---
+
+**Design Principles Applied:**
+
+**Visual Hierarchy:**
+- Size: Larger = more important (text-2xl vs text-lg)
+- Color: Higher contrast = more important (white on blue vs gray)
+- Shadow: Stronger shadow = more important (shadow-lg vs none)
+- Opacity: Lower opacity = less important (40% vs 100%)
+
+**Progressive Disclosure:**
+- Active section: Fully expanded, all details visible
+- Complete sections: Collapsible, summary mode
+- Locked sections: Collapsed, minimal preview
+
+**Action-Oriented Design:**
+- Primary CTA button (white, large, prominent)
+- Highlighted first action (blue glow)
+- Clear next step indicator
+- Specific action labels
+
+**Feedback & Reward:**
+- Green = success (completed documents, sections)
+- Blue = active (current work area)
+- Gray = inactive (future or locked)
+- Visual transitions create satisfaction
+
+---
+
+**Technical Notes:**
+
+**Why Gradient Background?**
+- Creates visual depth
+- More eye-catching than flat color
+- Modern, polished appearance
+- Signals importance
+
+**Why White CTA Button?**
+- Maximum contrast against blue gradient
+- Universally recognized as primary action
+- Stands out without being jarring
+- Familiar pattern from web conventions
+
+**Why opacity-40 for Locked?**
+- Fades into background without disappearing
+- Still visible for context
+- Doesn't compete for attention
+- Clear visual hierarchy
+
+**Why Highlight First Incomplete?**
+- Gentle guidance without forcing
+- Maintains operator autonomy
+- Reduces decision paralysis
+- Visual suggestion, not requirement
+
+---
+
 ## 2026-03-25 20:35 CT - Phase 3H.3 - Soft-Gated Document Workflow with Section-Based Active Work Zone Complete
 
 - Summary: Transformed documentation workflow from strict linear gating to section-based soft gating, allowing operator flexibility within structured boundaries

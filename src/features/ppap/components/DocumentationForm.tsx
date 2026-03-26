@@ -722,23 +722,41 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                 const isCollapsed = collapsedSections.has(section.id);
                 const sectionDocs = documents.filter(doc => section.documents.includes(doc.id));
 
+                // Phase 3H.4: UX Polish logging
+                if (sectionActive) {
+                  console.log('🎯 UX POLISH ACTIVE SECTION', section.id);
+                }
+
                 return (
                   <div
                     key={section.id}
                     className={`border rounded-lg transition-all ${
                       sectionActive
-                        ? 'border-2 border-blue-400 bg-white shadow-md'
+                        ? 'border-2 border-blue-500 bg-white shadow-lg'
                         : sectionComplete
                         ? 'border border-green-300 bg-green-50'
-                        : 'border border-gray-300 bg-gray-50 opacity-60'
+                        : 'border border-gray-300 bg-gray-50 opacity-40'
                     }`}
                   >
-                    {/* Section Header */}
-                    <div className="p-4 border-b border-gray-200">
+                    {/* Phase 3H.4: Enhanced Section Header */}
+                    <div className={`border-b border-gray-200 ${
+                      sectionActive ? 'p-6 bg-gradient-to-r from-blue-50 to-blue-100' : 'p-4'
+                    }`}>
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
+                          {/* Phase 3H.4: Active Work Section Indicator */}
+                          {sectionActive && (
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-lg">🟦</span>
+                              <p className="text-xs font-bold text-blue-700 uppercase tracking-wider">
+                                Active Work Section
+                              </p>
+                            </div>
+                          )}
                           <div className="flex items-center gap-3 mb-1">
-                            <h3 className={`text-lg font-bold ${
+                            <h3 className={`${
+                              sectionActive ? 'text-2xl' : 'text-lg'
+                            } font-bold ${
                               sectionActive ? 'text-blue-900' : sectionComplete ? 'text-green-900' : 'text-gray-600'
                             }`}>
                               {section.title}
@@ -746,18 +764,27 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                             <span
                               className={`px-2 py-0.5 text-xs font-bold uppercase rounded ${
                                 sectionActive
-                                  ? 'bg-blue-100 text-blue-800'
+                                  ? 'bg-blue-600 text-white'
                                   : sectionComplete
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-gray-100 text-gray-600'
+                                  ? 'bg-green-600 text-white'
+                                  : 'bg-gray-400 text-white'
                               }`}
                             >
-                              {sectionActive ? 'ACTIVE SECTION' : sectionComplete ? '✓ Complete' : 'LOCKED'}
+                              {sectionActive ? 'ACTIVE' : sectionComplete ? '✓ COMPLETE' : 'LOCKED'}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-600">
-                            ({progress.complete} / {progress.total} Complete)
-                          </p>
+                          {/* Phase 3H.4: Compact summary for complete sections */}
+                          {!sectionActive && (
+                            <p className="text-sm text-gray-600">
+                              {sectionComplete ? `✓ ${section.title} (${progress.total}/${progress.total})` : `(${progress.complete} / ${progress.total} Complete)`}
+                            </p>
+                          )}
+                          {/* Phase 3H.4: Improved microcopy for active section */}
+                          {sectionActive && (
+                            <p className="text-sm text-blue-700 mt-1 font-medium">
+                              Complete any of the remaining {progress.total - progress.complete} document{progress.total - progress.complete !== 1 ? 's' : ''} below
+                            </p>
+                          )}
                         </div>
                         
                         {/* Collapse Toggle (only for complete or locked sections) */}
@@ -772,15 +799,24 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                       </div>
                     </div>
 
-                    {/* Section Content */}
+                    {/* Phase 3H.4: Enhanced Section Content */}
                     {(!isCollapsed || sectionActive) && (
-                      <div className="p-4 space-y-4">
-                        {sectionDocs.map((doc) => (
+                      <div className={`space-y-4 ${
+                        sectionActive ? 'p-8' : 'p-4'
+                      }`}>
+                        {sectionDocs.map((doc, docIdx) => {
+                          // Phase 3H.4: Highlight first incomplete document in active section
+                          const isFirstIncomplete = sectionActive && doc.status === 'missing' && 
+                            sectionDocs.findIndex(d => d.status === 'missing') === docIdx;
+                          
+                          return (
                     <div
                       key={doc.id}
-                      className={`border rounded-lg p-4 ${
+                      className={`border rounded-lg p-4 transition-all ${
                         doc.status === 'ready'
                           ? 'border-green-300 bg-green-50'
+                          : isFirstIncomplete
+                          ? 'border-2 border-blue-400 bg-blue-50 shadow-md'
                           : 'border-gray-300 bg-white'
                       }`}
                     >
@@ -877,7 +913,8 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                         </div>
                       )}
                     </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
