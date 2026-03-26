@@ -17,6 +17,11 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
   // Phase 3H.9: Sanitize plant value before write (blocks invalid plants)
   const sanitizedPlant = sanitizePlant(input.plant);
   
+  // Phase 3H.12: Explicit error if plant validation fails
+  if (sanitizedPlant === null && input.plant) {
+    throw new Error('Invalid plant value. Must be one of: Ft. Smith, Ball Ground, Warner Robins');
+  }
+  
   const { data, error } = await supabase
     .from('ppap_records')
     .insert({

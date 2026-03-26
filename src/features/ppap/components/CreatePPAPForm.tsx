@@ -7,6 +7,7 @@ import { uploadPPAPDocument } from '@/src/features/ppap/utils/uploadFile';
 import { logEvent } from '@/src/features/events/mutations';
 import { supabase } from '@/src/lib/supabaseClient';
 import type { CreatePPAPInput, PPAPType } from '@/src/types/database.types';
+import { VALID_PLANTS } from '../utils/plantValidation';
 
 interface UploadedFile {
   file_name: string;
@@ -36,9 +37,21 @@ export function CreatePPAPForm() {
     setError(null);
 
     try {
+      // Phase 3H.12: Validate all required fields including plant
       if (!formData.ppap_number || !formData.part_number || !formData.customer_name || !formData.request_date || !formData.ppap_type) {
         throw new Error('Please fill in all required fields');
       }
+      
+      if (!formData.plant) {
+        throw new Error('Please select a production plant');
+      }
+      
+      // Phase 3H.12: Log creation input
+      console.log('🆕 CREATE PPAP INPUT', {
+        partNumber: formData.part_number,
+        customer: formData.customer_name,
+        plant: formData.plant,
+      });
 
       const ppap = await createPPAP(formData as CreatePPAPInput);
 
@@ -189,6 +202,26 @@ export function CreatePPAPForm() {
               <option value="NPI">New Product Introduction (NPI)</option>
               <option value="CHANGE">Engineering Change / Modification</option>
               <option value="MAINTENANCE">Production / Maintenance Update</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="plant" className="block text-sm font-semibold text-gray-700 mb-2">
+              Production Plant <span className="text-red-600">*</span>
+            </label>
+            <select
+              id="plant"
+              required
+              className="w-full px-4 py-3 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              value={formData.plant || ''}
+              onChange={(e) => handleChange('plant', e.target.value)}
+            >
+              <option value="">Select Production Plant</option>
+              {VALID_PLANTS.map((plant) => (
+                <option key={plant} value={plant}>
+                  {plant}
+                </option>
+              ))}
             </select>
           </div>
 
