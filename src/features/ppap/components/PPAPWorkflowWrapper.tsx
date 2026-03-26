@@ -183,20 +183,23 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
 
       {selectedPhase === 'DOCUMENTATION' && (
         <div ref={activePhaseRef}>
-          {/* Phase 3H.2: Validation panel for pre-ack, collapsed for post-ack */}
-          <PPAPValidationPanelDB
+          {/* Phase 3H.13: Document Execution FIRST (action before context) */}
+          <DocumentationForm
             ppapId={ppap.id}
+            partNumber={ppap.part_number || ''}
+            isReadOnly={false}
             currentPhase={currentPhase}
-            ppapStatus={ppap.status}
           />
           
-          {/* Phase 3H.2: Documentation form */}
-          <div className="mt-3">
-            <DocumentationForm
+          {/* Phase 3H.13: Validation Status SECOND (context after action) */}
+          <div className="mt-6">
+            <h3 className="text-sm font-semibold text-gray-500 mb-2">
+              Validation Status
+            </h3>
+            <PPAPValidationPanelDB
               ppapId={ppap.id}
-              partNumber={ppap.part_number || ''}
-              isReadOnly={false}
               currentPhase={currentPhase}
+              ppapStatus={ppap.status}
             />
           </div>
         </div>
