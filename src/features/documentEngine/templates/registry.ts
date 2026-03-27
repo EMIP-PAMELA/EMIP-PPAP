@@ -11,11 +11,13 @@ import { TemplateId, TemplateDefinition } from './types';
 import { PSW_TEMPLATE } from './pswTemplate';
 import { PROCESS_FLOW_TEMPLATE } from './processFlowTemplate';
 import { PFMEA_TEMPLATE } from './pfmeaTemplate';
+import { CONTROL_PLAN_TEMPLATE } from './controlPlanTemplate';
 
 const templates: Record<TemplateId, TemplateDefinition> = {
   'PSW': PSW_TEMPLATE,
   'PROCESS_FLOW': PROCESS_FLOW_TEMPLATE,
-  'PFMEA': PFMEA_TEMPLATE
+  'PFMEA': PFMEA_TEMPLATE,
+  'CONTROL_PLAN': CONTROL_PLAN_TEMPLATE
 };
 
 /**

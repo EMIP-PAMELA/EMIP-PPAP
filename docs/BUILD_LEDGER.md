@@ -4,6 +4,114 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 13:52 CT - Phase 9.3 - Control Plan Template (PFMEA-driven)
+
+- Summary: Completed the three-document chain by implementing Control Plan driven from PFMEA, with workbook-aligned structure and editable control fields
+- Files created:
+  - `src/features/documentEngine/models/controlPlan.ts` — ControlPlanRow and ControlPlanModel data model
+  - `src/features/documentEngine/mapping/pfmeaToControlPlan.ts` — PFMEAModel → ControlPlanModel mapping
+  - `src/features/documentEngine/templates/controlPlanTemplate.ts` — CONTROL_PLAN template definition
+- Files modified:
+  - `src/features/documentEngine/templates/types.ts` — Extended TemplateId with 'CONTROL_PLAN'
+  - `src/features/documentEngine/templates/registry.ts` — Registered CONTROL_PLAN_TEMPLATE
+- Impact: Users can generate a full Control Plan from BOM, trace through Process Flow and PFMEA, and edit all control fields
+- Objective: Third linked document in chain; completes Process Flow → PFMEA → Control Plan
+
+---
+
+**Architecture Layers:**
+
+```
+NormalizedBOM
+  ↓ bomToProcessFlow
+ProcessFlowModel
+  ↓ processFlowToPFMEA
+PFMEAModel
+  ↓ pfmeaToControlPlan
+ControlPlanModel
+  ↓ controlPlanTemplate.generate()
+DocumentDraft { fields: { partNumber, rows: ControlPlanRow[] } }
+  ↓ DocumentEditor (existing schema-driven editable table)
+UI
+```
+
+---
+
+**Mapping Rules (pfmeaToControlPlan):**
+
+- One `ControlPlanRow` per `PFMEARow` (order preserved)
+- Carried from PFMEA for traceability: `stepNumber`, `operation`, `characteristic` (← `output`), `failureMode`, `cause`
+- Row `id` = `"${stepNumber}-${index}"` (stable, deterministic)
+- Control fields initialized to `null`: `preventionControl`, `detectionControl`, `measurementMethod`, `sampleSize`, `frequency`, `reactionPlan`
+
+---
+
+**Control Plan Field Schema:**
+
+| Key | Label | Type | Editable | Source |
+|---|---|---|---|---|
+| `stepNumber` | Step | text | ❌ | PFMEA |
+| `operation` | Operation | text | ❌ | PFMEA |
+| `characteristic` | Characteristic | text | ❌ | PFMEA output |
+| `failureMode` | Failure Mode | text | ❌ | PFMEA |
+| `cause` | Cause | text | ❌ | PFMEA |
+| `preventionControl` | Prevention Control | text | ✅ | User |
+| `detectionControl` | Detection Control | text | ✅ | User |
+| `measurementMethod` | Measurement Method | text | ✅ | User |
+| `sampleSize` | Sample Size | text | ✅ | User |
+| `frequency` | Frequency | text | ✅ | User |
+| `reactionPlan` | Reaction Plan | text | ✅ | User |
+
+---
+
+**UI — No Changes Required:**
+
+The `DocumentEditor` editable table system (introduced in Phase 9.2 via `rowFields`) already handles all Control Plan editing. The existing generic rendering path is reused without modification.
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ CONTROL_PLAN appears in template selector
+✅ Rows generated from PFMEA (one row per PFMEA row)
+✅ PFMEA traceability preserved (failureMode, cause carried forward)
+✅ Editable control fields work via existing table system
+✅ No architecture violations
+✅ TypeScript compiles cleanly
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to PFMEA or Process Flow templates
+- NO modifications to parser or normalizer
+- NO Control Plan logic embedded in DocumentEditor
+- NO workflow or persistence logic introduced
+
+---
+
+**Complete Document Chain Established:**
+
+```
+Process Flow  (Phase 9.1)
+    ↓
+PFMEA         (Phase 9.2)
+    ↓
+Control Plan  (Phase 9.3)
+```
+
+All three documents share a single BOM as source; each layer adds traceability and user-editable fields while preserving strict separation.
+
+---
+
 ## 2026-03-27 13:33 CT - Phase 9.2 - PFMEA Template (Process Flow-driven)
 
 - Summary: Implemented first dependent document — PFMEA driven from Process Flow, with editable risk fields and live RPN calculation
