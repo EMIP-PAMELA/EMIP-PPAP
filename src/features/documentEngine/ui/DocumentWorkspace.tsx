@@ -120,10 +120,31 @@ export function DocumentWorkspace() {
       setError(null);
       console.log('[DocumentWorkspace] Generating PDF...');
       
-      // Dynamic import of client-only wrapper to prevent SSR bundling
-      const { generateAndDownloadPDF } = await import('../export/pdfClient');
+      // NOTE:
+      // Using eval-based dynamic import to prevent Turbopack from
+      // statically analyzing and bundling pdfGenerator into SSR.
+      // This ensures PDF libraries (jsPDF/fflate) remain client-only.
+      const generateModule = await (0, eval)(
+        "import('../export/pdfGenerator')"
+      );
       
-      await generateAndDownloadPDF(editableDraft, selectedTemplate);
+      const { generatePDF } = generateModule;
+      
+      const templateModule = await import('../templates/registry');
+      const template = templateModule.getTemplate(selectedTemplate);
+      
+      const pdfBytes = await generatePDF(editableDraft, template);
+      
+      const arrayBuffer = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength) as ArrayBuffer;
+      const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedTemplate}-${editableDraft.fields.partNumber || 'document'}.pdf`;
+      a.click();
+      
+      URL.revokeObjectURL(url);
       
       console.log('[DocumentWorkspace] PDF downloaded');
     } catch (err) {
