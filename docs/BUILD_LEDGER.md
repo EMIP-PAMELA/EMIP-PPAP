@@ -4,6 +4,444 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-26 21:55 CT - Phase 5 - Editable Draft Layer
+
+- Summary: Implemented editable draft layer enabling field-level editing with immutable state management and change tracking
+- Files created:
+  - `src/features/documentEngine/ui/DocumentEditor.tsx` - Editable document interface replacing DocumentPreview
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` - Added editableDraft state, reset functionality, and change detection
+- Impact: Users can now edit generated document drafts with full traceability and reset capability
+- Objective: Enable document editing as UI-controlled overlay without modifying engine logic
+
+**Context:**
+
+Phase 5 introduces an editable draft layer to the Document Workspace, maintaining strict separation between engine-generated output and user-controlled edits.
+
+This phase implements a critical architectural pattern: the generated draft (engine output) remains immutable, while an editable copy allows user modifications without corrupting the source data.
+
+**Problem Statement:**
+
+**Before Phase 5:**
+- Generated drafts were read-only
+- No way to modify field values after generation
+- Users had to regenerate entire draft to change values
+- No distinction between source data and working state
+
+**After Phase 5:**
+- Two-layer draft system: generated (immutable) + editable (working copy)
+- Field-level editing for all document fields
+- Immediate preview of changes
+- Reset to generated functionality
+- Change indicator shows modified state
+- Full separation: engine produces, UI edits
+
+---
+
+**Implementation Details:**
+
+**1. Dual-State Architecture**
+
+**State Management in DocumentWorkspace:**
+```typescript
+const [generatedDraft, setGeneratedDraft] = useState<DocumentDraft | null>(null);
+const [editableDraft, setEditableDraft] = useState<DocumentDraft | null>(null);
+```
+
+**Purpose:**
+- `generatedDraft` - Immutable source from engine (never modified)
+- `editableDraft` - Mutable working copy (user edits)
+
+**On Generation:**
+```typescript
+const draft = generateDocumentDraft(selectedTemplate, { bom, externalData });
+setGeneratedDraft(draft);
+
+// Create deep copy using structuredClone
+const editableCopy = structuredClone(draft);
+setEditableDraft(editableCopy);
+```
+
+**Why structuredClone:**
+- Native browser API for deep cloning
+- Handles nested objects correctly
+- No external dependencies
+- Better than `JSON.parse(JSON.stringify())` for complex objects
+
+**2. DocumentEditor Component**
+
+Replaced read-only DocumentPreview with editable DocumentEditor.
+
+**Props Interface:**
+```typescript
+interface DocumentEditorProps {
+  draft: DocumentDraft;           // Editable draft to display
+  onFieldChange: (key: string, value: any) => void;  // Field update handler
+  onReset: () => void;            // Reset to generated
+  hasChanges: boolean;            // Modified state indicator
+}
+```
+
+**Features:**
+- **Metadata Section:** Read-only (generatedAt, bomMasterPartNumber, templateVersion)
+- **Fields Section:** All fields editable with input controls
+- **Type-aware inputs:** Number fields use `type="number"`, text fields use `type="text"`
+- **Change indicator:** Yellow "Modified" badge when `hasChanges === true`
+- **Reset button:** "Reset to Generated" appears when changes exist
+
+**3. Immutable State Updates**
+
+**Field Change Handler (Immutable Pattern):**
+```typescript
+const handleFieldChange = (fieldKey: string, value: any) => {
+  setEditableDraft(prev => {
+    if (!prev) return prev;
+    return {
+      ...prev,              // Spread existing draft
+      fields: {
+        ...prev.fields,     // Spread existing fields
+        [fieldKey]: value   // Update single field
+      }
+    };
+  });
+};
+```
+
+**Why Immutable:**
+- React detects changes correctly
+- No accidental mutations
+- Predictable state updates
+- Easier debugging
+
+**Type-aware Value Parsing:**
+```typescript
+const newValue = typeof originalValue === 'number' 
+  ? parseFloat(inputValue) || 0 
+  : inputValue;
+```
+
+**4. Reset Functionality**
+
+**Two Reset Functions:**
+
+**Reset to Generated (keeps context):**
+```typescript
+const handleResetToGenerated = () => {
+  if (generatedDraft) {
+    setEditableDraft(structuredClone(generatedDraft));
+    console.log('[DocumentWorkspace] Draft reset to generated version');
+  }
+};
+```
+- Discards user edits
+- Restores to engine output
+- Stays in edit mode
+- Useful for "undo all changes"
+
+**Reset Workspace (full reset):**
+```typescript
+const handleResetWorkspace = () => {
+  setCurrentStep('upload');
+  setRawText(null);
+  setNormalizedBOM(null);
+  setSelectedTemplate(null);
+  setGeneratedDraft(null);
+  setEditableDraft(null);
+  setError(null);
+};
+```
+- Clears all state
+- Returns to upload step
+- Useful for "start new document"
+
+**5. Change Detection**
+
+**Comparison Function:**
+```typescript
+const hasChanges = () => {
+  if (!generatedDraft || !editableDraft) return false;
+  return JSON.stringify(generatedDraft.fields) !== JSON.stringify(editableDraft.fields);
+};
+```
+
+**Why JSON.stringify:**
+- Simple deep comparison
+- Works for all field types (string, number)
+- No external dependencies
+- Performant for small objects
+
+**Visual Indicators:**
+- Yellow "Modified" badge when `hasChanges() === true`
+- "Reset to Generated" button only shows when changes exist
+- Clear visual feedback for user
+
+**6. Workflow Update**
+
+**Step Progression Changed:**
+```typescript
+// Before Phase 5:
+'upload' → 'select-template' → 'input-data' → 'preview'
+
+// After Phase 5:
+'upload' → 'select-template' → 'input-data' → 'edit'
+```
+
+**Step 4 Label Updated:**
+- Before: "Preview Document"
+- After: "Edit Document"
+
+**Reflects New Capability:**
+- Step is now interactive, not read-only
+- Sets user expectation correctly
+
+---
+
+**Architectural Compliance:**
+
+**✅ Engine Boundary Maintained:**
+- Editing does NOT call parser
+- Editing does NOT call normalizer
+- Editing does NOT call template generator
+- Editing ONLY modifies UI state
+
+**✅ Immutable Source Data:**
+- `generatedDraft` NEVER modified after creation
+- Engine output remains pristine
+- Can always compare to original
+
+**✅ UI-Controlled Editing:**
+- All edits happen in UI layer
+- No hidden recalculation logic
+- No automatic field derivation
+- User has full control
+
+**✅ No PPAP Coupling:**
+- Editing works in standalone mode
+- No dependencies on PPAP state
+- No workflow assumptions
+
+**✅ No Database Persistence:**
+- Edits exist only in memory
+- No save/load functionality (future)
+- State lost on page refresh (expected)
+
+**✅ Clean Separation:**
+```
+Engine Layer (Immutable)
+    ↓ produces
+Generated Draft (Source)
+    ↓ cloned to
+Editable Draft (Working Copy)
+    ↓ modified by
+UI Layer (User Edits)
+```
+
+---
+
+**User Experience:**
+
+**Editing Workflow:**
+1. Generate document draft (engine produces `generatedDraft`)
+2. System creates `editableDraft` (deep copy)
+3. User edits any field in UI
+4. Changes reflected immediately in preview
+5. "Modified" badge appears
+6. User can:
+   - Continue editing
+   - Reset to generated (discard changes)
+   - Start new document (full reset)
+
+**Visual Feedback:**
+- **Before editing:** Clean preview, no badges
+- **After editing:** Yellow "Modified" badge, "Reset to Generated" button appears
+- **After reset:** Badge disappears, draft matches generated
+
+**Field Editing:**
+- Click any field value
+- Type new value
+- See change immediately
+- No "save" button needed (state updates automatically)
+
+**Example Edit Flow:**
+```
+Generated: customerName = "Trane Technologies"
+↓
+User edits: customerName = "Acme Corporation"
+↓
+Modified badge appears
+↓
+User clicks "Reset to Generated"
+↓
+customerName = "Trane Technologies" (restored)
+↓
+Modified badge disappears
+```
+
+---
+
+**Before/After Comparison:**
+
+**Before Phase 5 (Read-Only Preview):**
+```typescript
+<DocumentPreview draft={generatedDraft} />
+```
+- Fields displayed as read-only text
+- No editing capability
+- No change tracking
+- Single state layer
+
+**After Phase 5 (Editable Layer):**
+```typescript
+<DocumentEditor 
+  draft={editableDraft}
+  onFieldChange={handleFieldChange}
+  onReset={handleResetToGenerated}
+  hasChanges={hasChanges()}
+/>
+```
+- Fields displayed as editable inputs
+- Real-time editing
+- Change tracking with visual indicator
+- Dual state layer (generated + editable)
+- Reset capability
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to parser (`bomParser.ts`)
+- NO modifications to normalizer (`bomNormalizer.ts`)
+- NO modifications to template system (`registry.ts`, `pswTemplate.ts`)
+- NO modifications to engine core (`documentGenerator.ts`)
+- NO database persistence added
+- NO PDF export added
+- NO PPAP integration
+- NO automatic field derivation
+- NO hidden recalculation logic
+
+---
+
+**Build Verification:**
+
+TypeScript compilation: ✅ PASSED
+```bash
+npx tsc --noEmit --skipLibCheck
+Exit code: 0
+```
+
+All files compile cleanly:
+- DocumentEditor component
+- Updated DocumentWorkspace
+- No type errors
+
+---
+
+**Success Criteria Met:**
+
+✅ User can generate draft and edit all fields  
+✅ Edits update UI immediately  
+✅ Generated draft remains unchanged (immutable)  
+✅ Reset functionality works (reset to generated)  
+✅ Change indicator shows modified state  
+✅ No architecture violations (engine untouched)  
+✅ Immutable state updates (no mutations)  
+✅ Code compiles cleanly  
+✅ Clear separation of concerns  
+
+---
+
+**Technical Notes:**
+
+**Why Deep Copy is Critical:**
+
+**Bad (shallow copy):**
+```typescript
+setEditableDraft({ ...generatedDraft }); // ❌ Fields object still shared!
+```
+
+**Good (deep copy):**
+```typescript
+setEditableDraft(structuredClone(generatedDraft)); // ✅ Fully independent
+```
+
+**Prevents:**
+- Accidental mutation of generatedDraft
+- Reference sharing bugs
+- Incorrect change detection
+
+**Field Update Pattern:**
+
+**Bad (direct mutation):**
+```typescript
+editableDraft.fields[key] = value; // ❌ Mutates state directly
+```
+
+**Good (immutable update):**
+```typescript
+setEditableDraft(prev => ({
+  ...prev,
+  fields: { ...prev.fields, [key]: value }
+})); // ✅ Creates new object
+```
+
+**Benefits:**
+- React re-renders correctly
+- Time-travel debugging possible
+- State history trackable
+
+---
+
+**Future Enhancements (Not in This Phase):**
+
+1. **Validation:**
+   - Field-level validation rules
+   - Required field enforcement
+   - Format validation (dates, numbers)
+
+2. **Persistence:**
+   - Save draft to local storage
+   - Save draft to database
+   - Resume editing later
+
+3. **Undo/Redo:**
+   - Track edit history
+   - Undo last change
+   - Redo undone change
+
+4. **Export:**
+   - Export to PDF
+   - Export to JSON
+   - Export to Excel
+
+5. **Comparison View:**
+   - Side-by-side: generated vs edited
+   - Highlight changed fields
+   - Show diff summary
+
+---
+
+**Next Recommended Phase:**
+
+**Phase 6A - Document Persistence**
+
+Add save/load capability:
+- Save editable draft to database
+- Load saved drafts
+- Draft versioning
+- Draft metadata (created, modified, author)
+
+**OR**
+
+**Phase 6B - PDF Export**
+
+Add export functionality:
+- Generate PDF from editable draft
+- PSW template layout
+- Download capability
+- Print functionality
+
+---
+
 ## 2026-03-26 21:46 CT - Phase 4 - Standalone Document Workspace
 
 - Summary: Implemented standalone document workspace UI enabling end-to-end BOM upload, template selection, and document generation

@@ -9,9 +9,9 @@ import { TemplateId, DocumentDraft } from '../templates/types';
 import { BOMUpload } from './BOMUpload';
 import { TemplateSelector } from './TemplateSelector';
 import { TemplateInputForm } from './TemplateInputForm';
-import { DocumentPreview } from './DocumentPreview';
+import { DocumentEditor } from './DocumentEditor';
 
-type WorkflowStep = 'upload' | 'select-template' | 'input-data' | 'preview';
+type WorkflowStep = 'upload' | 'select-template' | 'input-data' | 'edit';
 
 export function DocumentWorkspace() {
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
@@ -19,6 +19,7 @@ export function DocumentWorkspace() {
   const [normalizedBOM, setNormalizedBOM] = useState<NormalizedBOM | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateId | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<DocumentDraft | null>(null);
+  const [editableDraft, setEditableDraft] = useState<DocumentDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleBOMProcessed = (text: string) => {
@@ -61,29 +62,61 @@ export function DocumentWorkspace() {
       });
 
       setGeneratedDraft(draft);
-      setCurrentStep('preview');
+      
+      // Create editable copy using structuredClone
+      const editableCopy = structuredClone(draft);
+      setEditableDraft(editableCopy);
+      
+      setCurrentStep('edit');
       
       console.log('[DocumentWorkspace] Document draft generated successfully');
+      console.log('[DocumentWorkspace] Editable draft initialized');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate document');
       console.error('[DocumentWorkspace] Error generating document:', err);
     }
   };
 
-  const handleReset = () => {
+  const handleResetWorkspace = () => {
     setCurrentStep('upload');
     setRawText(null);
     setNormalizedBOM(null);
     setSelectedTemplate(null);
     setGeneratedDraft(null);
+    setEditableDraft(null);
     setError(null);
+  };
+
+  const handleResetToGenerated = () => {
+    if (generatedDraft) {
+      setEditableDraft(structuredClone(generatedDraft));
+      console.log('[DocumentWorkspace] Draft reset to generated version');
+    }
+  };
+
+  const handleFieldChange = (fieldKey: string, value: any) => {
+    setEditableDraft(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        fields: {
+          ...prev.fields,
+          [fieldKey]: value
+        }
+      };
+    });
+  };
+
+  const hasChanges = () => {
+    if (!generatedDraft || !editableDraft) return false;
+    return JSON.stringify(generatedDraft.fields) !== JSON.stringify(editableDraft.fields);
   };
 
   const steps = [
     { id: 'upload', label: 'Upload BOM' },
     { id: 'select-template', label: 'Select Template' },
     { id: 'input-data', label: 'Provide Information' },
-    { id: 'preview', label: 'Preview Document' }
+    { id: 'edit', label: 'Edit Document' }
   ];
 
   const currentStepIndex = steps.findIndex(s => s.id === currentStep);
@@ -184,16 +217,21 @@ export function DocumentWorkspace() {
           />
         )}
 
-        {currentStep === 'preview' && generatedDraft && (
-          <DocumentPreview draft={generatedDraft} />
+        {currentStep === 'edit' && editableDraft && generatedDraft && (
+          <DocumentEditor 
+            draft={editableDraft}
+            onFieldChange={handleFieldChange}
+            onReset={handleResetToGenerated}
+            hasChanges={hasChanges()}
+          />
         )}
       </div>
 
       {/* Actions */}
-      {currentStep === 'preview' && (
+      {currentStep === 'edit' && (
         <div className="mt-6 flex gap-4">
           <button
-            onClick={handleReset}
+            onClick={handleResetWorkspace}
             className="flex-1 py-3 px-4 bg-gray-600 text-white rounded-md font-semibold hover:bg-gray-700 transition-colors"
           >
             Start New Document
