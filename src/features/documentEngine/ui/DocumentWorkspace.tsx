@@ -14,12 +14,25 @@ import { DocumentEditor } from './DocumentEditor';
 
 type AppPhase = 'upload' | 'workflow';
 
-const WORKFLOW_STEPS: Array<{ id: TemplateId; label: string }> = [
-  { id: 'PROCESS_FLOW', label: 'Process Flow' },
-  { id: 'PFMEA', label: 'PFMEA' },
-  { id: 'CONTROL_PLAN', label: 'Control Plan' },
-  { id: 'PSW', label: 'PSW' }
+const WORKFLOW_STEPS: Array<{ id: TemplateId; label: string; dependsOn: TemplateId[] }> = [
+  { id: 'PROCESS_FLOW', label: 'Process Flow', dependsOn: [] },
+  { id: 'PFMEA', label: 'PFMEA', dependsOn: ['PROCESS_FLOW'] },
+  { id: 'CONTROL_PLAN', label: 'Control Plan', dependsOn: ['PFMEA'] },
+  { id: 'PSW', label: 'PSW', dependsOn: ['CONTROL_PLAN'] }
 ];
+
+const REGENERATION_SOURCE: Record<string, string> = {
+  PROCESS_FLOW: 'BOM',
+  PFMEA: 'BOM',
+  CONTROL_PLAN: 'PFMEA',
+  PSW: 'BOM'
+};
+
+const DEP_LABEL: Record<string, string> = {
+  PFMEA: 'Derived from Process Flow',
+  CONTROL_PLAN: 'Derived from PFMEA',
+  PSW: 'Derived from Control Plan'
+};
 
 export function DocumentWorkspace() {
   const [appPhase, setAppPhase] = useState<AppPhase>('upload');
@@ -28,6 +41,8 @@ export function DocumentWorkspace() {
   const [documents, setDocuments] = useState<Record<string, DocumentDraft>>({});
   const [editableDocuments, setEditableDocuments] = useState<Record<string, DocumentDraft>>({});
   const [validationResults, setValidationResults] = useState<Record<string, ValidationResult>>({});
+  const [documentTimestamps, setDocumentTimestamps] = useState<Record<string, number>>({});
+  const [regenMessage, setRegenMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleBOMProcessed = (text: string) => {
@@ -51,7 +66,15 @@ export function DocumentWorkspace() {
     if (!normalizedBOM) return;
     try {
       setError(null);
-      console.log(`[DocumentWorkspace] Generating ${stepId}...`);
+      const now = Date.now();
+      const source = REGENERATION_SOURCE[stepId] ?? 'BOM';
+      const stepDef = WORKFLOW_STEPS.find(s => s.id === stepId)!;
+      const label = stepDef.label;
+      const isRegen = !!documents[stepId];
+      const msg = `${isRegen ? 'Regenerating' : 'Generating'} ${label} from ${source}`;
+      setRegenMessage(msg);
+
+      console.log(`[DocumentWorkspace] ${msg}`);
       const draft = generateDocumentDraft(stepId, { bom: normalizedBOM, externalData: {} });
       const editableCopy = structuredClone(draft);
       const template = getTemplate(stepId);
@@ -60,11 +83,13 @@ export function DocumentWorkspace() {
       setDocuments(prev => ({ ...prev, [stepId]: draft }));
       setEditableDocuments(prev => ({ ...prev, [stepId]: editableCopy }));
       setValidationResults(prev => ({ ...prev, [stepId]: validation }));
+      setDocumentTimestamps(prev => ({ ...prev, [stepId]: now }));
       setActiveStep(stepId);
 
       console.log(`[DocumentWorkspace] ${stepId} generated:`, validation.isValid ? 'Valid' : `${validation.errors.length} errors`);
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to generate ${stepId}`);
+      setRegenMessage(null);
       console.error(`[DocumentWorkspace] Error generating ${stepId}:`, err);
     }
   };
@@ -102,6 +127,8 @@ export function DocumentWorkspace() {
     setDocuments({});
     setEditableDocuments({});
     setValidationResults({});
+    setDocumentTimestamps({});
+    setRegenMessage(null);
     setError(null);
   };
 
@@ -145,6 +172,23 @@ export function DocumentWorkspace() {
 
   const currentEditableDraft = activeStep ? editableDocuments[activeStep] ?? null : null;
   const currentValidation = activeStep ? validationResults[activeStep] ?? null : null;
+
+  const isStale = (stepId: string): boolean => {
+    const step = WORKFLOW_STEPS.find(s => s.id === stepId);
+    if (!step || !documents[stepId]) return false;
+    const myTime = documentTimestamps[stepId] ?? 0;
+    return step.dependsOn.some(dep => (documentTimestamps[dep] ?? 0) > myTime);
+  };
+
+  const dependencyStatus = (stepId: string) => {
+    const step = WORKFLOW_STEPS.find(s => s.id === stepId);
+    if (!step || step.dependsOn.length === 0) return [];
+    return step.dependsOn.map(dep => ({
+      step: dep,
+      label: WORKFLOW_STEPS.find(s => s.id === dep)?.label ?? dep,
+      exists: !!documents[dep]
+    }));
+  };
 
   return (
     <div className="max-w-5xl mx-auto py-8 px-4">
@@ -201,6 +245,10 @@ export function DocumentWorkspace() {
                   {WORKFLOW_STEPS.map((step, index) => {
                     const isGenerated = !!documents[step.id];
                     const isActive = activeStep === step.id;
+                    const stale = isStale(step.id);
+                    const deps = dependencyStatus(step.id);
+                    const missingDeps = deps.filter(d => !d.exists);
+                    const depLabel = DEP_LABEL[step.id];
                     return (
                       <div key={step.id}>
                         <button
@@ -208,6 +256,8 @@ export function DocumentWorkspace() {
                           className={`w-full text-left rounded-md px-3 py-2.5 transition-colors ${
                             isActive
                               ? 'bg-blue-600 text-white'
+                              : stale
+                              ? 'bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100'
                               : isGenerated
                               ? 'bg-green-50 text-green-800 border border-green-200 hover:bg-green-100'
                               : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
@@ -217,21 +267,45 @@ export function DocumentWorkspace() {
                             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                               isActive
                                 ? 'bg-white text-blue-600'
+                                : stale
+                                ? 'bg-orange-400 text-white'
                                 : isGenerated
                                 ? 'bg-green-500 text-white'
                                 : 'bg-gray-300 text-gray-600'
                             }`}>
                               {index + 1}
                             </span>
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <div className="font-medium text-sm leading-tight">{step.label}</div>
                               <div className={`text-xs mt-0.5 ${
-                                isActive ? 'text-blue-100' : isGenerated ? 'text-green-600' : 'text-gray-400'
+                                isActive ? 'text-blue-100' : stale ? 'text-orange-600' : isGenerated ? 'text-green-600' : 'text-gray-400'
                               }`}>
-                                {isActive ? 'Active' : isGenerated ? 'Generated' : 'Not Generated'}
+                                {isActive ? 'Active' : stale ? 'May be stale' : isGenerated ? 'Generated' : 'Not Generated'}
                               </div>
+                              {depLabel && (
+                                <div className={`text-xs mt-0.5 ${
+                                  isActive ? 'text-blue-200' : 'text-gray-400'
+                                }`}>
+                                  {depLabel}
+                                </div>
+                              )}
                             </div>
                           </div>
+                          {missingDeps.length > 0 && !isActive && (
+                            <div className="mt-1.5 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
+                              ⚠ Depends on {missingDeps.map(d => d.label).join(', ')} (not yet generated)
+                            </div>
+                          )}
+                          {stale && !isActive && (
+                            <div className="mt-1.5 text-xs text-orange-700 bg-orange-50 rounded px-2 py-1">
+                              ⚠ May be out of sync with {deps.map(d => d.label).join(', ')}
+                            </div>
+                          )}
+                          {!stale && deps.length > 0 && deps.every(d => d.exists) && !isActive && isGenerated && (
+                            <div className="mt-1.5 text-xs text-green-700">
+                              ✓ Based on {deps.map(d => d.label).join(', ')}
+                            </div>
+                          )}
                         </button>
                         {index < WORKFLOW_STEPS.length - 1 && (
                           <div className="ml-5 w-px h-2 bg-gray-200 mx-auto" />
@@ -245,6 +319,14 @@ export function DocumentWorkspace() {
 
             {/* Main Content Area */}
             <div className="flex-1 min-w-0">
+              {/* Regeneration Info Message */}
+              {regenMessage && (
+                <div className="mb-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 flex items-center gap-2">
+                  <span className="text-blue-500 text-sm">ℹ</span>
+                  <span className="text-blue-800 text-sm">{regenMessage}</span>
+                </div>
+              )}
+
               {/* Validation Summary */}
               {currentValidation && (
                 <div className={`mb-4 border rounded-lg p-4 ${

@@ -4,6 +4,171 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 14:39 CT - Phase 13 - Dependency Awareness + Regeneration Logic
+
+- Summary: Added light dependency awareness to workflow steps with visual indicators, regeneration source messaging, and stale detection
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Added dependency metadata, regen messaging, stale detection
+- Impact: Users see document relationships, source data labels, and stale warnings without any workflow blocking
+- Objective: UI orchestration enhancement — non-breaking, non-blocking dependency visibility
+
+---
+
+**Architecture: UI Orchestration Layer Only**
+
+Zero changes to engine, templates, mapping, or validation. All additions are UI metadata and display logic in `DocumentWorkspace.tsx`.
+
+---
+
+**New Constants:**
+
+```typescript
+const WORKFLOW_STEPS = [
+  { id: 'PROCESS_FLOW', label: 'Process Flow', dependsOn: [] },
+  { id: 'PFMEA',        label: 'PFMEA',         dependsOn: ['PROCESS_FLOW'] },
+  { id: 'CONTROL_PLAN', label: 'Control Plan',  dependsOn: ['PFMEA'] },
+  { id: 'PSW',          label: 'PSW',            dependsOn: ['CONTROL_PLAN'] }
+];
+
+const REGENERATION_SOURCE: Record<string, string> = {
+  PROCESS_FLOW: 'BOM',
+  PFMEA: 'BOM',
+  CONTROL_PLAN: 'PFMEA',
+  PSW: 'BOM'
+};
+
+const DEP_LABEL: Record<string, string> = {
+  PFMEA: 'Derived from Process Flow',
+  CONTROL_PLAN: 'Derived from PFMEA',
+  PSW: 'Derived from Control Plan'
+};
+```
+
+---
+
+**New State:**
+
+| State | Type | Purpose |
+|---|---|---|
+| `documentTimestamps` | `Record<string, number>` | Tracks when each doc was last generated (for stale detection) |
+| `regenMessage` | `string \| null` | Transient info message shown on generation |
+
+---
+
+**Stale Detection Logic:**
+
+```typescript
+const isStale = (stepId: string): boolean => {
+  const step = WORKFLOW_STEPS.find(s => s.id === stepId);
+  if (!step || !documents[stepId]) return false;
+  const myTime = documentTimestamps[stepId] ?? 0;
+  return step.dependsOn.some(dep => (documentTimestamps[dep] ?? 0) > myTime);
+};
+```
+
+A document is stale if any of its declared dependencies were regenerated **after** this document was generated. Detected purely by timestamp comparison — no logic changes to generation.
+
+---
+
+**Dependency Status Per Step:**
+
+```typescript
+const dependencyStatus = (stepId: string) => {
+  const step = WORKFLOW_STEPS.find(s => s.id === stepId);
+  return step.dependsOn.map(dep => ({
+    step: dep,
+    label: WORKFLOW_STEPS.find(s => s.id === dep)?.label ?? dep,
+    exists: !!documents[dep]
+  }));
+};
+```
+
+---
+
+**Step Button — Visual States:**
+
+| Condition | Visual |
+|---|---|
+| Active | Blue background |
+| Stale (dep regenerated after this doc) | Orange tinted, orange badge, "May be stale" |
+| Generated (fresh) | Green tinted, green badge, "Generated" |
+| Not Generated | Gray tinted, gray badge, "Not Generated" |
+
+**Sub-labels shown in step buttons:**
+
+- `PFMEA` → "Derived from Process Flow"
+- `CONTROL_PLAN` → "Derived from PFMEA"
+- `PSW` → "Derived from Control Plan"
+
+**Inline dependency notices (inside button):**
+
+| Condition | Message |
+|---|---|
+| Missing dependency, not active | ⚠ Depends on [label] (not yet generated) |
+| Stale, not active | ⚠ May be out of sync with [dep label] |
+| Dependency satisfied, generated, fresh | ✓ Based on [dep label] |
+
+---
+
+**Regeneration Info Message:**
+
+When a step is clicked, a blue info banner appears in the main content area:
+
+```
+ℹ Generating Process Flow from BOM
+ℹ Regenerating PFMEA from BOM
+ℹ Generating Control Plan from PFMEA
+```
+
+Message persists until next action or error. Uses `REGENERATION_SOURCE` for source label. "Regenerating" used if document already exists, "Generating" if first time.
+
+---
+
+**No Blocking — Informational Only:**
+
+- No steps are locked or disabled
+- Stale indicator is advisory only
+- Dependency warnings do not prevent generation
+- User can generate any step in any order
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ Steps display dependency relationships (dependsOn metadata)
+✅ User sees where data comes from (DEP_LABEL subtitles)
+✅ Regeneration messaging is clear (regenMessage banner)
+✅ Stale documents visually flagged (orange state)
+✅ No change in generation behavior
+✅ No architecture violations (UI layer only)
+✅ TypeScript compiles cleanly
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to templates
+- NO modifications to mapping functions
+- NO modifications to validation engine
+- NO workflow gating or blocking introduced
+- NO persistence introduced
+
+---
+
+**Foundation for Phase 14 — Soft Workflow Gating:**
+
+Dependency metadata and stale detection are now in place. Phase 14 can use `dependsOn` and `isStale()` to optionally suggest or softly encourage step order without enforcing it.
+
+---
+
 ## 2026-03-27 14:25 CT - Phase 12 - Minimal Workflow UI (Visibility Layer)
 
 - Summary: Replaced single-template selector workflow with step-based document chain UI, making the full Process Flow → PFMEA → Control Plan → PSW chain visible and navigable
