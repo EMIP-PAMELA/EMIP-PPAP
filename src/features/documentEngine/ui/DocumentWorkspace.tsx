@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { parseBOMText } from '../core/bomParser';
 import { normalizeBOMData } from '../core/bomNormalizer';
 import { generateDocumentDraft } from '../core/documentGenerator';
+import { generatePDF, downloadPDF, generatePDFFilename } from '../export/pdfGenerator';
+import { getTemplate } from '../templates/registry';
 import { NormalizedBOM } from '../types/bomTypes';
 import { TemplateId, DocumentDraft } from '../templates/types';
 import { BOMUpload } from './BOMUpload';
@@ -110,6 +112,26 @@ export function DocumentWorkspace() {
   const hasChanges = () => {
     if (!generatedDraft || !editableDraft) return false;
     return JSON.stringify(generatedDraft.fields) !== JSON.stringify(editableDraft.fields);
+  };
+
+  const handleExportPDF = async () => {
+    if (!editableDraft || !selectedTemplate) return;
+
+    try {
+      setError(null);
+      console.log('[DocumentWorkspace] Generating PDF...');
+      
+      const template = getTemplate(selectedTemplate);
+      const pdfData = await generatePDF(editableDraft, template);
+      const filename = generatePDFFilename(editableDraft);
+      
+      downloadPDF(pdfData, filename);
+      
+      console.log('[DocumentWorkspace] PDF downloaded:', filename);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate PDF');
+      console.error('[DocumentWorkspace] Error generating PDF:', err);
+    }
   };
 
   const steps = [
@@ -231,6 +253,12 @@ export function DocumentWorkspace() {
       {/* Actions */}
       {currentStep === 'edit' && (
         <div className="mt-6 flex gap-4">
+          <button
+            onClick={handleExportPDF}
+            className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-colors"
+          >
+            Download PDF
+          </button>
           <button
             onClick={handleResetWorkspace}
             className="flex-1 py-3 px-4 bg-gray-600 text-white rounded-md font-semibold hover:bg-gray-700 transition-colors"
