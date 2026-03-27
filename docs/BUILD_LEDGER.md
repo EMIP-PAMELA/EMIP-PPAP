@@ -4,6 +4,254 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 14:58 CT - Phase 15 - Soft Workflow Gating (Guided Execution Layer)
+
+- Summary: Introduced soft workflow gating with recommended step logic, guidance banner, prerequisite warnings, and enhanced visual progression indicators
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Added STEP_ORDER, recommendedStep, guidance messaging, prerequisite warnings
+- Impact: Users receive clear guidance on next recommended step while retaining full freedom to generate any document in any order
+- Objective: Guide user behavior through visual cues and recommendations without enforcing constraints
+
+---
+
+**Architecture: UI Orchestration Layer Only**
+
+Zero changes to templates, mapping, validation, or generation logic. All additions are UI guidance and visual treatment in `DocumentWorkspace.tsx`.
+
+---
+
+**New Constants:**
+
+```typescript
+const STEP_ORDER: TemplateId[] = [
+  'PROCESS_FLOW',
+  'PFMEA',
+  'CONTROL_PLAN',
+  'PSW'
+];
+
+const STEP_DESCRIPTION: Record<string, string> = {
+  PROCESS_FLOW: 'Define manufacturing steps',
+  PFMEA: 'Analyze potential failures',
+  CONTROL_PLAN: 'Define process controls',
+  PSW: 'Finalize submission'
+};
+```
+
+---
+
+**New State:**
+
+| State | Type | Purpose |
+|---|---|---|
+| `prereqWarning` | `string \| null` | Non-blocking warning when user clicks step with unmet prerequisites |
+
+---
+
+**Recommended Step Logic:**
+
+```typescript
+const recommendedStep = STEP_ORDER.find(stepId => {
+  const step = WORKFLOW_STEPS.find(s => s.id === stepId);
+  return !documents[stepId] && step.dependsOn.every(dep => !!documents[dep]);
+});
+```
+
+**Rules:**
+- First step in `STEP_ORDER` that is **not generated** AND has **all dependencies met**
+- If all steps generated → `undefined` (no recommendation)
+- If no steps have dependencies met → recommends `PROCESS_FLOW`
+
+---
+
+**Guidance Banner:**
+
+Displayed above main content area when no document is active:
+
+| Scenario | Message |
+|---|---|
+| Process Flow not generated | `👉 Start by generating Process Flow — Define manufacturing steps` |
+| PFMEA recommended | `👉 Next: Generate PFMEA — Analyze potential failures` |
+| Control Plan recommended | `👉 Next: Generate Control Plan — Define process controls` |
+| PSW recommended | `👉 Next: Generate PSW — Finalize submission` |
+| All generated | `👉 All documents generated` |
+
+```typescript
+const getGuidanceMessage = (): string => {
+  if (!recommendedStep) {
+    const allGenerated = STEP_ORDER.every(id => !!documents[id]);
+    if (allGenerated) return 'All documents generated';
+    return 'Continue generating documents';
+  }
+  const stepDef = WORKFLOW_STEPS.find(s => s.id === recommendedStep)!;
+  const desc = STEP_DESCRIPTION[recommendedStep] ?? '';
+  if (recommendedStep === 'PROCESS_FLOW') {
+    return `Start by generating ${stepDef.label} — ${desc}`;
+  }
+  return `Next: Generate ${stepDef.label} — ${desc}`;
+};
+```
+
+---
+
+**Prerequisite Warning (Non-Blocking):**
+
+When user clicks a step with unmet dependencies:
+
+```typescript
+const missingDeps = stepDef.dependsOn.filter(dep => !documents[dep]);
+if (missingDeps.length > 0 && !isRegen) {
+  const depLabels = missingDeps.map(dep => WORKFLOW_STEPS.find(s => s.id === dep)?.label).join(', ');
+  setPrereqWarning(`Recommended: Generate ${depLabels} first for best results`);
+}
+```
+
+**Example:** User clicks PFMEA without Process Flow:
+- Warning appears: `⚠ Recommended: Generate Process Flow first for best results`
+- **Generation proceeds anyway** (non-blocking)
+
+---
+
+**Step Button Visual States (Enhanced):**
+
+| State | Visual Treatment |
+|---|---|
+| **Active** | Blue background, white text, shadow |
+| **Recommended (NEXT)** | Indigo background, thick indigo border, shadow-lg, "NEXT" badge, arrow icon (→) |
+| **Stale** | Orange tinted, orange border |
+| **Generated (fresh)** | Green tinted, green border |
+| **Not Generated** | Gray tinted, gray border |
+
+**Recommended step highlighting:**
+```typescript
+isRecommended
+  ? 'bg-indigo-100 text-indigo-900 border-2 border-indigo-400 hover:bg-indigo-200 shadow-lg'
+```
+
+**Badge display:**
+```typescript
+{isRecommended && (
+  <span className="text-xs font-bold text-indigo-600 bg-indigo-200 px-1.5 py-0.5 rounded">NEXT</span>
+)}
+```
+
+**Icon display:**
+```typescript
+{isRecommended ? '→' : index + 1}
+```
+
+---
+
+**Step Completion Indicators:**
+
+Each step now shows completion icon + description:
+
+```typescript
+const completionIcon = isGenerated && !stale ? '✓' : stale ? '⚠' : '○';
+```
+
+| Icon | Meaning |
+|---|---|
+| `✓` | Completed (generated and not stale) |
+| `⚠` | Needs update (stale) |
+| `○` | Not started |
+
+**Display:**
+```
+✓ Define manufacturing steps
+⚠ Analyze potential failures
+○ Define process controls
+```
+
+---
+
+**Step Descriptions:**
+
+Each step button now shows short helper text below the title:
+
+- **Process Flow** → "Define manufacturing steps"
+- **PFMEA** → "Analyze potential failures"
+- **Control Plan** → "Define process controls"
+- **PSW** → "Finalize submission"
+
+---
+
+**No Blocking — Guidance Only:**
+
+**CRITICAL:** All steps remain clickable at all times.
+
+- Recommended step is **highlighted**, not enforced
+- Prerequisite warnings are **informational**, not blocking
+- User can click any step in any order
+- Generation logic unchanged
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ Recommended next step clearly visible (indigo highlight + NEXT badge)
+✅ Guidance banner updates dynamically based on workflow state
+✅ Users understand correct sequence (visual progression + descriptions)
+✅ Users can still override flow (all steps clickable)
+✅ Prerequisite warnings shown but non-blocking
+✅ Step completion indicators clear (✓/⚠/○)
+✅ No architecture violations (UI layer only)
+✅ TypeScript compiles cleanly
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to templates
+- NO modifications to mapping functions
+- NO modifications to validation engine
+- NO modifications to generation logic
+- NO hard blocking introduced
+
+---
+
+**User Experience Flow:**
+
+**Scenario 1: First-time user**
+1. Uploads BOM
+2. Sees guidance: "👉 Start by generating Process Flow — Define manufacturing steps"
+3. Process Flow button highlighted with indigo border + NEXT badge
+4. Clicks Process Flow → generates
+5. Guidance updates: "👉 Next: Generate PFMEA — Analyze potential failures"
+6. PFMEA button now highlighted
+7. User follows visual guidance through entire chain
+
+**Scenario 2: Experienced user skipping steps**
+1. Uploads BOM
+2. Ignores guidance, clicks PFMEA directly
+3. Warning appears: "⚠ Recommended: Generate Process Flow first for best results"
+4. **Generation proceeds anyway** (non-blocking)
+5. PFMEA generated from BOM (fallback from Phase 14)
+
+**Scenario 3: User regenerates upstream document**
+1. Process Flow regenerated → timestamp updated
+2. PFMEA shows orange "⚠ May be stale" indicator
+3. Guidance banner: "👉 Next: Generate PFMEA — Analyze potential failures"
+4. PFMEA button highlighted as recommended
+5. User clicks PFMEA → confirmation prompt (edit protection from Phase 14)
+6. Regenerates from new Process Flow
+
+---
+
+**Foundation for Phase 16 — Hard Gating (Optional):**
+
+Soft gating infrastructure is now in place. Phase 16 could optionally add hard blocking (disable buttons, prevent clicks) but current implementation remains fully permissive and user-controlled.
+
+---
+
 ## 2026-03-27 14:46 CT - Phase 14 - Source-Aware Regeneration (True Propagation, Safe Mode)
 
 - Summary: Implemented source-aware document generation with best-source selection, user edit protection, and transparent messaging

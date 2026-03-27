@@ -37,6 +37,20 @@ const DEP_LABEL: Record<string, string> = {
   PSW: 'Derived from Control Plan'
 };
 
+const STEP_ORDER: TemplateId[] = [
+  'PROCESS_FLOW',
+  'PFMEA',
+  'CONTROL_PLAN',
+  'PSW'
+];
+
+const STEP_DESCRIPTION: Record<string, string> = {
+  PROCESS_FLOW: 'Define manufacturing steps',
+  PFMEA: 'Analyze potential failures',
+  CONTROL_PLAN: 'Define process controls',
+  PSW: 'Finalize submission'
+};
+
 export function DocumentWorkspace() {
   const [appPhase, setAppPhase] = useState<AppPhase>('upload');
   const [normalizedBOM, setNormalizedBOM] = useState<NormalizedBOM | null>(null);
@@ -46,6 +60,7 @@ export function DocumentWorkspace() {
   const [validationResults, setValidationResults] = useState<Record<string, ValidationResult>>({});
   const [documentTimestamps, setDocumentTimestamps] = useState<Record<string, number>>({});
   const [regenMessage, setRegenMessage] = useState<string | null>(null);
+  const [prereqWarning, setPrereqWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleBOMProcessed = (text: string) => {
@@ -132,10 +147,18 @@ export function DocumentWorkspace() {
     if (!normalizedBOM) return;
     try {
       setError(null);
+      setPrereqWarning(null);
       const stepDef = WORKFLOW_STEPS.find(s => s.id === stepId)!;
       const label = stepDef.label;
       const isRegen = !!documents[stepId];
       const hasEdits = editableDocuments[stepId] && hasChanges();
+
+      // Check prerequisites (non-blocking warning)
+      const missingDeps = stepDef.dependsOn.filter(dep => !documents[dep]);
+      if (missingDeps.length > 0 && !isRegen) {
+        const depLabels = missingDeps.map(dep => WORKFLOW_STEPS.find(s => s.id === dep)?.label).join(', ');
+        setPrereqWarning(`Recommended: Generate ${depLabels} first for best results`);
+      }
 
       // Protect user edits
       if (isRegen && hasEdits && activeStep === stepId) {
@@ -168,6 +191,7 @@ export function DocumentWorkspace() {
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to generate ${stepId}`);
       setRegenMessage(null);
+      setPrereqWarning(null);
       console.error(`[DocumentWorkspace] Error generating ${stepId}:`, err);
     }
   };
@@ -207,6 +231,7 @@ export function DocumentWorkspace() {
     setValidationResults({});
     setDocumentTimestamps({});
     setRegenMessage(null);
+    setPrereqWarning(null);
     setError(null);
   };
 
@@ -268,6 +293,26 @@ export function DocumentWorkspace() {
     }));
   };
 
+  const recommendedStep = STEP_ORDER.find(stepId => {
+    const step = WORKFLOW_STEPS.find(s => s.id === stepId);
+    if (!step) return false;
+    return !documents[stepId] && step.dependsOn.every(dep => !!documents[dep]);
+  });
+
+  const getGuidanceMessage = (): string => {
+    if (!recommendedStep) {
+      const allGenerated = STEP_ORDER.every(id => !!documents[id]);
+      if (allGenerated) return 'All documents generated';
+      return 'Continue generating documents';
+    }
+    const stepDef = WORKFLOW_STEPS.find(s => s.id === recommendedStep)!;
+    const desc = STEP_DESCRIPTION[recommendedStep] ?? '';
+    if (recommendedStep === 'PROCESS_FLOW') {
+      return `Start by generating ${stepDef.label} — ${desc}`;
+    }
+    return `Next: Generate ${stepDef.label} — ${desc}`;
+  };
+
   return (
     <div className="max-w-5xl mx-auto py-8 px-4">
       {/* Header */}
@@ -327,13 +372,18 @@ export function DocumentWorkspace() {
                     const deps = dependencyStatus(step.id);
                     const missingDeps = deps.filter(d => !d.exists);
                     const depLabel = DEP_LABEL[step.id];
+                    const isRecommended = recommendedStep === step.id;
+                    const stepDesc = STEP_DESCRIPTION[step.id];
+                    const completionIcon = isGenerated && !stale ? '✓' : stale ? '⚠' : '○';
                     return (
                       <div key={step.id}>
                         <button
                           onClick={() => handleStepClick(step.id)}
-                          className={`w-full text-left rounded-md px-3 py-2.5 transition-colors ${
+                          className={`w-full text-left rounded-md px-3 py-2.5 transition-all ${
                             isActive
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-blue-600 text-white shadow-md'
+                              : isRecommended
+                              ? 'bg-indigo-100 text-indigo-900 border-2 border-indigo-400 hover:bg-indigo-200 shadow-lg'
                               : stale
                               ? 'bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100'
                               : isGenerated
@@ -345,22 +395,29 @@ export function DocumentWorkspace() {
                             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                               isActive
                                 ? 'bg-white text-blue-600'
+                                : isRecommended
+                                ? 'bg-indigo-600 text-white'
                                 : stale
                                 ? 'bg-orange-400 text-white'
                                 : isGenerated
                                 ? 'bg-green-500 text-white'
                                 : 'bg-gray-300 text-gray-600'
                             }`}>
-                              {index + 1}
+                              {isRecommended ? '→' : index + 1}
                             </span>
                             <div className="min-w-0 flex-1">
-                              <div className="font-medium text-sm leading-tight">{step.label}</div>
-                              <div className={`text-xs mt-0.5 ${
-                                isActive ? 'text-blue-100' : stale ? 'text-orange-600' : isGenerated ? 'text-green-600' : 'text-gray-400'
-                              }`}>
-                                {isActive ? 'Active' : stale ? 'May be stale' : isGenerated ? 'Generated' : 'Not Generated'}
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-medium text-sm leading-tight">{step.label}</span>
+                                {isRecommended && (
+                                  <span className="text-xs font-bold text-indigo-600 bg-indigo-200 px-1.5 py-0.5 rounded">NEXT</span>
+                                )}
                               </div>
-                              {depLabel && (
+                              <div className={`text-xs mt-0.5 ${
+                                isActive ? 'text-blue-100' : isRecommended ? 'text-indigo-700' : stale ? 'text-orange-600' : isGenerated ? 'text-green-600' : 'text-gray-400'
+                              }`}>
+                                {completionIcon} {stepDesc}
+                              </div>
+                              {depLabel && !isRecommended && (
                                 <div className={`text-xs mt-0.5 ${
                                   isActive ? 'text-blue-200' : 'text-gray-400'
                                 }`}>
@@ -369,7 +426,7 @@ export function DocumentWorkspace() {
                               )}
                             </div>
                           </div>
-                          {missingDeps.length > 0 && !isActive && (
+                          {missingDeps.length > 0 && !isActive && !isRecommended && (
                             <div className="mt-1.5 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
                               ⚠ Depends on {missingDeps.map(d => d.label).join(', ')} (not yet generated)
                             </div>
@@ -379,7 +436,7 @@ export function DocumentWorkspace() {
                               ⚠ May be out of sync with {deps.map(d => d.label).join(', ')}
                             </div>
                           )}
-                          {!stale && deps.length > 0 && deps.every(d => d.exists) && !isActive && isGenerated && (
+                          {!stale && deps.length > 0 && deps.every(d => d.exists) && !isActive && isGenerated && !isRecommended && (
                             <div className="mt-1.5 text-xs text-green-700">
                               ✓ Based on {deps.map(d => d.label).join(', ')}
                             </div>
@@ -397,6 +454,24 @@ export function DocumentWorkspace() {
 
             {/* Main Content Area */}
             <div className="flex-1 min-w-0">
+              {/* Guidance Banner */}
+              {!activeStep && (
+                <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-indigo-600 text-lg">👉</span>
+                    <span className="text-indigo-900 font-medium">{getGuidanceMessage()}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Prerequisite Warning */}
+              {prereqWarning && (
+                <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 flex items-center gap-2">
+                  <span className="text-amber-600 text-sm">⚠</span>
+                  <span className="text-amber-800 text-sm">{prereqWarning}</span>
+                </div>
+              )}
+
               {/* Regeneration Info Message */}
               {regenMessage && (
                 <div className="mb-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 flex items-center gap-2">
