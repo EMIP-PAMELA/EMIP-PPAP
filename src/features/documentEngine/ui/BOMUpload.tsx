@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { extractTextFromPDF } from '../utils/pdfToText';
 
 interface BOMUploadProps {
   onBOMProcessed: (rawText: string) => void;
@@ -8,6 +9,7 @@ interface BOMUploadProps {
 
 export function BOMUpload({ onBOMProcessed }: BOMUploadProps) {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState<string>('Processing file...');
   const [error, setError] = useState<string | null>(null);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -18,17 +20,29 @@ export function BOMUpload({ onBOMProcessed }: BOMUploadProps) {
     setError(null);
 
     try {
-      const text = await file.text();
+      const isPDF = file.type === 'application/pdf';
+      
+      let text: string;
+      
+      if (isPDF) {
+        setProcessingMessage('Extracting text from PDF...');
+        text = await extractTextFromPDF(file);
+      } else {
+        setProcessingMessage('Processing file...');
+        text = await file.text();
+      }
       
       if (!text.trim()) {
-        throw new Error('File is empty');
+        throw new Error('File is empty or contains no extractable text');
       }
 
+      console.log(`[BOMUpload] Extracted ${text.length} characters from ${isPDF ? 'PDF' : 'text'} file`);
       onBOMProcessed(text);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to read file');
     } finally {
       setIsProcessing(false);
+      setProcessingMessage('Processing file...');
     }
   };
 
@@ -37,12 +51,12 @@ export function BOMUpload({ onBOMProcessed }: BOMUploadProps) {
       <div className="text-center">
         <h3 className="text-lg font-semibold mb-2">Upload BOM File</h3>
         <p className="text-gray-600 mb-4">
-          Upload a Visual Engineering Master BOM file (.txt)
+          Upload a Visual Engineering Master BOM file (.txt or .pdf)
         </p>
         
         <input
           type="file"
-          accept=".txt"
+          accept=".txt,.pdf"
           onChange={handleFileUpload}
           disabled={isProcessing}
           className="block w-full text-sm text-gray-500
@@ -55,7 +69,7 @@ export function BOMUpload({ onBOMProcessed }: BOMUploadProps) {
         />
 
         {isProcessing && (
-          <p className="mt-4 text-blue-600">Processing file...</p>
+          <p className="mt-4 text-blue-600">{processingMessage}</p>
         )}
 
         {error && (
