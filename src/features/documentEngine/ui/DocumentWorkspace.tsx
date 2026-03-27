@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { parseBOMText } from '../core/bomParser';
 import { normalizeBOMData } from '../core/bomNormalizer';
 import { generateDocumentDraft } from '../core/documentGenerator';
-import { generatePDF, downloadPDF, generatePDFFilename } from '../export/pdfGenerator';
 import { getTemplate } from '../templates/registry';
 import { NormalizedBOM } from '../types/bomTypes';
 import { TemplateId, DocumentDraft } from '../templates/types';
@@ -120,6 +119,9 @@ export function DocumentWorkspace() {
     try {
       setError(null);
       console.log('[DocumentWorkspace] Generating PDF...');
+      
+      // Dynamic import to ensure PDF generation only happens on client
+      const { generatePDF, downloadPDF, generatePDFFilename } = await import('../export/pdfGenerator');
       
       const template = getTemplate(selectedTemplate);
       const pdfData = await generatePDF(editableDraft, template);

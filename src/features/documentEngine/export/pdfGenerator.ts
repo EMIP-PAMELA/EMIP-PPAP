@@ -9,6 +9,10 @@
  * - Maintains separation of data, layout, and export
  * 
  * Architecture layer: Export
+ * 
+ * IMPORTANT:
+ * This module must only be loaded dynamically on the client.
+ * Do NOT import this file at the top level of any Next.js component.
  */
 
 import jsPDF from 'jspdf';
