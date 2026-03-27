@@ -9,7 +9,7 @@
 
 import { NormalizedBOM } from '../types/bomTypes';
 
-export type TemplateId = 'PSW' | 'PROCESS_FLOW';
+export type TemplateId = 'PSW' | 'PROCESS_FLOW' | 'PFMEA';
 
 export interface TemplateInputField {
   key: string;
@@ -52,6 +52,8 @@ export interface FieldDefinition {
     max?: number;
     pattern?: string;
   };
+  rowFields?: FieldDefinition[];
+  derivedProduct?: string[];
 }
 
 export interface TemplateDefinition {

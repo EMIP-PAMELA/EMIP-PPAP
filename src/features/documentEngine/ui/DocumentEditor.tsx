@@ -100,12 +100,96 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                       {!fieldDef.editable && <span className="text-gray-500 ml-2 text-xs">(Read-only)</span>}
                     </label>
                     
-                    {/* Array value → generic table rendering */}
+                    {/* Array value → table rendering (editable if rowFields defined) */}
                     {Array.isArray(value) ? (
                       <div className="overflow-x-auto">
                         {value.length === 0 ? (
                           <p className="text-sm text-gray-500 italic">No rows</p>
+                        ) : fieldDef.rowFields ? (
+                          /* Editable table — schema-driven per column */
+                          <table className="w-full text-sm border border-gray-200 rounded-md">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                {fieldDef.rowFields.map((col) => (
+                                  <th
+                                    key={col.key}
+                                    className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b border-gray-200 whitespace-nowrap"
+                                  >
+                                    {col.label}
+                                    {col.required && <span className="text-red-400 ml-1">*</span>}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(value as Record<string, any>[]).map((row, rowIndex) => (
+                                <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                  {fieldDef.rowFields!.map((col) => {
+                                    const cellValue = row[col.key];
+
+                                    const handleCellChange = (newCellValue: any) => {
+                                      const updatedRow = { ...row, [col.key]: newCellValue };
+
+                                      // Recompute any columns whose derivedProduct includes this key
+                                      for (const sibling of fieldDef.rowFields!) {
+                                        if (sibling.derivedProduct?.includes(col.key)) {
+                                          const product = sibling.derivedProduct.reduce<number | null>(
+                                            (acc, k) => {
+                                              const v = k === col.key ? newCellValue : updatedRow[k];
+                                              if (acc === null || v == null || v === '' || isNaN(Number(v))) return null;
+                                              return acc * Number(v);
+                                            },
+                                            1
+                                          );
+                                          updatedRow[sibling.key] = product;
+                                        }
+                                      }
+
+                                      const updatedRows = value.map((r: any, i: number) =>
+                                        i === rowIndex ? updatedRow : r
+                                      );
+                                      onFieldChange(fieldKey, updatedRows);
+                                    };
+
+                                    if (!col.editable) {
+                                      return (
+                                        <td
+                                          key={col.key}
+                                          className="px-3 py-2 border-b border-gray-100 text-gray-600 align-top whitespace-nowrap"
+                                        >
+                                          {Array.isArray(cellValue)
+                                            ? cellValue.length > 0 ? cellValue.join(', ') : '—'
+                                            : String(cellValue ?? '—')}
+                                        </td>
+                                      );
+                                    }
+
+                                    return (
+                                      <td key={col.key} className="px-2 py-1 border-b border-gray-100 align-top">
+                                        <input
+                                          type={col.type === 'number' ? 'number' : 'text'}
+                                          value={cellValue ?? ''}
+                                          min={col.validation?.min}
+                                          max={col.validation?.max}
+                                          onChange={(e) => {
+                                            let v: any = e.target.value;
+                                            if (col.type === 'number') {
+                                              v = e.target.value === '' ? null : (parseFloat(e.target.value) || null);
+                                            }
+                                            handleCellChange(v);
+                                          }}
+                                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[80px]"
+                                          placeholder={col.type === 'number' ? '1–10' : ''}
+                                        />
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         ) : (
+                          /* Read-only table — no rowFields schema */
                           <table className="w-full text-sm border border-gray-200 rounded-md">
                             <thead className="bg-gray-100">
                               <tr>

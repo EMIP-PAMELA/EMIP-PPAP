@@ -4,6 +4,156 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 13:33 CT - Phase 9.2 - PFMEA Template (Process Flow-driven)
+
+- Summary: Implemented first dependent document — PFMEA driven from Process Flow, with editable risk fields and live RPN calculation
+- Files created:
+  - `src/features/documentEngine/models/pfmea.ts` — PFMEARow and PFMEAModel data model
+  - `src/features/documentEngine/mapping/processFlowToPFMEA.ts` — ProcessFlowModel → PFMEAModel mapping
+  - `src/features/documentEngine/templates/pfmeaTemplate.ts` — PFMEA template definition
+- Files modified:
+  - `src/features/documentEngine/templates/types.ts` — Extended TemplateId with 'PFMEA'; added `rowFields` and `derivedProduct` to FieldDefinition
+  - `src/features/documentEngine/templates/registry.ts` — Registered PFMEA_TEMPLATE
+  - `src/features/documentEngine/ui/DocumentEditor.tsx` — Schema-driven editable table rendering with generic derived-product computation
+- Impact: Users can generate PFMEA from BOM, edit risk fields, and see RPN update live
+- Objective: First document relationship (Process Flow → PFMEA); foundation for Control Plan
+
+---
+
+**Architecture Layers:**
+
+```
+NormalizedBOM
+  ↓ bomToProcessFlow
+ProcessFlowModel
+  ↓ processFlowToPFMEA
+PFMEAModel
+  ↓ pfmeaTemplate.generate()
+DocumentDraft { fields: { partNumber, rows: PFMEARow[] } }
+  ↓ DocumentEditor (schema-driven editable table)
+UI
+```
+
+**Strict separation maintained:**
+- `processFlowToPFMEA` knows nothing about templates or UI
+- Template chains two mapping functions and assembles DocumentDraft — no UI knowledge
+- DocumentEditor is fully generic: no PFMEA or RPN logic hardcoded
+
+---
+
+**Mapping Rules (processFlowToPFMEA):**
+
+- One `PFMEARow` per output per `ProcessStep`
+- Steps with no outputs produce zero rows
+- `stepNumber` ← `step.stepNumber`
+- `operation` ← `step.operation`
+- `output` ← each output string
+- `failureMode`, `effect`, `cause`, `severity`, `occurrence`, `detection`, `rpn` all initialized to `null`
+
+---
+
+**Type System Extensions:**
+
+```typescript
+// FieldDefinition
+rowFields?: FieldDefinition[];    // per-column schema for type:'table' fields
+derivedProduct?: string[];        // value = product of these sibling column keys
+```
+
+**Usage in PFMEA template:**
+
+```typescript
+{
+  key: 'rpn',
+  type: 'number',
+  editable: false,
+  derivedProduct: ['severity', 'occurrence', 'detection']
+}
+```
+
+---
+
+**DocumentEditor Editable Table:**
+
+**Path selection logic:**
+
+1. `Array.isArray(value)` → table rendering
+2. `fieldDef.rowFields` exists → schema-driven editable table
+3. No `rowFields` → read-only table (existing PROCESS_FLOW behavior preserved)
+
+**Cell editing flow:**
+
+```
+User edits cell → handleCellChange(newValue)
+  → updatedRow = { ...row, [col.key]: newValue }
+  → for each sibling with derivedProduct including col.key:
+      product = derivedProduct.reduce((acc, k) => acc * row[k], 1)  // null if any missing
+      updatedRow[sibling.key] = product
+  → updatedRows = rows.map(r => i === rowIndex ? updatedRow : r)
+  → onFieldChange(fieldKey, updatedRows)
+```
+
+**RPN behavior:**
+- `rpn` = `severity × occurrence × detection`
+- Shows `null` if any of the three is missing
+- Computed entirely in UI — never stored in mapping or template
+- Computation is generic via `derivedProduct` — no PFMEA knowledge in editor
+
+---
+
+**PFMEA Field Schema:**
+
+| Key | Label | Type | Editable |
+|---|---|---|---|
+| `stepNumber` | Step | text | ❌ |
+| `operation` | Operation | text | ❌ |
+| `output` | Output | text | ❌ |
+| `failureMode` | Failure Mode | text | ✅ (required) |
+| `effect` | Effect | text | ✅ |
+| `cause` | Cause | text | ✅ |
+| `severity` | SEV | number 1–10 | ✅ |
+| `occurrence` | OCC | number 1–10 | ✅ |
+| `detection` | DET | number 1–10 | ✅ |
+| `rpn` | RPN | number | ❌ (derived) |
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ PFMEA template appears in selector
+✅ Rows generated from Process Flow outputs (one row per output per step)
+✅ Structural fields pre-populated, risk fields editable
+✅ RPN updates dynamically in UI when SEV/OCC/DET change
+✅ No architecture violations
+✅ TypeScript compiles cleanly
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to parser or normalizer
+- NO modifications to Process Flow mapping or template
+- NO PFMEA logic embedded in DocumentEditor
+- NO workflow or persistence logic introduced
+
+---
+
+**Foundation for Phase 9.3 — Control Plan:**
+
+- Reuses `mapBOMToProcessFlow` and `mapProcessFlowToPFMEA` as upstream sources
+- Adds control methods, sample sizes, and reaction plans per step/output
+- Same editable table pattern applies
+
+---
+
 ## 2026-03-27 13:27 CT - Phase 9.1 - Process Flow Template + BOM Mapping
 
 - Summary: Implemented first cross-document intelligence layer — Process Flow template driven by BOM → ProcessFlow mapping
