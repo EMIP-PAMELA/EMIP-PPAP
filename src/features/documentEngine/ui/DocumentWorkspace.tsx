@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { parseBOMText } from '../core/bomParser';
 import { normalizeBOMData } from '../core/bomNormalizer';
 import { generateDocumentDraft } from '../core/documentGenerator';
@@ -16,6 +16,48 @@ import { mapProcessFlowToPFMEA } from '../mapping/processFlowToPFMEA';
 import { mapPFMEAToControlPlan } from '../mapping/pfmeaToControlPlan';
 
 type AppPhase = 'upload' | 'workflow';
+
+type PPAPSession = {
+  bomData: NormalizedBOM | null;
+  documents: Record<string, DocumentDraft>;
+  editableDocuments: Record<string, DocumentDraft>;
+  validationResults: Record<string, ValidationResult>;
+  documentTimestamps: Record<string, number>;
+  activeStep: TemplateId | null;
+};
+
+const STORAGE_KEY = 'emip_ppap_session_v1';
+
+function saveSession(session: PPAPSession): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    console.log('[SessionPersistence] Session saved');
+  } catch (err) {
+    console.error('[SessionPersistence] Failed to save session:', err);
+  }
+}
+
+function loadSession(): PPAPSession | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw) as PPAPSession;
+    console.log('[SessionPersistence] Session loaded');
+    return session;
+  } catch (err) {
+    console.error('[SessionPersistence] Failed to load session:', err);
+    return null;
+  }
+}
+
+function clearSession(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    console.log('[SessionPersistence] Session cleared');
+  } catch (err) {
+    console.error('[SessionPersistence] Failed to clear session:', err);
+  }
+}
 
 const WORKFLOW_STEPS: Array<{ id: TemplateId; label: string; dependsOn: TemplateId[] }> = [
   { id: 'PROCESS_FLOW', label: 'Process Flow', dependsOn: [] },
@@ -62,6 +104,37 @@ export function DocumentWorkspace() {
   const [regenMessage, setRegenMessage] = useState<string | null>(null);
   const [prereqWarning, setPrereqWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Load session on mount
+  useEffect(() => {
+    const saved = loadSession();
+    if (saved && saved.bomData) {
+      console.log('[DocumentWorkspace] Restoring session from storage');
+      setNormalizedBOM(saved.bomData);
+      setDocuments(saved.documents || {});
+      setEditableDocuments(saved.editableDocuments || {});
+      setValidationResults(saved.validationResults || {});
+      setDocumentTimestamps(saved.documentTimestamps || {});
+      setActiveStep(saved.activeStep || null);
+      setAppPhase('workflow');
+      console.log('[DocumentWorkspace] Session restored:', Object.keys(saved.documents || {}).length, 'documents');
+    }
+  }, []);
+
+  // Auto-save session on state changes
+  useEffect(() => {
+    if (appPhase === 'workflow' && normalizedBOM) {
+      const session: PPAPSession = {
+        bomData: normalizedBOM,
+        documents,
+        editableDocuments,
+        validationResults,
+        documentTimestamps,
+        activeStep
+      };
+      saveSession(session);
+    }
+  }, [normalizedBOM, documents, editableDocuments, validationResults, documentTimestamps, activeStep, appPhase]);
 
   const handleBOMProcessed = (text: string) => {
     try {
@@ -222,7 +295,13 @@ export function DocumentWorkspace() {
     console.log(`[DocumentWorkspace] ${activeStep} reset to generated version`);
   };
 
-  const handleResetWorkspace = () => {
+  const resetSession = () => {
+    const confirmed = window.confirm(
+      'This will clear all documents and reset the workspace. Continue?'
+    );
+    if (!confirmed) return;
+
+    clearSession();
     setAppPhase('upload');
     setNormalizedBOM(null);
     setActiveStep(null);
@@ -233,6 +312,11 @@ export function DocumentWorkspace() {
     setRegenMessage(null);
     setPrereqWarning(null);
     setError(null);
+    console.log('[DocumentWorkspace] Session reset');
+  };
+
+  const handleResetWorkspace = () => {
+    resetSession();
   };
 
   const hasChanges = () => {
@@ -347,12 +431,20 @@ export function DocumentWorkspace() {
                     <span>Components: <strong>{normalizedBOM.summary.totalComponents}</strong> ({normalizedBOM.summary.wires}W / {normalizedBOM.summary.terminals}T / {normalizedBOM.summary.hardware}H)</span>
                   </div>
                 </div>
-                <button
-                  onClick={handleResetWorkspace}
-                  className="text-sm text-gray-500 hover:text-gray-700 underline"
-                >
-                  Load New BOM
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleResetWorkspace}
+                    className="text-sm text-red-600 hover:text-red-800 font-medium underline"
+                  >
+                    Reset Session
+                  </button>
+                  <button
+                    onClick={handleResetWorkspace}
+                    className="text-sm text-gray-500 hover:text-gray-700 underline"
+                  >
+                    Load New BOM
+                  </button>
+                </div>
               </div>
             </div>
           )}
