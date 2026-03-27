@@ -23,7 +23,6 @@ import { currentUser } from '@/src/lib/mockUser';
 import { uploadPPAPDocument } from '../utils/uploadFile';
 import { getPPAPDocuments } from '../utils/getPPAPDocuments';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
-import { openBalloonTool } from '../utils/documentHelpers';
 
 interface DocumentationFormProps {
   ppapId: string;
@@ -199,35 +198,13 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     }
   };
 
-  // Phase 3H.13.5: Unified create document handler with consistent routing
+  // Phase 17: Route to Document Workspace for document generation
   const handleCreateDocument = (documentId: string) => {
     console.log('🛠 DOCUMENT ACTION CLICK', { docId: documentId, action: 'create' });
     
-    // Phase 3H.13.5: Balloon drawing uses unified helper (ONE system)
-    if (documentId === 'ballooned_drawing') {
-      openBalloonTool(ppapId);
-      return;
-    }
-    
-    // Check if template is available
-    if (!canCreate(documentId)) {
-      console.warn('⚠️ TEMPLATE NOT AVAILABLE', { docType: documentId });
-      alert('Template coming soon — you can upload a document instead');
-      return;
-    }
-    
-    // Routes for available templates
-    const routes: Record<string, string> = {
-      control_plan: `/tools/control-plan?ppapId=${ppapId}`,
-      dfmea: `/tools/dfmea?ppapId=${ppapId}`,
-      pfmea: `/tools/pfmea?ppapId=${ppapId}`,
-      msa: `/tools/msa?ppapId=${ppapId}`,
-      dimensional_results: `/tools/dimensional-results?ppapId=${ppapId}`,
-    };
-    
-    if (routes[documentId]) {
-      router.push(routes[documentId]);
-    }
+    // Phase 17: Route all document creation to Document Workspace
+    // Document Workspace will handle generation for all PPAP documents
+    router.push(`/ppap/${ppapId}/documents`);
   };
 
   // Submit handler
@@ -376,12 +353,12 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                   </p>
                 </div>
                 <button
-                  onClick={() => openBalloonTool(ppapId)}
+                  onClick={() => router.push(`/ppap/${ppapId}/documents`)}
                   disabled={isReadOnly}
-                  title={isReadOnly ? 'View-only mode — contact coordinator to make changes' : 'Open balloon drawing markup tool'}
+                  title={isReadOnly ? 'View-only mode — contact coordinator to make changes' : 'Open Document Workspace for all document generation'}
                   className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
                 >
-                  🖊️ Open Balloon Drawing Tool
+                  � Open Document Workspace
                 </button>
               </div>
 

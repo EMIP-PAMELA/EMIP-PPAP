@@ -12,7 +12,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { PPAPRecord } from '@/src/types/database.types';
 import { currentUser } from '@/src/lib/mockUser';
-import { calculateDocumentProgress, getHealthStatus, getHealthBadgeStyle, getHealthBadgeIcon, getStatusClarityTag, openBalloonTool } from '../utils/documentHelpers';
+import { calculateDocumentProgress, getHealthStatus, getHealthBadgeStyle, getHealthBadgeIcon, getStatusClarityTag } from '../utils/documentHelpers';
 import { getPPAPDocuments, PPAPDocument } from '../utils/getPPAPDocuments';
 import { uploadPPAPDocument } from '../utils/uploadFile';
 import { updatePPAPState } from '../utils/updatePPAPState';
@@ -104,37 +104,17 @@ export function PPAPControlPanel({ ppap }: PPAPControlPanelProps) {
     ].includes(docType);
   };
   
-  // Phase 3H.13: Create document routing
+  // Phase 17: Route to Document Workspace for document generation
   const handleCreateDocument = (docType: string) => {
-    // Phase 3H.13: Log document action
     console.log('📄 DOCUMENT ACTION CLICK', {
       docType,
       action: 'create',
       userRole: currentUser.role,
     });
     
-    console.log('🛠 CREATE DOCUMENT', { docType, ppapId: ppap.id });
-    
-    // Phase 3H.13.5: Use unified balloon tool helper (ONE system)
-    if (docType === 'ballooned_drawing') {
-      openBalloonTool(ppap.id);
-      return;
-    }
-    
-    const routes: Record<string, string> = {
-      control_plan: `/tools/control-plan?ppapId=${ppap.id}`,
-      dfmea: `/tools/dfmea?ppapId=${ppap.id}`,
-      pfmea: `/tools/pfmea?ppapId=${ppap.id}`,
-      msa: `/tools/msa?ppapId=${ppap.id}`,
-      dimensional_results: `/tools/dimensional-results?ppapId=${ppap.id}`,
-    };
-    
-    if (routes[docType]) {
-      router.push(routes[docType]);
-    } else {
-      console.warn('⚠️ TEMPLATE NOT AVAILABLE', { docType });
-      alert('Template coming soon — you can upload a document instead');
-    }
+    // Phase 17: Route all document creation to Document Workspace
+    // Document Workspace will handle generation for all PPAP documents
+    router.push(`/ppap/${ppap.id}/documents`);
   };
   
   const handleUpload = async (docId: string, event: React.ChangeEvent<HTMLInputElement>) => {

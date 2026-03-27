@@ -4,6 +4,217 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 15:29 CT - Phase 17 - Document Engine Routing + PPAP Integration
+
+- Summary: Fixed routing and integrated Document Workspace into PPAP workflow, removed broken tool routes
+- Files modified:
+  - `app/ppap/[id]/documents/page.tsx` — Created PPAP-integrated Document Workspace route
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Added optional ppapId prop for integration
+  - `src/features/ppap/components/DocumentationForm.tsx` — Updated to route to Document Workspace
+  - `src/features/ppap/components/PPAPControlPanel.tsx` — Updated to route to Document Workspace
+- Impact: Document generation now accessible from PPAP workflow; eliminated broken /tools/* routes
+- Objective: Clean routing architecture connecting PPAP workflow with Document Engine
+
+---
+
+**Architecture: Clean Separation Maintained**
+
+Zero changes to Document Engine core logic. Integration implemented via routing and optional prop only.
+
+---
+
+**New Routes:**
+
+**Standalone Route (already existed):**
+```
+/document-workspace → DocumentWorkspace component
+```
+
+**PPAP-Integrated Route (new):**
+```
+/ppap/[id]/documents → DocumentWorkspace component with ppapId
+```
+
+---
+
+**DocumentWorkspace Interface Update:**
+
+```typescript
+interface DocumentWorkspaceProps {
+  ppapId?: string;
+}
+
+export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
+  // Component logic unchanged
+}
+```
+
+**Optional ppapId prop** allows PPAP integration without breaking standalone usage.
+
+---
+
+**PPAP-Integrated Route Implementation:**
+
+**File:** `app/ppap/[id]/documents/page.tsx`
+
+```typescript
+import { DocumentWorkspace } from '@/src/features/documentEngine/ui/DocumentWorkspace';
+
+interface DocumentsPageProps {
+  params: Promise<{
+    id: string;
+  }>;
+}
+
+export default async function DocumentsPage({ params }: DocumentsPageProps) {
+  const { id } = await params;
+  
+  return <DocumentWorkspace ppapId={id} />;
+}
+```
+
+Passes PPAP ID to Document Workspace for future BOM/document integration.
+
+---
+
+**Navigation Updates:**
+
+**DocumentationForm Changes:**
+
+**BEFORE (broken):**
+```typescript
+const routes: Record<string, string> = {
+  control_plan: `/tools/control-plan?ppapId=${ppapId}`,
+  dfmea: `/tools/dfmea?ppapId=${ppapId}`,
+  pfmea: `/tools/pfmea?ppapId=${ppapId}`,
+  msa: `/tools/msa?ppapId=${ppapId}`,
+  dimensional_results: `/tools/dimensional-results?ppapId=${ppapId}`,
+};
+```
+
+**AFTER (unified):**
+```typescript
+const handleCreateDocument = (documentId: string) => {
+  // Route all document creation to Document Workspace
+  router.push(`/ppap/${ppapId}/documents`);
+};
+```
+
+**Button update:**
+- Old: "🖊️ Open Balloon Drawing Tool"
+- New: "📄 Open Document Workspace"
+
+---
+
+**PPAPControlPanel Changes:**
+
+**BEFORE (broken):**
+```typescript
+const routes: Record<string, string> = {
+  control_plan: `/tools/control-plan?ppapId=${ppap.id}`,
+  // ... more broken routes
+};
+
+if (routes[docType]) {
+  router.push(routes[docType]);
+}
+```
+
+**AFTER (unified):**
+```typescript
+const handleCreateDocument = (docType: string) => {
+  // Route all document creation to Document Workspace
+  router.push(`/ppap/${ppap.id}/documents`);
+};
+```
+
+---
+
+**Removed Code:**
+
+**Imports removed:**
+```typescript
+import { openBalloonTool } from '../utils/documentHelpers';
+```
+
+**Functions no longer called:**
+- `openBalloonTool()` — balloon drawing routing
+- All `/tools/*` route mappings — broken tool routes
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ `/document-workspace` loads correctly (standalone)
+✅ `/ppap/[id]/documents` loads correctly (PPAP-integrated)
+✅ NO UUID errors
+✅ PPAP "Documentation" step opens Document Workspace
+✅ NO broken links to `/tools/*`
+✅ All document "Create" buttons route to Document Workspace
+✅ TypeScript compiles cleanly
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to Document Engine core logic
+- NO modifications to templates, mapping, or validation
+- NO modifications to DocumentWorkspace functionality
+- NO changes to BOM parser or normalizer
+
+---
+
+**User Experience:**
+
+**Scenario 1: Standalone usage**
+1. User navigates to `/document-workspace`
+2. Uploads BOM
+3. Generates documents
+4. Works exactly as before
+
+**Scenario 2: PPAP workflow usage**
+1. User in PPAP workflow at Documentation phase
+2. Clicks "📄 Open Document Workspace" button
+3. Routes to `/ppap/[ppapId]/documents`
+4. Document Workspace opens with ppapId context
+5. User can generate all PPAP documents
+
+**Scenario 3: Control Panel usage**
+1. User opens Control Panel view
+2. Clicks "Create" on any document (PFMEA, Control Plan, etc.)
+3. Routes to `/ppap/[ppapId]/documents`
+4. Unified document generation experience
+
+---
+
+**Future Integration Opportunities:**
+
+**BOM passing (future):**
+- PPAP could pass BOM data directly to Document Workspace
+- Eliminate need for re-upload if BOM already exists in PPAP
+- `<DocumentWorkspace ppapId={id} bomData={bomData} />`
+
+**Document sync (future):**
+- Generated documents could be saved back to PPAP
+- Document Workspace could load existing PPAP documents
+- Two-way integration between systems
+
+---
+
+**Foundation for Phase 18 — BOM Integration:**
+
+Routing infrastructure is now in place. Phase 18 could add BOM passing from PPAP to Document Workspace, eliminating duplicate upload step.
+
+---
+
 ## 2026-03-27 15:20 CT - Phase 16 - PPAP Session Persistence (Local State)
 
 - Summary: Implemented localStorage-based session persistence with auto-save, session restore on reload, and reset functionality

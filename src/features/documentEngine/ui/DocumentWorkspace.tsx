@@ -93,7 +93,11 @@ const STEP_DESCRIPTION: Record<string, string> = {
   PSW: 'Finalize submission'
 };
 
-export function DocumentWorkspace() {
+interface DocumentWorkspaceProps {
+  ppapId?: string;
+}
+
+export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   const [appPhase, setAppPhase] = useState<AppPhase>('upload');
   const [normalizedBOM, setNormalizedBOM] = useState<NormalizedBOM | null>(null);
   const [activeStep, setActiveStep] = useState<TemplateId | null>(null);
