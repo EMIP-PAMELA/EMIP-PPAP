@@ -1,15 +1,19 @@
 'use client';
 
-import { DocumentDraft } from '../templates/types';
+import { DocumentDraft, TemplateId } from '../templates/types';
+import { getTemplate } from '../templates/registry';
 
 interface DocumentEditorProps {
   draft: DocumentDraft;
+  templateId: TemplateId;
   onFieldChange: (fieldKey: string, value: any) => void;
   onReset: () => void;
   hasChanges: boolean;
 }
 
-export function DocumentEditor({ draft, onFieldChange, onReset, hasChanges }: DocumentEditorProps) {
+export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasChanges }: DocumentEditorProps) {
+  const template = getTemplate(templateId);
+  const layout = template.layout;
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -52,30 +56,39 @@ export function DocumentEditor({ draft, onFieldChange, onReset, hasChanges }: Do
           </div>
         </div>
 
-        {/* Editable Fields Section */}
-        <div>
-          <h4 className="text-sm font-semibold text-gray-700 mb-3">Document Fields (Editable)</h4>
-          <div className="bg-white rounded p-4 space-y-4">
-            {Object.entries(draft.fields).map(([key, value]) => (
-              <div key={key}>
-                <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
-                  {key.replace(/([A-Z])/g, ' $1').trim()}
-                </label>
-                <input
-                  type={typeof value === 'number' ? 'number' : 'text'}
-                  value={String(value)}
-                  onChange={(e) => {
-                    const newValue = typeof value === 'number' 
-                      ? parseFloat(e.target.value) || 0 
-                      : e.target.value;
-                    onFieldChange(key, newValue);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            ))}
+        {/* Section-Based Fields */}
+        {layout.sections.map((section) => (
+          <div key={section.id}>
+            <h4 className="text-sm font-semibold text-gray-700 mb-3">{section.title}</h4>
+            <div className="bg-white rounded p-4 space-y-4">
+              {section.fields.map((fieldKey) => {
+                // Skip if field doesn't exist in draft
+                if (!(fieldKey in draft.fields)) return null;
+                
+                const value = draft.fields[fieldKey];
+                
+                return (
+                  <div key={fieldKey}>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
+                      {fieldKey.replace(/([A-Z])/g, ' $1').trim()}
+                    </label>
+                    <input
+                      type={typeof value === 'number' ? 'number' : 'text'}
+                      value={String(value)}
+                      onChange={(e) => {
+                        const newValue = typeof value === 'number' 
+                          ? parseFloat(e.target.value) || 0 
+                          : e.target.value;
+                        onFieldChange(fieldKey, newValue);
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        ))}
       </div>
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

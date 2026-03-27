@@ -4,6 +4,531 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 10:47 CT - Phase 6 - Document Layout Layer
+
+- Summary: Implemented document layout layer separating data from structure, enabling section-based document rendering
+- Files modified:
+  - `src/features/documentEngine/templates/types.ts` - Added DocumentLayout and DocumentSection interfaces
+  - `src/features/documentEngine/templates/pswTemplate.ts` - Added structured layout with 3 sections
+  - `src/features/documentEngine/ui/DocumentEditor.tsx` - Updated to render sections dynamically from layout
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` - Pass templateId to DocumentEditor
+- Impact: Documents now render with logical sections and field grouping, prepared for PDF export
+- Objective: Separate document data from document structure for consistent, extensible rendering
+
+**Context:**
+
+Phase 6 introduces a clean separation between document DATA (field values) and document LAYOUT (sections, ordering, grouping).
+
+This phase implements a critical architectural pattern: templates define BOTH data generation AND presentation structure, while UI remains generic and renders purely from layout definitions.
+
+**Problem Statement:**
+
+**Before Phase 6:**
+- Document fields rendered as flat, unordered list
+- No logical grouping of related fields
+- UI hardcoded field rendering order
+- Template defined data but not structure
+- Difficult to prepare for PDF export
+
+**After Phase 6:**
+- Section-based document structure
+- Logical grouping: Part Info, Submission Info, Manufacturing Summary
+- Field ordering controlled by template layout
+- UI renders dynamically from layout definition
+- Ready for structured PDF export
+- Zero template-specific logic in UI
+
+---
+
+**Implementation Details:**
+
+**1. Document Layout Types**
+
+**Added to `templates/types.ts`:**
+```typescript
+export interface DocumentSection {
+  id: string;        // Section identifier
+  title: string;     // Display title
+  fields: string[];  // Field keys in order
+}
+
+export interface DocumentLayout {
+  sections: DocumentSection[];
+}
+```
+
+**Extended TemplateDefinition:**
+```typescript
+export interface TemplateDefinition {
+  id: TemplateId;
+  name: string;
+  description: string;
+  requiredInputs: TemplateInputField[];
+  layout: DocumentLayout;  // NEW - Layout definition
+  generate: (input: TemplateInput) => DocumentDraft;
+}
+```
+
+**Key Design Decisions:**
+- Layout stays in template definition (NOT in DocumentDraft)
+- Sections reference field keys (not values)
+- UI retrieves layout from template registry
+- Fields can appear in any order across sections
+
+**2. PSW Template Layout**
+
+**Added to PSW_TEMPLATE:**
+```typescript
+layout: {
+  sections: [
+    {
+      id: 'part_info',
+      title: 'Part Information',
+      fields: ['partNumber', 'revisionLevel']
+    },
+    {
+      id: 'submission',
+      title: 'Submission Information',
+      fields: ['customerName', 'submissionLevel', 'supplierName']
+    },
+    {
+      id: 'manufacturing_summary',
+      title: 'Manufacturing Summary',
+      fields: [
+        'totalOperations',
+        'totalComponents',
+        'wireCount',
+        'terminalCount',
+        'hardwareCount'
+      ]
+    }
+  ]
+}
+```
+
+**Section Rationale:**
+- **Part Information:** Core part identification (number, revision)
+- **Submission Information:** PPAP submission context (customer, level, supplier)
+- **Manufacturing Summary:** BOM-derived statistics (operations, components breakdown)
+
+**Field Ordering:**
+- Within sections, fields appear in defined order
+- Sections appear in defined order
+- Provides consistent, professional document structure
+
+**3. DocumentEditor Updates**
+
+**New Prop:**
+```typescript
+interface DocumentEditorProps {
+  draft: DocumentDraft;
+  templateId: TemplateId;  // NEW - Template identifier
+  onFieldChange: (fieldKey: string, value: any) => void;
+  onReset: () => void;
+  hasChanges: boolean;
+}
+```
+
+**Layout Retrieval:**
+```typescript
+const template = getTemplate(templateId);
+const layout = template.layout;
+```
+
+**Section-Based Rendering:**
+```typescript
+{layout.sections.map((section) => (
+  <div key={section.id}>
+    <h4>{section.title}</h4>
+    <div>
+      {section.fields.map((fieldKey) => {
+        // Skip if field doesn't exist (graceful handling)
+        if (!(fieldKey in draft.fields)) return null;
+        
+        const value = draft.fields[fieldKey];
+        
+        return (
+          <div key={fieldKey}>
+            <label>{fieldKey.replace(/([A-Z])/g, ' $1').trim()}</label>
+            <input
+              type={typeof value === 'number' ? 'number' : 'text'}
+              value={String(value)}
+              onChange={(e) => {
+                const newValue = typeof value === 'number' 
+                  ? parseFloat(e.target.value) || 0 
+                  : e.target.value;
+                onFieldChange(fieldKey, newValue);
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  </div>
+))}
+```
+
+**4. Missing Field Handling**
+
+**Graceful Skipping:**
+```typescript
+if (!(fieldKey in draft.fields)) return null;
+```
+
+**Why This Matters:**
+- Layout might reference fields not yet implemented
+- Template evolution doesn't break UI
+- Defensive programming prevents crashes
+- Future-proof for template extensions
+
+**5. Preserved Editing Behavior**
+
+**No Changes to State Management:**
+- `editableDraft` still updated immutably
+- `generatedDraft` still immutable
+- Reset functionality unchanged
+- Modified indicator unchanged
+
+**Field Change Handler (Unchanged):**
+```typescript
+const handleFieldChange = (fieldKey: string, value: any) => {
+  setEditableDraft(prev => {
+    if (!prev) return prev;
+    return {
+      ...prev,
+      fields: {
+        ...prev.fields,
+        [fieldKey]: value
+      }
+    };
+  });
+};
+```
+
+**6. DocumentWorkspace Update**
+
+**Pass templateId to DocumentEditor:**
+```typescript
+{currentStep === 'edit' && editableDraft && generatedDraft && selectedTemplate && (
+  <DocumentEditor 
+    draft={editableDraft}
+    templateId={selectedTemplate}  // NEW - Pass template ID
+    onFieldChange={handleFieldChange}
+    onReset={handleResetToGenerated}
+    hasChanges={hasChanges()}
+  />
+)}
+```
+
+**Why This Works:**
+- `selectedTemplate` already tracked in state
+- Available when user reaches edit step
+- No new state needed
+
+---
+
+**Architectural Compliance:**
+
+**✅ Data vs Layout Separation:**
+- DocumentDraft contains ONLY data (fields, metadata)
+- Layout defined in template (NOT in draft)
+- Clear separation of concerns
+
+**✅ Generic UI:**
+- DocumentEditor has ZERO template-specific logic
+- No branching on templateId for rendering
+- Purely driven by layout definition
+- Works for ANY template that follows contract
+
+**✅ Declarative Layout:**
+- Layout is data, not code
+- Sections defined declaratively
+- Field ordering declarative
+- No hidden logic
+
+**✅ Engine Boundary Maintained:**
+- Parser unchanged
+- Normalizer unchanged
+- Document generator unchanged
+- Layout is presentation concern ONLY
+
+**✅ Extensibility:**
+- Adding new template = define layout
+- Adding section = add to layout.sections
+- Reordering fields = change layout
+- UI requires ZERO changes
+
+**✅ No PPAP Coupling:**
+- Layout works in standalone mode
+- No workflow dependencies
+- No PPAP-specific sections
+
+---
+
+**Visual Structure (PSW Document):**
+
+**Before Phase 6 (Flat List):**
+```
+Document Fields (Editable)
+  └─ partNumber
+  └─ customerName
+  └─ revisionLevel
+  └─ submissionLevel
+  └─ supplierName
+  └─ totalOperations
+  └─ totalComponents
+  └─ wireCount
+  └─ terminalCount
+  └─ hardwareCount
+```
+
+**After Phase 6 (Structured Sections):**
+```
+Part Information
+  └─ partNumber
+  └─ revisionLevel
+
+Submission Information
+  └─ customerName
+  └─ submissionLevel
+  └─ supplierName
+
+Manufacturing Summary
+  └─ totalOperations
+  └─ totalComponents
+  └─ wireCount
+  └─ terminalCount
+  └─ hardwareCount
+```
+
+**Benefits:**
+- Logical grouping improves readability
+- Professional document appearance
+- Easier to scan and understand
+- Consistent structure across documents
+- Natural PDF section mapping
+
+---
+
+**Editing Within Sections:**
+
+**User Experience:**
+1. User sees clearly labeled sections
+2. Related fields grouped together
+3. Fields editable within sections
+4. Same editing behavior (type, see change)
+5. Modified badge still works
+6. Reset still restores to generated
+
+**Example Edit Flow:**
+```
+Part Information Section
+  └─ partNumber: "WH-12345-A" → Edit to "WH-12345-B"
+  └─ Modified badge appears
+  
+Submission Information Section
+  └─ customerName: "Trane Technologies" → Edit to "Acme Corp"
+  └─ Modified badge still shown
+  
+Click "Reset to Generated"
+  └─ All fields restored to original values
+  └─ Modified badge disappears
+```
+
+---
+
+**Template Contract:**
+
+**Every Template Must Provide:**
+1. `id` - Template identifier
+2. `name` - Display name
+3. `description` - Template purpose
+4. `requiredInputs` - External data fields
+5. **`layout`** - Section structure (NEW)
+6. `generate()` - Data generation function
+
+**Layout Requirements:**
+- At least one section
+- Each section has id, title, fields
+- Field keys must match generated draft fields
+- Field keys are strings (from draft.fields)
+
+**Example Validation:**
+```typescript
+// Good layout
+layout: {
+  sections: [
+    { id: 'info', title: 'Information', fields: ['name', 'date'] }
+  ]
+}
+
+// Bad layout (missing required props)
+layout: {
+  sections: [
+    { title: 'Information' }  // ❌ Missing id and fields
+  ]
+}
+```
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to parser (`bomParser.ts`)
+- NO modifications to normalizer (`bomNormalizer.ts`)
+- NO modifications to document generator (`documentGenerator.ts`)
+- NO modifications to DocumentDraft structure (still fields + metadata)
+- NO PDF export added (future phase)
+- NO database persistence
+- NO PPAP integration
+- NO template-specific UI logic
+
+---
+
+**Build Verification:**
+
+TypeScript compilation: ✅ PASSED
+```bash
+npx tsc --noEmit --skipLibCheck
+Exit code: 0
+```
+
+All files compile cleanly:
+- Updated template types
+- PSW template with layout
+- DocumentEditor with section rendering
+- DocumentWorkspace with templateId passing
+
+---
+
+**Success Criteria Met:**
+
+✅ DocumentEditor renders sections instead of flat fields  
+✅ PSW document appears structured and grouped  
+✅ Field editing still works correctly  
+✅ Layout defined only in template  
+✅ UI remains generic (no template-specific logic)  
+✅ Code compiles cleanly  
+✅ Graceful handling of missing fields  
+✅ Reset and modified logic preserved  
+
+---
+
+**Future Capabilities Enabled:**
+
+**1. PDF Export (Phase 6A):**
+- Sections map directly to PDF sections
+- Field ordering preserved
+- Professional layout structure
+- No UI changes needed
+
+**2. Additional Templates:**
+- Control Plan template with layout
+- FMEA template with layout
+- FAIR template with layout
+- Each defines own section structure
+
+**3. Section-Level Features:**
+- Collapsible sections
+- Section-level validation
+- Section progress indicators
+- Section-specific help text
+
+**4. Advanced Layouts:**
+- Multi-column sections
+- Nested subsections
+- Conditional sections
+- Dynamic section ordering
+
+---
+
+**Technical Notes:**
+
+**Why Layout in Template, Not Draft?**
+
+**Bad (layout in draft):**
+```typescript
+interface DocumentDraft {
+  templateId: TemplateId;
+  metadata: Record<string, any>;
+  fields: Record<string, any>;
+  layout: DocumentLayout;  // ❌ Duplicates template info
+}
+```
+
+**Good (layout in template):**
+```typescript
+// Template defines layout once
+template.layout = { sections: [...] }
+
+// Draft contains only data
+draft = { templateId, metadata, fields }
+
+// UI retrieves layout from template
+const template = getTemplate(draft.templateId);
+const layout = template.layout;
+```
+
+**Benefits:**
+- No duplication
+- Single source of truth
+- Draft stays focused on data
+- Template owns presentation
+
+**Field Key Reference Pattern:**
+
+**Layout references keys:**
+```typescript
+layout: {
+  sections: [
+    { id: 's1', title: 'Info', fields: ['name', 'date'] }
+  ]
+}
+```
+
+**Draft provides values:**
+```typescript
+draft: {
+  fields: {
+    name: 'John Doe',
+    date: '2026-03-27'
+  }
+}
+```
+
+**UI maps key → value:**
+```typescript
+section.fields.map(fieldKey => {
+  const value = draft.fields[fieldKey];
+  return <input value={value} />;
+})
+```
+
+---
+
+**Next Recommended Phase:**
+
+**Phase 7 - PDF Export**
+
+Implement PDF generation:
+- Install PDF library (jsPDF or react-pdf)
+- Create PDF renderer from layout
+- Map sections to PDF sections
+- Download/print functionality
+- Maintain layout-driven approach
+
+**OR**
+
+**Phase 8 - Document Persistence**
+
+Add save/load capability:
+- Save editable draft to database
+- Load saved drafts
+- Draft versioning
+- Audit trail (created, modified, author)
+
+---
+
 ## 2026-03-26 21:55 CT - Phase 5 - Editable Draft Layer
 
 - Summary: Implemented editable draft layer enabling field-level editing with immutable state management and change tracking

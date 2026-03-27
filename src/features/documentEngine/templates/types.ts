@@ -28,10 +28,21 @@ export interface DocumentDraft {
   fields: Record<string, any>;
 }
 
+export interface DocumentSection {
+  id: string;
+  title: string;
+  fields: string[];
+}
+
+export interface DocumentLayout {
+  sections: DocumentSection[];
+}
+
 export interface TemplateDefinition {
   id: TemplateId;
   name: string;
   description: string;
   requiredInputs: TemplateInputField[];
+  layout: DocumentLayout;
   generate: (input: TemplateInput) => DocumentDraft;
 }

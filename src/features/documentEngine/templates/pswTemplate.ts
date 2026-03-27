@@ -102,5 +102,30 @@ export const PSW_TEMPLATE: TemplateDefinition = {
   name: 'Production Part Submission Warrant',
   description: 'Part submission documentation for PPAP process',
   requiredInputs: REQUIRED_INPUTS,
+  layout: {
+    sections: [
+      {
+        id: 'part_info',
+        title: 'Part Information',
+        fields: ['partNumber', 'revisionLevel']
+      },
+      {
+        id: 'submission',
+        title: 'Submission Information',
+        fields: ['customerName', 'submissionLevel', 'supplierName']
+      },
+      {
+        id: 'manufacturing_summary',
+        title: 'Manufacturing Summary',
+        fields: [
+          'totalOperations',
+          'totalComponents',
+          'wireCount',
+          'terminalCount',
+          'hardwareCount'
+        ]
+      }
+    ]
+  },
   generate: generatePSW
 };

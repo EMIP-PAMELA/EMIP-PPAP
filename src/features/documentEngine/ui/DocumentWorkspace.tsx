@@ -217,9 +217,10 @@ export function DocumentWorkspace() {
           />
         )}
 
-        {currentStep === 'edit' && editableDraft && generatedDraft && (
+        {currentStep === 'edit' && editableDraft && generatedDraft && selectedTemplate && (
           <DocumentEditor 
             draft={editableDraft}
+            templateId={selectedTemplate}
             onFieldChange={handleFieldChange}
             onReset={handleResetToGenerated}
             hasChanges={hasChanges()}
