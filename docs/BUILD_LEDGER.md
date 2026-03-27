@@ -4,6 +4,166 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 14:25 CT - Phase 12 - Minimal Workflow UI (Visibility Layer)
+
+- Summary: Replaced single-template selector workflow with step-based document chain UI, making the full Process Flow → PFMEA → Control Plan → PSW chain visible and navigable
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Full rewrite to step-based workflow UI
+- Removed imports: `TemplateSelector`, `TemplateInputForm` (no longer needed in workflow)
+- Impact: Users can now generate and navigate between all four PPAP documents in a single session
+- Objective: UI orchestration layer to expose existing document engine behavior
+
+---
+
+**Architecture: UI Orchestration Only**
+
+This phase introduces zero logic changes to the underlying engine. All changes are confined to `DocumentWorkspace.tsx`.
+
+```
+BOM Upload
+  ↓ handleBOMProcessed()
+Workflow Phase (appPhase = 'workflow')
+  ↓ WORKFLOW_STEPS panel
+Step Click → handleStepClick(stepId)
+  ↓ generateDocumentDraft()  [existing engine, unchanged]
+  ↓ validateDocument()       [existing validation, unchanged]
+  ↓ stored in documents[stepId] + editableDocuments[stepId]
+DocumentEditor renders editableDocuments[activeStep]
+```
+
+---
+
+**State Model Changes:**
+
+Before (single-document linear flow):
+```typescript
+selectedTemplate: TemplateId | null
+generatedDraft: DocumentDraft | null
+editableDraft: DocumentDraft | null
+validationResult: ValidationResult | null
+currentStep: 'upload' | 'select-template' | 'input-data' | 'edit'
+```
+
+After (multi-document parallel state):
+```typescript
+appPhase: 'upload' | 'workflow'
+activeStep: TemplateId | null
+documents: Record<string, DocumentDraft>           // original generated
+editableDocuments: Record<string, DocumentDraft>   // user-edited copies
+validationResults: Record<string, ValidationResult> // per-document
+```
+
+---
+
+**WORKFLOW_STEPS constant (UI orchestration layer):**
+
+```typescript
+const WORKFLOW_STEPS: Array<{ id: TemplateId; label: string }> = [
+  { id: 'PROCESS_FLOW', label: 'Process Flow' },
+  { id: 'PFMEA', label: 'PFMEA' },
+  { id: 'CONTROL_PLAN', label: 'Control Plan' },
+  { id: 'PSW', label: 'PSW' }
+];
+```
+
+---
+
+**Step Navigation Panel — Visual Indicators:**
+
+Each step button shows one of three states:
+
+| State | Visual |
+|---|---|
+| Active | Blue background, white text, white numbered badge |
+| Generated | Green tinted, green badge, "Generated" label |
+| Not Generated | Gray tinted, gray badge, "Not Generated" label |
+
+Steps are connected by vertical dividers to show chain relationship. Clicking any step generates (or re-generates) that document immediately — no enforced ordering.
+
+---
+
+**Behavior Per Step Click:**
+
+```typescript
+const handleStepClick = (stepId: TemplateId) => {
+  const draft = generateDocumentDraft(stepId, { bom: normalizedBOM, externalData: {} });
+  const editableCopy = structuredClone(draft);
+  const validation = validateDocument(editableCopy, template);
+  setDocuments(prev => ({ ...prev, [stepId]: draft }));
+  setEditableDocuments(prev => ({ ...prev, [stepId]: editableCopy }));
+  setValidationResults(prev => ({ ...prev, [stepId]: validation }));
+  setActiveStep(stepId);
+};
+```
+
+Each document independently calls `generateDocumentDraft()` — no cross-document dependencies in UI state.
+
+---
+
+**Features Preserved:**
+
+✅ Editing works — `handleFieldChange` writes to `editableDocuments[activeStep]`
+✅ Validation runs live — re-validates on every field change, reset, and generation
+✅ Reset to generated — `handleResetToGenerated` clones `documents[activeStep]` back
+✅ PDF export — uses `editableDocuments[activeStep]` with eval-based dynamic import
+✅ Regenerate button — re-clicks `handleStepClick(activeStep)` to refresh from BOM
+
+---
+
+**UI Layout:**
+
+```
+[Header]
+[BOM Summary bar — compact, with "Load New BOM" link]
+[Left: 52-width Document Chain panel] [Right: flex-1 main area]
+  Step buttons (4)              Validation summary
+  with status indicators        Document editor (or empty prompt)
+                                Action buttons (Download PDF / Regenerate)
+```
+
+---
+
+**What Was Removed:**
+
+- `TemplateSelector` component usage (replaced by `WORKFLOW_STEPS` panel)
+- `TemplateInputForm` component usage (templates have no required inputs for PSW-chain)
+- `WorkflowStep` linear state machine (`'upload' | 'select-template' | 'input-data' | 'edit'`)
+- Progress bar stepper UI (replaced by document chain panel)
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ User sees step-based document chain workflow
+✅ Clicking each step generates the correct document
+✅ Documents persist in UI state across step switches
+✅ User can switch between all four documents freely
+✅ Validation summary displays per active document
+✅ Editing still works for all documents
+✅ PDF export works for active document
+✅ No architecture violations (UI layer only)
+✅ TypeScript compiles cleanly
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to templates
+- NO modifications to mapping functions
+- NO modifications to validation engine
+- NO persistence introduced
+- NO workflow gating introduced
+
+---
+
 ## 2026-03-27 14:14 CT - Phase 11 - System-Level Validation Engine
 
 - Summary: Implemented template-driven validation engine for document drafts with real-time validation feedback

@@ -10,37 +10,36 @@ import { TemplateId, DocumentDraft } from '../templates/types';
 import { validateDocument } from '../validation/validateDocument';
 import { ValidationResult } from '../validation/types';
 import { BOMUpload } from './BOMUpload';
-import { TemplateSelector } from './TemplateSelector';
-import { TemplateInputForm } from './TemplateInputForm';
 import { DocumentEditor } from './DocumentEditor';
 
-type WorkflowStep = 'upload' | 'select-template' | 'input-data' | 'edit';
+type AppPhase = 'upload' | 'workflow';
+
+const WORKFLOW_STEPS: Array<{ id: TemplateId; label: string }> = [
+  { id: 'PROCESS_FLOW', label: 'Process Flow' },
+  { id: 'PFMEA', label: 'PFMEA' },
+  { id: 'CONTROL_PLAN', label: 'Control Plan' },
+  { id: 'PSW', label: 'PSW' }
+];
 
 export function DocumentWorkspace() {
-  const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
-  const [rawText, setRawText] = useState<string | null>(null);
+  const [appPhase, setAppPhase] = useState<AppPhase>('upload');
   const [normalizedBOM, setNormalizedBOM] = useState<NormalizedBOM | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState<TemplateId | null>(null);
-  const [generatedDraft, setGeneratedDraft] = useState<DocumentDraft | null>(null);
-  const [editableDraft, setEditableDraft] = useState<DocumentDraft | null>(null);
-  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [activeStep, setActiveStep] = useState<TemplateId | null>(null);
+  const [documents, setDocuments] = useState<Record<string, DocumentDraft>>({});
+  const [editableDocuments, setEditableDocuments] = useState<Record<string, DocumentDraft>>({});
+  const [validationResults, setValidationResults] = useState<Record<string, ValidationResult>>({});
   const [error, setError] = useState<string | null>(null);
 
   const handleBOMProcessed = (text: string) => {
     try {
       setError(null);
-      setRawText(text);
-
       console.log('[DocumentWorkspace] Parsing BOM text...');
       const parsed = parseBOMText(text);
-      
       console.log('[DocumentWorkspace] Normalizing BOM data...');
       const normalized = normalizeBOMData(parsed);
-      
       setNormalizedBOM(normalized);
-      setCurrentStep('select-template');
-      
-      console.log('[DocumentWorkspace] BOM processed successfully');
+      setAppPhase('workflow');
+      console.log('[DocumentWorkspace] BOM processed:', normalized.masterPartNumber);
       console.log(`[DocumentWorkspace] Found ${normalized.summary.totalOperations} operations, ${normalized.summary.totalComponents} components`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to process BOM');
@@ -48,129 +47,95 @@ export function DocumentWorkspace() {
     }
   };
 
-  const handleTemplateSelected = (templateId: TemplateId) => {
-    setSelectedTemplate(templateId);
-    setCurrentStep('input-data');
-  };
-
-  const handleInputsComplete = (inputs: Record<string, any>) => {
-    if (!normalizedBOM || !selectedTemplate) return;
-
+  const handleStepClick = (stepId: TemplateId) => {
+    if (!normalizedBOM) return;
     try {
       setError(null);
-      
-      console.log('[DocumentWorkspace] Generating document draft...');
-      const draft = generateDocumentDraft(selectedTemplate, {
-        bom: normalizedBOM,
-        externalData: inputs
-      });
-
-      setGeneratedDraft(draft);
-      
-      // Create editable copy using structuredClone
+      console.log(`[DocumentWorkspace] Generating ${stepId}...`);
+      const draft = generateDocumentDraft(stepId, { bom: normalizedBOM, externalData: {} });
       const editableCopy = structuredClone(draft);
-      setEditableDraft(editableCopy);
-      
-      // Validate the generated draft
-      const template = getTemplate(selectedTemplate);
+      const template = getTemplate(stepId);
       const validation = validateDocument(editableCopy, template);
-      setValidationResult(validation);
-      
-      setCurrentStep('edit');
-      
-      console.log('[DocumentWorkspace] Document draft generated successfully');
-      console.log('[DocumentWorkspace] Editable draft initialized');
-      console.log('[DocumentWorkspace] Validation result:', validation.isValid ? 'Valid' : `${validation.errors.length} errors`);
+
+      setDocuments(prev => ({ ...prev, [stepId]: draft }));
+      setEditableDocuments(prev => ({ ...prev, [stepId]: editableCopy }));
+      setValidationResults(prev => ({ ...prev, [stepId]: validation }));
+      setActiveStep(stepId);
+
+      console.log(`[DocumentWorkspace] ${stepId} generated:`, validation.isValid ? 'Valid' : `${validation.errors.length} errors`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate document');
-      console.error('[DocumentWorkspace] Error generating document:', err);
-    }
-  };
-
-  const handleResetWorkspace = () => {
-    setCurrentStep('upload');
-    setRawText(null);
-    setNormalizedBOM(null);
-    setSelectedTemplate(null);
-    setGeneratedDraft(null);
-    setEditableDraft(null);
-    setValidationResult(null);
-    setError(null);
-  };
-
-  const handleResetToGenerated = () => {
-    if (generatedDraft && selectedTemplate) {
-      const resetDraft = structuredClone(generatedDraft);
-      setEditableDraft(resetDraft);
-      
-      // Re-validate after reset
-      const template = getTemplate(selectedTemplate);
-      const validation = validateDocument(resetDraft, template);
-      setValidationResult(validation);
-      
-      console.log('[DocumentWorkspace] Draft reset to generated version');
+      setError(err instanceof Error ? err.message : `Failed to generate ${stepId}`);
+      console.error(`[DocumentWorkspace] Error generating ${stepId}:`, err);
     }
   };
 
   const handleFieldChange = (fieldKey: string, value: any) => {
-    setEditableDraft(prev => {
-      if (!prev || !selectedTemplate) return prev;
-      
+    if (!activeStep) return;
+    setEditableDocuments(prev => {
+      const current = prev[activeStep];
+      if (!current) return prev;
       const updated = {
-        ...prev,
-        fields: {
-          ...prev.fields,
-          [fieldKey]: value
-        }
+        ...current,
+        fields: { ...current.fields, [fieldKey]: value }
       };
-      
-      // Re-validate after field change
-      const template = getTemplate(selectedTemplate);
+      const template = getTemplate(activeStep);
       const validation = validateDocument(updated, template);
-      setValidationResult(validation);
-      
-      return updated;
+      setValidationResults(vr => ({ ...vr, [activeStep]: validation }));
+      return { ...prev, [activeStep]: updated };
     });
   };
 
+  const handleResetToGenerated = () => {
+    if (!activeStep || !documents[activeStep]) return;
+    const resetDraft = structuredClone(documents[activeStep]);
+    const template = getTemplate(activeStep);
+    const validation = validateDocument(resetDraft, template);
+    setEditableDocuments(prev => ({ ...prev, [activeStep]: resetDraft }));
+    setValidationResults(prev => ({ ...prev, [activeStep]: validation }));
+    console.log(`[DocumentWorkspace] ${activeStep} reset to generated version`);
+  };
+
+  const handleResetWorkspace = () => {
+    setAppPhase('upload');
+    setNormalizedBOM(null);
+    setActiveStep(null);
+    setDocuments({});
+    setEditableDocuments({});
+    setValidationResults({});
+    setError(null);
+  };
+
   const hasChanges = () => {
-    if (!generatedDraft || !editableDraft) return false;
-    return JSON.stringify(generatedDraft.fields) !== JSON.stringify(editableDraft.fields);
+    if (!activeStep) return false;
+    const orig = documents[activeStep];
+    const edit = editableDocuments[activeStep];
+    if (!orig || !edit) return false;
+    return JSON.stringify(orig.fields) !== JSON.stringify(edit.fields);
   };
 
   const handleExportPDF = async () => {
-    if (!editableDraft || !selectedTemplate) return;
-
+    if (!activeStep || !editableDocuments[activeStep]) return;
+    const editableDraft = editableDocuments[activeStep];
     try {
       setError(null);
       console.log('[DocumentWorkspace] Generating PDF...');
-      
       // NOTE:
       // Using eval-based dynamic import to prevent Turbopack from
       // statically analyzing and bundling pdfGenerator into SSR.
       // This ensures PDF libraries (jsPDF/fflate) remain client-only.
-      const generateModule = await (0, eval)(
-        "import('../export/pdfGenerator')"
-      );
-      
+      const generateModule = await (0, eval)("import('../export/pdfGenerator')");
       const { generatePDF } = generateModule;
-      
       const templateModule = await import('../templates/registry');
-      const template = templateModule.getTemplate(selectedTemplate);
-      
+      const template = templateModule.getTemplate(activeStep);
       const pdfBytes = await generatePDF(editableDraft, template);
-      
       const arrayBuffer = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength) as ArrayBuffer;
       const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
-      
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${selectedTemplate}-${editableDraft.fields.partNumber || 'document'}.pdf`;
+      a.download = `${activeStep}-${editableDraft.fields.partNumber || 'document'}.pdf`;
       a.click();
-      
       URL.revokeObjectURL(url);
-      
       console.log('[DocumentWorkspace] PDF downloaded');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate PDF');
@@ -178,69 +143,15 @@ export function DocumentWorkspace() {
     }
   };
 
-  const steps = [
-    { id: 'upload', label: 'Upload BOM' },
-    { id: 'select-template', label: 'Select Template' },
-    { id: 'input-data', label: 'Provide Information' },
-    { id: 'edit', label: 'Edit Document' }
-  ];
-
-  const currentStepIndex = steps.findIndex(s => s.id === currentStep);
+  const currentEditableDraft = activeStep ? editableDocuments[activeStep] ?? null : null;
+  const currentValidation = activeStep ? validationResults[activeStep] ?? null : null;
 
   return (
-    <div className="max-w-4xl mx-auto py-8 px-4">
+    <div className="max-w-5xl mx-auto py-8 px-4">
+      {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Document Workspace
-        </h1>
-        <p className="text-gray-600">
-          Generate PPAP documents from BOM data
-        </p>
-      </div>
-
-      {/* Progress Steps */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          {steps.map((step, index) => (
-            <div key={step.id} className="flex items-center flex-1">
-              <div className="flex flex-col items-center flex-1">
-                <div
-                  className={`
-                    w-10 h-10 rounded-full flex items-center justify-center font-semibold
-                    ${index <= currentStepIndex
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-400'
-                    }
-                  `}
-                >
-                  {index + 1}
-                </div>
-                <span
-                  className={`
-                    text-sm mt-2
-                    ${index <= currentStepIndex
-                      ? 'text-gray-900 font-medium'
-                      : 'text-gray-400'
-                    }
-                  `}
-                >
-                  {step.label}
-                </span>
-              </div>
-              {index < steps.length - 1 && (
-                <div
-                  className={`
-                    h-1 flex-1 mx-2
-                    ${index < currentStepIndex
-                      ? 'bg-blue-600'
-                      : 'bg-gray-200'
-                    }
-                  `}
-                />
-              )}
-            </div>
-          ))}
-        </div>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Document Workspace</h1>
+        <p className="text-gray-600">Generate PPAP documents from BOM data</p>
       </div>
 
       {/* Error Display */}
@@ -251,95 +162,158 @@ export function DocumentWorkspace() {
         </div>
       )}
 
-      {/* BOM Summary (if loaded) */}
-      {normalizedBOM && currentStep !== 'upload' && (
-        <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
-          <h4 className="text-green-800 font-semibold mb-2">BOM Loaded</h4>
-          <div className="text-sm text-green-700 space-y-1">
-            <p>Part Number: <strong>{normalizedBOM.masterPartNumber}</strong></p>
-            <p>Operations: <strong>{normalizedBOM.summary.totalOperations}</strong></p>
-            <p>Components: <strong>{normalizedBOM.summary.totalComponents}</strong> ({normalizedBOM.summary.wires} wires, {normalizedBOM.summary.terminals} terminals, {normalizedBOM.summary.hardware} hardware)</p>
-          </div>
+      {appPhase === 'upload' ? (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <BOMUpload onBOMProcessed={handleBOMProcessed} />
         </div>
-      )}
-
-      {/* Validation Summary (if in edit step) */}
-      {currentStep === 'edit' && validationResult && (
-        <div className={`mb-6 border rounded-lg p-4 ${
-          validationResult.isValid
-            ? 'bg-green-50 border-green-200'
-            : 'bg-yellow-50 border-yellow-200'
-        }`}>
-          <h4 className={`font-semibold mb-2 ${
-            validationResult.isValid
-              ? 'text-green-800'
-              : 'text-yellow-800'
-          }`}>
-            {validationResult.isValid ? '✓ Document Valid' : `⚠ ${validationResult.errors.length} Validation ${validationResult.errors.length === 1 ? 'Error' : 'Errors'}`}
-          </h4>
-          {!validationResult.isValid && (
-            <div className="text-sm text-yellow-700 space-y-1">
-              {validationResult.errors.slice(0, 5).map((err, idx) => (
-                <p key={idx}>
-                  {err.rowIndex != null ? `Row ${err.rowIndex + 1}: ` : ''}
-                  <strong>{err.field}</strong> - {err.message}
-                </p>
-              ))}
-              {validationResult.errors.length > 5 && (
-                <p className="italic">...and {validationResult.errors.length - 5} more</p>
-              )}
+      ) : (
+        <>
+          {/* BOM Summary */}
+          {normalizedBOM && (
+            <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-green-800 font-semibold mb-1">BOM Loaded</h4>
+                  <div className="text-sm text-green-700 flex gap-6">
+                    <span>Part: <strong>{normalizedBOM.masterPartNumber}</strong></span>
+                    <span>Operations: <strong>{normalizedBOM.summary.totalOperations}</strong></span>
+                    <span>Components: <strong>{normalizedBOM.summary.totalComponents}</strong> ({normalizedBOM.summary.wires}W / {normalizedBOM.summary.terminals}T / {normalizedBOM.summary.hardware}H)</span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleResetWorkspace}
+                  className="text-sm text-gray-500 hover:text-gray-700 underline"
+                >
+                  Load New BOM
+                </button>
+              </div>
             </div>
           )}
-        </div>
-      )}
 
-      {/* Step Content */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        {currentStep === 'upload' && (
-          <BOMUpload onBOMProcessed={handleBOMProcessed} />
-        )}
+          <div className="flex gap-6 items-start">
+            {/* Step Navigation Panel */}
+            <div className="w-52 flex-shrink-0">
+              <div className="bg-white rounded-lg shadow-md p-4">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                  Document Chain
+                </h3>
+                <div className="space-y-1">
+                  {WORKFLOW_STEPS.map((step, index) => {
+                    const isGenerated = !!documents[step.id];
+                    const isActive = activeStep === step.id;
+                    return (
+                      <div key={step.id}>
+                        <button
+                          onClick={() => handleStepClick(step.id)}
+                          className={`w-full text-left rounded-md px-3 py-2.5 transition-colors ${
+                            isActive
+                              ? 'bg-blue-600 text-white'
+                              : isGenerated
+                              ? 'bg-green-50 text-green-800 border border-green-200 hover:bg-green-100'
+                              : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                              isActive
+                                ? 'bg-white text-blue-600'
+                                : isGenerated
+                                ? 'bg-green-500 text-white'
+                                : 'bg-gray-300 text-gray-600'
+                            }`}>
+                              {index + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="font-medium text-sm leading-tight">{step.label}</div>
+                              <div className={`text-xs mt-0.5 ${
+                                isActive ? 'text-blue-100' : isGenerated ? 'text-green-600' : 'text-gray-400'
+                              }`}>
+                                {isActive ? 'Active' : isGenerated ? 'Generated' : 'Not Generated'}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                        {index < WORKFLOW_STEPS.length - 1 && (
+                          <div className="ml-5 w-px h-2 bg-gray-200 mx-auto" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
-        {currentStep === 'select-template' && (
-          <TemplateSelector
-            onTemplateSelected={handleTemplateSelected}
-            disabled={!normalizedBOM}
-          />
-        )}
+            {/* Main Content Area */}
+            <div className="flex-1 min-w-0">
+              {/* Validation Summary */}
+              {currentValidation && (
+                <div className={`mb-4 border rounded-lg p-4 ${
+                  currentValidation.isValid
+                    ? 'bg-green-50 border-green-200'
+                    : 'bg-yellow-50 border-yellow-200'
+                }`}>
+                  <h4 className={`font-semibold mb-1 ${
+                    currentValidation.isValid ? 'text-green-800' : 'text-yellow-800'
+                  }`}>
+                    {currentValidation.isValid
+                      ? '✓ Document Valid'
+                      : `⚠ ${currentValidation.errors.length} Validation ${currentValidation.errors.length === 1 ? 'Error' : 'Errors'}`}
+                  </h4>
+                  {!currentValidation.isValid && (
+                    <div className="text-sm text-yellow-700 space-y-1">
+                      {currentValidation.errors.slice(0, 5).map((err, idx) => (
+                        <p key={idx}>
+                          {err.rowIndex != null ? `Row ${err.rowIndex + 1}: ` : ''}
+                          <strong>{err.field}</strong> — {err.message}
+                        </p>
+                      ))}
+                      {currentValidation.errors.length > 5 && (
+                        <p className="italic">...and {currentValidation.errors.length - 5} more</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
-        {currentStep === 'input-data' && selectedTemplate && (
-          <TemplateInputForm
-            templateId={selectedTemplate}
-            onInputsComplete={handleInputsComplete}
-          />
-        )}
+              {/* Document Editor */}
+              <div className="bg-white rounded-lg shadow-md p-6">
+                {currentEditableDraft && activeStep ? (
+                  <DocumentEditor
+                    draft={currentEditableDraft}
+                    templateId={activeStep}
+                    onFieldChange={handleFieldChange}
+                    onReset={handleResetToGenerated}
+                    hasChanges={hasChanges()}
+                  />
+                ) : (
+                  <div className="text-center py-16">
+                    <div className="text-5xl mb-4">📄</div>
+                    <p className="text-lg font-medium text-gray-500">Select a document step to get started</p>
+                    <p className="text-sm text-gray-400 mt-2">Click any step on the left to generate that document</p>
+                  </div>
+                )}
+              </div>
 
-        {currentStep === 'edit' && editableDraft && generatedDraft && selectedTemplate && (
-          <DocumentEditor 
-            draft={editableDraft}
-            templateId={selectedTemplate}
-            onFieldChange={handleFieldChange}
-            onReset={handleResetToGenerated}
-            hasChanges={hasChanges()}
-          />
-        )}
-      </div>
-
-      {/* Actions */}
-      {currentStep === 'edit' && (
-        <div className="mt-6 flex gap-4">
-          <button
-            onClick={handleExportPDF}
-            className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-colors"
-          >
-            Download PDF
-          </button>
-          <button
-            onClick={handleResetWorkspace}
-            className="flex-1 py-3 px-4 bg-gray-600 text-white rounded-md font-semibold hover:bg-gray-700 transition-colors"
-          >
-            Start New Document
-          </button>
-        </div>
+              {/* Actions */}
+              {currentEditableDraft && (
+                <div className="mt-4 flex gap-3">
+                  <button
+                    onClick={handleExportPDF}
+                    className="flex-1 py-2.5 px-4 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-colors text-sm"
+                  >
+                    Download PDF
+                  </button>
+                  <button
+                    onClick={() => activeStep && handleStepClick(activeStep)}
+                    className="py-2.5 px-4 bg-gray-100 text-gray-700 rounded-md font-semibold hover:bg-gray-200 transition-colors text-sm border border-gray-200"
+                  >
+                    Regenerate
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
