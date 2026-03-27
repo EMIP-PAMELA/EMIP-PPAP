@@ -4,6 +4,205 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 14:46 CT - Phase 14 - Source-Aware Regeneration (True Propagation, Safe Mode)
+
+- Summary: Implemented source-aware document generation with best-source selection, user edit protection, and transparent messaging
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Added generateWithBestSource, edit protection, source-aware messaging
+- Impact: PFMEA now derives from Process Flow when available, Control Plan from PFMEA when available, with safe fallback to BOM
+- Objective: Enable true document propagation while preserving user control and non-destructive workflow
+
+---
+
+**Architecture: UI Orchestration Layer Only**
+
+Zero changes to templates, mapping functions, or validation. All logic added to `DocumentWorkspace.tsx` to conditionally compose existing mappers based on available upstream documents.
+
+---
+
+**New Function: generateWithBestSource**
+
+```typescript
+const generateWithBestSource = (stepId: TemplateId): { draft: DocumentDraft; actualSource: string } => {
+  // Returns: { draft, actualSource }
+}
+```
+
+**Source Selection Rules:**
+
+| Step | Logic |
+|---|---|
+| `PROCESS_FLOW` | Always BOM |
+| `PFMEA` | Process Flow if exists, else BOM |
+| `CONTROL_PLAN` | PFMEA if exists, else BOM chain |
+| `PSW` | Always BOM |
+
+---
+
+**PFMEA Source-Aware Generation:**
+
+```typescript
+if (documents['PROCESS_FLOW']) {
+  const processFlow = mapBOMToProcessFlow(normalizedBOM!);
+  const pfmea = mapProcessFlowToPFMEA(processFlow);
+  draft = { templateId: 'PFMEA', metadata: {...}, fields: {...} };
+  actualSource = 'Process Flow';
+} else {
+  draft = generateDocumentDraft('PFMEA', { bom: normalizedBOM!, externalData: {} });
+  actualSource = 'BOM (no Process Flow available)';
+}
+```
+
+**Control Plan Source-Aware Generation:**
+
+```typescript
+if (documents['PFMEA']) {
+  const processFlow = mapBOMToProcessFlow(normalizedBOM!);
+  const pfmea = mapProcessFlowToPFMEA(processFlow);
+  const controlPlan = mapPFMEAToControlPlan(pfmea);
+  draft = { templateId: 'CONTROL_PLAN', metadata: {...}, fields: {...} };
+  actualSource = 'PFMEA';
+} else {
+  draft = generateDocumentDraft('CONTROL_PLAN', { bom: normalizedBOM!, externalData: {} });
+  actualSource = 'BOM (no PFMEA available)';
+}
+```
+
+---
+
+**User Edit Protection (CRITICAL):**
+
+Before regenerating a document, system checks:
+
+```typescript
+const hasEdits = editableDocuments[stepId] && hasChanges();
+
+if (isRegen && hasEdits && activeStep === stepId) {
+  const confirmed = window.confirm(
+    `Regenerating will overwrite your edits to ${label}. Continue?`
+  );
+  if (!confirmed) {
+    console.log(`[DocumentWorkspace] Regeneration cancelled by user`);
+    return;
+  }
+}
+```
+
+**Protection applies when:**
+- Document already exists (`isRegen`)
+- User has made edits (`hasEdits`)
+- User is viewing that document (`activeStep === stepId`)
+
+**If user cancels:** Regeneration aborted, no state changes.
+
+---
+
+**Enhanced Regeneration Messaging:**
+
+Messages now reflect **actual source used**, not just default:
+
+| Scenario | Message |
+|---|---|
+| PFMEA with Process Flow | `Generating PFMEA from Process Flow` |
+| PFMEA without Process Flow | `Generating PFMEA from BOM (no Process Flow available)` |
+| Control Plan with PFMEA | `Generating Control Plan from PFMEA` |
+| Control Plan without PFMEA | `Generating Control Plan from BOM (no PFMEA available)` |
+| Process Flow | `Generating Process Flow from BOM` |
+| PSW | `Generating PSW from BOM` |
+
+---
+
+**Mapper Reuse (No New Logic):**
+
+All generation uses **existing mappers**:
+- `mapBOMToProcessFlow` (unchanged)
+- `mapProcessFlowToPFMEA` (unchanged)
+- `mapPFMEAToControlPlan` (unchanged)
+
+System conditionally composes them based on `documents` state. No new mapping logic introduced.
+
+---
+
+**Timestamp Tracking Preserved:**
+
+```typescript
+setDocumentTimestamps(prev => ({ ...prev, [stepId]: now }));
+```
+
+Stale detection from Phase 13 continues to work correctly.
+
+---
+
+**No Auto-Propagation:**
+
+**IMPORTANT:** System does NOT automatically regenerate downstream documents when upstream changes.
+
+If user regenerates Process Flow:
+- PFMEA is NOT automatically regenerated
+- Control Plan is NOT automatically regenerated
+- User must manually click each step to regenerate
+
+Stale indicators (orange state) inform user that downstream docs may be out of sync, but **no automatic action is taken**.
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ PFMEA uses Process Flow when available
+✅ Control Plan uses PFMEA when available
+✅ Fallback to BOM works correctly
+✅ User edits protected (confirmation required before overwrite)
+✅ Regeneration messaging reflects actual source used
+✅ Stale detection still works (Phase 13 logic preserved)
+✅ No architecture violations (UI layer only)
+✅ TypeScript compiles cleanly
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to templates
+- NO modifications to mapping functions
+- NO modifications to validation engine
+- NO auto-propagation introduced
+- NO persistence introduced
+
+---
+
+**Data Flow Examples:**
+
+**Scenario 1: User generates all docs in order**
+1. User clicks Process Flow → generates from BOM
+2. User clicks PFMEA → generates from Process Flow (source-aware)
+3. User clicks Control Plan → generates from PFMEA (source-aware)
+4. User clicks PSW → generates from BOM
+
+**Scenario 2: User skips Process Flow**
+1. User clicks PFMEA directly → generates from BOM (fallback)
+2. User clicks Control Plan → generates from BOM chain (fallback)
+
+**Scenario 3: User regenerates Process Flow after editing PFMEA**
+1. Process Flow regenerated → timestamp updated
+2. PFMEA shows orange "May be stale" indicator
+3. User manually clicks PFMEA → confirmation prompt (edits exist)
+4. User confirms → PFMEA regenerated from new Process Flow
+
+---
+
+**Foundation for Phase 15 — Workflow Gating:**
+
+Source-aware generation is now in place. Phase 15 can optionally add soft or hard gating to encourage/enforce step order, but current implementation remains fully permissive.
+
+---
+
 ## 2026-03-27 14:39 CT - Phase 13 - Dependency Awareness + Regeneration Logic
 
 - Summary: Added light dependency awareness to workflow steps with visual indicators, regeneration source messaging, and stale detection

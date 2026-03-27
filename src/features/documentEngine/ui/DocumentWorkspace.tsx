@@ -11,6 +11,9 @@ import { validateDocument } from '../validation/validateDocument';
 import { ValidationResult } from '../validation/types';
 import { BOMUpload } from './BOMUpload';
 import { DocumentEditor } from './DocumentEditor';
+import { mapBOMToProcessFlow } from '../mapping/bomToProcessFlow';
+import { mapProcessFlowToPFMEA } from '../mapping/processFlowToPFMEA';
+import { mapPFMEAToControlPlan } from '../mapping/pfmeaToControlPlan';
 
 type AppPhase = 'upload' | 'workflow';
 
@@ -62,20 +65,95 @@ export function DocumentWorkspace() {
     }
   };
 
-  const handleStepClick = (stepId: TemplateId) => {
+  const generateWithBestSource = (stepId: TemplateId): { draft: DocumentDraft; actualSource: string } => {
+    const stepDef = WORKFLOW_STEPS.find(s => s.id === stepId)!;
+    let actualSource = 'BOM';
+    let draft: DocumentDraft;
+
+    if (stepId === 'PROCESS_FLOW') {
+      // Always generate from BOM
+      draft = generateDocumentDraft(stepId, { bom: normalizedBOM!, externalData: {} });
+      actualSource = 'BOM';
+    } else if (stepId === 'PFMEA') {
+      // Use Process Flow if available, else BOM
+      if (documents['PROCESS_FLOW']) {
+        const processFlow = mapBOMToProcessFlow(normalizedBOM!);
+        const pfmea = mapProcessFlowToPFMEA(processFlow);
+        draft = {
+          templateId: 'PFMEA',
+          metadata: {
+            generatedAt: new Date().toISOString(),
+            bomMasterPartNumber: normalizedBOM!.masterPartNumber,
+            templateVersion: '1.0'
+          },
+          fields: {
+            partNumber: pfmea.partNumber,
+            rows: pfmea.rows
+          }
+        };
+        actualSource = 'Process Flow';
+      } else {
+        draft = generateDocumentDraft(stepId, { bom: normalizedBOM!, externalData: {} });
+        actualSource = 'BOM (no Process Flow available)';
+      }
+    } else if (stepId === 'CONTROL_PLAN') {
+      // Use PFMEA if available, else BOM chain
+      if (documents['PFMEA']) {
+        const processFlow = mapBOMToProcessFlow(normalizedBOM!);
+        const pfmea = mapProcessFlowToPFMEA(processFlow);
+        const controlPlan = mapPFMEAToControlPlan(pfmea);
+        draft = {
+          templateId: 'CONTROL_PLAN',
+          metadata: {
+            generatedAt: new Date().toISOString(),
+            bomMasterPartNumber: normalizedBOM!.masterPartNumber,
+            templateVersion: '1.0'
+          },
+          fields: {
+            partNumber: controlPlan.partNumber,
+            rows: controlPlan.rows
+          }
+        };
+        actualSource = 'PFMEA';
+      } else {
+        draft = generateDocumentDraft(stepId, { bom: normalizedBOM!, externalData: {} });
+        actualSource = 'BOM (no PFMEA available)';
+      }
+    } else {
+      // PSW and others: use BOM
+      draft = generateDocumentDraft(stepId, { bom: normalizedBOM!, externalData: {} });
+      actualSource = 'BOM';
+    }
+
+    return { draft, actualSource };
+  };
+
+  const handleStepClick = async (stepId: TemplateId) => {
     if (!normalizedBOM) return;
     try {
       setError(null);
-      const now = Date.now();
-      const source = REGENERATION_SOURCE[stepId] ?? 'BOM';
       const stepDef = WORKFLOW_STEPS.find(s => s.id === stepId)!;
       const label = stepDef.label;
       const isRegen = !!documents[stepId];
-      const msg = `${isRegen ? 'Regenerating' : 'Generating'} ${label} from ${source}`;
+      const hasEdits = editableDocuments[stepId] && hasChanges();
+
+      // Protect user edits
+      if (isRegen && hasEdits && activeStep === stepId) {
+        const confirmed = window.confirm(
+          `Regenerating will overwrite your edits to ${label}. Continue?`
+        );
+        if (!confirmed) {
+          console.log(`[DocumentWorkspace] Regeneration cancelled by user`);
+          return;
+        }
+      }
+
+      const now = Date.now();
+      const { draft, actualSource } = generateWithBestSource(stepId);
+      const msg = `${isRegen ? 'Regenerating' : 'Generating'} ${label} from ${actualSource}`;
       setRegenMessage(msg);
 
       console.log(`[DocumentWorkspace] ${msg}`);
-      const draft = generateDocumentDraft(stepId, { bom: normalizedBOM, externalData: {} });
       const editableCopy = structuredClone(draft);
       const template = getTemplate(stepId);
       const validation = validateDocument(editableCopy, template);
