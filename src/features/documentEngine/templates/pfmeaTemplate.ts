@@ -68,49 +68,49 @@ export const PFMEA_TEMPLATE: TemplateDefinition = {
       rowFields: [
         {
           key: 'stepNumber',
-          label: 'Step',
+          label: 'Process Step',
           type: 'text',
           required: true,
           editable: false
         },
         {
           key: 'operation',
-          label: 'Operation',
+          label: 'Operation Description',
           type: 'text',
           required: true,
           editable: false
         },
         {
           key: 'output',
-          label: 'Output',
+          label: 'Product / Process Characteristic',
           type: 'text',
           required: true,
           editable: false
         },
         {
           key: 'failureMode',
-          label: 'Failure Mode',
+          label: 'Potential Failure Mode',
           type: 'text',
           required: true,
           editable: true
         },
         {
           key: 'effect',
-          label: 'Effect',
+          label: 'Potential Effect(s) of Failure',
           type: 'text',
           required: false,
           editable: true
         },
         {
           key: 'cause',
-          label: 'Cause',
+          label: 'Potential Cause(s)',
           type: 'text',
           required: false,
           editable: true
         },
         {
           key: 'severity',
-          label: 'SEV',
+          label: 'Severity',
           type: 'number',
           required: false,
           editable: true,
@@ -118,7 +118,7 @@ export const PFMEA_TEMPLATE: TemplateDefinition = {
         },
         {
           key: 'occurrence',
-          label: 'OCC',
+          label: 'Occurrence',
           type: 'number',
           required: false,
           editable: true,
@@ -126,7 +126,7 @@ export const PFMEA_TEMPLATE: TemplateDefinition = {
         },
         {
           key: 'detection',
-          label: 'DET',
+          label: 'Detection',
           type: 'number',
           required: false,
           editable: true,
@@ -134,7 +134,7 @@ export const PFMEA_TEMPLATE: TemplateDefinition = {
         },
         {
           key: 'rpn',
-          label: 'RPN',
+          label: 'Risk Priority Number',
           type: 'number',
           required: false,
           editable: false,

@@ -70,77 +70,77 @@ export const CONTROL_PLAN_TEMPLATE: TemplateDefinition = {
       rowFields: [
         {
           key: 'stepNumber',
-          label: 'Step',
+          label: 'Process Step',
           type: 'text',
           required: true,
           editable: false
         },
         {
           key: 'operation',
-          label: 'Operation',
+          label: 'Operation Description',
           type: 'text',
           required: true,
           editable: false
         },
         {
           key: 'characteristic',
-          label: 'Characteristic',
+          label: 'Product / Process Characteristic',
           type: 'text',
           required: true,
           editable: false
         },
         {
           key: 'failureMode',
-          label: 'Failure Mode',
+          label: 'Potential Failure Mode',
           type: 'text',
           required: false,
           editable: false
         },
         {
           key: 'cause',
-          label: 'Cause',
+          label: 'Potential Cause(s)',
           type: 'text',
           required: false,
           editable: false
         },
         {
           key: 'preventionControl',
-          label: 'Prevention Control',
+          label: 'Prevention Controls',
           type: 'text',
           required: false,
           editable: true
         },
         {
           key: 'detectionControl',
-          label: 'Detection Control',
+          label: 'Detection Controls',
           type: 'text',
           required: false,
           editable: true
         },
         {
           key: 'measurementMethod',
-          label: 'Measurement Method',
+          label: 'Measurement Technique',
           type: 'text',
           required: false,
           editable: true
         },
         {
           key: 'sampleSize',
-          label: 'Sample Size',
+          label: 'Sample Size / Frequency',
           type: 'text',
           required: false,
           editable: true
         },
         {
           key: 'frequency',
-          label: 'Frequency',
+          label: 'Control Method',
           type: 'text',
           required: false,
           editable: true
         },
         {
           key: 'reactionPlan',
-          label: 'Reaction Plan',
+          label: 'Reaction Plan / Corrective Action',
           type: 'text',
           required: false,
           editable: true

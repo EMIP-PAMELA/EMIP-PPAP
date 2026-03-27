@@ -57,7 +57,44 @@ export const PROCESS_FLOW_TEMPLATE: TemplateDefinition = {
       label: 'Process Steps',
       type: 'table',
       required: true,
-      editable: false
+      editable: false,
+      rowFields: [
+        {
+          key: 'stepNumber',
+          label: 'Process Step',
+          type: 'text',
+          required: true,
+          editable: false
+        },
+        {
+          key: 'operation',
+          label: 'Operation Description',
+          type: 'text',
+          required: true,
+          editable: false
+        },
+        {
+          key: 'description',
+          label: 'Process Description',
+          type: 'text',
+          required: true,
+          editable: false
+        },
+        {
+          key: 'inputs',
+          label: 'Inputs',
+          type: 'text',
+          required: false,
+          editable: false
+        },
+        {
+          key: 'outputs',
+          label: 'Outputs',
+          type: 'text',
+          required: false,
+          editable: false
+        }
+      ]
     }
   ],
   layout: {
@@ -69,7 +106,7 @@ export const PROCESS_FLOW_TEMPLATE: TemplateDefinition = {
       },
       {
         id: 'process_flow',
-        title: 'Process Flow',
+        title: 'Process Flow Diagram',
         fields: ['steps']
       }
     ]

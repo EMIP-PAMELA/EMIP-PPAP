@@ -4,6 +4,144 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 14:04 CT - Phase 10 - Smart Workbook Alignment
+
+- Summary: Aligned all template field labels and column ordering to OEM (Trane-style) workbook structure while preserving internal architecture
+- Files modified:
+  - `src/features/documentEngine/templates/processFlowTemplate.ts` — Added explicit `rowFields` with OEM-aligned labels; updated section title
+  - `src/features/documentEngine/templates/pfmeaTemplate.ts` — Updated all field labels to match OEM FMEA terminology
+  - `src/features/documentEngine/templates/controlPlanTemplate.ts` — Updated all field labels to match OEM Control Plan terminology
+- Impact: UI and PDF exports now display industry-standard OEM terminology while internal keys remain unchanged
+- Objective: External presentation alignment without architectural changes
+
+---
+
+**Key Principle: Internal vs External Separation**
+
+```
+Internal (system):  key: 'stepNumber'
+External (display): label: 'Process Step'
+```
+
+All mapping logic, data models, and internal processing use stable keys. Only presentation layer (UI + PDF) uses OEM labels.
+
+---
+
+**OEM Terminology Applied:**
+
+| Internal Key | OEM Label |
+|---|---|
+| `stepNumber` | Process Step |
+| `operation` | Operation Description |
+| `output` / `characteristic` | Product / Process Characteristic |
+| `failureMode` | Potential Failure Mode |
+| `effect` | Potential Effect(s) of Failure |
+| `cause` | Potential Cause(s) |
+| `severity` | Severity |
+| `occurrence` | Occurrence |
+| `detection` | Detection |
+| `rpn` | Risk Priority Number |
+| `preventionControl` | Prevention Controls |
+| `detectionControl` | Detection Controls |
+| `measurementMethod` | Measurement Technique |
+| `sampleSize` | Sample Size / Frequency |
+| `frequency` | Control Method |
+| `reactionPlan` | Reaction Plan / Corrective Action |
+
+---
+
+**Process Flow Template Changes:**
+
+- Added explicit `rowFields` array (previously relied on object key order)
+- Column order now deterministic: Process Step → Operation Description → Process Description → Inputs → Outputs
+- Section title: "Process Flow" → "Process Flow Diagram"
+
+---
+
+**PFMEA Template Changes:**
+
+- Updated all 10 column labels to match OEM FMEA workbooks
+- "Step" → "Process Step"
+- "Output" → "Product / Process Characteristic"
+- "Failure Mode" → "Potential Failure Mode"
+- "Effect" → "Potential Effect(s) of Failure"
+- "Cause" → "Potential Cause(s)"
+- "SEV/OCC/DET" → "Severity/Occurrence/Detection" (full words)
+- "RPN" → "Risk Priority Number"
+
+---
+
+**Control Plan Template Changes:**
+
+- Updated all 11 column labels to match OEM Control Plan workbooks
+- "Characteristic" → "Product / Process Characteristic"
+- "Prevention Control" → "Prevention Controls" (plural)
+- "Detection Control" → "Detection Controls" (plural)
+- "Measurement Method" → "Measurement Technique"
+- "Sample Size" → "Sample Size / Frequency"
+- "Frequency" → "Control Method"
+- "Reaction Plan" → "Reaction Plan / Corrective Action"
+
+---
+
+**UI Rendering — Already Correct:**
+
+`DocumentEditor` uses `col.label` for table headers (line 118):
+```typescript
+<th>{col.label}</th>
+```
+
+No changes needed — generic rendering already respects field definitions.
+
+---
+
+**PDF Generation — Already Correct:**
+
+`pdfGenerator` uses `fieldDef.label` (line 106):
+```typescript
+const label = fieldDef?.label || fieldKey.replace(/([A-Z])/g, ' $1').trim();
+```
+
+No changes needed — PDF export already uses labels.
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ All templates display OEM-aligned labels
+✅ Column order explicit via `rowFields` (no reliance on object key order)
+✅ UI remains fully generic (no template-specific logic)
+✅ PDF reflects correct labels
+✅ Internal keys unchanged (mapping/models untouched)
+✅ No architecture violations
+✅ TypeScript compiles cleanly
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to mapping functions
+- NO modifications to data models
+- NO modifications to document generation pipeline
+- NO modifications to template IDs
+- NO modifications to DocumentEditor or pdfGenerator logic
+
+---
+
+**Alignment Complete:**
+
+All three table-based templates (Process Flow, PFMEA, Control Plan) now present data using industry-standard OEM terminology while maintaining clean internal architecture. The system can be extended with additional templates following the same pattern.
+
+---
+
 ## 2026-03-27 13:52 CT - Phase 9.3 - Control Plan Template (PFMEA-driven)
 
 - Summary: Completed the three-document chain by implementing Control Plan driven from PFMEA, with workbook-aligned structure and editable control fields
