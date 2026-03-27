@@ -4,6 +4,555 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 10:54 CT - Phase 7 - Field Definition & Validation Layer
+
+- Summary: Implemented field definition and validation layer enabling typed field rendering, readonly enforcement, and validation rules
+- Files modified:
+  - `src/features/documentEngine/templates/types.ts` - Added FieldType, FieldDefinition interface
+  - `src/features/documentEngine/templates/pswTemplate.ts` - Added complete field definitions for all PSW fields
+  - `src/features/documentEngine/ui/DocumentEditor.tsx` - Updated to render fields using definitions with type-aware inputs
+- Impact: Fields now render with appropriate input types, validation rules, and readonly enforcement
+- Objective: Separate field semantics from data and layout for smarter rendering and validation
+
+**Context:**
+
+Phase 7 introduces a field definition layer that sits between data and presentation, defining field types, validation rules, and rendering behavior.
+
+This phase implements the final piece of the template architecture: DATA (values) + LAYOUT (structure) + FIELD DEFINITIONS (semantics).
+
+**Problem Statement:**
+
+**Before Phase 7:**
+- All fields rendered as generic text/number inputs
+- No distinction between editable and readonly fields
+- No type-specific rendering (dropdowns, etc.)
+- No validation rules enforced
+- UI inferred field types from values
+
+**After Phase 7:**
+- Typed field rendering (text, number, select)
+- Read-only fields enforced (BOM-derived fields)
+- Required field indicators (*) displayed
+- Dropdown for submission level (1-5)
+- Validation rules defined in template
+- Clean separation: data, layout, and field semantics
+
+---
+
+**Implementation Details:**
+
+**1. Field Definition Types**
+
+**Added to `templates/types.ts`:**
+```typescript
+export type FieldType = 'text' | 'number' | 'select';
+
+export interface FieldDefinition {
+  key: string;           // Field identifier
+  label: string;         // Display label
+  type: FieldType;       // Input type
+  required: boolean;     // Required field indicator
+  editable: boolean;     // Readonly enforcement
+  options?: string[];    // Select options
+  validation?: {         // Validation rules
+    min?: number;
+    max?: number;
+    pattern?: string;
+  };
+}
+```
+
+**Extended TemplateDefinition:**
+```typescript
+export interface TemplateDefinition {
+  id: TemplateId;
+  name: string;
+  description: string;
+  requiredInputs: TemplateInputField[];
+  fieldDefinitions: FieldDefinition[];  // NEW - Field semantics
+  layout: DocumentLayout;
+  generate: (input: TemplateInput) => DocumentDraft;
+}
+```
+
+**Key Design:**
+- Field definitions live in template (NOT in draft)
+- UI retrieves definitions from template
+- Definitions include ALL fields used in template
+
+**2. PSW Field Definitions**
+
+**10 Fields Defined:**
+
+**Editable Fields (User Input):**
+```typescript
+{
+  key: 'partNumber',
+  label: 'Part Number',
+  type: 'text',
+  required: true,
+  editable: true
+}
+
+{
+  key: 'submissionLevel',
+  label: 'Submission Level',
+  type: 'select',
+  required: true,
+  editable: true,
+  options: ['1', '2', '3', '4', '5']
+}
+```
+
+**Read-Only Fields (BOM-Derived):**
+```typescript
+{
+  key: 'totalOperations',
+  label: 'Total Operations',
+  type: 'number',
+  required: true,
+  editable: false,
+  validation: {
+    min: 0
+  }
+}
+```
+
+**Field Categories:**
+- **Part Information:** partNumber (text), revisionLevel (text)
+- **Submission Information:** customerName (text), submissionLevel (select), supplierName (text)
+- **Manufacturing Summary:** totalOperations (number, readonly), totalComponents (number, readonly), wireCount (number, readonly), terminalCount (number, readonly), hardwareCount (number, readonly)
+
+**3. DocumentEditor Updates**
+
+**Retrieve Field Definitions:**
+```typescript
+const template = getTemplate(templateId);
+const fieldDefinitions = template.fieldDefinitions;
+
+const getFieldDef = (fieldKey: string) => {
+  return fieldDefinitions.find(def => def.key === fieldKey);
+};
+```
+
+**Typed Field Rendering:**
+```typescript
+// Text input
+{fieldDef.type === 'text' && fieldDef.editable ? (
+  <input type="text" ... />
+) : ...}
+
+// Number input
+{fieldDef.type === 'number' && fieldDef.editable ? (
+  <input type="number" min={validation?.min} max={validation?.max} ... />
+) : ...}
+
+// Select dropdown
+{fieldDef.type === 'select' && fieldDef.editable ? (
+  <select>
+    {fieldDef.options?.map(option => <option>{option}</option>)}
+  </select>
+) : ...}
+
+// Read-only display
+{!fieldDef.editable ? (
+  <div className="bg-gray-50">{String(value)}</div>
+) : ...}
+```
+
+**4. Required Field Indicators**
+
+**Visual Indicator:**
+```typescript
+<label>
+  {fieldDef.label}
+  {fieldDef.required && <span className="text-red-500 ml-1">*</span>}
+</label>
+```
+
+**User sees:**
+- Part Number *
+- Customer Name *
+- Submission Level *
+
+**5. Read-Only Field Enforcement**
+
+**Two Rendering Modes:**
+
+**Editable:**
+```typescript
+<input type="number" value={value} onChange={...} />
+```
+
+**Read-Only:**
+```typescript
+<div className="bg-gray-50 text-gray-700">
+  {String(value)}
+</div>
+```
+
+**Read-Only Indicator:**
+```typescript
+{!fieldDef.editable && <span className="text-gray-500 ml-2 text-xs">(Read-only)</span>}
+```
+
+**6. Validation Attributes**
+
+**HTML5 Validation:**
+```typescript
+<input
+  type="number"
+  min={fieldDef.validation?.min}
+  max={fieldDef.validation?.max}
+  pattern={fieldDef.validation?.pattern}
+  required={fieldDef.required}
+/>
+```
+
+**Benefits:**
+- Browser-native validation
+- User feedback on invalid input
+- No custom validation code needed (yet)
+
+**7. Graceful Fallback**
+
+**If Field Definition Missing:**
+```typescript
+if (!fieldDef) {
+  return (
+    <input
+      type="text"
+      value={String(value)}
+      onChange={(e) => onFieldChange(fieldKey, e.target.value)}
+    />
+  );
+}
+```
+
+**Why This Matters:**
+- Prevents crashes if template incomplete
+- Allows gradual migration
+- Defensive programming
+
+**8. State Management (Unchanged)**
+
+**Editing Still Works Same Way:**
+```typescript
+const handleFieldChange = (fieldKey: string, value: any) => {
+  setEditableDraft(prev => ({
+    ...prev,
+    fields: {
+      ...prev.fields,
+      [fieldKey]: value
+    }
+  }));
+};
+```
+
+**Field definitions don't affect state management**
+- Still immutable updates
+- Still tracks changes
+- Still resets to generated
+
+---
+
+**Architectural Compliance:**
+
+**✅ Three-Layer Separation:**
+```
+DATA Layer (draft.fields)
+  ↓ values
+FIELD DEFINITION Layer (template.fieldDefinitions)
+  ↓ semantics (type, validation, editability)
+LAYOUT Layer (template.layout)
+  ↓ structure (sections, ordering)
+UI Layer
+  ↓ renders using all three
+```
+
+**✅ Template-Defined Behavior:**
+- UI does NOT hardcode field types
+- UI does NOT hardcode validation rules
+- UI does NOT hardcode editability
+- UI reads ALL from template
+
+**✅ Generic UI:**
+- No template-specific branching
+- No PSW-specific logic
+- Works for ANY template with field definitions
+
+**✅ Engine Boundary Maintained:**
+- Parser unchanged
+- Normalizer unchanged
+- Document generator unchanged
+- Field definitions are presentation concern
+
+**✅ Extensibility:**
+- Adding field type = extend FieldType union
+- Adding validation rule = extend validation object
+- New template = define field definitions
+- UI requires ZERO changes
+
+---
+
+**User Experience Improvements:**
+
+**Before Phase 7:**
+```
+Part Number: [text input]
+Submission Level: [text input]  ← user types "3"
+Total Operations: [number input]  ← user can edit (wrong!)
+```
+
+**After Phase 7:**
+```
+Part Number *: [text input]
+Submission Level *: [dropdown: 1, 2, 3, 4, 5]  ← user selects
+Total Operations * (Read-only): [2]  ← displayed as text, can't edit
+```
+
+**Benefits:**
+- Clear required field indication
+- Appropriate input types
+- Prevents editing computed fields
+- Better UX with dropdowns
+
+---
+
+**Field-by-Field Behavior:**
+
+**Editable Text Fields:**
+- partNumber: text input, required
+- revisionLevel: text input, required
+- customerName: text input, required
+- supplierName: text input, required
+
+**Editable Select Field:**
+- submissionLevel: dropdown (1-5), required
+
+**Read-Only Number Fields:**
+- totalOperations: plain text display, min: 0
+- totalComponents: plain text display, min: 0
+- wireCount: plain text display, min: 0
+- terminalCount: plain text display, min: 0
+- hardwareCount: plain text display, min: 0
+
+---
+
+**Validation Rules:**
+
+**Number Fields (BOM-Derived):**
+```typescript
+validation: {
+  min: 0  // Cannot be negative
+}
+```
+
+**Future Validation (Not Implemented Yet):**
+- Max values
+- Pattern matching (regex)
+- Custom validation functions
+- Cross-field validation
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to parser (`bomParser.ts`)
+- NO modifications to normalizer (`bomNormalizer.ts`)
+- NO modifications to document generator (`documentGenerator.ts`)
+- NO modifications to state management (still immutable)
+- NO modifications to reset functionality
+- NO modifications to change tracking
+- NO PDF export added
+- NO database persistence
+- NO PPAP integration
+
+---
+
+**Build Verification:**
+
+TypeScript compilation: ✅ PASSED
+```bash
+npx tsc --noEmit --skipLibCheck
+Exit code: 0
+```
+
+All files compile cleanly:
+- Updated template types
+- PSW template with field definitions
+- DocumentEditor with typed rendering
+
+---
+
+**Success Criteria Met:**
+
+✅ All fields rendered using definitions  
+✅ Correct input types used (text, number, select)  
+✅ Read-only fields enforced (BOM-derived)  
+✅ Required fields indicated with (*)  
+✅ Validation attributes applied  
+✅ Layout still respected  
+✅ No UI hardcoding per template  
+✅ Code compiles cleanly  
+✅ Generic field rendering  
+
+---
+
+**Technical Implementation Details:**
+
+**Type-Aware Rendering Logic:**
+```typescript
+// Determine which input to render
+if (fieldDef.type === 'select' && fieldDef.editable) {
+  // Render dropdown
+} else if (fieldDef.editable) {
+  // Render text/number input
+} else {
+  // Render read-only display
+}
+```
+
+**Value Parsing by Type:**
+```typescript
+onChange={(e) => {
+  let newValue: any = e.target.value;
+  if (fieldDef.type === 'number') {
+    newValue = parseFloat(e.target.value) || 0;
+  }
+  onFieldChange(fieldKey, newValue);
+}}
+```
+
+**Conditional Attributes:**
+```typescript
+<input
+  type={fieldDef.type === 'number' ? 'number' : 'text'}
+  min={fieldDef.validation?.min}      // Only if defined
+  max={fieldDef.validation?.max}      // Only if defined
+  pattern={fieldDef.validation?.pattern}  // Only if defined
+  required={fieldDef.required}        // Boolean
+/>
+```
+
+---
+
+**Field Definition Contract:**
+
+**Every Template Must Provide:**
+1. Field definitions for ALL fields in draft.fields
+2. Each definition must have: key, label, type, required, editable
+3. Select fields must have options array
+4. Validation is optional
+
+**Example Validation:**
+```typescript
+// Good definition
+{
+  key: 'submissionLevel',
+  label: 'Submission Level',
+  type: 'select',
+  required: true,
+  editable: true,
+  options: ['1', '2', '3', '4', '5']
+}
+
+// Bad definition (missing options)
+{
+  key: 'submissionLevel',
+  type: 'select',
+  options: undefined  // ❌ Select needs options!
+}
+```
+
+---
+
+**Future Capabilities Enabled:**
+
+**1. Advanced Validation:**
+- Custom validation functions
+- Cross-field validation (e.g., endDate > startDate)
+- Async validation (check uniqueness)
+- Error messages per field
+
+**2. Additional Field Types:**
+- Date picker
+- Time picker
+- Checkbox/boolean
+- Multi-select
+- Rich text editor
+- File upload
+
+**3. Conditional Fields:**
+- Show/hide based on other field values
+- Dynamic required status
+- Cascading dropdowns
+
+**4. Field Grouping:**
+- Fieldsets within sections
+- Repeating field groups
+- Dynamic field arrays
+
+**5. PDF Export Ready:**
+- Field definitions map to PDF formatting
+- Type determines PDF rendering
+- Validation ensures valid PDF data
+
+---
+
+**Why This Architecture?**
+
+**Single Responsibility:**
+- Draft = data storage
+- Layout = presentation structure
+- Field definitions = field semantics
+- UI = rendering engine
+
+**Each layer independent:**
+- Change field type without touching data
+- Reorder sections without touching fields
+- Add validation without changing UI
+
+**Template as Configuration:**
+```
+Template = {
+  Data Generation (generate function)
+  + Structure (layout)
+  + Semantics (field definitions)
+}
+```
+
+**UI as Generic Renderer:**
+```
+UI.render(draft, template) → document view
+```
+
+---
+
+**Next Recommended Phase:**
+
+**Phase 8 - PDF Export**
+
+Implement PDF generation:
+- Install PDF library
+- Create PDF renderer using layout + field definitions
+- Map field types to PDF formatting
+- Download/print functionality
+- Read-only fields render as static text in PDF
+
+**OR**
+
+**Phase 9 - Advanced Validation**
+
+Add validation layer:
+- Client-side validation feedback
+- Server-side validation
+- Custom validation rules
+- Error message display
+- Validation summary
+
+---
+
 ## 2026-03-27 10:47 CT - Phase 6 - Document Layout Layer
 
 - Summary: Implemented document layout layer separating data from structure, enabling section-based document rendering

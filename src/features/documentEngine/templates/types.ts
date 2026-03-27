@@ -38,11 +38,28 @@ export interface DocumentLayout {
   sections: DocumentSection[];
 }
 
+export type FieldType = 'text' | 'number' | 'select';
+
+export interface FieldDefinition {
+  key: string;
+  label: string;
+  type: FieldType;
+  required: boolean;
+  editable: boolean;
+  options?: string[];
+  validation?: {
+    min?: number;
+    max?: number;
+    pattern?: string;
+  };
+}
+
 export interface TemplateDefinition {
   id: TemplateId;
   name: string;
   description: string;
   requiredInputs: TemplateInputField[];
+  fieldDefinitions: FieldDefinition[];
   layout: DocumentLayout;
   generate: (input: TemplateInput) => DocumentDraft;
 }

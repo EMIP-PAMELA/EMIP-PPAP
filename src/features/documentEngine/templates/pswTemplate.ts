@@ -102,6 +102,94 @@ export const PSW_TEMPLATE: TemplateDefinition = {
   name: 'Production Part Submission Warrant',
   description: 'Part submission documentation for PPAP process',
   requiredInputs: REQUIRED_INPUTS,
+  fieldDefinitions: [
+    {
+      key: 'partNumber',
+      label: 'Part Number',
+      type: 'text',
+      required: true,
+      editable: true
+    },
+    {
+      key: 'revisionLevel',
+      label: 'Revision Level',
+      type: 'text',
+      required: true,
+      editable: true
+    },
+    {
+      key: 'customerName',
+      label: 'Customer Name',
+      type: 'text',
+      required: true,
+      editable: true
+    },
+    {
+      key: 'submissionLevel',
+      label: 'Submission Level',
+      type: 'select',
+      required: true,
+      editable: true,
+      options: ['1', '2', '3', '4', '5']
+    },
+    {
+      key: 'supplierName',
+      label: 'Supplier Name',
+      type: 'text',
+      required: true,
+      editable: true
+    },
+    {
+      key: 'totalOperations',
+      label: 'Total Operations',
+      type: 'number',
+      required: true,
+      editable: false,
+      validation: {
+        min: 0
+      }
+    },
+    {
+      key: 'totalComponents',
+      label: 'Total Components',
+      type: 'number',
+      required: true,
+      editable: false,
+      validation: {
+        min: 0
+      }
+    },
+    {
+      key: 'wireCount',
+      label: 'Wire Count',
+      type: 'number',
+      required: true,
+      editable: false,
+      validation: {
+        min: 0
+      }
+    },
+    {
+      key: 'terminalCount',
+      label: 'Terminal Count',
+      type: 'number',
+      required: true,
+      editable: false,
+      validation: {
+        min: 0
+      }
+    },
+    {
+      key: 'hardwareCount',
+      label: 'Hardware Count',
+      type: 'number',
+      required: true,
+      editable: false,
+      validation: {
+        min: 0
+      }
+    }
+  ],
   layout: {
     sections: [
       {
