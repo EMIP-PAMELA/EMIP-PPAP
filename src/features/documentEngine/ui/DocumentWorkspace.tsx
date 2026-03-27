@@ -120,16 +120,12 @@ export function DocumentWorkspace() {
       setError(null);
       console.log('[DocumentWorkspace] Generating PDF...');
       
-      // Dynamic import to ensure PDF generation only happens on client
-      const { generatePDF, downloadPDF, generatePDFFilename } = await import('../export/pdfGenerator');
+      // Dynamic import of client-only wrapper to prevent SSR bundling
+      const { generateAndDownloadPDF } = await import('../export/pdfClient');
       
-      const template = getTemplate(selectedTemplate);
-      const pdfData = await generatePDF(editableDraft, template);
-      const filename = generatePDFFilename(editableDraft);
+      await generateAndDownloadPDF(editableDraft, selectedTemplate);
       
-      downloadPDF(pdfData, filename);
-      
-      console.log('[DocumentWorkspace] PDF downloaded:', filename);
+      console.log('[DocumentWorkspace] PDF downloaded');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate PDF');
       console.error('[DocumentWorkspace] Error generating PDF:', err);
