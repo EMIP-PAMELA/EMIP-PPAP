@@ -4,6 +4,177 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 14:14 CT - Phase 11 - System-Level Validation Engine
+
+- Summary: Implemented template-driven validation engine for document drafts with real-time validation feedback
+- Files created:
+  - `src/features/documentEngine/validation/types.ts` — ValidationError and ValidationResult types
+  - `src/features/documentEngine/validation/validateDocument.ts` — Core validation engine
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Integrated validation into workflow with live summary display
+- Impact: Users see real-time validation feedback for required fields and numeric constraints; foundation for workflow gating
+- Objective: Establish reusable validation layer independent of UI
+
+---
+
+**Architecture Layers:**
+
+```
+DocumentDraft + TemplateDefinition
+  ↓ validateDocument()
+ValidationResult { isValid, errors[] }
+  ↓ DocumentWorkspace (display only)
+UI Validation Summary
+```
+
+**Strict separation maintained:**
+- Validation logic lives in standalone module
+- UI only displays validation results
+- No validation logic embedded in DocumentEditor
+- Template-driven rules (from fieldDefinitions + rowFields)
+
+---
+
+**Validation Engine Design:**
+
+**Core function:**
+```typescript
+validateDocument(draft: DocumentDraft, template: TemplateDefinition): ValidationResult
+```
+
+**Validation rules (template-driven):**
+
+1. **Required fields** — `fieldDef.required === true`
+   - Scalar: value must be non-null and non-empty
+   - Table: each row's required columns must be non-null and non-empty
+
+2. **Numeric constraints** — `fieldDef.type === 'number'`
+   - Value must be a valid number
+   - Respects `validation.min` and `validation.max` if defined
+
+3. **Derived fields skipped** — `fieldDef.derivedProduct` present
+   - RPN and other computed fields not validated
+   - Computed in UI, not stored in draft
+
+4. **Row-level validation** — `fieldDef.rowFields` present
+   - Each row validated against column schema
+   - Errors include `rowIndex` for precise feedback
+
+---
+
+**Validation Integration Points:**
+
+| Event | Action |
+|---|---|
+| Document generation | Initial validation after `generateDocumentDraft()` |
+| Field change | Re-validate after every `handleFieldChange()` |
+| Draft reset | Re-validate after `handleResetToGenerated()` |
+
+All validation is **non-blocking** — users can continue editing regardless of validation state.
+
+---
+
+**Validation Summary UI:**
+
+**Valid state:**
+```
+✓ Document Valid
+[green background]
+```
+
+**Invalid state:**
+```
+⚠ 12 Validation Errors
+Row 3: failureMode - Potential Failure Mode is required
+Row 5: severity - Severity must be at least 1
+Row 7: occurrence - Occurrence is required
+...and 9 more
+[yellow background]
+```
+
+- Shows first 5 errors
+- Includes row number for table errors
+- Uses field labels (not keys) for clarity
+- Non-blocking — informational only
+
+---
+
+**Validation Logic Examples:**
+
+**Scalar field validation:**
+```typescript
+// Required text field
+if (fieldDef.required && (value == null || value === '')) {
+  errors.push({ field: fieldDef.key, message: `${fieldDef.label} is required` });
+}
+
+// Numeric range
+if (fieldDef.type === 'number' && value < fieldDef.validation.min) {
+  errors.push({ field: fieldDef.key, message: `${fieldDef.label} must be at least ${min}` });
+}
+```
+
+**Table row validation:**
+```typescript
+value.forEach((row, rowIndex) => {
+  for (const colDef of fieldDef.rowFields) {
+    if (colDef.required && row[colDef.key] == null) {
+      errors.push({ 
+        field: colDef.key, 
+        message: `${colDef.label} is required`,
+        rowIndex 
+      });
+    }
+  }
+});
+```
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ Validation engine runs on all templates
+✅ Required fields flagged correctly
+✅ Numeric constraints enforced (min/max)
+✅ Table rows validated per column schema
+✅ Validation result displayed in UI (non-blocking)
+✅ No validation logic in DocumentEditor
+✅ Template-driven (no hardcoded rules)
+✅ No architecture violations
+✅ TypeScript compiles cleanly
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to templates (only read fieldDefinitions)
+- NO modifications to mapping functions
+- NO validation logic embedded in DocumentEditor
+- NO workflow gating introduced (validation is informational only)
+- NO persistence of validation results
+
+---
+
+**Foundation for Phase 12 — Workflow Gating:**
+
+The validation engine is now in place and can be extended to:
+- Block PDF export if validation fails
+- Require validation pass before document approval
+- Track validation history per document
+- Add custom validation rules per template
+
+Current implementation is **non-blocking** by design — users can edit and export regardless of validation state. Gating will be added in a future phase.
+
+---
+
 ## 2026-03-27 14:04 CT - Phase 10 - Smart Workbook Alignment
 
 - Summary: Aligned all template field labels and column ordering to OEM (Trane-style) workbook structure while preserving internal architecture

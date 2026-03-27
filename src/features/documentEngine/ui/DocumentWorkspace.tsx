@@ -7,6 +7,8 @@ import { generateDocumentDraft } from '../core/documentGenerator';
 import { getTemplate } from '../templates/registry';
 import { NormalizedBOM } from '../types/bomTypes';
 import { TemplateId, DocumentDraft } from '../templates/types';
+import { validateDocument } from '../validation/validateDocument';
+import { ValidationResult } from '../validation/types';
 import { BOMUpload } from './BOMUpload';
 import { TemplateSelector } from './TemplateSelector';
 import { TemplateInputForm } from './TemplateInputForm';
@@ -21,6 +23,7 @@ export function DocumentWorkspace() {
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateId | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<DocumentDraft | null>(null);
   const [editableDraft, setEditableDraft] = useState<DocumentDraft | null>(null);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleBOMProcessed = (text: string) => {
@@ -68,10 +71,16 @@ export function DocumentWorkspace() {
       const editableCopy = structuredClone(draft);
       setEditableDraft(editableCopy);
       
+      // Validate the generated draft
+      const template = getTemplate(selectedTemplate);
+      const validation = validateDocument(editableCopy, template);
+      setValidationResult(validation);
+      
       setCurrentStep('edit');
       
       console.log('[DocumentWorkspace] Document draft generated successfully');
       console.log('[DocumentWorkspace] Editable draft initialized');
+      console.log('[DocumentWorkspace] Validation result:', validation.isValid ? 'Valid' : `${validation.errors.length} errors`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate document');
       console.error('[DocumentWorkspace] Error generating document:', err);
@@ -85,26 +94,42 @@ export function DocumentWorkspace() {
     setSelectedTemplate(null);
     setGeneratedDraft(null);
     setEditableDraft(null);
+    setValidationResult(null);
     setError(null);
   };
 
   const handleResetToGenerated = () => {
-    if (generatedDraft) {
-      setEditableDraft(structuredClone(generatedDraft));
+    if (generatedDraft && selectedTemplate) {
+      const resetDraft = structuredClone(generatedDraft);
+      setEditableDraft(resetDraft);
+      
+      // Re-validate after reset
+      const template = getTemplate(selectedTemplate);
+      const validation = validateDocument(resetDraft, template);
+      setValidationResult(validation);
+      
       console.log('[DocumentWorkspace] Draft reset to generated version');
     }
   };
 
   const handleFieldChange = (fieldKey: string, value: any) => {
     setEditableDraft(prev => {
-      if (!prev) return prev;
-      return {
+      if (!prev || !selectedTemplate) return prev;
+      
+      const updated = {
         ...prev,
         fields: {
           ...prev.fields,
           [fieldKey]: value
         }
       };
+      
+      // Re-validate after field change
+      const template = getTemplate(selectedTemplate);
+      const validation = validateDocument(updated, template);
+      setValidationResult(validation);
+      
+      return updated;
     });
   };
 
@@ -235,6 +260,36 @@ export function DocumentWorkspace() {
             <p>Operations: <strong>{normalizedBOM.summary.totalOperations}</strong></p>
             <p>Components: <strong>{normalizedBOM.summary.totalComponents}</strong> ({normalizedBOM.summary.wires} wires, {normalizedBOM.summary.terminals} terminals, {normalizedBOM.summary.hardware} hardware)</p>
           </div>
+        </div>
+      )}
+
+      {/* Validation Summary (if in edit step) */}
+      {currentStep === 'edit' && validationResult && (
+        <div className={`mb-6 border rounded-lg p-4 ${
+          validationResult.isValid
+            ? 'bg-green-50 border-green-200'
+            : 'bg-yellow-50 border-yellow-200'
+        }`}>
+          <h4 className={`font-semibold mb-2 ${
+            validationResult.isValid
+              ? 'text-green-800'
+              : 'text-yellow-800'
+          }`}>
+            {validationResult.isValid ? '✓ Document Valid' : `⚠ ${validationResult.errors.length} Validation ${validationResult.errors.length === 1 ? 'Error' : 'Errors'}`}
+          </h4>
+          {!validationResult.isValid && (
+            <div className="text-sm text-yellow-700 space-y-1">
+              {validationResult.errors.slice(0, 5).map((err, idx) => (
+                <p key={idx}>
+                  {err.rowIndex != null ? `Row ${err.rowIndex + 1}: ` : ''}
+                  <strong>{err.field}</strong> - {err.message}
+                </p>
+              ))}
+              {validationResult.errors.length > 5 && (
+                <p className="italic">...and {validationResult.errors.length - 5} more</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
