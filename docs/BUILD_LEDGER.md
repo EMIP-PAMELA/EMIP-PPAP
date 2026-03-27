@@ -4,6 +4,143 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 13:27 CT - Phase 9.1 - Process Flow Template + BOM Mapping
+
+- Summary: Implemented first cross-document intelligence layer — Process Flow template driven by BOM → ProcessFlow mapping
+- Files created:
+  - `src/features/documentEngine/models/processFlow.ts` — ProcessStep and ProcessFlowModel data model
+  - `src/features/documentEngine/mapping/bomToProcessFlow.ts` — NormalizedBOM → ProcessFlowModel mapping function
+  - `src/features/documentEngine/templates/processFlowTemplate.ts` — PROCESS_FLOW template definition
+- Files modified:
+  - `src/features/documentEngine/templates/types.ts` — Extended TemplateId ('PSW' | 'PROCESS_FLOW'), added 'table' FieldType
+  - `src/features/documentEngine/templates/registry.ts` — Registered PROCESS_FLOW_TEMPLATE
+  - `src/features/documentEngine/ui/DocumentEditor.tsx` — Generic array/table rendering for array-valued fields
+- Impact: Users can select Process Flow template, generate process steps from BOM, and view them as a table
+- Objective: First mapping-driven document; foundation layer for PFMEA and Control Plan
+
+---
+
+**Architecture Layers Introduced:**
+
+```
+NormalizedBOM
+  ↓
+Mapping Layer  (mapping/bomToProcessFlow.ts)
+  ↓
+ProcessFlowModel  (models/processFlow.ts)
+  ↓
+Template  (templates/processFlowTemplate.ts)
+  ↓
+DocumentDraft { fields: { partNumber, steps: ProcessStep[] } }
+  ↓
+DocumentEditor  (generic array → table rendering)
+```
+
+**Strict separation maintained:**
+- Mapping layer knows nothing about templates or UI
+- Template calls mapping, assembles DocumentDraft, knows nothing about UI
+- DocumentEditor detects arrays generically — no Process Flow logic in UI
+
+---
+
+**Mapping Rules (bomToProcessFlow):**
+
+| ProcessStep field | Source |
+|---|---|
+| `stepNumber` | `operation.step` |
+| `operation` | `operation.resourceId` |
+| `description` | `operation.description` |
+| `outputs` | `component.partId[]` (filtered non-null) for this operation |
+| `inputs` | `outputs` of previous step (index > 0), else `[]` |
+
+Order preserved — deterministic, no inference.
+
+---
+
+**Type System Changes:**
+
+```typescript
+// types.ts
+export type TemplateId = 'PSW' | 'PROCESS_FLOW';
+export type FieldType = 'text' | 'number' | 'select' | 'table';
+```
+
+- `DocumentDraft.fields` was already `Record<string, any>` — supports arrays without change
+- `FieldType 'table'` marks fields that contain row arrays in fieldDefinitions
+
+---
+
+**Template Definition (PROCESS_FLOW):**
+
+```typescript
+{
+  id: 'PROCESS_FLOW',
+  name: 'Process Flow Diagram',
+  requiredInputs: [],  // fully BOM-driven, no external inputs needed
+  fieldDefinitions: [
+    { key: 'partNumber', label: 'Part Number', type: 'text', ... },
+    { key: 'steps', label: 'Process Steps', type: 'table', ... }
+  ],
+  layout: {
+    sections: [
+      { id: 'part_info', title: 'Part Information', fields: ['partNumber'] },
+      { id: 'process_flow', title: 'Process Flow', fields: ['steps'] }
+    ]
+  }
+}
+```
+
+**No external inputs required** — `TemplateInputForm` renders zero fields; button is immediately enabled.
+
+---
+
+**DocumentEditor Array Rendering (generic):**
+
+- Detects `Array.isArray(value)` — no hardcoded field names
+- Derives column headers from `Object.keys(value[0])`
+- Nested arrays (e.g., `inputs`, `outputs` fields of ProcessStep) joined as comma-separated strings
+- Renders striped table with responsive horizontal scroll
+- Extensible: any future template that produces array fields gets table rendering automatically
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ PROCESS_FLOW appears in template selector  
+✅ BOM generates ProcessStep rows from operations  
+✅ Steps render as table in DocumentEditor  
+✅ Operation order preserved (deterministic)  
+✅ No architecture violations  
+✅ TypeScript compiles cleanly  
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to parser (`bomParser.ts`)
+- NO modifications to normalizer (`bomNormalizer.ts`)
+- NO modifications to PSW template
+- NO workflow or persistence logic introduced
+- NO Process Flow logic embedded in UI
+
+---
+
+**Foundation for Future Phases:**
+
+- **Phase 9.2 — PFMEA:** Extends ProcessFlowModel with failure modes per step
+- **Phase 9.3 — Control Plan:** Extends ProcessFlowModel with control methods per step
+- Both can reuse `mapBOMToProcessFlow` as base and layer additional mapping on top
+
+---
+
 ## 2026-03-27 11:02 CT - Phase 8 - PDF Export Layer
 
 - Summary: Implemented PDF export layer enabling document download using layout definitions and field semantics

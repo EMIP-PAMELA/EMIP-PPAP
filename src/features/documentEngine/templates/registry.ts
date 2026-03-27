@@ -9,9 +9,11 @@
 
 import { TemplateId, TemplateDefinition } from './types';
 import { PSW_TEMPLATE } from './pswTemplate';
+import { PROCESS_FLOW_TEMPLATE } from './processFlowTemplate';
 
 const templates: Record<TemplateId, TemplateDefinition> = {
-  'PSW': PSW_TEMPLATE
+  'PSW': PSW_TEMPLATE,
+  'PROCESS_FLOW': PROCESS_FLOW_TEMPLATE
 };
 
 /**

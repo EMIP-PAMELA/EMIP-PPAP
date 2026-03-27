@@ -9,7 +9,7 @@
 
 import { NormalizedBOM } from '../types/bomTypes';
 
-export type TemplateId = 'PSW';
+export type TemplateId = 'PSW' | 'PROCESS_FLOW';
 
 export interface TemplateInputField {
   key: string;
@@ -38,7 +38,7 @@ export interface DocumentLayout {
   sections: DocumentSection[];
 }
 
-export type FieldType = 'text' | 'number' | 'select';
+export type FieldType = 'text' | 'number' | 'select' | 'table';
 
 export interface FieldDefinition {
   key: string;

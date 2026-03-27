@@ -100,8 +100,46 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                       {!fieldDef.editable && <span className="text-gray-500 ml-2 text-xs">(Read-only)</span>}
                     </label>
                     
-                    {/* Render based on field type */}
-                    {fieldDef.type === 'select' && fieldDef.editable ? (
+                    {/* Array value → generic table rendering */}
+                    {Array.isArray(value) ? (
+                      <div className="overflow-x-auto">
+                        {value.length === 0 ? (
+                          <p className="text-sm text-gray-500 italic">No rows</p>
+                        ) : (
+                          <table className="w-full text-sm border border-gray-200 rounded-md">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                {Object.keys(value[0]).map((col) => (
+                                  <th
+                                    key={col}
+                                    className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b border-gray-200"
+                                  >
+                                    {col.replace(/([A-Z])/g, ' $1').trim()}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {value.map((row: Record<string, any>, rowIndex: number) => (
+                                <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                  {Object.values(row).map((cell, cellIndex) => (
+                                    <td
+                                      key={cellIndex}
+                                      className="px-3 py-2 border-b border-gray-100 text-gray-800 align-top"
+                                    >
+                                      {Array.isArray(cell)
+                                        ? cell.length > 0 ? cell.join(', ') : '—'
+                                        : String(cell ?? '—')}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    ) : /* Render based on field type */
+                    fieldDef.type === 'select' && fieldDef.editable ? (
                       <select
                         value={String(value)}
                         onChange={(e) => onFieldChange(fieldKey, e.target.value)}
