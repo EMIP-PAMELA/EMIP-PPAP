@@ -307,6 +307,41 @@ Important architectural and design decisions for EMIP-PPAP.
 
 ---
 
+## DEC-017: Reusable document engine as shared capability with dual surfaces
+- Date: 2026-03-26
+- Status: Accepted (Planning)
+- Context: Document creation infrastructure exists as placeholders ("Create" buttons, template references in BUILD_PLAN), but no implementation exists. Need formal architectural direction before implementation begins.
+- Decision: Build a reusable document engine with three-layer architecture:
+  - Layer 1: Core engine (BOM parsing, normalization, template registry, field mapping, draft generation)
+  - Layer 2: Standalone surface (independent document generator at `/tools/document-generator`)
+  - Layer 3: Embedded PPAP surface (integrated into existing PPAP workflow document cards)
+- Key Principles:
+  - Build once, expose twice (ONE engine, TWO surfaces)
+  - Context-aware but not PPAP-dependent (engine accepts optional PPAP context)
+  - No direct coupling to PPAP state machine (engine is state-agnostic)
+  - Preserve existing PPAP architectural rules (status-driven workflow, pre-ack/post-ack boundary)
+- Consequences:
+  - ✅ Avoids duplicate template logic across surfaces
+  - ✅ Enables standalone document generation for non-PPAP work
+  - ✅ Reduces manual data entry via BOM auto-fill
+  - ✅ Preserves PPAP workflow integrity (no architectural compromise)
+  - ✅ Testable core engine (pure functions, explicit context interfaces)
+  - ⚠️ Significant implementation effort (7 phases planned: 3P through 3V)
+  - ⚠️ BOM parsing complexity may exceed initial estimates
+  - ⚠️ Template variations (customer-specific) may require extensibility
+  - ⚠️ User adoption of standalone surface uncertain (may prefer PPAP-embedded)
+- Implementation Phases:
+  - Phase 3P: Foundation architecture and planning
+  - Phase 3Q: BOM ingestion and normalization
+  - Phase 3R: Template registry and PSW template (reference implementation)
+  - Phase 3S: Standalone UI flow
+  - Phase 3T: PPAP embedded integration
+  - Phase 3U: Expanded template library (Control Plan, PFMEA, FAIR)
+  - Phase 3V: Advanced parsing and BOM intelligence
+- Rationale: Current "Create" button infrastructure is placeholder-only. Formalizing architectural direction prevents duplicate implementations, ensures PPAP workflow preservation, and enables reusable capability both inside and outside PPAP context. Decision aligns with existing document action system design (actions array: `['upload', 'create']`).
+
+---
+
 ## DEC-007: Minimal permissions for v1
 - Date: 2026-03-19
 - Status: Accepted

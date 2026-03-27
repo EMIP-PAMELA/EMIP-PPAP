@@ -1606,6 +1606,814 @@ After implementation:
 
 ---
 
+## ADDENDUM: Reusable Document Engine Architecture
+
+**Date Added:** 2026-03-26  
+**Status:** Architectural Direction - Implementation Pending  
+**Phase Scope:** Phase 3P and beyond
+
+### System Identity Evolution
+
+**CRITICAL ARCHITECTURAL EXPANSION:**
+
+EMIP-PPAP is evolving from a **PPAP workflow orchestration system** into a **dual-capability platform**:
+
+1. **PPAP Workflow Orchestration** (existing)
+   - Controlled execution system for PPAP lifecycle management
+   - State machine-driven workflow with gates and validations
+   - Role-based authority and multi-site coordination
+
+2. **Reusable Document Generation Capability** (new)
+   - Standalone document creation from BOM and templates
+   - BOM ingestion, normalization, and intelligent auto-fill
+   - Template-driven draft generation with user completion
+   - **Used both independently AND embedded within PPAP workflow**
+
+**This is NOT two separate products.** This is ONE system with a **shared document intelligence capability** exposed through **multiple surfaces**.
+
+---
+
+### Core Architectural Concept
+
+The reusable document engine follows a **three-layer architecture**:
+
+#### Layer 1: Core Engine / Capability Layer
+
+**Responsibilities:**
+- BOM file ingestion (upload, parse, validate)
+- BOM normalization into structured internal representation
+- Template / document definition registry
+- Auto-fill field mapping (BOM data → template fields)
+- Optional context integration (PPAP metadata, system data)
+- Draft document generation with best-effort pre-fill
+- Export / print / save hooks
+
+**Critical Properties:**
+- **Context-aware but not PPAP-dependent**
+- Can operate with BOM alone OR with PPAP context
+- No direct coupling to PPAP state machine
+- Testable and reusable across surfaces
+
+#### Layer 2: Standalone Access Surface
+
+**Responsibilities:**
+- User uploads BOM file independently
+- System parses and previews BOM structure
+- User selects from available supported templates
+- System generates prefilled draft document
+- User completes remaining required fields
+- User prints, exports, or saves to local storage
+
+**Entry Point:** Dedicated route (e.g., `/tools/document-generator`)
+
+**Use Cases:**
+- Engineer needs PSW for non-PPAP project
+- Quick document generation without full PPAP workflow
+- Template exploration and testing
+- External supplier document requests
+
+#### Layer 3: Embedded PPAP Access Surface
+
+**Responsibilities:**
+- Uses PPAP-linked BOM when available
+- Reuses same core generation engine
+- Integrates PPAP metadata (part number, dates, engineer, customer)
+- Saves generated documents into PPAP context
+- Respects PPAP workflow gates and permissions
+- Preserves existing document execution UI
+
+**Entry Point:** Existing PPAP detail page document cards
+
+**Use Cases:**
+- Engineer creating Control Plan during post-ack phase
+- Coordinator generating PSW for submission package
+- Document creation within governed PPAP workflow
+
+---
+
+### Canonical Design Principles
+
+**PRINCIPLE 1: Build Once, Expose Twice**
+
+- ONE engine implementation
+- TWO access surfaces (standalone + embedded)
+- ZERO duplication of parser, normalization, or template logic
+
+**PRINCIPLE 2: Context-Aware, Not PPAP-Bound**
+
+- Document generation accepts optional context
+- Works with BOM alone (standalone mode)
+- Enhances with PPAP context when available (embedded mode)
+- Never assumes PPAP context exists
+
+**PRINCIPLE 3: BOM → Normalized Data → Template → Editable Draft**
+
+Data flow is unidirectional and explicit:
+```
+BOM File Input
+  ↓ Parse
+Structured BOM Data
+  ↓ Normalize
+Internal Standard Representation
+  ↓ Combine with Optional Context
+Enriched Data Model
+  ↓ Map to Template
+Field Assignments
+  ↓ Generate
+Editable Draft Document
+  ↓ User Review/Complete
+Final Document
+```
+
+**PRINCIPLE 4: No Direct Coupling to PPAP State Machine**
+
+- Document engine MUST NOT read `ppap.status` directly
+- PPAP workflow layer provides context as explicit parameters
+- Engine remains state-agnostic, operates on provided data
+
+**PRINCIPLE 5: PPAP Remains Workflow Orchestration, Engine Remains Document Intelligence**
+
+- PPAP components: Control workflow, enforce gates, manage permissions
+- Document engine: Parse BOM, map fields, generate drafts
+- Clear separation of concerns, no architectural blurring
+
+**PRINCIPLE 6: No False Affordances**
+
+- Only expose "Create" flows when template is truly supported
+- Show clear "Template not yet available" for unsupported documents
+- Never promise capability that doesn't exist
+
+---
+
+### Recommended Module Boundaries
+
+**Recommended Structure:**
+
+```
+src/features/
+  documentEngine/               # NEW - Reusable document capability
+    core/
+      bomParser.ts              # BOM file parsing
+      bomNormalizer.ts          # Normalize to internal standard
+      templateRegistry.ts       # Available template definitions
+      fieldMapper.ts            # Data → template field mapping
+      draftGenerator.ts         # Generate editable drafts
+    templates/
+      pswTemplate.ts            # PSW template definition + logic
+      controlPlanTemplate.ts    # Control Plan template
+      fairTemplate.ts           # FAIR template
+      [additional templates]
+    standalone/
+      DocumentGeneratorPage.tsx # Standalone UI surface
+      BOMUploadForm.tsx         # BOM upload + preview
+      TemplateSelector.tsx      # Choose template
+      DraftEditor.tsx           # Complete and export
+    embedded/
+      PPAPDocumentGenerator.tsx # PPAP-integrated wrapper
+      [integrations with existing PPAP components]
+    types/
+      bomTypes.ts               # BOM data structures
+      templateTypes.ts          # Template interfaces
+      draftTypes.ts             # Draft document types
+      
+  ppap/                         # EXISTING - PPAP workflow
+    [existing structure preserved]
+    # Integration points:
+    # - DocumentationForm imports from documentEngine/embedded
+    # - Control panel imports from documentEngine/embedded
+```
+
+**Interface Contracts:**
+
+```typescript
+// Core engine accepts optional context
+interface DocumentGenerationRequest {
+  bom: StructuredBOM;              // Required
+  templateId: string;              // Required
+  ppapContext?: PPAPContext;       // Optional - only for embedded use
+  userContext?: UserContext;       // Optional - for all uses
+}
+
+interface PPAPContext {
+  ppapId: string;
+  ppapNumber: string;
+  partNumber: string;
+  customerName: string;
+  plant: string;
+  engineer: string;
+  acknowledgedDate?: string;
+  // NO ppap.status - workflow state not exposed to engine
+}
+```
+
+---
+
+### Data Flow Pipeline
+
+**Stage 1: BOM Acquisition**
+
+- **Standalone mode:** User uploads BOM file
+- **PPAP-embedded mode:** System retrieves BOM from PPAP context or prompts upload
+- **Output:** Raw BOM file (Excel, CSV, PDF, etc.)
+
+**Stage 2: BOM Parsing**
+
+- System identifies file format
+- Extracts tabular data (part numbers, descriptions, quantities, specs)
+- Handles format variations (customer-specific layouts)
+- **Output:** Raw parsed data structure
+
+**Stage 3: BOM Normalization**
+
+- Converts parsed data into internal standard representation
+- Maps vendor-specific field names to standard schema
+- Validates required fields present
+- Flags anomalies or missing data
+- **Output:** `StructuredBOM` object
+
+**Stage 4: Context Enrichment (Optional)**
+
+- Combines normalized BOM with PPAP metadata (if available)
+- Adds system-known values (dates, engineer, plant)
+- Merges user-provided context
+- **Output:** `EnrichedDataModel`
+
+**Stage 5: Template Selection**
+
+- User selects template from registry of supported documents
+- System validates template compatibility with available data
+- Identifies fillable fields vs. user-required fields
+- **Output:** Selected `TemplateDefinition`
+
+**Stage 6: Field Mapping**
+
+- Maps enriched data to template fields
+- Auto-fills fields where data exists with confidence
+- Leaves uncertain fields blank for user completion
+- Marks required vs. optional fields
+- **Output:** `FieldAssignments`
+
+**Stage 7: Draft Generation**
+
+- Generates editable document with pre-filled values
+- Renders in appropriate format (PDF form, Excel, web form)
+- Highlights user-required fields
+- Provides field-level help text
+- **Output:** Editable draft document
+
+**Stage 8: User Completion**
+
+- User reviews auto-filled values
+- User completes remaining required fields
+- User adds narrative, analysis, engineering judgment
+- System validates completeness
+- **Output:** Completed document draft
+
+**Stage 9: Save/Export**
+
+- **Standalone mode:** Export to PDF, Excel, or save locally
+- **PPAP-embedded mode:** Save to PPAP document context, log event
+- Both modes support print-ready output
+
+**CRITICAL RULE:** System prefills ONLY what it knows with confidence. Uncertain fields remain blank for user validation.
+
+---
+
+### Product Modes
+
+#### Mode 1: Standalone Document Generation
+
+**Entry Point:** `/tools/document-generator` (or similar dedicated route)
+
+**User Flow:**
+1. User navigates to standalone document generator
+2. User uploads BOM file
+3. System parses and previews BOM structure
+4. System shows compatible templates (PSW, Control Plan, etc.)
+5. User selects template
+6. System generates draft with auto-filled fields
+7. User completes remaining required fields
+8. User exports to PDF or prints
+
+**Context Available:**
+- BOM data (user-uploaded)
+- User identity (current logged-in user)
+- No PPAP context
+
+**Save/Export Behavior:**
+- No PPAP linkage
+- Export to file or print directly
+- Optional: Save to user's document library for reuse
+
+**Permissions:**
+- Available to Engineer, Coordinator, Admin roles
+- Viewer role: read-only (cannot generate)
+
+**Use Case Example:**
+> Engineer needs to create a Control Plan for an internal improvement project (not a formal PPAP). They upload the project BOM, select Control Plan template, review auto-filled process steps, complete control methods, and export final PDF.
+
+#### Mode 2: PPAP-Embedded Document Creation
+
+**Entry Point:** Existing PPAP detail page document cards ("Create" button)
+
+**User Flow:**
+1. User working in PPAP workflow (post-ack phase)
+2. User clicks "Create" button on document card (e.g., PSW)
+3. System loads PPAP-linked BOM (if exists) or prompts upload
+4. System pre-populates PPAP context (part number, customer, dates)
+5. System generates draft combining BOM + PPAP context
+6. User completes remaining fields
+7. User saves to PPAP context (links to PPAP record)
+
+**Context Available:**
+- BOM data (PPAP-linked or uploaded)
+- PPAP metadata (ID, number, part, customer, engineer, dates)
+- User identity
+- Workflow state awareness (via PPAP layer, not engine)
+
+**Save/Export Behavior:**
+- Saves to `ppap_documents` table
+- Links to PPAP record via `ppap_id`
+- Logs `DOCUMENT_ADDED` event
+- Updates document validation status
+- Also supports export/print
+
+**Permissions:**
+- Respects PPAP workflow permissions
+- Engineer can create during assigned post-ack work
+- Coordinator can create at any time
+- Workflow state gates may restrict (enforced by PPAP layer)
+
+**Use Case Example:**
+> Engineer assigned to PPAP-2026-0042 completes pre-ack validations. Coordinator acknowledges PPAP. Engineer enters post-ack phase and clicks "Create" on Control Plan card. System loads PPAP BOM, pre-fills part number, process steps, and measurement specs from BOM. Engineer completes control methods and reaction plans. Saves to PPAP, validation auto-completes.
+
+---
+
+### Shared Core Prevents Duplication
+
+**ANTI-PATTERN (Prohibited):**
+```typescript
+// ❌ WRONG: Duplicate template logic in PPAP component
+function generatePSWInPPAPWorkflow(ppap: PPAPRecord) {
+  // Custom PSW generation logic here
+  // This duplicates template logic
+}
+
+// ❌ WRONG: Separate parser in standalone surface
+function parseStandaloneBOM(file: File) {
+  // Different parsing logic
+  // This duplicates parser logic
+}
+```
+
+**CORRECT PATTERN (Required):**
+```typescript
+// ✅ CORRECT: PPAP component uses shared engine
+import { generateDocument } from '@/features/documentEngine/core/draftGenerator';
+
+async function handleCreatePSW(ppapId: string) {
+  const bom = await fetchPPAPBOM(ppapId);
+  const ppapContext = await fetchPPAPContext(ppapId);
+  
+  const draft = await generateDocument({
+    bom,
+    templateId: 'psw',
+    ppapContext,  // Optional context
+  });
+  
+  // Rest of PPAP-specific logic (save, link, log event)
+}
+
+// ✅ CORRECT: Standalone surface uses same engine
+async function handleStandaloneGenerate(bomFile: File, templateId: string) {
+  const bom = await parseBOM(bomFile);  // Same parser
+  
+  const draft = await generateDocument({
+    bom,
+    templateId,
+    // No ppapContext - standalone mode
+  });
+  
+  // Rest of standalone logic (export, print)
+}
+```
+
+---
+
+### Phased Roadmap
+
+#### Phase 3P: Foundation Architecture & Planning
+
+**Goal:** Establish module structure, define interfaces, document template strategy
+
+**Scope:**
+- Create `src/features/documentEngine/` module structure
+- Define TypeScript interfaces for BOM, templates, drafts
+- Document template definition schema
+- Create placeholder template registry
+- Define parser extension points for future format support
+
+**Dependencies:**
+- Current BUILD_PLAN update (this addendum)
+- Decision to proceed with dual-surface architecture
+
+**Risks:**
+- Over-engineering: Keep interfaces simple, iterate based on real use
+- Under-specification: Ensure interfaces support both standalone and embedded
+
+**Success Criteria:**
+- Module structure exists and compiles
+- Interfaces documented and reviewed
+- Template schema defined
+- No breaking changes to existing PPAP workflow
+
+#### Phase 3Q: BOM Ingestion & Normalization Baseline
+
+**Goal:** Parse Excel/CSV BOMs, normalize to internal standard
+
+**Scope:**
+- Implement Excel BOM parser (primary format)
+- Implement CSV BOM parser (secondary format)
+- Create normalization logic (vendor formats → internal schema)
+- Handle common BOM variations (Trane, customer-specific)
+- Validate parsed data completeness
+- Error handling and user feedback
+
+**Dependencies:**
+- Phase 3P complete (interfaces defined)
+- Sample BOM files for testing
+
+**Risks:**
+- BOM format variations may be more complex than anticipated
+- Normalization rules may require domain expertise input
+
+**Success Criteria:**
+- Can parse 80%+ of existing BOM files
+- Normalized data structure is consistent
+- Clear error messages for unsupported formats
+- Unit tests cover common and edge cases
+
+#### Phase 3R: Template Registry & First Supported Template (PSW)
+
+**Goal:** Implement template registry, build PSW template as reference implementation
+
+**Scope:**
+- Create template registry with supported templates list
+- Define PSW template structure and fields
+- Implement PSW field mapping (BOM + PPAP context → PSW fields)
+- Generate editable PSW draft (PDF form or web form)
+- Validate PSW completeness
+- Export PSW to PDF
+
+**Dependencies:**
+- Phase 3Q complete (BOM normalization works)
+- PSW template requirements documented
+- Sample PSW forms for reference
+
+**Risks:**
+- PSW template may have variations (customer-specific)
+- PDF generation libraries may have limitations
+- Field mapping may be more complex than expected
+
+**Success Criteria:**
+- PSW template generates successfully
+- Auto-fill populates 60%+ of PSW fields
+- User can complete remaining fields
+- Export produces valid PSW PDF
+- Code serves as template pattern for future documents
+
+#### Phase 3S: Standalone UI Flow
+
+**Goal:** Build standalone document generator surface
+
+**Scope:**
+- Create `/tools/document-generator` route
+- BOM upload form with drag & drop
+- BOM preview after parse (show component list)
+- Template selector (show only supported templates)
+- Draft editor with field completion
+- Export and print functionality
+- Error handling and user guidance
+
+**Dependencies:**
+- Phase 3R complete (at least one template works)
+- UX design for standalone flow
+
+**Risks:**
+- Standalone flow may compete for resources with PPAP work
+- User adoption uncertain (may prefer PPAP-embedded)
+
+**Success Criteria:**
+- Engineer can upload BOM and generate PSW independently
+- Flow is intuitive (minimal training needed)
+- Export produces usable document
+- No PPAP coupling in standalone code
+
+#### Phase 3T: PPAP Embedded Integration
+
+**Goal:** Integrate document engine into PPAP workflow
+
+**Scope:**
+- Update DocumentationForm "Create" buttons to use engine
+- Implement PPAP context provider
+- Link generated documents to PPAP records
+- Auto-complete validations on document save
+- Log events for document creation
+- Preserve existing workflow gates and permissions
+
+**Dependencies:**
+- Phase 3S complete (engine proven in standalone)
+- Phase 3R complete (PSW template works)
+
+**Risks:**
+- Integration may reveal coupling issues
+- Existing PPAP components may need refactoring
+- Workflow state interactions require careful testing
+
+**Success Criteria:**
+- Create button generates PSW using engine
+- PPAP context auto-fills correctly
+- Saved documents link to PPAP record
+- Validations auto-complete
+- No regression in existing PPAP workflow
+
+#### Phase 3U: Expanded Template Library
+
+**Goal:** Add Control Plan, PFMEA, FAIR templates
+
+**Scope:**
+- Control Plan template definition
+- PFMEA template definition
+- FAIR template definition
+- Advanced field mapping for each
+- Customer-specific template variations (if needed)
+- Template versioning strategy
+
+**Dependencies:**
+- Phase 3T complete (integration proven)
+- Template requirements documented for each
+- Sample filled templates for reference
+
+**Risks:**
+- Templates may be more complex than PSW
+- Engineering judgment fields difficult to auto-fill
+- Measurement data integration (FAIR) may require additional systems
+
+**Success Criteria:**
+- 4 total templates supported (PSW + 3 new)
+- Each template auto-fills 50%+ of fields
+- Templates work in both standalone and embedded modes
+- Clear documentation of what each template auto-fills
+
+#### Phase 3V: Advanced Parsing & BOM Intelligence
+
+**Goal:** Support PDF BOMs, multi-sheet Excel, improved normalization
+
+**Scope:**
+- PDF BOM parsing (OCR if needed)
+- Multi-sheet Excel support
+- Intelligent field detection (machine learning?)
+- BOM comparison logic (customer vs internal)
+- Material availability lookup integration
+- Component specification extraction
+
+**Dependencies:**
+- Phase 3U complete (template library stable)
+- Advanced parsing libraries evaluated
+
+**Risks:**
+- PDF parsing accuracy may be low
+- OCR may require external services
+- ML models may require training data
+
+**Success Criteria:**
+- Can parse PDF BOMs with 70%+ accuracy
+- Multi-sheet Excel handled correctly
+- BOM comparison identifies discrepancies
+- Material availability integrated (if feasible)
+
+---
+
+### Non-Goals / Boundaries
+
+**This effort is explicitly NOT doing:**
+
+1. **Not replacing PPAP state machine**
+   - Document engine operates alongside, not instead of workflow
+   - PPAP status-driven progression remains unchanged
+   - Pre-ack/post-ack boundary preserved
+
+2. **Not bypassing workflow gates**
+   - Embedded mode respects all PPAP permissions
+   - Coordinator acknowledgement gate still required
+   - Document creation during pre-ack still prohibited
+
+3. **Not promising AI-derived engineering judgment**
+   - Auto-fill is data mapping, not analysis
+   - Failure modes, risk ratings, control methods require human expertise
+   - System assists, does not replace engineer
+
+4. **Not auto-completing uncertain compliance data**
+   - Measurement results require actual measurements
+   - Material certifications require supplier documentation
+   - Capability studies require statistical analysis
+   - System will NOT fabricate data
+
+5. **Not exposing Create for unsupported templates**
+   - Only show "Create" button when template truly exists
+   - Unsupported documents: upload only, clear messaging
+   - No false expectations
+
+6. **Not turning BOM parsing into silent defaults**
+   - Uncertain field values left blank, not guessed
+   - User must validate all auto-filled values
+   - Clear indication of confidence level per field
+
+7. **Not creating a separate disconnected product**
+   - This is ONE repo, ONE system, shared capability
+   - Not a microservice, not a separate deployment
+   - Integrated architecture, not bolted-on tool
+
+---
+
+### Integration Guidance for Future Implementation
+
+**RULE 1: Reuse One Engine**
+
+- Standalone and embedded surfaces MUST use same core engine
+- Do not duplicate template logic in PPAP components
+- Do not create separate parsers for different surfaces
+
+**RULE 2: Avoid Mixing Parser Logic into UI**
+
+- UI components import and call parser functions
+- UI components do not contain parsing logic
+- Parser layer is testable independently of UI
+
+**RULE 3: Keep Context Interfaces Explicit**
+
+- Engine accepts context as explicit parameters
+- No implicit global state or hidden dependencies
+- Testable with mock context
+
+**RULE 4: Preserve PPAP Architectural Rules**
+
+- `ppap.status` remains single source of truth for workflow
+- All status updates through `updatePPAPState()`
+- Pre-ack/post-ack boundary preserved
+- Document engine does not read or write workflow state
+
+**RULE 5: Make Generation APIs Testable**
+
+- Core generation functions are pure (input → output)
+- Side effects (save, log, upload) handled by surface layer
+- Unit tests do not require database or UI
+
+**RULE 6: Fail Fast on Unsupported Templates**
+
+- Template registry returns clear "not supported" status
+- UI checks registry before showing "Create" button
+- Error messages guide user to upload instead
+
+**RULE 7: Document What Each Template Auto-Fills**
+
+- Each template definition includes list of auto-filled fields
+- Documentation shows examples of before/after
+- User knows what to expect from generation
+
+---
+
+### Initial Candidate Templates (Priority Order)
+
+**Tier 1: High Auto-Fill Potential (Implement First)**
+
+1. **PSW (Production Part Submission Warrant)**
+   - Auto-fill: Part number, revision, customer, supplier info, submission reason, dates
+   - User-entry: Change description, submission level, deviations
+   - Rationale: Mostly metadata, high success rate
+
+2. **Control Plan**
+   - Auto-fill: Part number, process steps (from routing or BOM), measurement specs (from drawing)
+   - User-entry: Control methods, reaction plans, sampling frequency
+   - Rationale: Structured data, clear mapping from BOM
+
+3. **PFMEA (Process FMEA)**
+   - Auto-fill: Part number, process steps, component list (from BOM)
+   - User-entry: Failure modes, effects, causes, controls, RPN calculations
+   - Rationale: Framework auto-fill, judgment fields remain manual
+
+**Tier 2: Moderate Auto-Fill Potential (Implement Second)**
+
+4. **FAIR (First Article Inspection Report)**
+   - Auto-fill: Part number, drawing reference, measurement specs (from drawing)
+   - User-entry: Actual measurements, pass/fail, inspector notes
+   - Rationale: Specs from drawing, measurements require physical inspection
+
+5. **DFMEA (Design FMEA)**
+   - Auto-fill: Part number, component list, material specs (from BOM)
+   - User-entry: Failure modes, effects, design controls, severity/occurrence/detection
+   - Rationale: Similar to PFMEA, design-focused
+
+**Tier 3: Low Auto-Fill Potential (Defer or Upload-Only)**
+
+6. **MSA / Gauge R&R**
+   - Auto-fill: Part number, gage info (if tracked)
+   - User-entry: Repeatability/reproducibility analysis, statistical calculations
+   - Rationale: Highly measurement-dependent, complex statistical analysis
+
+7. **Capability Studies**
+   - Auto-fill: Part number, process info
+   - User-entry: SPC data, Cpk/Ppk calculations, control charts
+   - Rationale: Requires extensive measurement data collection
+
+8. **Dimensional Results**
+   - Auto-fill: Part number, drawing reference, spec limits
+   - User-entry: All actual measurements
+   - Rationale: Almost entirely measurement data
+
+**Prioritization Strategy:**
+- Start with high auto-fill templates (PSW, Control Plan)
+- Prove engine architecture works
+- Expand to moderate auto-fill templates
+- Consider upload-only for low auto-fill templates (defer generation)
+
+---
+
+### Reconciliation with Current PPAP Documentation UI
+
+**Current State:**
+- DocumentationForm shows document cards with upload/create actions
+- Create button exists for ballooned_drawing (routes to markup tool)
+- Create button for other documents shows "Template coming soon"
+
+**Post-Engine Integration:**
+- Document cards remain primary UI (no redesign needed)
+- Create button behavior changes based on template registry
+  - Supported templates: Generate using engine
+  - Unsupported templates: Continue showing "Template not available, please upload"
+- Upload button always available (upload-first approach preserved)
+
+**Integration Points:**
+- DocumentationForm imports `generateDocument()` from engine
+- Create button handler calls engine with PPAP context
+- Generated documents saved to PPAP via existing save flow
+- Validation auto-completion logic unchanged
+
+**Workflow Awareness:**
+- Document engine is workflow-agnostic (operates on provided context)
+- PPAP layer enforces workflow rules (pre-ack/post-ack boundary)
+- Embedded surface checks `ppap.status` before allowing creation
+- Engine itself never reads `ppap.status`
+
+**Permissions:**
+- Embedded surface enforces PPAP permissions
+- Engine has no permission logic (receives validated context)
+- Standalone surface has simpler role-based permissions
+
+**No Breaking Changes Required:**
+- Existing upload flow unchanged
+- Existing document cards UI unchanged
+- Existing validation logic unchanged
+- Engine integrates via "Create" button enhancement
+
+---
+
+### Implementation-Grade Writing Standards
+
+This addendum follows BUILD_PLAN standards:
+
+**Structured Sections:**
+- Clear hierarchy (major sections, subsections, bullets)
+- Consistent formatting and naming
+- Cross-references to existing plan sections
+
+**Concrete Architecture Boundaries:**
+- Specific module structure recommendations
+- Interface contracts with TypeScript examples
+- Data flow diagrams with explicit stages
+
+**Phased Delivery:**
+- 7 phases with clear goals, scope, dependencies, risks, success criteria
+- Each phase builds on previous, no circular dependencies
+- Realistic scope per phase
+
+**Decision-Grade Clarity:**
+- Principles stated as firm rules, not suggestions
+- Non-goals explicitly called out
+- Integration guidance with MUST/MUST NOT requirements
+
+**Implementation Hooks:**
+- TypeScript code examples show correct patterns
+- Anti-patterns explicitly shown and prohibited
+- Module boundaries mapped to actual file structure
+
+**No Speculation:**
+- Template capabilities based on known data sources (BOM, PPAP metadata)
+- Parsing scope based on common file formats
+- Phasing based on logical dependency chains
+
+---
+
 ## Appendices
 
 ### Appendix A: Status Definitions (Current)
@@ -1651,6 +2459,20 @@ type RequirementLevel = 'REQUIRED' | 'CONDITIONAL' | 'OPTIONAL';
 ---
 
 ## Document History
+
+**Version 3P.1 (2026-03-26 20:25 CT):**
+- Added ADDENDUM: Reusable Document Engine Architecture
+- Established dual-capability platform direction (PPAP workflow + standalone document generation)
+- Defined three-layer architecture (core engine, standalone surface, embedded PPAP surface)
+- Documented canonical design principles (build once, expose twice; context-aware not PPAP-bound)
+- Defined recommended module boundaries and interface contracts
+- Documented nine-stage data flow pipeline (BOM acquisition → save/export)
+- Defined two product modes (standalone and PPAP-embedded) with detailed user flows
+- Created 7-phase implementation roadmap (Phases 3P through 3V)
+- Documented non-goals and boundaries (preserves PPAP architecture, no AI judgment, no false affordances)
+- Added integration guidance and implementation rules
+- Prioritized candidate templates (Tier 1: PSW, Control Plan, PFMEA)
+- Reconciled with current PPAP documentation UI
 
 **Version 3F.15 (2026-03-25 19:15 CT):**
 - Complete rewrite to implementation-grade source of truth

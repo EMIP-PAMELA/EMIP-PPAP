@@ -4,6 +4,443 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-26 21:38 CT - Phase 3R - Template Registry & PSW Template Implementation
+
+- Summary: Implemented template system infrastructure with declarative template registry and first working template (PSW)
+- Files created:
+  - `src/features/documentEngine/templates/types.ts` - Template system type definitions
+  - `src/features/documentEngine/templates/registry.ts` - Central template registry with discovery
+  - `src/features/documentEngine/templates/pswTemplate.ts` - PSW (Production Part Submission Warrant) template implementation
+  - `src/features/documentEngine/core/documentGenerator.ts` - Document draft generation orchestrator
+  - `src/features/documentEngine/examples/pswExample.ts` - Working example with sample BOM data
+- Impact: Template system complete. Can now generate structured document drafts from normalized BOM data.
+- Objective: Enable declarative template-based document generation with external input validation
+
+**Context:**
+
+Phase 3R completes the template layer of the Document Engine Architecture, enabling document draft generation from normalized BOM data and external inputs.
+
+This phase implements a clean, extensible template registry with the PSW template as the reference implementation, demonstrating the complete data flow: Parse → Normalize → Template → Draft.
+
+**Problem Statement:**
+
+**Before Phase 3R:**
+- No template system
+- No way to map BOM data to document structures
+- No field validation for external inputs
+- No document draft generation capability
+
+**After Phase 3R:**
+- Template registry with discovery (`getTemplate`, `listTemplates`)
+- Declarative template definitions with required input fields
+- PSW template generates structured drafts from BOM + external data
+- Input validation (throws clear errors for missing required fields)
+- Document draft output with metadata and fields
+- Example usage demonstrating complete flow
+
+---
+
+**Implementation Details:**
+
+**1. Template System Types (`templates/types.ts`)**
+
+Core type definitions for template system:
+
+```typescript
+export type TemplateId = 'PSW';
+
+interface TemplateInputField {
+  key: string;
+  label: string;
+  required: boolean;
+}
+
+interface TemplateInput {
+  bom: NormalizedBOM;
+  externalData?: Record<string, any>;
+}
+
+interface DocumentDraft {
+  templateId: TemplateId;
+  metadata: Record<string, any>;
+  fields: Record<string, any>;
+}
+
+interface TemplateDefinition {
+  id: TemplateId;
+  name: string;
+  description: string;
+  requiredInputs: TemplateInputField[];
+  generate: (input: TemplateInput) => DocumentDraft;
+}
+```
+
+**Key design decisions:**
+- `TemplateId` as string literal union (type-safe, extensible)
+- `requiredInputs` array declares external data needs
+- `generate` function is pure (deterministic, no side effects)
+- `externalData` is optional but validated at runtime
+
+**2. Template Registry (`templates/registry.ts`)**
+
+Central registry for template discovery:
+
+```typescript
+const templates: Record<TemplateId, TemplateDefinition> = {
+  'PSW': PSW_TEMPLATE
+};
+
+export function getTemplate(id: TemplateId): TemplateDefinition
+export function listTemplates(): TemplateDefinition[]
+export function hasTemplate(id: TemplateId): boolean
+```
+
+**Features:**
+- Single source of truth for all templates
+- Type-safe template retrieval
+- Throws clear error if template not found
+- Easy to extend with new templates
+
+**3. PSW Template (`templates/pswTemplate.ts`)**
+
+Production Part Submission Warrant template implementation:
+
+**Required External Inputs:**
+- `customerName` - Customer Name (required)
+- `partNumber` - Part Number (required, with BOM fallback)
+- `revisionLevel` - Revision Level (required)
+- `submissionLevel` - Submission Level 1-5 (required)
+- `supplierName` - Supplier Name (required)
+
+**BOM-Derived Fields:**
+- `totalOperations` ← `bom.summary.totalOperations`
+- `totalComponents` ← `bom.summary.totalComponents`
+- `wireCount` ← `bom.summary.wires`
+- `terminalCount` ← `bom.summary.terminals`
+- `hardwareCount` ← `bom.summary.hardware`
+
+**Validation Logic:**
+```typescript
+function validateRequiredInputs(externalData) {
+  if (!externalData) {
+    throw new Error('PSW Template requires external data: ...');
+  }
+  
+  for (const field of REQUIRED_INPUTS) {
+    if (field.required && !externalData[field.key]) {
+      throw new Error(`PSW Template missing required fields: ${field.label}`);
+    }
+  }
+}
+```
+
+**Generation Function:**
+```typescript
+function generatePSW(input: TemplateInput): DocumentDraft {
+  validateRequiredInputs(input.externalData);
+  
+  const { bom, externalData } = input;
+  
+  return {
+    templateId: 'PSW',
+    metadata: {
+      generatedAt: new Date().toISOString(),
+      bomMasterPartNumber: bom.masterPartNumber,
+      templateVersion: '1.0'
+    },
+    fields: {
+      // External inputs
+      partNumber: externalData.partNumber || bom.masterPartNumber,
+      customerName: externalData.customerName,
+      revisionLevel: externalData.revisionLevel,
+      submissionLevel: externalData.submissionLevel,
+      supplierName: externalData.supplierName,
+      
+      // BOM-derived
+      totalOperations: bom.summary.totalOperations,
+      totalComponents: bom.summary.totalComponents,
+      wireCount: bom.summary.wires,
+      terminalCount: bom.summary.terminals,
+      hardwareCount: bom.summary.hardware
+    }
+  };
+}
+```
+
+**4. Document Generator (`core/documentGenerator.ts`)**
+
+Orchestrates document generation:
+
+```typescript
+export function generateDocumentDraft(
+  templateId: TemplateId,
+  input: TemplateInput
+): DocumentDraft {
+  const template = getTemplate(templateId);
+  return template.generate(input);
+}
+```
+
+**Features:**
+- Retrieves template from registry
+- Delegates to template's generate function
+- Console logging for visibility
+- Throws errors on validation failure
+
+**5. Example Usage (`examples/pswExample.ts`)**
+
+Working example demonstrating complete flow:
+
+```typescript
+const exampleBOM: NormalizedBOM = {
+  masterPartNumber: 'WH-12345-A',
+  operations: [/* ... */],
+  summary: {
+    totalComponents: 3,
+    totalOperations: 2,
+    wires: 1,
+    terminals: 1,
+    hardware: 1
+  }
+};
+
+const externalData = {
+  customerName: 'Trane Technologies',
+  partNumber: 'WH-12345-A',
+  revisionLevel: 'B',
+  submissionLevel: '3',
+  supplierName: 'Apogee Controls'
+};
+
+const draft = generateDocumentDraft('PSW', {
+  bom: exampleBOM,
+  externalData
+});
+```
+
+**Example Output:**
+```json
+{
+  "templateId": "PSW",
+  "metadata": {
+    "generatedAt": "2026-03-26T21:38:00.000Z",
+    "bomMasterPartNumber": "WH-12345-A",
+    "templateVersion": "1.0"
+  },
+  "fields": {
+    "partNumber": "WH-12345-A",
+    "customerName": "Trane Technologies",
+    "revisionLevel": "B",
+    "submissionLevel": "3",
+    "supplierName": "Apogee Controls",
+    "totalOperations": 2,
+    "totalComponents": 3,
+    "wireCount": 1,
+    "terminalCount": 1,
+    "hardwareCount": 1
+  }
+}
+```
+
+---
+
+**Architectural Compliance:**
+
+**✅ Declarative Templates:**
+- Templates declare required inputs upfront
+- No business logic tied to PPAP state
+- Only consume NormalizedBOM + external data
+
+**✅ Pure Functions (Deterministic):**
+- Same input always produces same output
+- No randomness
+- No external API calls
+- No database operations
+
+**✅ Input Validation:**
+- Required fields enforced
+- Clear error messages on missing data
+- No silent defaults
+- No "magic inference"
+
+**✅ No PPAP Coupling:**
+- Templates do NOT read `ppap.status`
+- Templates do NOT import from `@/features/ppap`
+- Templates work in standalone mode
+- Context passed explicitly via `externalData`
+
+**✅ Build Once, Use Twice:**
+- Same template works in standalone surface
+- Same template works in PPAP embedded surface
+- No duplicate logic
+
+**✅ Extensible Design:**
+- Easy to add new templates (just add to registry)
+- TemplateId union type ensures type safety
+- Template interface is minimal and clear
+
+---
+
+**Data Flow Complete:**
+
+```
+Raw Text (PDF/File)
+    ↓
+[bomParser.ts] → RawBOMData
+    ↓
+[bomNormalizer.ts] → NormalizedBOM
+    ↓
+[pswTemplate.ts] → DocumentDraft
+    ↓
+Generated PSW Document
+```
+
+---
+
+**Template System Features:**
+
+1. **Registry-Based Discovery**
+   - Central registry (`getTemplate`, `listTemplates`)
+   - Type-safe template IDs
+   - Clear error handling
+
+2. **Declarative Input Requirements**
+   - Each template declares required fields
+   - UI can query `template.requiredInputs` to build forms
+   - Runtime validation with clear errors
+
+3. **BOM Data Mapping**
+   - Templates consume `NormalizedBOM`
+   - Direct access to summary statistics
+   - Access to all operations and components
+
+4. **External Data Integration**
+   - Templates accept optional `externalData`
+   - Validation enforces required fields
+   - No silent defaults (fail fast)
+
+5. **Structured Output**
+   - `DocumentDraft` has consistent structure
+   - Metadata for provenance tracking
+   - Fields ready for UI rendering or export
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to parser (`bomParser.ts`)
+- NO modifications to normalizer (`bomNormalizer.ts`)
+- NO modifications to existing PPAP code
+- NO UI implementation
+- NO PDF export/rendering
+- NO database persistence
+- NO PPAP workflow integration yet
+
+---
+
+**Build Verification:**
+
+TypeScript compilation: ✅ PASSED
+```bash
+npx tsc --noEmit --skipLibCheck src/features/documentEngine/**/*.ts
+Exit code: 0
+```
+
+All document engine files compile cleanly including:
+- Template types
+- Template registry
+- PSW template
+- Document generator
+- Example usage
+
+---
+
+**Success Criteria Met:**
+
+✅ Template registry exists and is extensible  
+✅ PSW template generates valid draft from normalized BOM  
+✅ External required inputs are enforced (throws on missing)  
+✅ Document draft output is structured and deterministic  
+✅ Code compiles cleanly  
+✅ Example demonstrates complete flow  
+✅ No PPAP coupling  
+✅ No over-engineering  
+
+---
+
+**Usage Summary:**
+
+**Required External Inputs for PSW:**
+- Customer Name
+- Part Number (optional, falls back to BOM master part number)
+- Revision Level
+- Submission Level (1-5)
+- Supplier Name
+
+**BOM-Derived Fields (Automatic):**
+- Total Operations
+- Total Components
+- Wire Count
+- Terminal Count
+- Hardware Count
+
+**How to Generate PSW Draft:**
+```typescript
+import { generateDocumentDraft } from '@/features/documentEngine/core/documentGenerator';
+import { parseBOMText } from '@/features/documentEngine/core/bomParser';
+import { normalizeBOMData } from '@/features/documentEngine/core/bomNormalizer';
+
+// 1. Parse BOM
+const rawBOM = parseBOMText(pdfText);
+
+// 2. Normalize BOM
+const normalizedBOM = normalizeBOMData(rawBOM);
+
+// 3. Provide external data
+const externalData = {
+  customerName: 'Trane Technologies',
+  partNumber: 'WH-12345-A',
+  revisionLevel: 'B',
+  submissionLevel: '3',
+  supplierName: 'Apogee Controls'
+};
+
+// 4. Generate draft
+const draft = generateDocumentDraft('PSW', {
+  bom: normalizedBOM,
+  externalData
+});
+
+// draft.fields contains all PSW data ready for rendering/export
+```
+
+---
+
+**Next Recommended Phase:**
+
+**Phase 3S - Standalone Document Generator UI**
+
+Build standalone web surface:
+- Route: `/tools/document-generator`
+- Upload BOM file
+- Select template (PSW initially)
+- Form for external inputs (auto-generated from `template.requiredInputs`)
+- Preview generated draft
+- Export to JSON/PDF
+- NO PPAP integration yet (pure standalone)
+
+**OR**
+
+**Phase 3T - PPAP Embedded Integration**
+
+Integrate into PPAP workflow:
+- Wire "Create" buttons on document cards to template system
+- Pre-fill external data from PPAP context
+- Respect workflow gates (pre-ack/post-ack boundary)
+- Save generated drafts to PPAP document store
+
+---
+
 ## 2026-03-26 21:13 CT - Phase 3P.2 - Multi-Line Aware BOM Normalizer Implementation
 
 - Summary: Implemented full BOM normalization logic with multi-line component binding, line classification, and component type detection
