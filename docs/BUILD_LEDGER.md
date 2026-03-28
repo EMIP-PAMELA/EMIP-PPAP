@@ -4,6 +4,361 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-27 20:31 CT - Phase 19 - Hard Workflow Gating (Controlled Execution Layer)
+
+- Summary: Enforced dependency-based document generation with validation gating for final export
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Added hard workflow gating and validation controls
+- Impact: Users can no longer generate documents without required prerequisites; export blocked on validation errors
+- Objective: Ensure correct workflow sequence and PPAP package integrity
+
+---
+
+**Architecture: Controlled Execution Layer**
+
+Introduced hard enforcement of workflow dependencies and validation requirements while preserving user visibility and navigation.
+
+---
+
+**Phase Evolution:**
+
+- **Phase 13–15**: Soft guidance (warnings, recommendations, stale indicators)
+- **Phase 19**: Hard enforcement (blocking generation, validation gates)
+
+**Key difference:** Warnings → Enforcement
+
+---
+
+**Core Gating Logic:**
+
+**1. Step Enablement Function:**
+```typescript
+const isStepEnabled = (stepId: TemplateId): boolean => {
+  const step = WORKFLOW_STEPS.find(s => s.id === stepId);
+  if (!step) return false;
+  // Step is enabled if all dependencies are satisfied
+  return step.dependsOn.every(dep => !!documents[dep]);
+};
+```
+
+**Enforcement rules:**
+- PFMEA requires Process Flow
+- Control Plan requires PFMEA
+- PSW requires Control Plan
+
+**2. Generation Blocking:**
+```typescript
+const handleStepClick = async (stepId: TemplateId) => {
+  const isRegen = !!documents[stepId];
+  const enabled = isStepEnabled(stepId);
+  
+  // Allow navigation to existing documents even if not enabled
+  if (isRegen) {
+    setActiveStep(stepId);
+    return;
+  }
+  
+  // Block generation if dependencies not met
+  if (!enabled) {
+    const missingDeps = stepDef.dependsOn.filter(dep => !documents[dep]);
+    const depLabels = missingDeps.map(dep => /* ... */).join(', ');
+    setError(`Cannot generate ${label}: Please complete ${depLabels} first`);
+    return;
+  }
+  
+  // Proceed with generation...
+};
+```
+
+**Behavior:**
+- ✅ Can view existing documents (even if prerequisites now missing)
+- ❌ Cannot generate new documents without prerequisites
+- ✅ Clear error messaging when blocked
+
+---
+
+**3. Validation Gating for Export:**
+```typescript
+const handleExportPDF = async () => {
+  const currentVal = validationResults[activeStep];
+  
+  // Block export if validation fails
+  if (currentVal && !currentVal.isValid) {
+    setError(`Cannot export ${activeStep}: Document has ${currentVal.errors.length} validation error(s) that must be resolved first`);
+    return;
+  }
+  
+  // Proceed with PDF generation...
+};
+```
+
+**Export rules:**
+- ✅ Can export valid documents
+- ❌ Cannot export documents with validation errors
+- Clear error message explaining why export is blocked
+
+---
+
+**4. Global PPAP Readiness Indicator:**
+```typescript
+const allStepsGenerated = STEP_ORDER.every(stepId => !!documents[stepId]);
+const allStepsValid = STEP_ORDER.every(stepId => {
+  const result = validationResults[stepId];
+  return result && result.isValid;
+});
+const ppapReady = allStepsGenerated && allStepsValid;
+```
+
+**Display states:**
+- ✅ **PPAP Package Ready** (green) — All docs generated and valid
+- ⚠️ **PPAP Package Incomplete** (yellow) — All docs generated, but validation errors exist
+
+**Banner shows:**
+- Readiness status
+- Contextual message
+- Count of documents needing attention (if incomplete)
+
+---
+
+**UI Changes:**
+
+**Disabled Step State:**
+```tsx
+<button
+  disabled={isBlocked}
+  className="bg-gray-100 text-gray-400 border border-gray-300 cursor-not-allowed opacity-60"
+>
+  <span className="bg-gray-300 text-gray-500">
+    🔒 {/* Lock icon instead of step number */}
+  </span>
+  <div className="mt-1.5 text-xs text-red-700 bg-red-50 rounded px-2 py-1 font-medium">
+    🔒 Requires {missingDeps.map(d => d.label).join(', ')}
+  </div>
+</button>
+```
+
+**Visual indicators:**
+- 🔒 Lock icon on disabled steps
+- Greyed out appearance
+- Red warning banner showing required dependencies
+- `disabled` attribute prevents clicks
+- `cursor-not-allowed` for UX clarity
+
+---
+
+**Step Navigation Matrix:**
+
+| State | Icon | Color | Clickable | Action |
+|---|---|---|---|---|
+| **Blocked** (not generated, deps missing) | 🔒 | Gray | No | Show error message |
+| **Enabled** (not generated, deps met) | Step # | Gray | Yes | Generate document |
+| **Recommended** (next logical step) | → | Indigo | Yes | Generate document |
+| **Generated** (valid) | ✓ | Green | Yes | Navigate to document |
+| **Stale** (out of sync) | ⚠ | Orange | Yes | Navigate to document |
+| **Active** (currently viewing) | Step # | Blue | N/A | Already active |
+
+---
+
+**Error Messaging Examples:**
+
+**Generation blocked:**
+```
+Cannot generate PFMEA: Please complete Process Flow first
+```
+
+**Export blocked:**
+```
+Cannot export CONTROL_PLAN: Document has 3 validation error(s) that must be resolved first
+```
+
+**Clear, actionable, non-technical.**
+
+---
+
+**Workflow Enforcement Examples:**
+
+**Scenario 1: User tries to generate PFMEA without Process Flow**
+```
+1. User clicks PFMEA button (disabled)
+2. Browser prevents click (disabled button)
+3. No action taken
+4. Lock icon and "🔒 Requires Process Flow" visible
+```
+
+**Scenario 2: User tries to generate Control Plan without PFMEA**
+```
+1. User clicks Control Plan button
+2. handleStepClick executes
+3. isStepEnabled returns false (PFMEA missing)
+4. Error displayed: "Cannot generate Control Plan: Please complete PFMEA first"
+5. No document generated
+```
+
+**Scenario 3: User tries to export PSW with validation errors**
+```
+1. User has PSW generated but invalid
+2. User clicks "Export PDF"
+3. handleExportPDF checks validation
+4. Validation fails (3 errors)
+5. Error displayed: "Cannot export PSW: Document has 3 validation error(s)..."
+6. No PDF generated
+```
+
+**Scenario 4: User completes all documents with validation**
+```
+1. All 4 documents generated
+2. All 4 documents valid
+3. Green "PPAP Package Ready" banner appears
+4. Export allowed for all documents
+5. Ready for submission
+```
+
+---
+
+**Non-Destructive Guarantees:**
+
+✅ **Navigation preserved:**
+- Can view any previously generated document
+- Can switch between existing documents
+- Can edit existing documents
+
+✅ **No auto-generation:**
+- System never generates documents automatically
+- User always initiates generation explicitly
+
+✅ **Stale documents still usable:**
+- Stale indicator shown (⚠ orange)
+- But not blocked from use
+- User decides when to regenerate
+
+✅ **User edits protected:**
+- Validation prevents invalid exports
+- But doesn't delete user work
+- User can fix errors and retry
+
+---
+
+**What Was NOT Changed:**
+
+- NO modifications to parser, normalizer, mapping, templates
+- NO modifications to document generation algorithms
+- NO modifications to validation logic
+- NO modifications to multi-session system
+- NO backend/persistence changes
+
+**Only UI orchestration layer affected.**
+
+---
+
+**Backward Compatibility:**
+
+Existing sessions with documents:
+- Continue to work normally
+- Existing documents remain viewable
+- Only new generation attempts are gated
+- No data loss or corruption
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ PFMEA cannot be generated without Process Flow
+✅ Control Plan cannot be generated without PFMEA
+✅ PSW export blocked if validation fails
+✅ Users understand WHY actions are blocked (clear error messages)
+✅ Users can navigate freely between existing documents
+✅ No architecture violations (UI layer only)
+✅ Code compiles cleanly
+✅ Multi-session system preserved
+✅ Stale logic preserved (non-blocking)
+✅ Global PPAP readiness indicator added
+
+---
+
+**User Experience Improvements:**
+
+**Before Phase 19 (Soft Guidance):**
+- "⚠ Recommended: Generate Process Flow first for best results"
+- User could ignore and generate anyway
+- Potentially inconsistent or suboptimal documents
+
+**After Phase 19 (Hard Enforcement):**
+- "🔒 Requires Process Flow" (button disabled)
+- OR "Cannot generate PFMEA: Please complete Process Flow first" (clear error)
+- Guarantees correct workflow sequence
+- Ensures PPAP package integrity
+
+---
+
+**Validation-Driven Export:**
+
+**Before:**
+- Export always allowed
+- User might export invalid documents
+- Validation shown but not enforced
+
+**After:**
+- Export blocked on validation errors
+- Clear error: "Cannot export: 3 validation errors..."
+- User must fix errors before export
+- Ensures only valid documents leave the system
+
+---
+
+**PPAP Readiness at a Glance:**
+
+**Visual feedback:**
+- ✅ Green banner = Ready for submission
+- ⚠️ Yellow banner = Needs attention
+- Shows exact count of invalid documents
+
+**Benefits:**
+- User knows package status instantly
+- Clear path to completion
+- No guesswork about readiness
+
+---
+
+**Technical Implementation Notes:**
+
+**Disabled button approach:**
+- Uses HTML `disabled` attribute
+- Browser-level prevention of clicks
+- Visual feedback via `cursor-not-allowed`
+- Accessibility-compliant
+
+**Error messaging:**
+- Set via `setError()` state
+- Displayed in error banner
+- Cleared on successful actions
+- User-friendly language
+
+**Lock icon:**
+- Unicode emoji 🔒
+- Renders consistently across platforms
+- Clear visual metaphor
+- Distinguishes from step numbers
+
+---
+
+**Foundation for Future Phases:**
+
+Phase 19 establishes controlled execution layer. Future phases could add:
+- **Phase 20**: Regeneration confirmation with diff view
+- **Phase 21**: Batch document generation
+- **Phase 22**: Workflow templates (industry-specific sequences)
+- **Phase 23**: Audit trail for generation/edits
+
+---
+
 ## 2026-03-27 20:09 CT - Phase 18 - Multi-Session PPAP Management
 
 - Summary: Upgraded from single-session to multi-session persistence with session switching and management

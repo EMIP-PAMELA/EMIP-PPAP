@@ -255,33 +255,47 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     return { draft, actualSource };
   };
 
+  const isStepEnabled = (stepId: TemplateId): boolean => {
+    const step = WORKFLOW_STEPS.find(s => s.id === stepId);
+    if (!step) return false;
+    // Step is enabled if all dependencies are satisfied
+    return step.dependsOn.every(dep => !!documents[dep]);
+  };
+
   const handleStepClick = async (stepId: TemplateId) => {
     if (!normalizedBOM) return;
+    
+    const stepDef = WORKFLOW_STEPS.find(s => s.id === stepId)!;
+    const label = stepDef.label;
+    const isRegen = !!documents[stepId];
+    const enabled = isStepEnabled(stepId);
+    
+    // Allow navigation to existing documents even if not enabled
+    if (isRegen) {
+      setActiveStep(stepId);
+      setRegenMessage(null);
+      setPrereqWarning(null);
+      setError(null);
+      return;
+    }
+    
+    // Block generation if dependencies not met
+    if (!enabled) {
+      const missingDeps = stepDef.dependsOn.filter(dep => !documents[dep]);
+      const depLabels = missingDeps.map(dep => WORKFLOW_STEPS.find(s => s.id === dep)?.label).join(', ');
+      setError(`Cannot generate ${label}: Please complete ${depLabels} first`);
+      setPrereqWarning(null);
+      setRegenMessage(null);
+      console.log(`[DocumentWorkspace] Generation blocked: ${label} requires ${depLabels}`);
+      return;
+    }
+    
     try {
       setError(null);
       setPrereqWarning(null);
-      const stepDef = WORKFLOW_STEPS.find(s => s.id === stepId)!;
-      const label = stepDef.label;
-      const isRegen = !!documents[stepId];
       const hasEdits = editableDocuments[stepId] && hasChanges();
 
-      // Check prerequisites (non-blocking warning)
-      const missingDeps = stepDef.dependsOn.filter(dep => !documents[dep]);
-      if (missingDeps.length > 0 && !isRegen) {
-        const depLabels = missingDeps.map(dep => WORKFLOW_STEPS.find(s => s.id === dep)?.label).join(', ');
-        setPrereqWarning(`Recommended: Generate ${depLabels} first for best results`);
-      }
-
-      // Protect user edits
-      if (isRegen && hasEdits && activeStep === stepId) {
-        const confirmed = window.confirm(
-          `Regenerating will overwrite your edits to ${label}. Continue?`
-        );
-        if (!confirmed) {
-          console.log(`[DocumentWorkspace] Regeneration cancelled by user`);
-          return;
-        }
-      }
+      // Note: isRegen is false here due to early return above
 
       const now = Date.now();
       const { draft, actualSource } = generateWithBestSource(stepId);
@@ -454,6 +468,15 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   const handleExportPDF = async () => {
     if (!activeStep || !editableDocuments[activeStep]) return;
     const editableDraft = editableDocuments[activeStep];
+    const currentVal = validationResults[activeStep];
+    
+    // Block export if validation fails
+    if (currentVal && !currentVal.isValid) {
+      setError(`Cannot export ${activeStep}: Document has ${currentVal.errors.length} validation error(s) that must be resolved first`);
+      console.log(`[DocumentWorkspace] Export blocked: validation errors present`);
+      return;
+    }
+    
     try {
       setError(null);
       console.log('[DocumentWorkspace] Generating PDF...');
@@ -520,6 +543,13 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     }
     return `Next: Generate ${stepDef.label} — ${desc}`;
   };
+
+  const allStepsGenerated = STEP_ORDER.every(stepId => !!documents[stepId]);
+  const allStepsValid = STEP_ORDER.every(stepId => {
+    const result = validationResults[stepId];
+    return result && result.isValid;
+  });
+  const ppapReady = allStepsGenerated && allStepsValid;
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
@@ -639,6 +669,47 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
             </div>
           )}
 
+          {/* PPAP Readiness Indicator */}
+          {allStepsGenerated && (
+            <div className={`mb-6 border rounded-lg p-4 ${
+              ppapReady
+                ? 'bg-green-50 border-green-300'
+                : 'bg-yellow-50 border-yellow-300'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">
+                    {ppapReady ? '✅' : '⚠️'}
+                  </span>
+                  <div>
+                    <h4 className={`font-bold ${
+                      ppapReady ? 'text-green-800' : 'text-yellow-800'
+                    }`}>
+                      {ppapReady ? 'PPAP Package Ready' : 'PPAP Package Incomplete'}
+                    </h4>
+                    <p className={`text-sm ${
+                      ppapReady ? 'text-green-700' : 'text-yellow-700'
+                    }`}>
+                      {ppapReady
+                        ? 'All documents generated and validated. Ready for submission.'
+                        : 'All documents generated, but validation errors must be resolved before submission.'}
+                    </p>
+                  </div>
+                </div>
+                {!ppapReady && (
+                  <div className="text-sm text-yellow-700">
+                    <strong>
+                      {STEP_ORDER.filter(id => {
+                        const result = validationResults[id];
+                        return !result || !result.isValid;
+                      }).length}
+                    </strong> document(s) need attention
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-6 items-start">
             {/* Step Navigation Panel */}
             <div className="w-52 flex-shrink-0">
@@ -656,16 +727,21 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                     const depLabel = DEP_LABEL[step.id];
                     const isRecommended = recommendedStep === step.id;
                     const stepDesc = STEP_DESCRIPTION[step.id];
+                    const enabled = isStepEnabled(step.id);
                     const completionIcon = isGenerated && !stale ? '✓' : stale ? '⚠' : '○';
+                    const isBlocked = !enabled && !isGenerated;
                     return (
                       <div key={step.id}>
                         <button
                           onClick={() => handleStepClick(step.id)}
+                          disabled={isBlocked}
                           className={`w-full text-left rounded-md px-3 py-2.5 transition-all ${
                             isActive
                               ? 'bg-blue-600 text-white shadow-md'
                               : isRecommended
                               ? 'bg-indigo-100 text-indigo-900 border-2 border-indigo-400 hover:bg-indigo-200 shadow-lg'
+                              : isBlocked
+                              ? 'bg-gray-100 text-gray-400 border border-gray-300 cursor-not-allowed opacity-60'
                               : stale
                               ? 'bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100'
                               : isGenerated
@@ -679,13 +755,15 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                                 ? 'bg-white text-blue-600'
                                 : isRecommended
                                 ? 'bg-indigo-600 text-white'
+                                : isBlocked
+                                ? 'bg-gray-300 text-gray-500'
                                 : stale
                                 ? 'bg-orange-400 text-white'
                                 : isGenerated
                                 ? 'bg-green-500 text-white'
                                 : 'bg-gray-300 text-gray-600'
                             }`}>
-                              {isRecommended ? '→' : index + 1}
+                              {isBlocked ? '🔒' : isRecommended ? '→' : index + 1}
                             </span>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
@@ -708,9 +786,9 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                               )}
                             </div>
                           </div>
-                          {missingDeps.length > 0 && !isActive && !isRecommended && (
-                            <div className="mt-1.5 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
-                              ⚠ Depends on {missingDeps.map(d => d.label).join(', ')} (not yet generated)
+                          {isBlocked && missingDeps.length > 0 && (
+                            <div className="mt-1.5 text-xs text-red-700 bg-red-50 rounded px-2 py-1 font-medium">
+                              🔒 Requires {missingDeps.map(d => d.label).join(', ')}
                             </div>
                           )}
                           {stale && !isActive && (
