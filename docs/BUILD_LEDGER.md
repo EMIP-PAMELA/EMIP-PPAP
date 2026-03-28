@@ -4,6 +4,393 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-28 11:08 CT - Phase 20 - Approval Workflow + Ownership Layer
+
+- Summary: Added document ownership and approval state tracking with approval-based export gating
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Added ownership and approval workflow
+- Impact: Each document now has owner and status (draft/in_review/approved); export blocked until approved
+- Objective: Introduce human accountability layer without backend authentication
+
+---
+
+**Architecture: Client-Side Ownership + Approval**
+
+Introduced document metadata tracking for ownership and approval status while maintaining client-side-only architecture.
+
+---
+
+**New Types:**
+
+```typescript
+type DocumentStatus = 'draft' | 'in_review' | 'approved';
+
+type DocumentMetadata = {
+  owner: string;
+  status: DocumentStatus;
+};
+```
+
+**Added to PPAPSession:**
+```typescript
+type PPAPSession = {
+  // ... existing fields
+  documentMeta: Record<string, DocumentMetadata>;
+};
+```
+
+---
+
+**Metadata Initialization:**
+
+When document is first generated:
+```typescript
+if (!documentMeta[stepId]) {
+  setDocumentMeta(prev => ({
+    ...prev,
+    [stepId]: {
+      owner: '',
+      status: 'draft'
+    }
+  }));
+}
+```
+
+**Default state:**
+- Owner: empty string (user fills in)
+- Status: 'draft'
+
+---
+
+**Status Lifecycle:**
+
+**Draft → In Review → Approved**
+
+| Status | Icon | Meaning | Next Action |
+|---|---|---|---|
+| **Draft** | 📝 | Initial state, work in progress | Complete and review |
+| **In Review** | ⏳ | Ready for approval | Awaiting approval |
+| **Approved** | ✅ | Validated and approved | Ready for export |
+
+**User controls:** Manual status updates via dropdown (no automatic transitions)
+
+---
+
+**UI Components:**
+
+**1. Owner and Status Controls (above editor):**
+```tsx
+<div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-blue-500">
+  <div className="flex items-center gap-6">
+    {/* Owner input */}
+    <input
+      value={documentMeta[activeStep]?.owner || ''}
+      placeholder="Enter owner name"
+    />
+    
+    {/* Status dropdown */}
+    <select
+      value={documentMeta[activeStep]?.status || 'draft'}
+      className={statusColorClass}
+    >
+      <option value="draft">Draft</option>
+      <option value="in_review">In Review</option>
+      <option value="approved">Approved</option>
+    </select>
+  </div>
+  
+  {/* Status guidance */}
+  <div className="mt-2 text-xs">
+    {status === 'draft' && '📝 Complete and review document before submission'}
+    {status === 'in_review' && '⏳ Awaiting approval'}
+    {status === 'approved' && '✅ Ready for submission'}
+  </div>
+</div>
+```
+
+**Color coding:**
+- Draft: Gray background
+- In Review: Yellow background
+- Approved: Green background
+
+---
+
+**2. Status Badges in Step Navigation:**
+
+Each step now shows:
+```tsx
+{meta && isGenerated && (
+  <div className="mt-1 space-y-0.5">
+    {meta.owner && (
+      <div className="text-xs text-gray-500">
+        👤 {meta.owner}
+      </div>
+    )}
+    <div className={`text-xs font-medium ${statusColor}`}>
+      {statusBadge} {statusLabel}
+    </div>
+  </div>
+)}
+```
+
+**Example display:**
+```
+PFMEA
+✓ FMEA Analysis
+👤 Matt Robinson
+✅ Approved
+```
+
+---
+
+**Approval Gating:**
+
+**Export Gating (per document):**
+```typescript
+const handleExportPDF = async () => {
+  const currentMeta = documentMeta[activeStep];
+  
+  // Block export if not approved
+  if (currentMeta?.status !== 'approved') {
+    setError(`Cannot export ${activeStep}: Document must be approved before export (current status: ${currentMeta?.status || 'draft'})`);
+    return;
+  }
+  
+  // Validation still required
+  if (currentVal && !currentVal.isValid) {
+    setError(`Cannot export ${activeStep}: Document has validation errors...`);
+    return;
+  }
+  
+  // Proceed with export...
+};
+```
+
+**Dual gating:**
+1. ✅ Validation must pass (Phase 11)
+2. ✅ Status must be 'approved' (Phase 20)
+
+---
+
+**PPAP Package Readiness:**
+
+Updated readiness calculation:
+```typescript
+const allStepsGenerated = STEP_ORDER.every(stepId => !!documents[stepId]);
+const allStepsValid = STEP_ORDER.every(stepId => {
+  const result = validationResults[stepId];
+  return result && result.isValid;
+});
+const allStepsApproved = STEP_ORDER.every(stepId => {
+  const meta = documentMeta[stepId];
+  return meta?.status === 'approved';
+});
+
+const ppapReady = allStepsGenerated && allStepsValid && allStepsApproved;
+```
+
+**Three-layer readiness:**
+1. All documents generated ✓
+2. All documents valid ✓
+3. All documents approved ✓
+
+---
+
+**Readiness Banner:**
+
+**Ready state (green):**
+```
+✅ PPAP Package Ready
+All documents generated, validated, and approved. Ready for submission.
+```
+
+**Incomplete state (yellow):**
+```
+⚠️ PPAP Package Incomplete
+All documents generated, but validation and/or approval requirements must be met.
+
+2 document(s) with validation errors
+3 document(s) awaiting approval
+```
+
+**Breakdown shows:**
+- Count of documents with validation errors
+- Count of documents not approved
+
+---
+
+**Session Persistence:**
+
+Metadata is now part of session data:
+```typescript
+const sessionData: PPAPSession = {
+  bomData: normalizedBOM,
+  documents,
+  editableDocuments,
+  validationResults,
+  documentTimestamps,
+  documentMeta,  // ← New
+  activeStep
+};
+```
+
+**Persisted to localStorage:**
+- Survives page reloads
+- Included in session switching
+- Part of multi-session storage
+
+---
+
+**User Workflows:**
+
+**Scenario 1: Create and approve a document**
+```
+1. User generates PFMEA
+2. Document initialized with owner='' status='draft'
+3. User enters owner: "Matt Robinson"
+4. User edits document, fixes validation errors
+5. User sets status to "In Review"
+6. After review, user sets status to "Approved"
+7. Export button now works
+```
+
+**Scenario 2: Try to export draft document**
+```
+1. User generates Control Plan
+2. Status = 'draft' (default)
+3. User clicks "Export PDF"
+4. Error: "Cannot export CONTROL_PLAN: Document must be approved before export (current status: draft)"
+5. User must approve before exporting
+```
+
+**Scenario 3: Complete PPAP package**
+```
+1. User generates all 4 documents
+2. All documents show "Draft" status
+3. PPAP banner shows yellow: "4 document(s) awaiting approval"
+4. User approves Process Flow → banner shows "3 document(s)..."
+5. User approves PFMEA → banner shows "2 document(s)..."
+6. User approves Control Plan → banner shows "1 document(s)..."
+7. User approves PSW → banner shows green "PPAP Package Ready"
+```
+
+**Scenario 4: Viewing step navigation**
+```
+Step list shows for each generated document:
+- Document name
+- Completion/stale status
+- Owner name (if set)
+- Approval status with color-coded badge
+```
+
+---
+
+**What Was NOT Changed:**
+
+- NO backend authentication introduced
+- NO server-side persistence
+- NO modifications to parser, mapping, templates, validation
+- NO changes to document generation logic
+- NO changes to multi-session system
+- NO changes to workflow gating (Phase 19)
+
+**Only added metadata layer on top of existing architecture.**
+
+---
+
+**Backward Compatibility:**
+
+Existing sessions without `documentMeta`:
+```typescript
+setDocumentMeta(session.data.documentMeta || {});
+```
+
+**Migration behavior:**
+- Missing metadata defaulted to empty object
+- Documents generated before Phase 20 have no metadata
+- User can add metadata retroactively
+- No data loss or corruption
+
+---
+
+**Build Verification:**
+
+```
+npx tsc --noEmit --skipLibCheck → exit code 0 ✅
+```
+
+---
+
+**Success Criteria Met:**
+
+✅ Each document has owner + status tracking
+✅ Status visible in workflow UI with badges
+✅ User can update owner and status via UI
+✅ Export blocked unless document is approved
+✅ Export still requires validation (dual gating)
+✅ PPAP readiness includes approval requirement
+✅ Session persistence includes metadata
+✅ No architecture violations (client-side only)
+✅ Code compiles cleanly
+✅ Multi-session system preserved
+
+---
+
+**Key Design Decisions:**
+
+**Why client-side only?**
+- No backend infrastructure requirement
+- Simpler deployment
+- Suitable for single-user or small team workflows
+- Can be extended to backend in future phase
+
+**Why manual status transitions?**
+- User retains full control
+- No "magic" automatic approvals
+- Clear human accountability
+- Matches real-world approval processes
+
+**Why dual gating (validation + approval)?**
+- Validation = technical correctness
+- Approval = human sign-off
+- Both required for quality assurance
+- Prevents exporting invalid-but-approved documents
+
+**Why show status in step navigation?**
+- Visibility at-a-glance
+- User knows which documents need attention
+- Clear workflow progress indicator
+- Reduces cognitive load
+
+---
+
+**Export Error Messages:**
+
+**Validation failure:**
+```
+Cannot export PFMEA: Document has 3 validation error(s) that must be resolved first
+```
+
+**Approval failure:**
+```
+Cannot export PFMEA: Document must be approved before export (current status: in_review)
+```
+
+**Both clear and actionable.**
+
+---
+
+**Foundation for Future Phases:**
+
+Phase 20 establishes ownership/approval layer. Future phases could add:
+- **Phase 21**: Approval delegation and multi-user workflows
+- **Phase 22**: Approval history and audit trail
+- **Phase 23**: Electronic signatures for approvals
+- **Phase 24**: Backend sync for approval states
+- **Phase 25**: Role-based access control (approver vs editor)
+
+---
+
 ## 2026-03-27 20:31 CT - Phase 19 - Hard Workflow Gating (Controlled Execution Layer)
 
 - Summary: Enforced dependency-based document generation with validation gating for final export

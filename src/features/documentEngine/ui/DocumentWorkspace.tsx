@@ -17,12 +17,20 @@ import { mapPFMEAToControlPlan } from '../mapping/pfmeaToControlPlan';
 
 type AppPhase = 'upload' | 'workflow';
 
+type DocumentStatus = 'draft' | 'in_review' | 'approved';
+
+type DocumentMetadata = {
+  owner: string;
+  status: DocumentStatus;
+};
+
 type PPAPSession = {
   bomData: NormalizedBOM | null;
   documents: Record<string, DocumentDraft>;
   editableDocuments: Record<string, DocumentDraft>;
   validationResults: Record<string, ValidationResult>;
   documentTimestamps: Record<string, number>;
+  documentMeta: Record<string, DocumentMetadata>;
   activeStep: TemplateId | null;
 };
 
@@ -84,6 +92,7 @@ function getEmptySession(): PPAPSession {
     editableDocuments: {},
     validationResults: {},
     documentTimestamps: {},
+    documentMeta: {},
     activeStep: null
   };
 }
@@ -134,6 +143,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   const [editableDocuments, setEditableDocuments] = useState<Record<string, DocumentDraft>>({});
   const [validationResults, setValidationResults] = useState<Record<string, ValidationResult>>({});
   const [documentTimestamps, setDocumentTimestamps] = useState<Record<string, number>>({});
+  const [documentMeta, setDocumentMeta] = useState<Record<string, DocumentMetadata>>({});
   const [regenMessage, setRegenMessage] = useState<string | null>(null);
   const [prereqWarning, setPrereqWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +173,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
         editableDocuments,
         validationResults,
         documentTimestamps,
+        documentMeta,
         activeStep
       };
       
@@ -173,7 +184,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
       setSessions(updatedSessions);
       saveSessions(updatedSessions);
     }
-  }, [normalizedBOM, documents, editableDocuments, validationResults, documentTimestamps, activeStep, appPhase, activeSessionId, sessions]);
+  }, [normalizedBOM, documents, editableDocuments, validationResults, documentTimestamps, documentMeta, activeStep, appPhase, activeSessionId, sessions]);
 
   const handleBOMProcessed = (text: string) => {
     try {
@@ -311,6 +322,18 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
       setEditableDocuments(prev => ({ ...prev, [stepId]: editableCopy }));
       setValidationResults(prev => ({ ...prev, [stepId]: validation }));
       setDocumentTimestamps(prev => ({ ...prev, [stepId]: now }));
+      
+      // Initialize metadata for new document
+      if (!documentMeta[stepId]) {
+        setDocumentMeta(prev => ({
+          ...prev,
+          [stepId]: {
+            owner: '',
+            status: 'draft'
+          }
+        }));
+      }
+      
       setActiveStep(stepId);
 
       console.log(`[DocumentWorkspace] ${stepId} generated:`, validation.isValid ? 'Valid' : `${validation.errors.length} errors`);
@@ -358,6 +381,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
       setEditableDocuments(session.data.editableDocuments || {});
       setValidationResults(session.data.validationResults || {});
       setDocumentTimestamps(session.data.documentTimestamps || {});
+      setDocumentMeta(session.data.documentMeta || {});
       setActiveStep(session.data.activeStep || null);
       setAppPhase('workflow');
       console.log('[DocumentWorkspace] Session loaded:', Object.keys(session.data.documents || {}).length, 'documents');
@@ -369,6 +393,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
       setEditableDocuments({});
       setValidationResults({});
       setDocumentTimestamps({});
+      setDocumentMeta({});
     }
     
     setRegenMessage(null);
@@ -469,11 +494,19 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     if (!activeStep || !editableDocuments[activeStep]) return;
     const editableDraft = editableDocuments[activeStep];
     const currentVal = validationResults[activeStep];
+    const currentMeta = documentMeta[activeStep];
     
     // Block export if validation fails
     if (currentVal && !currentVal.isValid) {
       setError(`Cannot export ${activeStep}: Document has ${currentVal.errors.length} validation error(s) that must be resolved first`);
       console.log(`[DocumentWorkspace] Export blocked: validation errors present`);
+      return;
+    }
+    
+    // Block export if not approved
+    if (currentMeta?.status !== 'approved') {
+      setError(`Cannot export ${activeStep}: Document must be approved before export (current status: ${currentMeta?.status || 'draft'})`);
+      console.log(`[DocumentWorkspace] Export blocked: document not approved`);
       return;
     }
     
@@ -549,7 +582,11 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     const result = validationResults[stepId];
     return result && result.isValid;
   });
-  const ppapReady = allStepsGenerated && allStepsValid;
+  const allStepsApproved = STEP_ORDER.every(stepId => {
+    const meta = documentMeta[stepId];
+    return meta?.status === 'approved';
+  });
+  const ppapReady = allStepsGenerated && allStepsValid && allStepsApproved;
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
@@ -691,19 +728,39 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                       ppapReady ? 'text-green-700' : 'text-yellow-700'
                     }`}>
                       {ppapReady
-                        ? 'All documents generated and validated. Ready for submission.'
-                        : 'All documents generated, but validation errors must be resolved before submission.'}
+                        ? 'All documents generated, validated, and approved. Ready for submission.'
+                        : 'All documents generated, but validation and/or approval requirements must be met before submission.'}
                     </p>
                   </div>
                 </div>
                 {!ppapReady && (
-                  <div className="text-sm text-yellow-700">
-                    <strong>
-                      {STEP_ORDER.filter(id => {
-                        const result = validationResults[id];
-                        return !result || !result.isValid;
-                      }).length}
-                    </strong> document(s) need attention
+                  <div className="text-sm text-yellow-700 space-y-1">
+                    {STEP_ORDER.filter(id => {
+                      const result = validationResults[id];
+                      return !result || !result.isValid;
+                    }).length > 0 && (
+                      <div>
+                        <strong>
+                          {STEP_ORDER.filter(id => {
+                            const result = validationResults[id];
+                            return !result || !result.isValid;
+                          }).length}
+                        </strong> document(s) with validation errors
+                      </div>
+                    )}
+                    {STEP_ORDER.filter(id => {
+                      const meta = documentMeta[id];
+                      return meta?.status !== 'approved';
+                    }).length > 0 && (
+                      <div>
+                        <strong>
+                          {STEP_ORDER.filter(id => {
+                            const meta = documentMeta[id];
+                            return meta?.status !== 'approved';
+                          }).length}
+                        </strong> document(s) awaiting approval
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -730,6 +787,8 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                     const enabled = isStepEnabled(step.id);
                     const completionIcon = isGenerated && !stale ? '✓' : stale ? '⚠' : '○';
                     const isBlocked = !enabled && !isGenerated;
+                    const meta = documentMeta[step.id];
+                    const statusBadge = meta?.status === 'approved' ? '✅' : meta?.status === 'in_review' ? '⏳' : meta?.status === 'draft' ? '📝' : '';
                     return (
                       <div key={step.id}>
                         <button
@@ -782,6 +841,22 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                                   isActive ? 'text-blue-200' : 'text-gray-400'
                                 }`}>
                                   {depLabel}
+                                </div>
+                              )}
+                              {meta && isGenerated && (
+                                <div className="mt-1 space-y-0.5">
+                                  {meta.owner && (
+                                    <div className="text-xs text-gray-500">
+                                      👤 {meta.owner}
+                                    </div>
+                                  )}
+                                  <div className={`text-xs font-medium ${
+                                    meta.status === 'approved' ? 'text-green-700' :
+                                    meta.status === 'in_review' ? 'text-yellow-700' :
+                                    'text-gray-600'
+                                  }`}>
+                                    {statusBadge} {meta.status === 'approved' ? 'Approved' : meta.status === 'in_review' ? 'In Review' : 'Draft'}
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -867,6 +942,65 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Owner and Status Controls */}
+              {currentEditableDraft && activeStep && (
+                <div className="bg-white rounded-lg shadow-md p-4 mb-4 border-l-4 border-blue-500">
+                  <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2 flex-1">
+                      <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Owner:</label>
+                      <input
+                        type="text"
+                        value={documentMeta[activeStep]?.owner || ''}
+                        onChange={(e) => {
+                          setDocumentMeta(prev => ({
+                            ...prev,
+                            [activeStep]: {
+                              ...prev[activeStep],
+                              owner: e.target.value,
+                              status: prev[activeStep]?.status || 'draft'
+                            }
+                          }));
+                        }}
+                        placeholder="Enter owner name"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Status:</label>
+                      <select
+                        value={documentMeta[activeStep]?.status || 'draft'}
+                        onChange={(e) => {
+                          setDocumentMeta(prev => ({
+                            ...prev,
+                            [activeStep]: {
+                              ...prev[activeStep],
+                              owner: prev[activeStep]?.owner || '',
+                              status: e.target.value as DocumentStatus
+                            }
+                          }));
+                        }}
+                        className={`px-3 py-2 border rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          documentMeta[activeStep]?.status === 'approved'
+                            ? 'bg-green-50 border-green-300 text-green-800'
+                            : documentMeta[activeStep]?.status === 'in_review'
+                            ? 'bg-yellow-50 border-yellow-300 text-yellow-800'
+                            : 'bg-gray-50 border-gray-300 text-gray-700'
+                        }`}
+                      >
+                        <option value="draft">Draft</option>
+                        <option value="in_review">In Review</option>
+                        <option value="approved">Approved</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-600">
+                    {documentMeta[activeStep]?.status === 'draft' && '📝 Complete and review document before submission'}
+                    {documentMeta[activeStep]?.status === 'in_review' && '⏳ Awaiting approval'}
+                    {documentMeta[activeStep]?.status === 'approved' && '✅ Ready for submission'}
+                  </div>
                 </div>
               )}
 
