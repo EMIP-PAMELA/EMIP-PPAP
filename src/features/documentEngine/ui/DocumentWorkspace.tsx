@@ -26,37 +26,66 @@ type PPAPSession = {
   activeStep: TemplateId | null;
 };
 
-const STORAGE_KEY = 'emip_ppap_session_v1';
+type StoredSession = {
+  id: string;
+  name: string;
+  data: PPAPSession;
+};
 
-function saveSession(session: PPAPSession): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    console.log('[SessionPersistence] Session saved');
-  } catch (err) {
-    console.error('[SessionPersistence] Failed to save session:', err);
-  }
-}
+const STORAGE_KEY = 'emip_ppap_sessions_v1';
+const LEGACY_STORAGE_KEY = 'emip_ppap_session_v1';
 
-function loadSession(): PPAPSession | null {
+function loadSessions(): StoredSession[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const session = JSON.parse(raw) as PPAPSession;
-    console.log('[SessionPersistence] Session loaded');
-    return session;
+    if (raw) {
+      const sessions = JSON.parse(raw) as StoredSession[];
+      console.log(`[SessionPersistence] Loaded ${sessions.length} sessions`);
+      return sessions;
+    }
+    
+    // Migration: check for legacy single-session storage
+    const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacyRaw) {
+      console.log('[SessionPersistence] Migrating from legacy single-session storage');
+      const legacySession = JSON.parse(legacyRaw) as PPAPSession;
+      const migratedSession: StoredSession = {
+        id: crypto.randomUUID(),
+        name: 'Migrated Session',
+        data: legacySession
+      };
+      const sessions = [migratedSession];
+      saveSessions(sessions);
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+      console.log('[SessionPersistence] Migration complete');
+      return sessions;
+    }
+    
+    return [];
   } catch (err) {
-    console.error('[SessionPersistence] Failed to load session:', err);
-    return null;
+    console.error('[SessionPersistence] Failed to load sessions:', err);
+    return [];
   }
 }
 
-function clearSession(): void {
+function saveSessions(sessions: StoredSession[]): void {
   try {
-    localStorage.removeItem(STORAGE_KEY);
-    console.log('[SessionPersistence] Session cleared');
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    console.log(`[SessionPersistence] Saved ${sessions.length} sessions`);
   } catch (err) {
-    console.error('[SessionPersistence] Failed to clear session:', err);
+    console.error('[SessionPersistence] Failed to save sessions:', err);
   }
+}
+
+function getEmptySession(): PPAPSession {
+  return {
+    bomData: null,
+    documents: {},
+    editableDocuments: {},
+    validationResults: {},
+    documentTimestamps: {},
+    activeStep: null
+  };
 }
 
 const WORKFLOW_STEPS: Array<{ id: TemplateId; label: string; dependsOn: TemplateId[] }> = [
@@ -108,27 +137,27 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   const [regenMessage, setRegenMessage] = useState<string | null>(null);
   const [prereqWarning, setPrereqWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Multi-session state
+  const [sessions, setSessions] = useState<StoredSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-  // Load session on mount
+  // Load sessions on mount
   useEffect(() => {
-    const saved = loadSession();
-    if (saved && saved.bomData) {
-      console.log('[DocumentWorkspace] Restoring session from storage');
-      setNormalizedBOM(saved.bomData);
-      setDocuments(saved.documents || {});
-      setEditableDocuments(saved.editableDocuments || {});
-      setValidationResults(saved.validationResults || {});
-      setDocumentTimestamps(saved.documentTimestamps || {});
-      setActiveStep(saved.activeStep || null);
-      setAppPhase('workflow');
-      console.log('[DocumentWorkspace] Session restored:', Object.keys(saved.documents || {}).length, 'documents');
+    const loadedSessions = loadSessions();
+    setSessions(loadedSessions);
+    
+    if (loadedSessions.length > 0) {
+      // Auto-load the first session
+      const firstSession = loadedSessions[0];
+      loadSessionIntoWorkspace(firstSession);
     }
   }, []);
 
-  // Auto-save session on state changes
+  // Auto-save active session on state changes
   useEffect(() => {
-    if (appPhase === 'workflow' && normalizedBOM) {
-      const session: PPAPSession = {
+    if (appPhase === 'workflow' && normalizedBOM && activeSessionId) {
+      const sessionData: PPAPSession = {
         bomData: normalizedBOM,
         documents,
         editableDocuments,
@@ -136,9 +165,15 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
         documentTimestamps,
         activeStep
       };
-      saveSession(session);
+      
+      const updatedSessions = sessions.map(s => 
+        s.id === activeSessionId ? { ...s, data: sessionData } : s
+      );
+      
+      setSessions(updatedSessions);
+      saveSessions(updatedSessions);
     }
-  }, [normalizedBOM, documents, editableDocuments, validationResults, documentTimestamps, activeStep, appPhase]);
+  }, [normalizedBOM, documents, editableDocuments, validationResults, documentTimestamps, activeStep, appPhase, activeSessionId, sessions]);
 
   const handleBOMProcessed = (text: string) => {
     try {
@@ -299,13 +334,98 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     console.log(`[DocumentWorkspace] ${activeStep} reset to generated version`);
   };
 
-  const resetSession = () => {
+  const loadSessionIntoWorkspace = (session: StoredSession) => {
+    console.log(`[DocumentWorkspace] Loading session: ${session.name}`);
+    setActiveSessionId(session.id);
+    
+    if (session.data.bomData) {
+      setNormalizedBOM(session.data.bomData);
+      setDocuments(session.data.documents || {});
+      setEditableDocuments(session.data.editableDocuments || {});
+      setValidationResults(session.data.validationResults || {});
+      setDocumentTimestamps(session.data.documentTimestamps || {});
+      setActiveStep(session.data.activeStep || null);
+      setAppPhase('workflow');
+      console.log('[DocumentWorkspace] Session loaded:', Object.keys(session.data.documents || {}).length, 'documents');
+    } else {
+      setAppPhase('upload');
+      setNormalizedBOM(null);
+      setActiveStep(null);
+      setDocuments({});
+      setEditableDocuments({});
+      setValidationResults({});
+      setDocumentTimestamps({});
+    }
+    
+    setRegenMessage(null);
+    setPrereqWarning(null);
+    setError(null);
+  };
+  
+  const createNewSession = () => {
+    const name = window.prompt('Enter session name:');
+    if (!name || !name.trim()) return;
+    
+    const newSession: StoredSession = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      data: getEmptySession()
+    };
+    
+    const updatedSessions = [...sessions, newSession];
+    setSessions(updatedSessions);
+    saveSessions(updatedSessions);
+    loadSessionIntoWorkspace(newSession);
+    console.log(`[DocumentWorkspace] Created new session: ${name}`);
+  };
+  
+  const deleteSession = (sessionId: string) => {
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    
     const confirmed = window.confirm(
-      'This will clear all documents and reset the workspace. Continue?'
+      `Delete session "${session.name}"? This cannot be undone.`
+    );
+    if (!confirmed) return;
+    
+    const updatedSessions = sessions.filter(s => s.id !== sessionId);
+    setSessions(updatedSessions);
+    saveSessions(updatedSessions);
+    
+    // If deleting active session, switch to first available or create new
+    if (sessionId === activeSessionId) {
+      if (updatedSessions.length > 0) {
+        loadSessionIntoWorkspace(updatedSessions[0]);
+      } else {
+        setActiveSessionId(null);
+        setAppPhase('upload');
+        setNormalizedBOM(null);
+        setActiveStep(null);
+        setDocuments({});
+        setEditableDocuments({});
+        setValidationResults({});
+        setDocumentTimestamps({});
+      }
+    }
+    
+    console.log(`[DocumentWorkspace] Deleted session: ${session.name}`);
+  };
+  
+  const resetSession = () => {
+    if (!activeSessionId) return;
+    
+    const confirmed = window.confirm(
+      'This will clear all documents and reset the current session. Continue?'
     );
     if (!confirmed) return;
 
-    clearSession();
+    const updatedSessions = sessions.map(s => 
+      s.id === activeSessionId ? { ...s, data: getEmptySession() } : s
+    );
+    
+    setSessions(updatedSessions);
+    saveSessions(updatedSessions);
+    
     setAppPhase('upload');
     setNormalizedBOM(null);
     setActiveStep(null);
@@ -401,6 +521,8 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     return `Next: Generate ${stepDef.label} — ${desc}`;
   };
 
+  const activeSession = sessions.find(s => s.id === activeSessionId);
+
   return (
     <div className="max-w-5xl mx-auto py-8 px-4">
       {/* Header */}
@@ -408,6 +530,70 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Document Workspace</h1>
         <p className="text-gray-600">Generate PPAP documents from BOM data</p>
       </div>
+
+      {/* Session Selector */}
+      {sessions.length > 0 && (
+        <div className="mb-6 bg-white border border-gray-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4 flex-1">
+              <label className="text-sm font-semibold text-gray-700">Session:</label>
+              <select
+                value={activeSessionId || ''}
+                onChange={(e) => {
+                  const session = sessions.find(s => s.id === e.target.value);
+                  if (session) loadSessionIntoWorkspace(session);
+                }}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {sessions.map(session => (
+                  <option key={session.id} value={session.id}>
+                    {session.name} {session.data.bomData ? `(${Object.keys(session.data.documents || {}).length} docs)` : '(empty)'}
+                  </option>
+                ))}
+              </select>
+              {activeSession && (
+                <span className="text-xs text-gray-500">
+                  Active: <strong>{activeSession.name}</strong>
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={createNewSession}
+                className="px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
+              >
+                + New Session
+              </button>
+              {activeSessionId && sessions.length > 1 && (
+                <button
+                  onClick={() => activeSessionId && deleteSession(activeSessionId)}
+                  className="px-3 py-2 bg-red-50 text-red-700 text-sm font-medium rounded-md hover:bg-red-100 transition-colors"
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Session Button (if no sessions exist) */}
+      {sessions.length === 0 && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-blue-800 font-semibold mb-1">No Sessions Found</h4>
+              <p className="text-sm text-blue-700">Create your first PPAP session to get started</p>
+            </div>
+            <button
+              onClick={createNewSession}
+              className="px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Create First Session
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Error Display */}
       {error && (
