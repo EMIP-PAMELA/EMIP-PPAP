@@ -68,17 +68,6 @@ const DOCUMENT_CONFIG: DocumentItem[] = [
   { id: 'tooling', name: 'Tooling Documentation', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload', 'create'] },
 ];
 
-// Phase 3H.14: Template availability check
-const canCreate = (docId: string): boolean => {
-  return [
-    'ballooned_drawing',
-    'control_plan',
-    'dfmea',
-    'pfmea',
-    'msa',
-    'dimensional_results',
-  ].includes(docId);
-};
 
 export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOnly = false, currentPhase = 'post-ack' }: DocumentationFormProps) {
   const router = useRouter();
@@ -198,14 +187,6 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     }
   };
 
-  // Phase 17: Route to Document Workspace for document generation
-  const handleCreateDocument = (documentId: string) => {
-    console.log('🛠 DOCUMENT ACTION CLICK', { docId: documentId, action: 'create' });
-    
-    // Phase 17: Route all document creation to Document Workspace
-    // Document Workspace will handle generation for all PPAP documents
-    router.push(`/ppap/${ppapId}/documents`);
-  };
 
   // Submit handler
   const handleSubmit = async () => {
@@ -386,12 +367,6 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                         >
                           {doc.requirement_level}
                         </span>
-                        {/* Phase 3H.15: Template availability badge */}
-                        {!canCreate(doc.id) && (
-                          <span className="px-2 py-0.5 text-xs font-medium rounded bg-yellow-100 text-yellow-700">
-                            Template Coming Soon
-                          </span>
-                        )}
                       </div>
                       <span
                         className={`px-3 py-1 text-xs font-semibold rounded-full ${
@@ -414,29 +389,9 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                       </div>
                     )}
 
-                    {/* Phase 3H.15: Actions Row - all buttons actionable */}
+                    {/* Phase 21: Upload only - all creation goes through Document Workspace */}
                     <div className="flex gap-2">
-                      {/* Phase 3H.13.5: Create Button - WHY + WHAT NEXT */}
-                      <button
-                        onClick={() => handleCreateDocument(doc.id)}
-                        disabled={isReadOnly}
-                        title={
-                          isReadOnly
-                            ? 'View-only mode — contact coordinator to make changes'
-                            : canCreate(doc.id)
-                            ? `Create ${doc.name} from template`
-                            : `Template for ${doc.name} coming soon — upload a file to continue`
-                        }
-                        className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
-                          isReadOnly
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}
-                      >
-                        🛠 {canCreate(doc.id) ? 'Create' : 'Create (Soon)'}
-                      </button>
-                      
-                      {/* Phase 3H.13.5: Upload Button - WHY + WHAT NEXT */}
+                      {/* Upload Button */}
                       <label
                         title={
                           isReadOnly
@@ -447,7 +402,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                             ? `Replace existing ${doc.name} file`
                             : `Upload ${doc.name} file (PDF, Word, Excel) to mark as ready`
                         }
-                        className={`flex-1 px-4 py-2 text-sm font-medium text-center rounded transition-colors ${
+                        className={`w-full px-4 py-2 text-sm font-medium text-center rounded transition-colors ${
                           isReadOnly || uploading
                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             : 'bg-gray-200 text-gray-700 hover:bg-gray-300 cursor-pointer'

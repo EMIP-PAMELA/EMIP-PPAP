@@ -92,30 +92,7 @@ export function PPAPControlPanel({ ppap }: PPAPControlPanelProps) {
     fetchValidations();
   }, [ppap.id]);
   
-  // Phase 3H.13: Template availability check
-  const canCreate = (docType: string): boolean => {
-    return [
-      'ballooned_drawing',
-      'control_plan',
-      'dfmea',
-      'pfmea',
-      'msa',
-      'dimensional_results',
-    ].includes(docType);
-  };
   
-  // Phase 17: Route to Document Workspace for document generation
-  const handleCreateDocument = (docType: string) => {
-    console.log('📄 DOCUMENT ACTION CLICK', {
-      docType,
-      action: 'create',
-      userRole: currentUser.role,
-    });
-    
-    // Phase 17: Route all document creation to Document Workspace
-    // Document Workspace will handle generation for all PPAP documents
-    router.push(`/ppap/${ppap.id}/documents`);
-  };
   
   const handleUpload = async (docId: string, event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -274,11 +251,27 @@ export function PPAPControlPanel({ ppap }: PPAPControlPanelProps) {
         </div>
       </div>
       
+      {/* Phase 21: Document Workspace Entry Point */}
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-300 rounded-lg shadow-md p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-purple-900 mb-1">📄 Document Workspace</h2>
+            <p className="text-sm text-purple-700">Create and manage all PPAP documents in one unified workspace</p>
+          </div>
+          <button
+            onClick={() => router.push(`/ppap/${ppap.id}/documents`)}
+            className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors shadow-sm"
+          >
+            🚀 Open Document Workspace
+          </button>
+        </div>
+      </div>
+      
       {/* Phase 3H.6: Document Matrix */}
       <div className="bg-white border border-gray-300 rounded-lg shadow-sm overflow-hidden">
         <div className="bg-gray-100 border-b border-gray-300 px-6 py-4">
-          <h2 className="text-lg font-bold text-gray-900">Document Matrix</h2>
-          <p className="text-sm text-gray-600 mt-1">All documents in one place</p>
+          <h2 className="text-lg font-bold text-gray-900">Document Status</h2>
+          <p className="text-sm text-gray-600 mt-1">Overview of uploaded documents</p>
         </div>
         
         <div className="overflow-x-auto">
@@ -335,23 +328,9 @@ export function PPAPControlPanel({ ppap }: PPAPControlPanelProps) {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        {/* Phase 3H.13: Create Action */}
-                        <button
-                          onClick={() => handleCreateDocument(doc.id)}
-                          disabled={!canCreate(doc.id)}
-                          className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
-                            canCreate(doc.id)
-                              ? 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
-                              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                          }`}
-                          title={canCreate(doc.id) ? 'Create from template' : 'Template coming soon'}
-                        >
-                          🛠 Create
-                        </button>
-                        
-                        {/* Upload Action */}
+                        {/* Phase 21: Upload only - all creation goes through Document Workspace */}
                         <label
-                          className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                          className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors flex-1 ${
                             isUploading
                               ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300 cursor-pointer'
