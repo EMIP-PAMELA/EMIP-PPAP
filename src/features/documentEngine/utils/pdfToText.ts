@@ -5,14 +5,10 @@
  * Provides pre-parser ingestion layer for PDF BOM files.
  * 
  * Architecture layer: Ingestion (preprocessing)
+ * 
+ * IMPORTANT: Uses dynamic import to prevent SSR evaluation.
+ * pdfjs-dist must only be loaded in browser runtime, never during build/SSR.
  */
-
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Configure worker source for pdfjs
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-}
 
 /**
  * Extract text content from a PDF file
@@ -23,6 +19,12 @@ if (typeof window !== 'undefined') {
  */
 export async function extractTextFromPDF(file: File): Promise<string> {
   try {
+    // Dynamic import ensures pdfjs is only loaded in browser, never during SSR
+    const pdfjsLib = await import('pdfjs-dist');
+    
+    // Configure worker source for pdfjs
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 

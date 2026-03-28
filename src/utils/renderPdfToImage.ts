@@ -1,12 +1,18 @@
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Use local worker from pdfjs-dist package instead of unreliable CDN
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).toString();
+/**
+ * IMPORTANT: Uses dynamic import to prevent SSR evaluation.
+ * pdfjs-dist must only be loaded in browser runtime, never during build/SSR.
+ */
 
 export const renderPdfToImage = async (url: string): Promise<string> => {
+  // Dynamic import ensures pdfjs is only loaded in browser, never during SSR
+  const pdfjsLib = await import('pdfjs-dist');
+  
+  // Use local worker from pdfjs-dist package instead of unreliable CDN
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url
+  ).toString();
+
   const loadingTask = pdfjsLib.getDocument(url);
   const pdf = await loadingTask.promise;
 
