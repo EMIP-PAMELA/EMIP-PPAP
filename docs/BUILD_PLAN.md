@@ -1,10 +1,142 @@
 # EMIP-PPAP System Architecture & Build Plan
 
-**Last Updated:** 2026-03-25 19:15 CT  
-**Version:** 3F.15 - Implementation-Grade Source of Truth  
-**Status:** Architectural Blueprint Locked
+**Last Updated:** 2026-03-28 11:56 CT  
+**Version:** 3F.15 + Implementation Update (Phases 9-21)  
+**Status:** Architectural Blueprint + Implementation Reconciliation
 
 **Previous Version:** Archived to `BUILD_PLAN_ARCHIVE_20260325.md`
+
+---
+
+## IMPLEMENTATION STATUS OVERVIEW
+
+**Post-Implementation Clarification** — Added 2026-03-28
+
+This section summarizes the current implementation status of the EMIP-PPAP system as of Phase 21, reconciling the original BUILD_PLAN with actual delivered functionality.
+
+### Legacy PPAP Workflow System (Phase 3F–3K) — IMPLEMENTED
+
+**Status:** ✅ **COMPLETE AND OPERATIONAL**
+
+The core PPAP workflow system defined in this BUILD_PLAN has been fully implemented:
+
+- **State Machine Architecture:** `ppap.status` as single source of truth ✅
+- **5-Layer Process Model:** Intake → Pre-Ack → Ack Gate → Post-Ack → Submission ✅
+- **Role-Based Authority:** Coordinator vs Engineer boundaries enforced ✅
+- **Guided Validation Flow:** Sequential validation with completion tracking ✅
+- **Pre-Ack/Post-Ack Boundary:** Hard separation with lock-on-acknowledge ✅
+- **Document Upload System:** File upload and tracking for external documents ✅
+- **Event Logging:** All state transitions logged to audit trail ✅
+
+**Key Governance Rules Enforced:**
+- All status updates flow through `updatePPAPState()` ✅
+- No direct database status writes ✅
+- Backward transition guards active ✅
+- Acknowledgement gate restricted to Coordinator/Admin roles ✅
+
+### Document Engine System (Phase 3P–3V, Phases 9–21) — IMPLEMENTED
+
+**Status:** ✅ **COMPLETE AND OPERATIONAL**
+
+The Document Engine addendum (added in Version 3P.1) has been fully implemented across 13 phases:
+
+**Core Engine (Phases 9–11):**
+- **Phase 9.1–9.3:** Document generation (Process Flow, PFMEA, Control Plan) ✅
+- **Phase 10:** OEM alignment and BOM-to-document mapping ✅
+- **Phase 11:** Validation engine with field-level error reporting ✅
+
+**Workspace & Workflow (Phases 12–16):**
+- **Phase 12:** DocumentWorkspace UI with template selection and editing ✅
+- **Phase 13–15:** Workflow guidance (dependency chains, staleness detection, soft gating) ✅
+- **Phase 16:** Local session persistence (multi-session support) ✅
+
+**Integration & Governance (Phases 17–21):**
+- **Phase 17:** PPAP integration (`/ppap/[id]/documents` route) ✅
+- **Phase 18:** Multi-session management with session switching ✅
+- **Phase 19:** Hard workflow gating (prerequisite enforcement) ✅
+- **Phase 20:** Approval workflow (owner + draft/review/approved lifecycle) ✅
+- **Phase 21:** **Document system unification (single entry point)** ✅
+
+**Capabilities Delivered:**
+- BOM-driven document generation ✅
+- Template-based field mapping ✅
+- Real-time validation with error highlighting ✅
+- PDF export per document ✅
+- Dependency-aware generation (Process Flow → PFMEA → Control Plan) ✅
+- Session persistence across page reloads ✅
+- Approval gating before export ✅
+- Single unified document system (Phase 21) ✅
+
+### Current System Architecture (As of Phase 21)
+
+**TWO INTEGRATED LAYERS:**
+
+1. **PPAP Workflow System** (state-driven, validation-driven)
+   - Routes: `/ppap`, `/ppap/[id]`, `/ppap/dashboard`
+   - Components: `PPAPWorkflowWrapper`, `DocumentationForm`, `PPAPControlPanel`
+   - Purpose: PPAP lifecycle management, validation tracking, submission gating
+   - Status: Fully operational
+
+2. **Document Engine System** (data-driven, template-driven)
+   - Routes: `/ppap/[id]/documents`, `/document-workspace`
+   - Components: `DocumentWorkspace`, `BOMUpload`, `DocumentEditor`
+   - Purpose: BOM-driven document generation, editing, validation, export
+   - Status: Fully operational
+
+**Integration Point:** `/ppap/[id]/documents` (Phase 17)
+
+**Unified Entry:** Phase 21 eliminated duplicate document systems; DocumentWorkspace is now the SINGLE entry point for all document creation.
+
+### Implementation Complete
+
+**Phases 9–21:** ✅ All delivered and operational
+
+**What is COMPLETE:**
+- ✅ Document generation engine (Process Flow, PFMEA, Control Plan, PSW)
+- ✅ BOM parsing and normalization
+- ✅ Field-level validation with error reporting
+- ✅ Dependency-based workflow with staleness detection
+- ✅ Multi-session persistence
+- ✅ PPAP integration with dedicated route
+- ✅ Approval workflow (owner + status lifecycle)
+- ✅ Document system unification (Phase 21)
+
+**What is PARTIALLY IMPLEMENTED:**
+- ⚠️ Document upload coexists with generation (legacy upload preserved for external docs)
+- ⚠️ Validation system exists in both layers (PPAP workflow validations + document field validations)
+
+**What is PLANNED (Post-21):**
+- 🔲 Backend persistence (PPAP-linked document storage)
+- 🔲 Real user system (ownership tied to authenticated users)
+- 🔲 Document revision/version control
+- 🔲 Additional templates (DFMEA, MSA, Dimensional Results)
+
+### Key Architectural Decision (Phase 21)
+
+**"There must be ONE document system in the application."**
+
+**Before Phase 21:**
+- Legacy `/tools/*` routes (broken, dead code)
+- Individual "Create" buttons per document (confusing UX)
+- Multiple entry points for document creation
+
+**After Phase 21:**
+- ✅ ONE system: DocumentWorkspace
+- ✅ ONE entry point: `/ppap/[id]/documents`
+- ✅ Clear, consistent UX across all PPAP interfaces
+
+**Impact:** All document creation now flows through DocumentWorkspace. Upload functionality preserved for external documents only (e.g., customer-supplied files).
+
+### Reconciliation Summary
+
+This BUILD_PLAN remains the architectural blueprint. The implementation (Phases 9–21) has:
+- ✅ Preserved all core PPAP workflow architecture
+- ✅ Added Document Engine capability as designed in Phase 3P addendum
+- ✅ Unified document systems to eliminate technical debt (Phase 21)
+- ✅ Maintained governance rules and hard boundaries
+- ✅ Integrated seamlessly without breaking existing PPAP workflow
+
+**Next sections provide detailed clarification of current system state.**
 
 ---
 
@@ -2494,6 +2626,615 @@ type RequirementLevel = 'REQUIRED' | 'CONDITIONAL' | 'OPTIONAL';
 
 ---
 
+## SYSTEM ARCHITECTURE (CURRENT STATE)
+
+**Post-Implementation Clarification** — Added 2026-03-28
+
+This section clarifies the current dual-layer architecture of the EMIP-PPAP system as implemented through Phase 21.
+
+### Two Integrated Layers
+
+The EMIP-PPAP system now operates as **two integrated layers** that work together seamlessly:
+
+#### Layer 1: PPAP Workflow System (State-Driven, Validation-Driven)
+
+**Purpose:** Manage PPAP lifecycle from intake through submission
+
+**Architecture Foundation:** Original BUILD_PLAN (Phase 3F–3K)
+
+**Core Components:**
+- **State Machine:** `ppap.status` as single source of truth
+- **Workflow Orchestration:** `PPAPWorkflowWrapper` drives sequential phases
+- **Validation System:** Pre-ack and post-ack validation tracking
+- **Document Tracking:** Upload and status tracking for external documents
+- **Event Logging:** Audit trail of all state transitions
+
+**Routes:**
+- `/ppap` — PPAP list/dashboard
+- `/ppap/[id]` — Individual PPAP workflow
+- `/ppap/dashboard` — System-wide overview
+
+**Key Files:**
+- `src/features/ppap/components/PPAPWorkflowWrapper.tsx`
+- `src/features/ppap/components/DocumentationForm.tsx`
+- `src/features/ppap/components/PPAPControlPanel.tsx`
+- `src/features/ppap/utils/updatePPAPState.ts`
+
+**Responsibilities:**
+- PPAP record creation and lifecycle management
+- Pre-acknowledgement readiness validation
+- Acknowledgement gate enforcement (coordinator-only)
+- Post-acknowledgement workflow progression
+- Submission readiness determination
+- External document upload (customer-supplied files, manual uploads)
+
+#### Layer 2: Document Engine System (Data-Driven, Template-Driven)
+
+**Purpose:** Generate PPAP documents from BOM data using templates
+
+**Architecture Foundation:** BUILD_PLAN Addendum (Phase 3P–3V), Implemented as Phases 9–21
+
+**Core Components:**
+- **BOM Parser:** Excel/CSV/PDF text extraction and normalization
+- **Template Engine:** Field definitions and mapping logic
+- **Document Generator:** BOM + template → draft document
+- **Validation Engine:** Field-level validation with error reporting
+- **Workspace UI:** Multi-document editing and workflow guidance
+- **Session Persistence:** Local storage for multi-session work
+
+**Routes:**
+- `/ppap/[id]/documents` — PPAP-integrated workspace (Phase 17)
+- `/document-workspace` — Standalone workspace
+
+**Key Files:**
+- `src/features/documentEngine/ui/DocumentWorkspace.tsx`
+- `src/features/documentEngine/core/documentGenerator.ts`
+- `src/features/documentEngine/validation/validateDocument.ts`
+- `src/features/documentEngine/templates/` (registry + individual templates)
+- `src/features/documentEngine/mapping/` (BOM-to-document mappers)
+
+**Responsibilities:**
+- BOM data ingestion and normalization
+- Document generation (Process Flow, PFMEA, Control Plan, PSW)
+- Field-level validation and error reporting
+- Dependency-aware workflow (staleness detection, prerequisite enforcement)
+- Document editing and approval workflow
+- PDF export with validation + approval gating
+
+### How the Layers Integrate
+
+**Integration Point:** `/ppap/[id]/documents` route (Phase 17)
+
+**Flow:**
+1. User creates PPAP in Layer 1 (PPAP Workflow System)
+2. User uploads BOM or enters PPAP data (Layer 1)
+3. User clicks "Open Document Workspace" button (Layer 1 → Layer 2 transition)
+4. User generates documents from BOM data (Layer 2)
+5. User edits, validates, approves documents (Layer 2)
+6. User exports PDFs (Layer 2)
+7. User uploads exported PDFs to PPAP record (Layer 2 → Layer 1 transition)
+8. PPAP workflow progresses based on document readiness (Layer 1)
+
+**Key Architectural Principle (Phase 21):**
+
+> **"There must be ONE document system in the application."**
+
+**Before Phase 21:** Duplicate systems (legacy /tools/* + DocumentWorkspace)  
+**After Phase 21:** Single system (DocumentWorkspace only)
+
+**Document Creation:**
+- ✅ **Generated documents:** DocumentWorkspace (Layer 2)
+- ✅ **External documents:** Upload only (Layer 1)
+
+**No More:**
+- ❌ Individual "Create" buttons per document
+- ❌ `/tools/*` routes
+- ❌ Duplicate document creation systems
+
+### Validation Architecture
+
+The system has **two complementary validation systems**:
+
+**1. PPAP Workflow Validations (Layer 1):**
+- **Type:** Checklist-based, human-verified
+- **Scope:** Pre-ack readiness (drawing verification, BOM review, tooling, material availability)
+- **Purpose:** Ensure organization is ready to acknowledge PPAP commitment
+- **UI:** Sequential validation checkboxes in `DocumentationForm`
+- **Storage:** `ppap_validations` table
+
+**2. Document Field Validations (Layer 2):**
+- **Type:** Automated, field-level constraints
+- **Scope:** Document completeness (required fields, numeric ranges, table row completeness)
+- **Purpose:** Ensure generated documents meet template requirements
+- **UI:** Inline error messages in `DocumentEditor`
+- **Storage:** Client-side (validation run on-demand)
+
+**Relationship:** Both systems are independent but complementary. PPAP workflow validations ensure readiness to build; document field validations ensure generated documents are complete and correct.
+
+### Upload vs Generation Coexistence
+
+**Upload System (Layer 1):**
+- **Purpose:** Accept external documents (customer-supplied files, manually created documents)
+- **UI:** Upload buttons in `DocumentationForm` and `PPAPControlPanel`
+- **Use Case:** Documents not generated from BOM (e.g., customer drawings, material certs, manual MSA reports)
+
+**Generation System (Layer 2):**
+- **Purpose:** Create documents from BOM data using templates
+- **UI:** DocumentWorkspace with step-based workflow
+- **Use Case:** Documents that can be auto-generated (Process Flow, PFMEA, Control Plan, PSW)
+
+**Coexistence Strategy:**
+- Upload remains for documents that **cannot** be auto-generated
+- Generation handles documents that **can** be derived from BOM
+- User chooses appropriate path based on document type and data availability
+
+### Current State Summary
+
+**Layer 1 (PPAP Workflow):** ✅ Fully operational, unchanged by Phases 9–21  
+**Layer 2 (Document Engine):** ✅ Fully operational, integrated via Phase 17  
+**Integration:** ✅ Seamless via `/ppap/[id]/documents` route  
+**Unification:** ✅ Single document system enforced (Phase 21)
+
+---
+
+## DOCUMENT SYSTEM UNIFICATION (PHASE 21)
+
+**Post-Implementation Clarification** — Added 2026-03-28
+
+Phase 21 (implemented 2026-03-28) eliminated duplicate document systems and enforced a single entry point for all document creation.
+
+### Problem Statement
+
+**Before Phase 21:**
+- **Two separate document systems coexisted:**
+  1. Legacy `/tools/*` routes (broken, dead code)
+  2. DocumentWorkspace (Phases 12–20, fully functional)
+- Individual "Create" buttons on each document in `DocumentationForm` and `PPAPControlPanel`
+- Confusing UX: multiple entry points, unclear where to create documents
+- Dead code referencing non-existent routes
+- Inconsistent behavior between different UI components
+
+**After Phase 21:**
+- **ONE document system:** DocumentWorkspace
+- **ONE entry point:** `/ppap/[id]/documents`
+- Clear, consistent UX across all PPAP interfaces
+- No dead code or broken references
+
+### Changes Made
+
+**1. DocumentationForm Simplification:**
+- ❌ Removed individual "Create" buttons (one per document)
+- ❌ Removed `canCreate()` template availability function
+- ❌ Removed `handleCreateDocument()` handler
+- ✅ Kept single "Open Document Workspace" button at top
+- ✅ Kept upload functionality for external documents
+
+**2. PPAPControlPanel Simplification:**
+- ❌ Removed individual "Create" buttons in document matrix
+- ❌ Removed `canCreate()` function
+- ❌ Removed `handleCreateDocument()` handler
+- ✅ Added prominent purple "Document Workspace" entry card
+- ✅ Renamed "Document Matrix" → "Document Status" (reflects new purpose: status overview only)
+
+**3. Dead Code Removal:**
+- ❌ Removed `openBalloonTool()` function from `documentHelpers.ts` (referenced non-existent `/tools/*`)
+
+### Architectural Impact
+
+**Routing Before:**
+```
+/ppap/[id] → DocumentationForm → [Create] → /tools/* (404)
+/ppap/[id] → PPAPControlPanel → [Create] → /tools/* (404)
+/ppap/[id]/documents → DocumentWorkspace ✓
+```
+
+**Routing After:**
+```
+/ppap/[id] → DocumentationForm → "Open Workspace" → /ppap/[id]/documents ✓
+/ppap/[id] → PPAPControlPanel → "Open Workspace" → /ppap/[id]/documents ✓
+/ppap/[id]/documents → DocumentWorkspace ✓
+```
+
+**User Experience Before:**
+```
+Document Execution Panel
+┌──────────────────────────────────────┐
+│ Process Flow                  REQUIRED│
+│ [🛠 Create] [📤 Upload]              │  ← Confusing: two options
+├──────────────────────────────────────┤
+│ PFMEA                        REQUIRED │
+│ [🛠 Create] [📤 Upload]              │
+└──────────────────────────────────────┘
+```
+
+**User Experience After:**
+```
+Document Execution Panel
+[🚀 Open Document Workspace]  ← Clear: one entry point
+
+┌──────────────────────────────────────┐
+│ Process Flow                  REQUIRED│
+│ [📤 Upload]                          │  ← Simple: upload only
+├──────────────────────────────────────┤
+│ PFMEA                        REQUIRED │
+│ [📤 Upload]                          │
+└──────────────────────────────────────┘
+```
+
+### Success Criteria Met
+
+✅ One document system only (DocumentWorkspace)  
+✅ All document actions go through DocumentWorkspace  
+✅ No 404 routes (no /tools/* references)  
+✅ No broken buttons (all route to workspace)  
+✅ PPAP flow feels coherent (single entry point)  
+✅ Validation + documents aligned (unchanged)  
+✅ Clean navigation experience (clear UX)
+
+---
+
+## DOCUMENT ENGINE — IMPLEMENTED PHASES
+
+**Post-Implementation Clarification** — Added 2026-03-28
+
+This section summarizes the 13 implementation phases (Phases 9–21) that delivered the Document Engine system as defined in the BUILD_PLAN Addendum (Phase 3P–3V).
+
+### Phase 9: Document Generation Foundation
+
+**Phase 9.1 — Process Flow Template:**
+- Purpose: Generate process flow diagrams from BOM data
+- Capability: BOM → process steps with operations, controls, and outputs
+- Template: `processFlowTemplate.ts`
+- Mapper: `mapBOMToProcessFlow.ts`
+
+**Phase 9.2 — PFMEA Template:**
+- Purpose: Generate PFMEA documents from process flow
+- Capability: Process Flow → failure modes, effects, severity, occurrence, detection
+- Template: `pfmeaTemplate.ts`
+- Mapper: `mapProcessFlowToPFMEA.ts`
+- Dependency: Requires Process Flow
+
+**Phase 9.3 — Control Plan Template:**
+- Purpose: Generate control plans from PFMEA
+- Capability: PFMEA → control methods, measurement specs, reaction plans
+- Template: `controlPlanTemplate.ts`
+- Mapper: `mapPFMEAToControlPlan.ts`
+- Dependency: Requires PFMEA
+
+### Phase 10: OEM Alignment
+
+- Purpose: Ensure document formats align with OEM requirements (Ford, GM, Chrysler)
+- Capability: Template variations per OEM standard
+- Implementation: Field definitions match OEM PSW/APQP requirements
+
+### Phase 11: Validation Engine
+
+- Purpose: Field-level validation with error reporting
+- Capability: Required field checks, numeric range validation, table row completeness
+- Implementation: `validateDocument.ts` with `ValidationError` and `ValidationResult` types
+- UI: Inline error messages in `DocumentEditor`, error summary panel
+
+### Phase 12: DocumentWorkspace UI
+
+- Purpose: Unified workspace for document generation and editing
+- Capability: BOM upload, template selection, document editing, PDF export
+- Implementation: `DocumentWorkspace.tsx` with multi-step workflow
+- UI: Upload → Select Template → Input Data → Edit Document → Export PDF
+
+### Phase 13: Workflow Visibility
+
+- Purpose: Show document dependency chain and recommended next steps
+- Capability: Step-based navigation, dependency labels, recommended step highlighting
+- Implementation: `WORKFLOW_STEPS` array with `dependsOn` relationships
+
+### Phase 14: Staleness Detection
+
+- Purpose: Detect when documents are out of sync with dependencies
+- Capability: Timestamp tracking, stale status indicators, regeneration messaging
+- Implementation: `documentTimestamps` state, `isStale()` function
+- UI: Warning indicators, "regenerate recommended" messages
+
+### Phase 15: Soft Workflow Gating
+
+- Purpose: Guide users to follow dependency order without hard blocking
+- Capability: Recommended step logic, guidance banners, visual indicators
+- Implementation: `recommendedStep` calculation, prerequisite warnings
+
+### Phase 16: Session Persistence
+
+- Purpose: Save and restore workspace state across page reloads
+- Capability: Multi-session storage, session switching, automatic save
+- Implementation: `localStorage` with `StoredSession` type, session selector UI
+
+### Phase 17: PPAP Integration
+
+- Purpose: Integrate DocumentWorkspace into PPAP workflow
+- Capability: PPAP-specific route, optional `ppapId` prop
+- Implementation: `/ppap/[id]/documents` route, `ppapId` context passing
+
+### Phase 18: Multi-Session Management
+
+- Purpose: Support multiple concurrent PPAP document workspaces
+- Capability: Session creation, switching, deletion
+- Implementation: Session selector UI, `activeSessionId` state
+
+### Phase 19: Hard Workflow Gating
+
+- Purpose: Enforce dependency order (cannot generate without prerequisites)
+- Capability: Step enablement logic, lock icons on disabled steps, prerequisite error messages
+- Implementation: `isStepEnabled()` function, `STEP_ORDER` enforcement
+
+### Phase 20: Approval Workflow
+
+- Purpose: Add ownership and approval lifecycle to documents
+- Capability: Owner assignment, draft/in_review/approved status, approval-gated export
+- Implementation: `documentMeta` state with `DocumentStatus` type, status dropdown UI
+- Gating: PDF export blocked unless status = 'approved'
+
+### Phase 21: Document System Unification
+
+- Purpose: Eliminate duplicate document systems
+- Capability: Single entry point for all document creation
+- Implementation: Removed individual "Create" buttons, added prominent workspace button
+- Impact: `/ppap/[id]/documents` is now the ONLY document creation route
+
+### Capabilities Summary
+
+**Complete and Operational:**
+- ✅ BOM parsing (Excel, CSV, PDF text extraction)
+- ✅ BOM normalization (vendor formats → internal schema)
+- ✅ Template-based generation (Process Flow, PFMEA, Control Plan, PSW)
+- ✅ Dependency-aware workflow (staleness, prerequisite enforcement)
+- ✅ Field-level validation (required, numeric, table completeness)
+- ✅ Real-time editing with validation feedback
+- ✅ Multi-session persistence (localStorage)
+- ✅ PPAP integration (dedicated route)
+- ✅ Approval workflow (owner + status lifecycle)
+- ✅ PDF export (per document, validation + approval gated)
+- ✅ Single unified document system (Phase 21)
+
+---
+
+## KNOWN TRANSITION AREAS
+
+**Post-Implementation Clarification** — Added 2026-03-28
+
+This section documents known architectural boundaries and areas where the two systems (PPAP Workflow + Document Engine) coexist.
+
+### 1. Dual Validation Systems
+
+**Situation:** Two separate validation systems exist
+
+**Layer 1 (PPAP Workflow):**
+- Pre-ack and post-ack validation checklists
+- Human-verified, checklist-based
+- Stored in `ppap_validations` table
+
+**Layer 2 (Document Engine):**
+- Field-level document validation
+- Automated, constraint-based
+- Run client-side on-demand
+
+**Architectural Boundary:** These systems serve different purposes and do not conflict. PPAP workflow validations ensure organizational readiness; document field validations ensure document completeness.
+
+**Status:** ✅ Intentional design, no conflict
+
+### 2. Upload and Generation Coexistence
+
+**Situation:** Both upload and generation capabilities exist for documents
+
+**Upload (Layer 1):**
+- User manually uploads externally created documents
+- Use case: Customer-supplied files, manually created documents
+- UI: Upload buttons in `DocumentationForm` and `PPAPControlPanel`
+
+**Generation (Layer 2):**
+- System generates documents from BOM data
+- Use case: Documents that can be auto-generated
+- UI: DocumentWorkspace
+
+**Architectural Boundary:** Upload is for external documents; generation is for BOM-derived documents. Both paths are valid depending on document source.
+
+**Status:** ✅ Intentional design, no conflict
+
+### 3. Document Status Tracking
+
+**Situation:** Document status tracked in two places
+
+**Layer 1 (PPAP Workflow):**
+- Document upload status (missing/ready)
+- Stored in `ppap_documents` table (uploaded files)
+- UI: Document matrix shows uploaded file status
+
+**Layer 2 (Document Engine):**
+- Document generation status (not generated / generated / approved)
+- Stored in `localStorage` (client-side sessions)
+- UI: Workspace shows generation + approval status
+
+**Architectural Boundary:** Upload status and generation status are separate concerns. A document can be generated in workspace but not yet uploaded to PPAP record.
+
+**Status:** ⚠️ Potential for user confusion if not clear which status is being shown
+
+**Mitigation:** Phase 21 clarified UI to distinguish "Document Status" (uploaded) from "Document Workspace" (generation)
+
+### 4. Client-Side vs Server-Side Persistence
+
+**Situation:** Document Engine uses client-side persistence only
+
+**Current State:**
+- Generated documents stored in `localStorage`
+- Session data persists per browser/device
+- No server-side document storage
+- No cross-device synchronization
+
+**Architectural Boundary:** Document Engine is currently client-side only. PPAP workflow is server-side (database-backed).
+
+**Status:** ⚠️ Temporary limitation (planned for Phase 22+)
+
+**Impact:** Users cannot access generated documents from different devices. Generated documents are not linked to PPAP records in database.
+
+### 5. Ownership and User System
+
+**Situation:** Approval workflow uses client-side owner tracking
+
+**Current State:**
+- Owner entered as free-text string
+- No authentication or user validation
+- No role-based approval authority
+
+**Architectural Boundary:** Real user system and authentication not yet implemented.
+
+**Status:** ⚠️ Temporary limitation (planned for Phase 23+)
+
+**Impact:** Owner field is informational only, not enforced by authentication.
+
+### Summary
+
+**Intentional Boundaries (No Action Needed):**
+- ✅ Dual validation systems (serve different purposes)
+- ✅ Upload and generation coexistence (different use cases)
+
+**Temporary Limitations (Future Enhancement):**
+- ⚠️ Client-side only persistence (Phase 22: Backend storage)
+- ⚠️ Free-text owner tracking (Phase 23: Real user system)
+- ⚠️ Document status disconnect (Phase 22: Link generated docs to PPAP records)
+
+**No Breaking Issues Identified.**
+
+---
+
+## FORWARD ROADMAP (POST-21)
+
+**Post-Implementation Clarification** — Added 2026-03-28
+
+This section outlines planned future phases to extend the Document Engine system capabilities.
+
+### Phase 22: Backend Persistence (PPAP-Linked Storage)
+
+**Goal:** Store generated documents in database, link to PPAP records
+
+**Scope:**
+- Create `ppap_generated_documents` table (document drafts, metadata, timestamps)
+- Link generated documents to PPAP via `ppap_id` foreign key
+- Persist document edits to database (replace `localStorage`)
+- Enable cross-device access to generated documents
+- Sync approval status with PPAP workflow
+
+**Dependencies:**
+- Database schema extension
+- Server-side document storage API
+
+**Success Criteria:**
+- Generated documents accessible from any device
+- Document generation visible in PPAP dashboard
+- Approval status synced with PPAP submission readiness
+
+### Phase 23: User System Integration (Ownership Tied to Real Users)
+
+**Goal:** Replace free-text owner with authenticated user assignment
+
+**Scope:**
+- Integrate with authentication system
+- Assign documents to real users (not free-text)
+- Enforce role-based approval authority (approver vs editor roles)
+- Track approval history with user audit trail
+- Implement approval delegation workflows
+
+**Dependencies:**
+- Phase 22 complete (backend persistence)
+- Authentication system integrated
+
+**Success Criteria:**
+- Owner field populated from user database
+- Only designated approvers can change status to 'approved'
+- Approval history logged with timestamps and user IDs
+
+### Phase 24: Document Revision/Version Control
+
+**Goal:** Track document revisions and enable version history
+
+**Scope:**
+- Version numbering for generated documents
+- Revision history tracking (who changed what, when)
+- Diff view between versions
+- Restore previous versions
+- Lock finalized versions (prevent edits after submission)
+
+**Dependencies:**
+- Phase 22 complete (backend persistence)
+- Phase 23 complete (user system)
+
+**Success Criteria:**
+- Each document edit creates new version
+- Users can view and compare historical versions
+- Submitted documents locked from further edits
+
+### Phase 25: Additional Document Templates
+
+**Goal:** Expand template library beyond current four templates
+
+**Scope:**
+- DFMEA template (design failure mode analysis)
+- MSA template (measurement system analysis)
+- Dimensional Results template (FAIR/inspection results)
+- Ballooned Drawing template (annotated CAD markup)
+- Material Test Results template
+
+**Dependencies:**
+- Template design and field definition
+- Mapping logic for each template
+- Sample data for testing
+
+**Success Criteria:**
+- 5+ additional templates operational
+- Same workflow and validation capabilities as existing templates
+- Integration with dependency chain (e.g., DFMEA → PFMEA)
+
+### Phase 26: Cross-PPAP Dashboard (System Visibility)
+
+**Goal:** System-wide view of document generation status across all PPAPs
+
+**Purpose:** Manager/coordinator visibility into document readiness across active PPAPs
+
+**Scope:**
+- Dashboard showing all PPAPs with document generation status
+- Filter by approval status, owner, template type
+- Identify bottlenecks (documents awaiting approval)
+- Export aggregated reports
+
+**Note:** This is NOT a replacement for existing PPAP dashboard; it is a complementary view focused on document engine status.
+
+**Dependencies:**
+- Phase 22 complete (backend persistence)
+- Phase 23 complete (user system)
+
+**Success Criteria:**
+- Coordinators can see document status across all PPAPs
+- Identify which PPAPs have unapproved documents
+- Track document generation velocity
+
+### Phasing Strategy
+
+**Near-Term (Next 2-4 Phases):**
+- Phase 22 is highest priority (removes client-side limitation)
+- Phase 23 follows naturally (real users once backend exists)
+
+**Mid-Term (Phases 24-25):**
+- Version control enhances audit capability
+- Additional templates expand utility
+
+**Long-Term (Phase 26+):**
+- Cross-PPAP visibility for management
+- Advanced analytics and reporting
+
+**Guiding Principles:**
+- Preserve all existing functionality
+- Maintain separation of concerns (PPAP workflow vs Document Engine)
+- Avoid over-engineering; build based on real usage patterns
+- Continue iterative enhancement approach
+
+---
+
 ## Conclusion
 
 This document is the **implementation-grade source of truth** for EMIP-PPAP.
@@ -2506,3 +3247,10 @@ This document is the **implementation-grade source of truth** for EMIP-PPAP.
 
 **This plan is a living document.**
 As the system evolves, this plan MUST be updated to reflect current state and future direction.
+
+**As of Phase 21 (2026-03-28):**
+- ✅ Core PPAP workflow system fully operational (Phase 3F–3K)
+- ✅ Document Engine system fully operational (Phases 9–21)
+- ✅ Systems integrated via `/ppap/[id]/documents` route
+- ✅ Single unified document system enforced
+- 🔲 Future enhancements planned (Phases 22–26+)
