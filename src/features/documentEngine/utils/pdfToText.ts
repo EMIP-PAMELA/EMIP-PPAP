@@ -22,8 +22,9 @@ export async function extractTextFromPDF(file: File): Promise<string> {
     // Dynamic import ensures pdfjs is only loaded in browser, never during SSR
     const pdfjsLib = await import('pdfjs-dist');
     
-    // Configure worker source for pdfjs
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    // Use local bundled worker instead of CDN to avoid 404 errors
+    const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs' as any);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default;
     
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
