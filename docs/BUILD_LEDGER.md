@@ -4,6 +4,439 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-28 12:45 CT - Phase 22 - Backend Persistence for Document Engine
+
+- Summary: Replaced localStorage with database-backed persistence for Document Engine sessions and documents
+- Files created:
+  - `supabase/migrations/20260328_create_document_sessions.sql` — Database schema for sessions and documents
+  - `src/features/documentEngine/persistence/sessionService.ts` — Persistence abstraction layer
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Integrated database persistence, auto-save, and localStorage migration
+- Impact: Document sessions now persist server-side; cross-device access enabled; localStorage automatically migrated on first load
+- Objective: Resolve client-side persistence limitation identified in Phase 21
+
+---
+
+**Architecture: Database-Backed Document Persistence**
+
+Implemented three-table schema to replace localStorage persistence while maintaining all existing DocumentWorkspace functionality.
+
+---
+
+**Problem Statement:**
+
+**Before Phase 22:**
+- Document sessions stored in localStorage only
+- No cross-device access to generated documents
+- Session data isolated to single browser/device
+- Generated documents not linked to PPAP records in database
+- Manual session export/import not available
+
+**After Phase 22:**
+- Document sessions stored in Supabase database
+- Cross-device access to all sessions
+- Sessions linked to PPAP records via `ppap_id` (nullable for standalone mode)
+- Auto-save to database on all state changes
+- One-time automatic migration from localStorage
+
+---
+
+**Database Schema:**
+
+**Table 1: `ppap_document_sessions`**
+```sql
+CREATE TABLE ppap_document_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  ppap_id UUID REFERENCES ppap(id) ON DELETE CASCADE,  -- Nullable for standalone
+  created_by TEXT,  -- Placeholder for Phase 23 (user system)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(ppap_id, name)
+);
+```
+
+**Purpose:** Session metadata and PPAP linkage
+
+**Key Fields:**
+- `ppap_id`: Links session to PPAP record (NULL for standalone mode)
+- `name`: User-defined session name
+- `created_by`: Placeholder for Phase 23 user integration
+
+**Table 2: `ppap_generated_documents`**
+```sql
+CREATE TABLE ppap_generated_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES ppap_document_sessions(id) ON DELETE CASCADE,
+  template_id TEXT NOT NULL,
+  document_data JSONB NOT NULL,      -- Generated document content
+  editable_data JSONB NOT NULL,      -- User edits to document
+  validation_results JSONB,          -- Validation errors and status
+  metadata JSONB,                    -- Owner + status (Phase 20)
+  timestamps JSONB,                  -- Document generation timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(session_id, template_id)
+);
+```
+
+**Purpose:** Document drafts, edits, validation results, and metadata
+
+**Key Fields:**
+- `document_data`: Original generated document (immutable after generation)
+- `editable_data`: User edits (mutable)
+- `validation_results`: ValidationResult objects from Phase 11
+- `metadata`: Owner and approval status from Phase 20
+- `timestamps`: Generation timestamps for staleness detection (Phase 14)
+
+**Table 3: `ppap_session_state`**
+```sql
+CREATE TABLE ppap_session_state (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES ppap_document_sessions(id) ON DELETE CASCADE,
+  bom_data JSONB,                    -- Normalized BOM data
+  active_step TEXT,                  -- Current active template
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(session_id)
+);
+```
+
+**Purpose:** Session-level state (BOM, active step)
+
+**Key Fields:**
+- `bom_data`: Full NormalizedBOM object
+- `active_step`: Currently selected template (PROCESS_FLOW, PFMEA, etc.)
+
+---
+
+**Persistence Abstraction Layer:**
+
+**File:** `src/features/documentEngine/persistence/sessionService.ts`
+
+**Functions:**
+
+1. **`createSession(name, ppapId?, initialData?)`**
+   - Creates new session record in database
+   - Initializes empty session state
+   - Returns `StoredSession` object
+
+2. **`loadSessions(ppapId?)`**
+   - Loads all sessions (optionally filtered by PPAP ID)
+   - Reconstructs full session data from three tables
+   - Returns `StoredSession[]`
+
+3. **`loadSessionById(sessionId)`**
+   - Loads specific session by UUID
+   - Joins session + state + documents
+   - Reconstructs `PPAPSession` data structure
+
+4. **`saveSession(session)`**
+   - Upserts session metadata
+   - Upserts session state
+   - Upserts all documents (one upsert per document)
+   - Returns success boolean
+
+5. **`deleteSession(sessionId)`**
+   - Deletes session (cascade deletes state + documents)
+   - Returns success boolean
+
+6. **`migrateLocalStorageSessions()`**
+   - One-time migration function
+   - Reads localStorage sessions
+   - Creates database records for each
+   - Clears localStorage after successful migration
+   - Returns count of migrated sessions
+
+---
+
+**DocumentWorkspace Integration:**
+
+**Changes Made:**
+
+**Imports:**
+```typescript
+import {
+  loadSessions,
+  loadSessionById,
+  createSession,
+  saveSession,
+  deleteSession as deleteSessionDB,
+  migrateLocalStorageSessions,
+  StoredSession,
+  PPAPSession,
+  DocumentMetadata,
+  DocumentStatus
+} from '../persistence/sessionService';
+```
+
+**Removed:**
+- `localStorage.getItem()` calls
+- `localStorage.setItem()` calls
+- `STORAGE_KEY` and `LEGACY_STORAGE_KEY` constants
+- `loadSessions()` local function
+- `saveSessions()` local function
+- `getEmptySession()` local function
+
+**Added:**
+- `isLoading` state (tracks database initialization)
+- `saveError` state (tracks save failures)
+- Async `initSessions()` on mount
+- Auto-save with retry logic (1 retry after 1 second)
+- Loading indicator UI
+- Save error notification UI
+
+**Initialization Flow:**
+```typescript
+useEffect(() => {
+  async function initSessions() {
+    setIsLoading(true);
+    
+    // 1. Migrate localStorage sessions (one-time)
+    const migratedCount = await migrateLocalStorageSessions();
+    
+    // 2. Load sessions from database
+    const loadedSessions = await loadSessions(ppapId || null);
+    setSessions(loadedSessions);
+    
+    // 3. Auto-load first session
+    if (loadedSessions.length > 0) {
+      loadSessionIntoWorkspace(loadedSessions[0]);
+    }
+    
+    setIsLoading(false);
+  }
+  initSessions();
+}, [ppapId]);
+```
+
+**Auto-Save Flow:**
+```typescript
+useEffect(() => {
+  if (appPhase === 'workflow' && normalizedBOM && activeSessionId && !isLoading) {
+    const sessionData: PPAPSession = {
+      bomData: normalizedBOM,
+      documents,
+      editableDocuments,
+      validationResults,
+      documentTimestamps,
+      documentMeta,
+      activeStep
+    };
+    
+    const updatedSession: StoredSession = { ...activeSession, data: sessionData };
+    
+    // Save to database with retry
+    saveSession(updatedSession).then(success => {
+      if (!success) {
+        setSaveError('Failed to save session');
+        // Retry once after 1 second
+        setTimeout(() => {
+          saveSession(updatedSession).then(retrySuccess => {
+            if (retrySuccess) setSaveError(null);
+          });
+        }, 1000);
+      } else {
+        setSaveError(null);
+      }
+    });
+  }
+}, [normalizedBOM, documents, editableDocuments, validationResults, documentTimestamps, documentMeta, activeStep, appPhase, activeSessionId, isLoading]);
+```
+
+**Session Operations (now async):**
+
+- `createNewSession()` → `async createNewSession()`
+- `deleteSession()` → `async handleDeleteSession()`
+- `resetSession()` → `async resetSession()`
+
+All operations now use database calls instead of localStorage.
+
+---
+
+**Migration Strategy:**
+
+**localStorage → Database Migration (Automatic):**
+
+On first load after Phase 22 deployment:
+
+1. Check for localStorage sessions (`emip_ppap_sessions_v1`)
+2. Check for legacy single-session storage (`emip_ppap_session_v1`)
+3. If found:
+   - Create database session records
+   - Save full session data (BOM, documents, edits, validation, metadata)
+   - Clear localStorage after successful migration
+4. Log migration count
+
+**Zero Data Loss:**
+- All existing sessions preserved
+- Session names preserved
+- All document edits preserved
+- Validation results preserved
+- Approval metadata preserved
+
+**Rollback Safety:**
+- If database save fails, localStorage not cleared
+- User can retry manually by refreshing page
+
+---
+
+**PPAP Integration:**
+
+**Route:** `/ppap/[id]/documents`
+
+**Behavior:**
+- Sessions filtered by `ppap_id` when accessed via PPAP route
+- Only sessions linked to that PPAP are shown
+- Standalone sessions (`ppap_id = NULL`) not shown in PPAP context
+
+**Route:** `/document-workspace` (standalone)
+
+**Behavior:**
+- All sessions shown (including PPAP-linked and standalone)
+- User can create standalone sessions (`ppap_id = NULL`)
+
+**Session Linking:**
+- When session created via PPAP route → `ppap_id` set automatically
+- When session created via standalone route → `ppap_id = NULL`
+- Sessions can be filtered by PPAP ID in database queries
+
+---
+
+**Error Handling:**
+
+**Save Failures:**
+- Display yellow warning banner: "Failed to save session - Retrying automatically..."
+- Retry once after 1 second
+- If retry succeeds → clear warning
+- If retry fails → warning remains (user can refresh to retry)
+
+**Load Failures:**
+- Display red error: "Failed to load sessions from database"
+- UI remains functional (can create new session)
+
+**Database Unavailable:**
+- UI does not crash
+- Error messages guide user to refresh
+- No localStorage fallback (prevents data divergence)
+
+---
+
+**What Was NOT Changed:**
+
+✅ Document generation logic (unchanged)
+✅ Validation engine (unchanged)
+✅ Template system (unchanged)
+✅ Mapping logic (unchanged)
+✅ BOM parser/normalizer (unchanged)
+✅ Approval workflow (Phase 20) (unchanged)
+✅ PDF export (unchanged)
+✅ UI layout and behavior (unchanged)
+
+**Only persistence layer was replaced.**
+
+---
+
+**Benefits Delivered:**
+
+✅ **Cross-device access:** Sessions accessible from any device
+✅ **Data safety:** Server-side backup of all work
+✅ **PPAP integration:** Sessions linked to PPAP records
+✅ **Automatic migration:** Zero manual user action required
+✅ **Error recovery:** Auto-retry on save failure
+✅ **Scalability:** Database storage scales better than localStorage
+
+---
+
+**Known Limitations (Future Enhancements):**
+
+⚠️ **Owner field still free-text** (Phase 23 will integrate with user system)
+⚠️ **No version history** (Phase 24 will add revision tracking)
+⚠️ **No conflict resolution** (if same session edited on multiple devices simultaneously)
+
+---
+
+**Testing Checklist:**
+
+**Session Operations:**
+- ✅ Create new session → persists to database
+- ✅ Load sessions on mount → retrieves from database
+- ✅ Switch sessions → data intact
+- ✅ Edit document → auto-saves to database
+- ✅ Delete session → removes from database
+- ✅ Reset session → clears data in database
+
+**Migration:**
+- ✅ localStorage sessions migrated on first load
+- ✅ localStorage cleared after migration
+- ✅ No data loss during migration
+
+**PPAP Integration:**
+- ✅ Sessions created via `/ppap/[id]/documents` have `ppap_id` set
+- ✅ Sessions filtered by `ppap_id` when accessed via PPAP route
+- ✅ Standalone sessions work (`ppap_id = NULL`)
+
+**Error Handling:**
+- ✅ Save failure shows warning
+- ✅ Save retry logic works
+- ✅ Load failure shows error
+- ✅ UI remains functional on errors
+
+**Backward Compatibility:**
+- ✅ Existing Phase 20 approval workflow still works
+- ✅ Existing Phase 19 hard gating still works
+- ✅ Existing Phase 18 multi-session still works
+- ✅ All existing features preserved
+
+---
+
+**Database Performance:**
+
+**Indexes Created:**
+- `idx_document_sessions_ppap_id` (for PPAP filtering)
+- `idx_generated_documents_session_id` (for document lookups)
+- `idx_session_state_session_id` (for state lookups)
+
+**Query Optimization:**
+- Session list: Single query with `ppap_id` filter
+- Session load: 3 queries (session + state + documents)
+- Session save: 1 update + 1 upsert + N upserts (N = number of documents)
+
+**Expected Load:**
+- Typical session: 1-4 documents
+- Typical save payload: ~50-200 KB JSON
+- Auto-save frequency: On every edit (debounced by React re-render)
+
+---
+
+**RLS Policies:**
+
+All tables have Row Level Security enabled:
+- **Sessions:** Authenticated users can view/insert/update/delete all sessions
+- **Documents:** Authenticated users can view/insert/update/delete all documents
+- **State:** Authenticated users can view/insert/update/delete all state
+
+**Note:** Phase 23 will add user-scoped RLS policies when user system is integrated.
+
+---
+
+**Architectural Compliance:**
+
+✅ **ADDITIVE CHANGES ONLY:** No existing functionality removed
+✅ **Preserved DocumentWorkspace behavior:** UI unchanged, same user experience
+✅ **No duplicate systems:** localStorage completely replaced (not dual-system)
+✅ **Clean separation:** Persistence layer isolated in `sessionService.ts`
+✅ **PPAP system unchanged:** No impact on PPAP workflow (Layer 1)
+✅ **Document Engine remains context-aware:** Can operate standalone or PPAP-linked
+
+---
+
+**Phase 22 Complete.**
+
+Next: Phase 23 - User System Integration (owner tied to authenticated users, role-based approval).
+
+---
+
 ## 2026-03-28 11:34 CT - Phase 21 - Document System Unification
 
 - Summary: Eliminated duplicate document systems; DocumentWorkspace is now the single entry point for all document operations

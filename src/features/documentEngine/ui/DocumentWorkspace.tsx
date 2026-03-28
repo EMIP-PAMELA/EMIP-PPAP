@@ -14,88 +14,20 @@ import { DocumentEditor } from './DocumentEditor';
 import { mapBOMToProcessFlow } from '../mapping/bomToProcessFlow';
 import { mapProcessFlowToPFMEA } from '../mapping/processFlowToPFMEA';
 import { mapPFMEAToControlPlan } from '../mapping/pfmeaToControlPlan';
+import {
+  loadSessions,
+  loadSessionById,
+  createSession,
+  saveSession,
+  deleteSession as deleteSessionDB,
+  migrateLocalStorageSessions,
+  StoredSession,
+  PPAPSession,
+  DocumentMetadata,
+  DocumentStatus
+} from '../persistence/sessionService';
 
 type AppPhase = 'upload' | 'workflow';
-
-type DocumentStatus = 'draft' | 'in_review' | 'approved';
-
-type DocumentMetadata = {
-  owner: string;
-  status: DocumentStatus;
-};
-
-type PPAPSession = {
-  bomData: NormalizedBOM | null;
-  documents: Record<string, DocumentDraft>;
-  editableDocuments: Record<string, DocumentDraft>;
-  validationResults: Record<string, ValidationResult>;
-  documentTimestamps: Record<string, number>;
-  documentMeta: Record<string, DocumentMetadata>;
-  activeStep: TemplateId | null;
-};
-
-type StoredSession = {
-  id: string;
-  name: string;
-  data: PPAPSession;
-};
-
-const STORAGE_KEY = 'emip_ppap_sessions_v1';
-const LEGACY_STORAGE_KEY = 'emip_ppap_session_v1';
-
-function loadSessions(): StoredSession[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const sessions = JSON.parse(raw) as StoredSession[];
-      console.log(`[SessionPersistence] Loaded ${sessions.length} sessions`);
-      return sessions;
-    }
-    
-    // Migration: check for legacy single-session storage
-    const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (legacyRaw) {
-      console.log('[SessionPersistence] Migrating from legacy single-session storage');
-      const legacySession = JSON.parse(legacyRaw) as PPAPSession;
-      const migratedSession: StoredSession = {
-        id: crypto.randomUUID(),
-        name: 'Migrated Session',
-        data: legacySession
-      };
-      const sessions = [migratedSession];
-      saveSessions(sessions);
-      localStorage.removeItem(LEGACY_STORAGE_KEY);
-      console.log('[SessionPersistence] Migration complete');
-      return sessions;
-    }
-    
-    return [];
-  } catch (err) {
-    console.error('[SessionPersistence] Failed to load sessions:', err);
-    return [];
-  }
-}
-
-function saveSessions(sessions: StoredSession[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-    console.log(`[SessionPersistence] Saved ${sessions.length} sessions`);
-  } catch (err) {
-    console.error('[SessionPersistence] Failed to save sessions:', err);
-  }
-}
-
-function getEmptySession(): PPAPSession {
-  return {
-    bomData: null,
-    documents: {},
-    editableDocuments: {},
-    validationResults: {},
-    documentTimestamps: {},
-    documentMeta: {},
-    activeStep: null
-  };
-}
 
 const WORKFLOW_STEPS: Array<{ id: TemplateId; label: string; dependsOn: TemplateId[] }> = [
   { id: 'PROCESS_FLOW', label: 'Process Flow', dependsOn: [] },
@@ -151,22 +83,44 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   // Multi-session state
   const [sessions, setSessions] = useState<StoredSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Load sessions on mount
+  // Load sessions on mount + migrate localStorage if needed
   useEffect(() => {
-    const loadedSessions = loadSessions();
-    setSessions(loadedSessions);
-    
-    if (loadedSessions.length > 0) {
-      // Auto-load the first session
-      const firstSession = loadedSessions[0];
-      loadSessionIntoWorkspace(firstSession);
+    async function initSessions() {
+      try {
+        setIsLoading(true);
+        
+        // Phase 22: Migrate localStorage sessions to database
+        const migratedCount = await migrateLocalStorageSessions();
+        if (migratedCount > 0) {
+          console.log(`[DocumentWorkspace] Migrated ${migratedCount} sessions from localStorage`);
+        }
+        
+        // Load sessions from database
+        const loadedSessions = await loadSessions(ppapId || null);
+        setSessions(loadedSessions);
+        
+        if (loadedSessions.length > 0) {
+          // Auto-load the first session
+          const firstSession = loadedSessions[0];
+          loadSessionIntoWorkspace(firstSession);
+        }
+      } catch (err) {
+        console.error('[DocumentWorkspace] Failed to initialize sessions:', err);
+        setError('Failed to load sessions from database');
+      } finally {
+        setIsLoading(false);
+      }
     }
-  }, []);
+    
+    initSessions();
+  }, [ppapId]);
 
   // Auto-save active session on state changes
   useEffect(() => {
-    if (appPhase === 'workflow' && normalizedBOM && activeSessionId) {
+    if (appPhase === 'workflow' && normalizedBOM && activeSessionId && !isLoading) {
       const sessionData: PPAPSession = {
         bomData: normalizedBOM,
         documents,
@@ -177,14 +131,39 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
         activeStep
       };
       
-      const updatedSessions = sessions.map(s => 
-        s.id === activeSessionId ? { ...s, data: sessionData } : s
-      );
-      
-      setSessions(updatedSessions);
-      saveSessions(updatedSessions);
+      const activeSession = sessions.find(s => s.id === activeSessionId);
+      if (activeSession) {
+        const updatedSession: StoredSession = {
+          ...activeSession,
+          data: sessionData
+        };
+        
+        // Auto-save to database
+        saveSession(updatedSession).then(success => {
+          if (!success) {
+            setSaveError('Failed to save session');
+            // Retry once after 1 second
+            setTimeout(() => {
+              saveSession(updatedSession).then(retrySuccess => {
+                if (retrySuccess) {
+                  setSaveError(null);
+                  console.log('[DocumentWorkspace] Session saved on retry');
+                }
+              });
+            }, 1000);
+          } else {
+            setSaveError(null);
+          }
+        });
+        
+        // Update local state
+        const updatedSessions = sessions.map(s => 
+          s.id === activeSessionId ? updatedSession : s
+        );
+        setSessions(updatedSessions);
+      }
     }
-  }, [normalizedBOM, documents, editableDocuments, validationResults, documentTimestamps, documentMeta, activeStep, appPhase, activeSessionId, sessions]);
+  }, [normalizedBOM, documents, editableDocuments, validationResults, documentTimestamps, documentMeta, activeStep, appPhase, activeSessionId, isLoading]);
 
   const handleBOMProcessed = (text: string) => {
     try {
@@ -401,24 +380,28 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     setError(null);
   };
   
-  const createNewSession = () => {
+  const createNewSession = async () => {
     const name = window.prompt('Enter session name:');
     if (!name || !name.trim()) return;
     
-    const newSession: StoredSession = {
-      id: crypto.randomUUID(),
-      name: name.trim(),
-      data: getEmptySession()
-    };
-    
-    const updatedSessions = [...sessions, newSession];
-    setSessions(updatedSessions);
-    saveSessions(updatedSessions);
-    loadSessionIntoWorkspace(newSession);
-    console.log(`[DocumentWorkspace] Created new session: ${name}`);
+    try {
+      const newSession = await createSession(name.trim(), ppapId || null);
+      if (!newSession) {
+        setError('Failed to create session');
+        return;
+      }
+      
+      const updatedSessions = [...sessions, newSession];
+      setSessions(updatedSessions);
+      loadSessionIntoWorkspace(newSession);
+      console.log(`[DocumentWorkspace] Created new session: ${name}`);
+    } catch (err) {
+      console.error('[DocumentWorkspace] Error creating session:', err);
+      setError('Failed to create session');
+    }
   };
   
-  const deleteSession = (sessionId: string) => {
+  const handleDeleteSession = async (sessionId: string) => {
     const session = sessions.find(s => s.id === sessionId);
     if (!session) return;
     
@@ -427,30 +410,41 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     );
     if (!confirmed) return;
     
-    const updatedSessions = sessions.filter(s => s.id !== sessionId);
-    setSessions(updatedSessions);
-    saveSessions(updatedSessions);
-    
-    // If deleting active session, switch to first available or create new
-    if (sessionId === activeSessionId) {
-      if (updatedSessions.length > 0) {
-        loadSessionIntoWorkspace(updatedSessions[0]);
-      } else {
-        setActiveSessionId(null);
-        setAppPhase('upload');
-        setNormalizedBOM(null);
-        setActiveStep(null);
-        setDocuments({});
-        setEditableDocuments({});
-        setValidationResults({});
-        setDocumentTimestamps({});
+    try {
+      const success = await deleteSessionDB(sessionId);
+      if (!success) {
+        setError('Failed to delete session');
+        return;
       }
+      
+      const updatedSessions = sessions.filter(s => s.id !== sessionId);
+      setSessions(updatedSessions);
+      
+      // If deleting active session, switch to first available or create new
+      if (sessionId === activeSessionId) {
+        if (updatedSessions.length > 0) {
+          loadSessionIntoWorkspace(updatedSessions[0]);
+        } else {
+          setActiveSessionId(null);
+          setAppPhase('upload');
+          setNormalizedBOM(null);
+          setActiveStep(null);
+          setDocuments({});
+          setEditableDocuments({});
+          setValidationResults({});
+          setDocumentTimestamps({});
+          setDocumentMeta({});
+        }
+      }
+      
+      console.log(`[DocumentWorkspace] Deleted session: ${session.name}`);
+    } catch (err) {
+      console.error('[DocumentWorkspace] Error deleting session:', err);
+      setError('Failed to delete session');
     }
-    
-    console.log(`[DocumentWorkspace] Deleted session: ${session.name}`);
   };
   
-  const resetSession = () => {
+  const resetSession = async () => {
     if (!activeSessionId) return;
     
     const confirmed = window.confirm(
@@ -458,24 +452,52 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     );
     if (!confirmed) return;
 
-    const updatedSessions = sessions.map(s => 
-      s.id === activeSessionId ? { ...s, data: getEmptySession() } : s
-    );
+    const activeSession = sessions.find(s => s.id === activeSessionId);
+    if (!activeSession) return;
     
-    setSessions(updatedSessions);
-    saveSessions(updatedSessions);
+    const emptyData: PPAPSession = {
+      bomData: null,
+      documents: {},
+      editableDocuments: {},
+      validationResults: {},
+      documentTimestamps: {},
+      documentMeta: {},
+      activeStep: null
+    };
     
-    setAppPhase('upload');
-    setNormalizedBOM(null);
-    setActiveStep(null);
-    setDocuments({});
-    setEditableDocuments({});
-    setValidationResults({});
-    setDocumentTimestamps({});
-    setRegenMessage(null);
-    setPrereqWarning(null);
-    setError(null);
-    console.log('[DocumentWorkspace] Session reset');
+    const updatedSession: StoredSession = {
+      ...activeSession,
+      data: emptyData
+    };
+    
+    try {
+      const success = await saveSession(updatedSession);
+      if (!success) {
+        setError('Failed to reset session');
+        return;
+      }
+      
+      const updatedSessions = sessions.map(s => 
+        s.id === activeSessionId ? updatedSession : s
+      );
+      setSessions(updatedSessions);
+      
+      setAppPhase('upload');
+      setNormalizedBOM(null);
+      setActiveStep(null);
+      setDocuments({});
+      setEditableDocuments({});
+      setValidationResults({});
+      setDocumentTimestamps({});
+      setDocumentMeta({});
+      setRegenMessage(null);
+      setPrereqWarning(null);
+      setError(null);
+      console.log('[DocumentWorkspace] Session reset');
+    } catch (err) {
+      console.error('[DocumentWorkspace] Error resetting session:', err);
+      setError('Failed to reset session');
+    }
   };
 
   const handleResetWorkspace = () => {
@@ -633,7 +655,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
               </button>
               {activeSessionId && sessions.length > 1 && (
                 <button
-                  onClick={() => activeSessionId && deleteSession(activeSessionId)}
+                  onClick={() => activeSessionId && handleDeleteSession(activeSessionId)}
                   className="px-3 py-2 bg-red-50 text-red-700 text-sm font-medium rounded-md hover:bg-red-100 transition-colors"
                 >
                   Delete
@@ -667,6 +689,21 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
         <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
           <h4 className="text-red-800 font-semibold mb-1">Error</h4>
           <p className="text-red-700 text-sm">{error}</p>
+        </div>
+      )}
+      
+      {/* Save Error Notification */}
+      {saveError && (
+        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <h4 className="text-yellow-800 font-semibold mb-1">⚠️ Save Warning</h4>
+          <p className="text-yellow-700 text-sm">{saveError} - Retrying automatically...</p>
+        </div>
+      )}
+      
+      {/* Loading Indicator */}
+      {isLoading && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <p className="text-blue-700 text-sm">Loading sessions from database...</p>
         </div>
       )}
 
