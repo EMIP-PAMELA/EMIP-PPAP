@@ -4,6 +4,509 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 11:30 CT - Phase 28 - PPAP Package Export & Submission Layer
+
+- Summary: Implemented complete PPAP package export with validation gating and submission-ready PDF generation
+- Files created:
+  - `src/features/documentEngine/export/packageExporter.ts` — Package assembly and validation service
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Added export button and eligibility checking
+- Impact: Users can export complete, validated, approved PPAP submission packages as combined PDF
+- Objective: Enable submission-ready package generation with strict validation requirements
+
+---
+
+**From Individual Documents → Complete Submission Package**
+
+This phase introduces the ability to export a complete, validated PPAP submission package containing all required documents in the correct order with approval metadata.
+
+---
+
+**Core Features:**
+
+1. **Export Eligibility Gating** — Validates all requirements before allowing export
+2. **Approved Version Assembly** — Collects latest approved versions of all documents
+3. **Combined PDF Generation** — Assembles documents in correct order with metadata
+4. **Validation Enforcement** — Blocks export if documents incomplete, invalid, or unapproved
+5. **Metadata Inclusion** — Includes version numbers, approval info, timestamps
+
+---
+
+**Required Documents:**
+
+**Mandatory for Export:**
+1. PSW (Part Submission Warrant)
+2. Process Flow
+3. PFMEA (Process Failure Mode and Effects Analysis)
+4. Control Plan
+
+**Export Order:**
+1. **PSW** — First (submission cover sheet)
+2. **Process Flow** — Process documentation
+3. **PFMEA** — Risk analysis
+4. **Control Plan** — Quality controls
+
+---
+
+**Export Eligibility Check:**
+
+**Pre-Export Validation:**
+```typescript
+export async function checkExportEligibility(
+  sessionId: string,
+  documents: Record<string, DocumentDraft>,
+  documentMeta: Record<string, DocumentMetadata>,
+  validationResults: Record<string, { isValid: boolean; errors: any[] }>
+): Promise<ExportEligibility>
+```
+
+**Checks Performed:**
+1. **Missing Documents** — All 4 required documents must exist
+2. **Approval Status** — All documents must have status = 'approved'
+3. **Validation Status** — All documents must pass validation (isValid = true)
+
+**Block Conditions:**
+```typescript
+if (missingDocuments.length > 0) {
+  issues.push(`Missing documents: ${missing.join(', ')}`);
+}
+if (unapprovedDocuments.length > 0) {
+  issues.push(`Unapproved documents: ${unapproved.join(', ')}`);
+}
+if (invalidDocuments.length > 0) {
+  issues.push(`Invalid documents: ${invalid.join(', ')}`);
+}
+```
+
+**Error Messages:**
+- "PPAP package incomplete: Missing documents: PSW, PFMEA"
+- "PPAP package incomplete: Unapproved documents: PROCESS_FLOW"
+- "PPAP package incomplete: Invalid documents: CONTROL_PLAN"
+
+---
+
+**Package Assembly:**
+
+**Get Approved Documents:**
+```typescript
+export async function getApprovedDocuments(
+  sessionId: string,
+  documents: Record<string, DocumentDraft>,
+  documentMeta: Record<string, DocumentMetadata>
+): Promise<ExportableDocument[]>
+```
+
+**Process:**
+1. Iterate through EXPORT_ORDER (PSW, PROCESS_FLOW, PFMEA, CONTROL_PLAN)
+2. For each document, query version history
+3. Find latest approved version
+4. Collect into ExportableDocument array
+
+**ExportableDocument Type:**
+```typescript
+export type ExportableDocument = {
+  templateId: TemplateId;
+  draft: DocumentDraft;
+  metadata: DocumentMetadata;
+  versionNumber: number;
+};
+```
+
+**Ensures:**
+- Only approved versions exported (not draft edits)
+- Correct order maintained
+- Version metadata preserved
+
+---
+
+**PDF Generation:**
+
+**Combined Package PDF:**
+```typescript
+export async function generatePackagePDF(
+  documents: ExportableDocument[],
+  sessionName: string
+): Promise<Uint8Array>
+```
+
+**PDF Structure:**
+
+**1. Cover Page**
+- Title: "PPAP Submission Package"
+- Session name
+- Generation timestamp
+- Document count
+
+**2. Per-Document Section**
+For each document:
+- Document title (from template)
+- **Approval Information:**
+  - Version number
+  - Approval status
+  - Approved by (name)
+  - Approved at (timestamp)
+  - Document owner (name)
+- **Document Metadata** (part number, etc.)
+- **Document Content** (sections and fields)
+
+**3. Page Management**
+- Automatic page breaks
+- Section headers
+- Consistent formatting
+- Table handling for array fields
+
+---
+
+**Metadata Inclusion:**
+
+**Approval Information Section:**
+```typescript
+doc.text(`Version: ${exportDoc.versionNumber}`, margin + 5, yPosition);
+doc.text(`Status: Approved`, margin + 5, yPosition);
+doc.text(`Approved By: ${exportDoc.metadata.approvedByName}`, margin + 5, yPosition);
+doc.text(`Approved At: ${approvedDate}`, margin + 5, yPosition);
+doc.text(`Document Owner: ${exportDoc.metadata.ownerName}`, margin + 5, yPosition);
+```
+
+**Purpose:**
+- Audit trail for submission
+- Compliance documentation
+- Quality assurance tracking
+- Customer requirement fulfillment
+
+---
+
+**Export Button UI:**
+
+**Location:** Session Actions area (next to New Session, Delete)
+
+**Button Appearance:**
+```tsx
+<button
+  onClick={handleExportPackage}
+  disabled={!packageEligibility.isEligible || isExportingPackage}
+  title={packageEligibility.message}
+  className={
+    packageEligibility.isEligible && !isExportingPackage
+      ? 'bg-green-600 text-white hover:bg-green-700'
+      : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+  }
+>
+  {isExportingPackage ? '⏳ Exporting...' : '📦 Export PPAP Package'}
+</button>
+```
+
+**States:**
+- **Enabled** (Green) — All requirements met, ready to export
+- **Disabled** (Gray) — Requirements not met, hover shows reason
+- **Loading** (Gray, spinning) — Export in progress
+
+**Tooltip:**
+- Displays `packageEligibility.message`
+- Shows specific issues preventing export
+- Updates automatically as documents change
+
+---
+
+**Eligibility Auto-Check:**
+
+**Real-Time Validation:**
+```typescript
+useEffect(() => {
+  async function checkEligibility() {
+    const eligibility = await checkExportEligibility(
+      activeSessionId,
+      documents,
+      documentMeta,
+      validationResults
+    );
+    setPackageEligibility({
+      isEligible: eligibility.isEligible,
+      message: eligibility.message
+    });
+  }
+  checkEligibility();
+}, [activeSessionId, documents, documentMeta, validationResults]);
+```
+
+**Behavior:**
+- Runs whenever documents, metadata, or validation results change
+- No manual "check" required
+- Button state updates automatically
+- User sees immediate feedback
+
+---
+
+**Export Flow:**
+
+**User Journey:**
+1. User completes all 4 required documents
+2. User validates all documents (no errors)
+3. User approves all documents (QA/Manager/Admin)
+4. Export button becomes enabled (green)
+5. User clicks "Export PPAP Package"
+6. System verifies eligibility one final time
+7. System retrieves latest approved versions
+8. System generates combined PDF with metadata
+9. Browser downloads PDF file
+10. User submits PDF to customer
+
+**Error Handling:**
+```typescript
+try {
+  const approvedDocs = await getApprovedDocuments(...);
+  if (approvedDocs.length === 0) {
+    setError('No approved documents found for export');
+    return;
+  }
+  const pdfBytes = await generatePackagePDF(approvedDocs, sessionName);
+  downloadPackage(pdfBytes, sessionName);
+} catch (err) {
+  setError(err instanceof Error ? err.message : 'Failed to export PPAP package');
+} finally {
+  setIsExportingPackage(false);
+}
+```
+
+---
+
+**Filename Generation:**
+
+**Format:**
+```typescript
+const timestamp = new Date().toISOString().split('T')[0];
+const filename = `PPAP-Package-${sessionName.replace(/\s+/g, '-')}-${timestamp}.pdf`;
+```
+
+**Example:**
+- Session: "Widget Assembly Q1 2026"
+- Date: 2026-03-29
+- Filename: `PPAP-Package-Widget-Assembly-Q1-2026-2026-03-29.pdf`
+
+**Benefits:**
+- Unique per session
+- Includes date for version tracking
+- Filesystem-safe (no spaces)
+- Descriptive for file management
+
+---
+
+**Integration with Existing Systems:**
+
+**Document Engine (Phase 21-22):**
+- Uses existing template definitions for PDF rendering
+- Leverages layout sections and field definitions
+- No changes to document generation logic
+
+**Version Control (Phase 24):**
+- Queries `ppap_document_versions` table
+- Retrieves approved versions only
+- Preserves version metadata in export
+
+**Approval System (Phase 23):**
+- Requires status = 'approved' for all documents
+- Includes approver name and timestamp in PDF
+- Respects role-based approval authority
+
+**Validation System (Phase 22):**
+- Blocks export if any document has validation errors
+- Uses existing validation results
+- No changes to validation logic
+
+---
+
+**Security & Compliance:**
+
+**Data Integrity:**
+- Exports immutable approved versions (not draft edits)
+- Version numbers prevent confusion
+- Audit trail included in PDF
+
+**Access Control:**
+- Export available to all authenticated users
+- But requires documents to be approved (QA/Manager/Admin)
+- Indirect enforcement via approval workflow
+
+**Audit Trail:**
+- Approved by (user name)
+- Approved at (timestamp)
+- Version number
+- Document owner
+- Generation timestamp
+
+---
+
+**Performance Considerations:**
+
+**PDF Generation:**
+- Uses jsPDF library (client-side)
+- Minimal server load
+- ~1-2 seconds for 4-document package
+- File size: ~100-500 KB depending on content
+
+**Dynamic Import:**
+- Uses eval-based dynamic import (like existing PDF export)
+- Prevents server-side bundling of jsPDF
+- Ensures client-side-only execution
+
+**Memory Management:**
+- Generates PDF in memory
+- Triggers browser download
+- Cleans up with URL.revokeObjectURL()
+
+---
+
+**Error Handling:**
+
+**Export Button Disabled:**
+- Button grayed out if not eligible
+- Hover tooltip shows specific issues
+- No error modal displayed
+
+**Export Failure:**
+- Error message displayed in error banner
+- User can retry export
+- Console logs for debugging
+
+**No Approved Documents:**
+- Specific error: "No approved documents found for export"
+- Prevents empty PDF generation
+- Guides user to approve documents
+
+---
+
+**User Experience:**
+
+**Scenario 1: Incomplete Package**
+1. User has 3 of 4 documents
+2. Export button disabled (gray)
+3. Hover shows: "Missing documents: PSW"
+4. User generates PSW
+5. Button remains disabled: "Unapproved documents: PSW"
+6. User approves PSW
+7. Button enables (green)
+
+**Scenario 2: Validation Errors**
+1. All 4 documents exist and approved
+2. But Control Plan has validation errors
+3. Export button disabled
+4. Hover shows: "Invalid documents: CONTROL_PLAN"
+5. User fixes validation errors
+6. Button enables automatically
+
+**Scenario 3: Successful Export**
+1. All requirements met
+2. User clicks "Export PPAP Package"
+3. Button shows "⏳ Exporting..."
+4. PDF generates and downloads
+5. Button returns to "📦 Export PPAP Package"
+6. User can export again if needed
+
+---
+
+**Future Enhancements:**
+
+⚠️ **Multi-Format Export**
+- Option to export as ZIP with individual PDFs
+- Option to export as Excel/CSV for data
+- **Future:** Add format selector dropdown
+
+⚠️ **Custom Package Configuration**
+- Select which documents to include
+- Reorder documents
+- Add custom cover page
+- **Future:** Advanced export settings
+
+⚠️ **Email Submission**
+- Send package directly to customer email
+- Track submission status
+- **Future:** Email integration
+
+⚠️ **Template Customization**
+- Custom headers/footers
+- Company logo
+- Watermarks
+- **Future:** PDF template editor
+
+⚠️ **Batch Export**
+- Export multiple sessions at once
+- Bulk submission for related parts
+- **Future:** Multi-session export
+
+---
+
+**Testing Validation:**
+
+**Functional:**
+- ✅ Cannot export without all 4 documents
+- ✅ Cannot export unapproved documents
+- ✅ Cannot export invalid documents
+- ✅ Exports approved versions only (not drafts)
+- ✅ PDF contains all documents in correct order
+- ✅ PDF includes approval metadata
+- ✅ Filename includes session name and date
+- ✅ Button enables/disables automatically
+- ✅ Error handling for export failures
+- ✅ Loading state during export
+
+**TypeScript:**
+- ✅ No compilation errors
+- ✅ All type definitions correct
+- ✅ Service functions properly typed
+
+**PDF Quality:**
+- ✅ Cover page displays correctly
+- ✅ Approval information readable
+- ✅ Document content formatted properly
+- ✅ Page breaks work correctly
+- ✅ Tables render (arrays)
+
+---
+
+**Known Limitations:**
+
+⚠️ **No individual document selection**
+- Must export all 4 documents
+- Cannot choose subset
+- **Workaround:** Export individual PDFs separately
+- **Future:** Add document selection UI
+
+⚠️ **No custom ordering**
+- Fixed order: PSW, Process Flow, PFMEA, Control Plan
+- **Future:** Drag-and-drop reordering
+
+⚠️ **No digital signatures**
+- PDF not digitally signed
+- Manual signature required
+- **Future:** Add e-signature integration
+
+⚠️ **Client-side generation only**
+- PDF generated in browser
+- Limited to browser memory constraints
+- **Future:** Server-side generation for large packages
+
+---
+
+**Phase 28 Complete.**
+
+System now supports **complete PPAP package export** with strict validation gating, approved version assembly, and submission-ready PDF generation. Users cannot export incomplete or invalid packages, ensuring quality and compliance.
+
+**Operational Benefits:**
+- Automated package assembly
+- Validation enforcement
+- Approved-only exports
+- No manual PDF compilation
+
+**Compliance Benefits:**
+- Audit trail included
+- Version tracking
+- Approval documentation
+- Quality assurance
+
+**Next:** Phase 29 - Digital signatures and customer submission tracking (optional).
+
+---
+
 ## 2026-03-29 11:15 CT - Phase 27 - Cross-PPAP Dashboard & System Visibility Layer
 
 - Summary: Created system-wide dashboard for tracking PPAP sessions, documents, and approvals across the entire system

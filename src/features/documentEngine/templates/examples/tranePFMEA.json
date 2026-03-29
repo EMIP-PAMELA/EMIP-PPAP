@@ -1,0 +1,202 @@
+{
+  "id": "TRANE_PFMEA",
+  "name": "Trane PFMEA (Process Failure Mode and Effects Analysis)",
+  "description": "Trane-specific PFMEA template based on OEM workbook structure",
+  "metadataFields": ["partNumber", "partName", "customer", "supplier"],
+  "sections": [
+    {
+      "id": "header",
+      "title": "PFMEA Header Information",
+      "fields": [
+        {
+          "key": "pfmeaNumber",
+          "label": "PFMEA Number",
+          "type": "text",
+          "required": true,
+          "editable": true
+        },
+        {
+          "key": "pfmeaDate",
+          "label": "PFMEA Date",
+          "type": "text",
+          "required": true,
+          "editable": true
+        },
+        {
+          "key": "modelYear",
+          "label": "Model Year",
+          "type": "text",
+          "required": false,
+          "editable": true
+        },
+        {
+          "key": "coreTeam",
+          "label": "Core Team Members",
+          "type": "text",
+          "required": true,
+          "editable": true
+        },
+        {
+          "key": "revisionDate",
+          "label": "Revision Date",
+          "type": "text",
+          "required": false,
+          "editable": true
+        }
+      ]
+    },
+    {
+      "id": "process_analysis",
+      "title": "Process Analysis",
+      "fields": [
+        {
+          "key": "processSteps",
+          "label": "Process Steps and Failure Modes",
+          "type": "table",
+          "required": true,
+          "editable": true,
+          "columns": [
+            {
+              "key": "processStep",
+              "label": "Process Step / Function",
+              "type": "text",
+              "required": true,
+              "editable": true
+            },
+            {
+              "key": "potentialFailureMode",
+              "label": "Potential Failure Mode",
+              "type": "text",
+              "required": true,
+              "editable": true
+            },
+            {
+              "key": "potentialEffects",
+              "label": "Potential Effects of Failure",
+              "type": "text",
+              "required": true,
+              "editable": true
+            },
+            {
+              "key": "severity",
+              "label": "Severity (SEV)",
+              "type": "number",
+              "required": true,
+              "editable": true,
+              "validation": {
+                "min": 1,
+                "max": 10
+              }
+            },
+            {
+              "key": "classification",
+              "label": "Classification",
+              "type": "select",
+              "required": false,
+              "editable": true,
+              "options": ["Critical", "Significant", "Minor"]
+            },
+            {
+              "key": "potentialCauses",
+              "label": "Potential Cause(s) / Mechanism(s) of Failure",
+              "type": "text",
+              "required": true,
+              "editable": true
+            },
+            {
+              "key": "occurrence",
+              "label": "Occurrence (OCC)",
+              "type": "number",
+              "required": true,
+              "editable": true,
+              "validation": {
+                "min": 1,
+                "max": 10
+              }
+            },
+            {
+              "key": "currentControls",
+              "label": "Current Process Controls (Prevention)",
+              "type": "text",
+              "required": false,
+              "editable": true
+            },
+            {
+              "key": "detection",
+              "label": "Detection (DET)",
+              "type": "number",
+              "required": true,
+              "editable": true,
+              "validation": {
+                "min": 1,
+                "max": 10
+              }
+            },
+            {
+              "key": "rpn",
+              "label": "Risk Priority Number (RPN)",
+              "type": "number",
+              "required": true,
+              "editable": false
+            },
+            {
+              "key": "recommendedActions",
+              "label": "Recommended Action(s)",
+              "type": "text",
+              "required": false,
+              "editable": true
+            },
+            {
+              "key": "responsibility",
+              "label": "Responsibility & Target Completion Date",
+              "type": "text",
+              "required": false,
+              "editable": true
+            },
+            {
+              "key": "actionsTaken",
+              "label": "Actions Taken",
+              "type": "text",
+              "required": false,
+              "editable": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "summary",
+      "title": "PFMEA Summary",
+      "fields": [
+        {
+          "key": "highestRPN",
+          "label": "Highest RPN Value",
+          "type": "number",
+          "required": false,
+          "editable": false
+        },
+        {
+          "key": "criticalCharacteristics",
+          "label": "Critical Characteristics Identified",
+          "type": "text",
+          "required": false,
+          "editable": true
+        },
+        {
+          "key": "preparedBy",
+          "label": "Prepared By",
+          "type": "text",
+          "required": true,
+          "editable": true
+        },
+        {
+          "key": "approvedBy",
+          "label": "Approved By",
+          "type": "text",
+          "required": false,
+          "editable": true
+        }
+      ]
+    }
+  ]
+}

@@ -9,7 +9,8 @@
 
 import { NormalizedBOM } from '../types/bomTypes';
 
-export type TemplateId = 'PSW' | 'PROCESS_FLOW' | 'PFMEA' | 'CONTROL_PLAN';
+// Phase 29: Support dynamic template IDs from ingested templates
+export type TemplateId = 'PSW' | 'PROCESS_FLOW' | 'PFMEA' | 'CONTROL_PLAN' | string;
 
 export interface TemplateInputField {
   key: string;
