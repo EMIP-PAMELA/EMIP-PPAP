@@ -1,5 +1,6 @@
 /**
  * Document Validation Engine - Document Engine
+ * Phase 34: Mapping Validation Layer
  *
  * Template-driven validation for document drafts.
  * Validates scalar fields and table rows based on field definitions.
@@ -9,20 +10,24 @@
  * - Numeric fields must respect min/max constraints
  * - Table rows validated per column using rowFields definitions
  * - Derived fields (with derivedProduct) are skipped
+ * - Phase 34: Failed mappings on required fields trigger validation errors
  *
  * Architecture layer: Validation
  */
 
 import { DocumentDraft, TemplateDefinition, FieldDefinition } from '../templates/types';
 import { ValidationResult, ValidationError } from './types';
+import { MappingMetadata } from '../templates/templateMappingService';
 
 /**
  * Validate a document draft against its template definition.
+ * Phase 34: Optionally checks mapping metadata for required field failures.
  * Returns structured validation result with all errors.
  */
 export function validateDocument(
   draft: DocumentDraft,
-  template: TemplateDefinition
+  template: TemplateDefinition,
+  mappingMeta?: MappingMetadata
 ): ValidationResult {
   const errors: ValidationError[] = [];
 
@@ -36,10 +41,10 @@ export function validateDocument(
 
     // Validate scalar fields
     if (fieldDef.type !== 'table') {
-      validateScalarField(fieldDef, value, errors);
+      validateScalarField(fieldDef, value, errors, mappingMeta);
     } else {
       // Validate table fields (array of rows)
-      validateTableField(fieldDef, value, errors);
+      validateTableField(fieldDef, value, errors, mappingMeta);
     }
   }
 
@@ -51,12 +56,28 @@ export function validateDocument(
 
 /**
  * Validate a scalar field (text, number, select)
+ * Phase 34: Checks mapping metadata for failed mappings on required fields
  */
 function validateScalarField(
   fieldDef: FieldDefinition,
   value: any,
-  errors: ValidationError[]
+  errors: ValidationError[],
+  mappingMeta?: MappingMetadata
 ): void {
+  // Phase 34: Check for mapping failures on required fields
+  if (fieldDef.required && mappingMeta && mappingMeta[fieldDef.key]) {
+    const meta = mappingMeta[fieldDef.key];
+    
+    // If mapping failed AND field is empty, report mapping failure
+    if (!meta.success && (value == null || value === '')) {
+      errors.push({
+        field: fieldDef.key,
+        message: `${fieldDef.label} mapping failed: ${meta.error || 'source field not found'}`
+      });
+      return; // Skip further validation - mapping failure is the root issue
+    }
+  }
+
   // Required field validation
   if (fieldDef.required) {
     if (value == null || value === '') {
@@ -98,12 +119,28 @@ function validateScalarField(
 
 /**
  * Validate a table field (array of rows with rowFields schema)
+ * Phase 34: Checks mapping metadata for table mapping failures
  */
 function validateTableField(
   fieldDef: FieldDefinition,
   value: any,
-  errors: ValidationError[]
+  errors: ValidationError[],
+  mappingMeta?: MappingMetadata
 ): void {
+  // Phase 34: Check for table mapping failures
+  if (fieldDef.required && mappingMeta && mappingMeta[fieldDef.key]) {
+    const meta = mappingMeta[fieldDef.key];
+    
+    // If table mapping failed completely
+    if (!meta.success && meta.isTableMapping) {
+      errors.push({
+        field: fieldDef.key,
+        message: `${fieldDef.label} table mapping failed: ${meta.error || 'source table not found'}`
+      });
+      // Don't return - still validate any data that exists
+    }
+  }
+
   // Table must be an array
   if (!Array.isArray(value)) {
     if (fieldDef.required) {
