@@ -4,6 +4,596 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 15:20 CT - Phase 36 - Version Comparison and Diff Layer
+
+- Summary: Added version comparison functionality to visualize changes between document versions
+- Files created:
+  - `src/features/documentEngine/persistence/versionDiffService.ts` — Diff comparison logic
+  - `src/features/documentEngine/ui/VersionDiffView.tsx` — Diff visualization component
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Integrated comparison UI
+- Impact: Users can now compare any two versions to see field and mapping differences
+- Objective: Enable visibility into document evolution and change tracking
+
+---
+
+**Problem Statement**
+
+Phase 35 enabled historical version viewing, but users had no way to:
+- Compare versions side-by-side
+- See what changed between versions
+- Understand document evolution
+- Debug why values changed
+- Track mapping source changes
+
+**Before:**
+- Could view individual versions
+- No comparison capability
+- Manual diff required
+- Unclear what changed
+- No mapping change tracking
+
+**After:**
+- Select any 2 versions to compare
+- Visual side-by-side diff
+- Field changes highlighted
+- Mapping source changes tracked
+- Clear change summary
+
+---
+
+**Architecture**
+
+**Diff Service Structure:**
+```typescript
+export interface FieldDiff {
+  oldValue: any;
+  newValue: any;
+  changed: boolean;
+}
+
+export interface MappingDiff {
+  oldMapping: FieldMappingMeta | null;
+  newMapping: FieldMappingMeta | null;
+  changed: boolean;
+}
+
+export interface VersionComparison {
+  fieldDiffs: Record<string, FieldDiff>;
+  mappingDiffs: Record<string, MappingDiff>;
+  oldVersion: DocumentVersion;
+  newVersion: DocumentVersion;
+}
+```
+
+**Comparison Function:**
+```typescript
+export function compareVersions(
+  oldVersion: DocumentVersion,
+  newVersion: DocumentVersion
+): VersionComparison {
+  // Deep compare all fields
+  // Deep compare all mappings
+  // Return structured diff
+}
+```
+
+---
+
+**Comparison Logic**
+
+**Field Comparison:**
+```typescript
+// Get all unique field keys from both versions
+const allFieldKeys = new Set([
+  ...Object.keys(oldFields),
+  ...Object.keys(newFields)
+]);
+
+// Deep compare each field
+for (const fieldKey of allFieldKeys) {
+  const oldValue = oldFields[fieldKey];
+  const newValue = newFields[fieldKey];
+  const changed = !deepEqual(oldValue, newValue);
+  
+  fieldDiffs[fieldKey] = {
+    oldValue,
+    newValue,
+    changed
+  };
+}
+```
+
+**Mapping Comparison:**
+```typescript
+// Get all unique mapping keys
+const allMappingKeys = new Set([
+  ...Object.keys(oldMappingMeta),
+  ...Object.keys(newMappingMeta)
+]);
+
+// Compare mapping metadata
+for (const fieldKey of allMappingKeys) {
+  const oldMapping = oldMappingMeta[fieldKey] || null;
+  const newMapping = newMappingMeta[fieldKey] || null;
+  const changed = !deepEqual(oldMapping, newMapping);
+  
+  mappingDiffs[fieldKey] = {
+    oldMapping,
+    newMapping,
+    changed
+  };
+}
+```
+
+**Deep Equality:**
+- Handles primitives, objects, arrays
+- Null-safe comparison
+- Recursive for nested structures
+- Type-aware
+
+---
+
+**UI Flow**
+
+**1. Version Selection:**
+```
+Version History Panel
+  ↓
+User checks 2 versions (checkboxes)
+  ↓
+"Compare Selected" button appears
+  ↓
+Click to trigger comparison
+```
+
+**2. Comparison Modal:**
+```
+Full-screen modal overlay
+  ↓
+Header: "Version X → Version Y"
+  ↓
+Two sections:
+  - Field Changes
+  - Mapping Changes
+  ↓
+Side-by-side diff view
+```
+
+**3. Visual Layout:**
+```
+┌─────────────────────────────────────┐
+│ Field Changes (N)                   │
+├─────────────────┬───────────────────┤
+│ Version X       │ Version Y         │
+│ (red bg)        │ (green bg)        │
+│                 │                   │
+│ OLD: ABC-123    │ NEW: ABC-124      │
+└─────────────────┴───────────────────┘
+```
+
+---
+
+**Version History UI Enhancement**
+
+**Before (Phase 25):**
+```tsx
+<div>
+  <span>v{versionNumber}</span>
+  <button>View</button>
+</div>
+```
+
+**After (Phase 36):**
+```tsx
+<div>
+  <input type="checkbox" onChange={toggleSelection} />
+  <span>v{versionNumber}</span>
+  <button>View</button>
+</div>
+
+{selectedCount === 2 && (
+  <button onClick={compareVersions}>
+    Compare Selected
+  </button>
+)}
+```
+
+**Selection Rules:**
+- Max 2 versions selectable
+- Checkboxes for selection
+- "Compare Selected" button appears when 2 selected
+- Selected versions highlighted (indigo background)
+
+---
+
+**Diff View Component**
+
+**Header:**
+```tsx
+<div className="bg-indigo-600 text-white">
+  <h2>Version Comparison</h2>
+  <p>Version {old} → Version {new}</p>
+  <button onClick={onClose}>✕</button>
+</div>
+```
+
+**Field Changes Section:**
+```tsx
+<h3>Field Changes (N)</h3>
+
+{changedFields.map(field => (
+  <div className="grid grid-cols-2">
+    {/* Old Value (Red) */}
+    <div className="bg-red-50 p-4">
+      <div>Version {oldVersion}</div>
+      <div>{formatValue(oldValue)}</div>
+    </div>
+    
+    {/* New Value (Green) */}
+    <div className="bg-green-50 p-4">
+      <div>Version {newVersion}</div>
+      <div>{formatValue(newValue)}</div>
+    </div>
+  </div>
+))}
+```
+
+**Mapping Changes Section:**
+```tsx
+<h3>Mapping Changes (N)</h3>
+
+{changedMappings.map(field => (
+  <div className="grid grid-cols-2">
+    {/* Old Mapping */}
+    <div className="bg-red-50">
+      {formatMapping(oldMapping)}
+      // e.g., "✓ processFlow.partNumber"
+    </div>
+    
+    {/* New Mapping */}
+    <div className="bg-green-50">
+      {formatMapping(newMapping)}
+      // e.g., "✓ bom.partNumber"
+    </div>
+  </div>
+))}
+```
+
+**Empty State:**
+```tsx
+{!hasChanges && (
+  <div className="text-center">
+    <svg>✓</svg>
+    <p>No changes detected</p>
+    <p>These versions are identical</p>
+  </div>
+)}
+```
+
+---
+
+**Value Formatting**
+
+**Primitives:**
+```typescript
+formatFieldValue("ABC-123")
+// → "ABC-123"
+
+formatFieldValue(null)
+// → "(empty)"
+```
+
+**Arrays:**
+```typescript
+formatFieldValue([...5 items])
+// → "[5 items]"
+```
+
+**Objects:**
+```typescript
+formatFieldValue({...})
+// → JSON.stringify(..., null, 2)
+```
+
+**Mappings:**
+```typescript
+formatMapping({
+  sourceModel: "processFlow",
+  sourceField: "partNumber",
+  success: true
+})
+// → "✓ processFlow.partNumber"
+
+formatMapping({
+  sourceModel: "bom",
+  sourceField: "revision",
+  success: false,
+  error: "Field not found"
+})
+// → "✗ bom.revision (Field not found)"
+```
+
+---
+
+**State Management**
+
+**New State:**
+```typescript
+const [versionComparison, setVersionComparison] = useState<VersionComparison | null>(null);
+const [selectedVersionsForCompare, setSelectedVersionsForCompare] = useState<Record<string, number[]>>({});
+```
+
+**Selection Toggle:**
+```typescript
+const toggleVersionSelection = (templateId, versionNumber) => {
+  setSelectedVersionsForCompare(prev => {
+    const current = prev[templateId] || [];
+    
+    if (current.includes(versionNumber)) {
+      // Deselect
+      return filter out versionNumber;
+    } else if (current.length < 2) {
+      // Select (max 2)
+      return [...current, versionNumber].sort();
+    }
+    
+    return prev;
+  });
+};
+```
+
+**Comparison Trigger:**
+```typescript
+const compareSelectedVersions = async (templateId) => {
+  const selected = selectedVersionsForCompare[templateId];
+  
+  if (selected.length !== 2) {
+    setError('Please select exactly 2 versions');
+    return;
+  }
+  
+  const oldVersion = versions.find(v => v.versionNumber === selected[0]);
+  const newVersion = versions.find(v => v.versionNumber === selected[1]);
+  
+  const comparison = compareVersions(oldVersion, newVersion);
+  setVersionComparison(comparison);
+};
+```
+
+---
+
+**Example: End-to-End Flow**
+
+**1. User Action:**
+- Views version history for template
+- Checks version 1 
+- Checks version 3 
+- "Compare Selected" button appears
+- Clicks "Compare Selected"
+
+**2. System:**
+```typescript
+compareSelectedVersions("PPAP_PSW")
+  ↓
+Load version 1 and version 3
+  ↓
+compareVersions(v1, v3)
+  ↓
+{
+  fieldDiffs: {
+    "partNumber": {
+      oldValue: "ABC-123",
+      newValue: "ABC-124",
+      changed: true
+    },
+    "revision": {
+      oldValue: "A",
+      newValue: "A",
+      changed: false  // Not shown in diff
+    }
+  },
+  mappingDiffs: {
+    "partNumber": {
+      oldMapping: { sourceModel: "processFlow", success: true },
+      newMapping: { sourceModel: "bom", success: true },
+      changed: true
+    }
+  }
+}
+  ↓
+setVersionComparison(comparison)
+  ↓
+<VersionDiffView /> renders
+```
+
+**3. User Sees:**
+```
+┌────────────────────────────────────────────┐
+│ Version Comparison                         │
+│ Version 1 → Version 3                      │
+├────────────────────────────────────────────┤
+│ Field Changes (1)                          │
+│                                            │
+│ partNumber                                 │
+│ ┌──────────────┬───────────────┐          │
+│ │ Version 1    │ Version 3     │          │
+│ │ ABC-123      │ ABC-124       │          │
+│ └──────────────┴───────────────┘          │
+│                                            │
+│ Mapping Changes (1)                        │
+│                                            │
+│ partNumber                                 │
+│ ┌──────────────┬───────────────┐          │
+│ │ Version 1    │ Version 3     │          │
+│ │ ✓ processFlow│ ✓ bom         │          │
+│ │   .partNumber│   .partNumber │          │
+│ └──────────────┴───────────────┘          │
+│                                            │
+│ 1 field(s) • 1 mapping(s) changed          │
+│                          [Close]           │
+└────────────────────────────────────────────┘
+```
+
+---
+
+**Use Cases**
+
+**1. Audit Changes:**
+- Compare approved version to draft
+- See exactly what changed
+- Verify no unauthorized modifications
+
+**2. Debug Regressions:**
+- Document value wrong in latest version
+- Compare to known-good version
+- Identify when change occurred
+
+**3. Mapping Evolution:**
+- Template mappings updated
+- Compare before/after
+- Validate mapping changes worked
+
+**4. Review Approvals:**
+- Compare submitted draft to current
+- Verify all requested changes made
+- Approve with confidence
+
+**5. Training:**
+- Show new users how documents evolve
+- Demonstrate correction workflows
+- Explain version control benefits
+
+---
+
+**Benefits**
+
+**For Users:**
+- Clear visibility into changes
+- Side-by-side comparison
+- No manual diffing needed
+- Understand document history
+
+**For Reviewers:**
+- Verify changes quickly
+- Catch unintended modifications
+- Approve with evidence
+- Track revision requests
+
+**For Auditors:**
+- Document change trail
+- Verify data integrity
+- Trace field value evolution
+- Validate mapping changes
+
+**For Template Authors:**
+- Test mapping changes
+- Verify template updates
+- Debug mapping issues
+- Validate transformations
+
+---
+
+**Non-Breaking Design**
+
+**Key Principles:**
+- Additive only (no modifications to existing features)
+- Read-only comparison (no editing)
+- Optional feature (doesn't affect normal workflow)
+- No impact on version storage
+
+**Preserved:**
+- Version viewing unchanged
+- Version creation unchanged
+- Document editing unchanged
+- Approval workflow unchanged
+
+**New:**
+- Version selection checkboxes
+- Compare button (conditional)
+- Diff modal (on-demand)
+- Comparison service (isolated)
+
+---
+
+**Error Handling**
+
+**Invalid Selection:**
+```typescript
+if (selected.length !== 2) {
+  setError('Please select exactly 2 versions to compare');
+  return;
+}
+```
+
+**Version Load Failure:**
+```typescript
+if (!oldVersion || !newVersion) {
+  setError('Failed to load selected versions');
+  return;
+}
+```
+
+**Incompatible Versions:**
+- Still compare (no error)
+- Show all differences
+- User decides if meaningful
+
+**No Changes:**
+- Not an error
+- Show "No changes detected" message
+- Confirm versions are identical
+
+---
+
+**Technical Notes**
+
+**Deep Equality Algorithm:**
+- Handles circular references (via JSON approach)
+- Type-safe comparison
+- Null-safe
+- Performant for typical document sizes
+
+**Performance:**
+- Comparison happens client-side
+- No additional server load
+- Instant results
+- Scales to hundreds of fields
+
+**Memory:**
+- Comparison result cached in state
+- Cleared on modal close
+- No memory leaks
+- Garbage collected automatically
+
+**Accessibility:**
+- Keyboard navigation supported
+- Screen reader compatible
+- Color not sole indicator (icons used)
+- Focus management on modal open/close
+
+---
+
+**Phase 36 Complete.**
+
+Version comparison functionality now enables **clear visualization of changes** between any two document versions, including both field values and mapping sources. System provides intuitive UI for selecting, comparing, and understanding document evolution.
+
+**Operational Benefits:**
+- Quick change identification
+- Visual diff presentation
+- Mapping source tracking
+- Audit trail visibility
+
+**Strategic Benefits:**
+- Enhanced review workflow
+- Stronger version control
+- Better compliance evidence
+- Improved user confidence
+
+**Next:** Phase 37 - Mapping analytics dashboard (optional).
+
+---
+
 ## 2026-03-29 14:30 CT - Phase 33 - Template Mapping Visibility and Debug Layer
 
 - Summary: Added mapping metadata tracking and UI indicators for template field mappings
