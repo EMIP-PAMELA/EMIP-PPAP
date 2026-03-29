@@ -26,6 +26,7 @@ import {
   DocumentMetadata,
   DocumentStatus
 } from '../persistence/sessionService';
+import { getCurrentUser, canApprove, getRoleDisplayName, getRoleColor, type PPAPUser } from '@/src/features/auth/userService';
 
 type AppPhase = 'upload' | 'workflow';
 
@@ -85,6 +86,23 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
+  
+  // Phase 23: User state
+  const [currentUser, setCurrentUser] = useState<PPAPUser | null>(null);
+
+  // Phase 23: Load current authenticated user
+  useEffect(() => {
+    async function initUser() {
+      const user = await getCurrentUser();
+      setCurrentUser(user);
+      if (!user) {
+        console.warn('[DocumentWorkspace] No authenticated user found');
+      } else {
+        console.log('[DocumentWorkspace] Authenticated user:', user.name, user.role);
+      }
+    }
+    initUser();
+  }, []);
 
   // Load session into workspace state
   const loadSessionIntoWorkspace = (session: StoredSession) => {
@@ -206,7 +224,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
       if (!activeSessionId) {
         console.log('[DocumentWorkspace] No active session - creating new session for BOM');
         const sessionName = `Session ${new Date().toLocaleString()}`;
-        const newSession = await createSession(sessionName, ppapId || null);
+        const newSession = await createSession(sessionName, ppapId || null, currentUser?.id || null);
         
         if (!newSession) {
           setError('Failed to create session for BOM data');
@@ -349,11 +367,12 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
       setDocumentTimestamps(prev => ({ ...prev, [stepId]: now }));
       
       // Initialize metadata for new document
-      if (!documentMeta[stepId]) {
+      if (!documentMeta[stepId] && currentUser) {
         setDocumentMeta(prev => ({
           ...prev,
           [stepId]: {
-            owner: '',
+            ownerId: currentUser.id,
+            ownerName: currentUser.name,
             status: 'draft'
           }
         }));
@@ -401,7 +420,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     if (!name || !name.trim()) return;
     
     try {
-      const newSession = await createSession(name.trim(), ppapId || null);
+      const newSession = await createSession(name.trim(), ppapId || null, currentUser?.id || null);
       if (!newSession) {
         setError('Failed to create session');
         return;
@@ -898,9 +917,9 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                               )}
                               {meta && isGenerated && (
                                 <div className="mt-1 space-y-0.5">
-                                  {meta.owner && (
+                                  {meta.ownerName && (
                                     <div className="text-xs text-gray-500">
-                                      👤 {meta.owner}
+                                      👤 {meta.ownerName}
                                     </div>
                                   )}
                                   <div className={`text-xs font-medium ${
@@ -910,6 +929,11 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                                   }`}>
                                     {statusBadge} {meta.status === 'approved' ? 'Approved' : meta.status === 'in_review' ? 'In Review' : 'Draft'}
                                   </div>
+                                  {meta.status === 'approved' && meta.approvedByName && (
+                                    <div className="text-xs text-green-600">
+                                      ✓ by {meta.approvedByName}
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -1002,36 +1026,37 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
               {currentEditableDraft && activeStep && (
                 <div className="bg-white rounded-lg shadow-md p-4 mb-4 border-l-4 border-blue-500">
                   <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2 flex-1">
-                      <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Owner:</label>
-                      <input
-                        type="text"
-                        value={documentMeta[activeStep]?.owner || ''}
-                        onChange={(e) => {
-                          setDocumentMeta(prev => ({
-                            ...prev,
-                            [activeStep]: {
-                              ...prev[activeStep],
-                              owner: e.target.value,
-                              status: prev[activeStep]?.status || 'draft'
-                            }
-                          }));
-                        }}
-                        placeholder="Enter owner name"
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-semibold text-gray-700">Owner:</label>
+                      <span className="text-sm font-medium text-gray-900">
+                        {documentMeta[activeStep]?.ownerName || currentUser?.name || 'Unknown'}
+                      </span>
+                      {currentUser && (
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${getRoleColor(currentUser.role)}`}>
+                          {getRoleDisplayName(currentUser.role)}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Status:</label>
                       <select
                         value={documentMeta[activeStep]?.status || 'draft'}
                         onChange={(e) => {
+                          const newStatus = e.target.value as DocumentStatus;
+                          if (newStatus === 'approved' && currentUser && !canApprove(currentUser.role)) {
+                            setError(`Only QA, Manager, or Admin can approve documents. Your role: ${getRoleDisplayName(currentUser.role)}`);
+                            return;
+                          }
                           setDocumentMeta(prev => ({
                             ...prev,
                             [activeStep]: {
                               ...prev[activeStep],
-                              owner: prev[activeStep]?.owner || '',
-                              status: e.target.value as DocumentStatus
+                              ownerId: prev[activeStep]?.ownerId || currentUser?.id || '',
+                              ownerName: prev[activeStep]?.ownerName || currentUser?.name,
+                              status: newStatus,
+                              approvedBy: newStatus === 'approved' ? currentUser?.id : prev[activeStep]?.approvedBy,
+                              approvedByName: newStatus === 'approved' ? currentUser?.name : prev[activeStep]?.approvedByName,
+                              approvedAt: newStatus === 'approved' ? Date.now() : prev[activeStep]?.approvedAt,
                             }
                           }));
                         }}
@@ -1048,7 +1073,22 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                         <option value="approved">Approved</option>
                       </select>
                     </div>
+                    {documentMeta[activeStep]?.status === 'approved' && documentMeta[activeStep]?.approvedByName && (
+                      <div className="text-xs text-green-700 flex items-center gap-1">
+                        <span>✓ Approved by {documentMeta[activeStep].approvedByName}</span>
+                        {documentMeta[activeStep]?.approvedAt && (
+                          <span className="text-gray-500">
+                            ({new Date(documentMeta[activeStep].approvedAt!).toLocaleDateString()})
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
+                  {currentUser && !canApprove(currentUser.role) && (
+                    <div className="mt-2 text-xs text-amber-700 bg-amber-50 rounded px-3 py-2">
+                      ℹ️ Your role ({getRoleDisplayName(currentUser.role)}) does not have approval authority. Only QA, Manager, or Admin can approve documents.
+                    </div>
+                  )}
                   <div className="mt-2 text-xs text-gray-600">
                     {documentMeta[activeStep]?.status === 'draft' && '📝 Complete and review document before submission'}
                     {documentMeta[activeStep]?.status === 'in_review' && '⏳ Awaiting approval'}

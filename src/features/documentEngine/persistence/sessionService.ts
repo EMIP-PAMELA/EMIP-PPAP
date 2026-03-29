@@ -13,8 +13,12 @@ import { ValidationResult } from '../validation/types';
 export type DocumentStatus = 'draft' | 'in_review' | 'approved';
 
 export type DocumentMetadata = {
-  owner: string;
+  ownerId: string;          // User ID of document owner
+  ownerName?: string;       // Display name (cached for backward compat)
   status: DocumentStatus;
+  approvedBy?: string;      // User ID of approver
+  approvedByName?: string;  // Display name of approver (cached)
+  approvedAt?: number;      // Timestamp of approval
 };
 
 export type PPAPSession = {
@@ -31,6 +35,7 @@ export type StoredSession = {
   id: string;
   name: string;
   ppapId?: string | null;
+  createdBy?: string | null;  // User ID of session creator (Phase 23)
   data: PPAPSession;
   createdAt?: string;
   updatedAt?: string;
@@ -38,14 +43,16 @@ export type StoredSession = {
 
 /**
  * Create a new session in the database
+ * Phase 23: Added createdBy parameter for user ownership
  */
 export async function createSession(
   name: string,
   ppapId?: string | null,
+  createdBy?: string | null,
   initialData?: PPAPSession
 ): Promise<StoredSession | null> {
   try {
-    console.log('[SessionService] Creating new session:', { name, ppapId });
+    console.log('[SessionService] Creating new session:', { name, ppapId, createdBy });
     
     // Create session record
     const { data: sessionRecord, error: sessionError } = await supabase
@@ -53,6 +60,7 @@ export async function createSession(
       .insert({
         name,
         ppap_id: ppapId || null,
+        created_by: createdBy || null,
       })
       .select()
       .single();
@@ -384,7 +392,7 @@ export async function migrateLocalStorageSessions(): Promise<number> {
     // Migrate each session
     let migratedCount = 0;
     for (const session of sessionsToMigrate) {
-      const created = await createSession(session.name, session.ppapId, session.data);
+      const created = await createSession(session.name, session.ppapId, null, session.data);
       if (created) {
         // Save full session data
         const saved = await saveSession({ ...session, id: created.id });
