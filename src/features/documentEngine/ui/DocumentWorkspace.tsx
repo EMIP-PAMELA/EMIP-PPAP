@@ -86,6 +86,37 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   const [isLoading, setIsLoading] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Load session into workspace state
+  const loadSessionIntoWorkspace = (session: StoredSession) => {
+    console.log(`[DocumentWorkspace] Loading session: ${session.name}`);
+    setActiveSessionId(session.id);
+    
+    if (session.data.bomData) {
+      setNormalizedBOM(session.data.bomData);
+      setDocuments(session.data.documents || {});
+      setEditableDocuments(session.data.editableDocuments || {});
+      setValidationResults(session.data.validationResults || {});
+      setDocumentTimestamps(session.data.documentTimestamps || {});
+      setDocumentMeta(session.data.documentMeta || {});
+      setActiveStep(session.data.activeStep || null);
+      setAppPhase('workflow');
+      console.log('[DocumentWorkspace] Session loaded:', Object.keys(session.data.documents || {}).length, 'documents');
+    } else {
+      setAppPhase('upload');
+      setNormalizedBOM(null);
+      setActiveStep(null);
+      setDocuments({});
+      setEditableDocuments({});
+      setValidationResults({});
+      setDocumentTimestamps({});
+      setDocumentMeta({});
+    }
+    
+    setRegenMessage(null);
+    setPrereqWarning(null);
+    setError(null);
+  };
+
   // Load sessions on mount + migrate localStorage if needed
   useEffect(() => {
     async function initSessions() {
@@ -98,7 +129,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
           console.log(`[DocumentWorkspace] Migrated ${migratedCount} sessions from localStorage`);
         }
         
-        // Load sessions from database
+        // Load sessions from database (filtered by ppapId if provided)
         const loadedSessions = await loadSessions(ppapId || null);
         setSessions(loadedSessions);
         
@@ -116,6 +147,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     }
     
     initSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ppapId]);
 
   // Auto-save active session on state changes
@@ -138,7 +170,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
           data: sessionData
         };
         
-        // Auto-save to database
+        // Auto-save to database only (don't update local sessions array)
         saveSession(updatedSession).then(success => {
           if (!success) {
             setSaveError('Failed to save session');
@@ -154,24 +186,38 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
           } else {
             setSaveError(null);
           }
+        }).catch(err => {
+          console.error('[DocumentWorkspace] Auto-save error:', err);
+          setSaveError('Failed to save session');
         });
-        
-        // Update local state
-        const updatedSessions = sessions.map(s => 
-          s.id === activeSessionId ? updatedSession : s
-        );
-        setSessions(updatedSessions);
       }
     }
-  }, [normalizedBOM, documents, editableDocuments, validationResults, documentTimestamps, documentMeta, activeStep, appPhase, activeSessionId, isLoading]);
+  }, [normalizedBOM, documents, editableDocuments, validationResults, documentTimestamps, documentMeta, activeStep, appPhase, activeSessionId, isLoading, sessions]);
 
-  const handleBOMProcessed = (text: string) => {
+  const handleBOMProcessed = async (text: string) => {
     try {
       setError(null);
       console.log('[DocumentWorkspace] Parsing BOM text...');
       const parsed = parseBOMText(text);
       console.log('[DocumentWorkspace] Normalizing BOM data...');
       const normalized = normalizeBOMData(parsed);
+      
+      // If no active session exists, create one automatically
+      if (!activeSessionId) {
+        console.log('[DocumentWorkspace] No active session - creating new session for BOM');
+        const sessionName = `Session ${new Date().toLocaleString()}`;
+        const newSession = await createSession(sessionName, ppapId || null);
+        
+        if (!newSession) {
+          setError('Failed to create session for BOM data');
+          return;
+        }
+        
+        setSessions(prev => [...prev, newSession]);
+        setActiveSessionId(newSession.id);
+        console.log('[DocumentWorkspace] Auto-created session:', newSession.name);
+      }
+      
       setNormalizedBOM(normalized);
       setAppPhase('workflow');
       console.log('[DocumentWorkspace] BOM processed:', normalized.masterPartNumber);
@@ -350,36 +396,6 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     console.log(`[DocumentWorkspace] ${activeStep} reset to generated version`);
   };
 
-  const loadSessionIntoWorkspace = (session: StoredSession) => {
-    console.log(`[DocumentWorkspace] Loading session: ${session.name}`);
-    setActiveSessionId(session.id);
-    
-    if (session.data.bomData) {
-      setNormalizedBOM(session.data.bomData);
-      setDocuments(session.data.documents || {});
-      setEditableDocuments(session.data.editableDocuments || {});
-      setValidationResults(session.data.validationResults || {});
-      setDocumentTimestamps(session.data.documentTimestamps || {});
-      setDocumentMeta(session.data.documentMeta || {});
-      setActiveStep(session.data.activeStep || null);
-      setAppPhase('workflow');
-      console.log('[DocumentWorkspace] Session loaded:', Object.keys(session.data.documents || {}).length, 'documents');
-    } else {
-      setAppPhase('upload');
-      setNormalizedBOM(null);
-      setActiveStep(null);
-      setDocuments({});
-      setEditableDocuments({});
-      setValidationResults({});
-      setDocumentTimestamps({});
-      setDocumentMeta({});
-    }
-    
-    setRegenMessage(null);
-    setPrereqWarning(null);
-    setError(null);
-  };
-  
   const createNewSession = async () => {
     const name = window.prompt('Enter session name:');
     if (!name || !name.trim()) return;
