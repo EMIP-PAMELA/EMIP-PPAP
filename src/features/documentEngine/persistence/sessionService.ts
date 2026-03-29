@@ -67,10 +67,10 @@ export async function createSession(
   name: string,
   ppapId?: string | null,
   createdBy?: string | null,
-  initialData?: PPAPSession
+  customerId?: string
 ): Promise<StoredSession | null> {
   try {
-    console.log('[SessionService] Creating new session:', { name, ppapId, createdBy });
+    console.log('[SessionService] Creating new session:', { name, ppapId, createdBy, customerId });
     
     // Create session record
     const { data: sessionRecord, error: sessionError } = await supabase

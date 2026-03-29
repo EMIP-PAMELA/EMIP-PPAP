@@ -110,6 +110,10 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   const [packageEligibility, setPackageEligibility] = useState<{ isEligible: boolean; message: string } | null>(null);
   const [isExportingPackage, setIsExportingPackage] = useState(false);
 
+  // Phase 31: Customer and template assignment
+  const [customerName, setCustomerName] = useState<string | null>(null);
+  const [customerTemplates, setCustomerTemplates] = useState<string[]>([]);
+
   // Phase 23: Load current authenticated user
   useEffect(() => {
     async function initUser() {
@@ -330,7 +334,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
       if (!activeSessionId) {
         console.log('[DocumentWorkspace] No active session - creating new session for BOM');
         const sessionName = `Session ${new Date().toLocaleString()}`;
-        const newSession = await createSession(sessionName, ppapId || null, currentUser?.id || null);
+        const newSession = await createSession(sessionName, currentUser?.id || null, ppapId || null);
         
         if (!newSession) {
           setError('Failed to create session for BOM data');
