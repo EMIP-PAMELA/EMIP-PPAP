@@ -113,6 +113,11 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   // Phase 31: Customer and template assignment
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [customerTemplates, setCustomerTemplates] = useState<string[]>([]);
+  
+  // Phase 31.5: Customer selection for new sessions
+  const [availableCustomers, setAvailableCustomers] = useState<Array<{id: string; name: string}>>([]);
+  const [showCustomerSelector, setShowCustomerSelector] = useState(false);
+  const [selectedCustomerForNewSession, setSelectedCustomerForNewSession] = useState<string>('');
 
   // Phase 23: Load current authenticated user
   useEffect(() => {
@@ -141,6 +146,21 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
       }
     }
     loadDynamicTemplates();
+  }, []);
+  
+  // Phase 31.5: Load available customers for session creation
+  useEffect(() => {
+    async function loadCustomers() {
+      try {
+        const { getCustomers } = await import('../../customer/customerService');
+        const customers = await getCustomers();
+        setAvailableCustomers(customers.map(c => ({ id: c.id, name: c.name })));
+        console.log(`[DocumentWorkspace] Loaded ${customers.length} customers for selection`);
+      } catch (err) {
+        console.error('[DocumentWorkspace] Error loading customers:', err);
+      }
+    }
+    loadCustomers();
   }, []);
   
   // Phase 25: Load version history when activeStep changes
@@ -322,6 +342,29 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     }
   }, [normalizedBOM, documents, editableDocuments, validationResults, documentTimestamps, documentMeta, activeStep, appPhase, activeSessionId, isLoading, sessions]);
 
+  // Phase 31.5: Session creation with customer selector
+  const handleCreateNewSession = () => {
+    setShowCustomerSelector(true);
+  };
+  
+  const createNewSessionWithCustomer = async () => {
+    const sessionName = `Session ${sessions.length + 1}`;
+    const customerId = selectedCustomerForNewSession || undefined;
+    const newSession = await createSession(sessionName, currentUser?.id || null, customerId);
+    if (newSession) {
+      const allSessions = await loadSessions();
+      setSessions(allSessions);
+      loadSessionIntoWorkspace(newSession);
+      setShowCustomerSelector(false);
+      setSelectedCustomerForNewSession('');
+    }
+  };
+  
+  const cancelCustomerSelection = () => {
+    setShowCustomerSelector(false);
+    setSelectedCustomerForNewSession('');
+  };
+
   const handleBOMProcessed = async (text: string) => {
     try {
       setError(null);
@@ -354,6 +397,34 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
       setError(err instanceof Error ? err.message : 'Failed to process BOM');
       console.error('[DocumentWorkspace] Error processing BOM:', err);
     }
+  };
+
+  // Phase 31.5: Get available template IDs based on customer assignment
+  const getAvailableTemplateIds = (): string[] => {
+    // If session has customer and customer has templates assigned, use those
+    if (customerTemplates.length > 0) {
+      console.log(`[DocumentWorkspace] Using ${customerTemplates.length} customer templates`);
+      return customerTemplates;
+    }
+    
+    // Otherwise, get all available templates (static + dynamic)
+    try {
+      const { listTemplates } = require('../templates/registry');
+      const allTemplates = listTemplates();
+      const templateIds = allTemplates.map((t: any) => t.id);
+      console.log(`[DocumentWorkspace] Using ${templateIds.length} default templates`);
+      return templateIds;
+    } catch (err) {
+      console.error('[DocumentWorkspace] Error loading templates:', err);
+      // Fallback to static templates only
+      return ['PSW', 'PROCESS_FLOW', 'PFMEA', 'CONTROL_PLAN'];
+    }
+  };
+  
+  // Phase 31.5: Check if a template is available for this session
+  const isTemplateAvailable = (templateId: string): boolean => {
+    const availableIds = getAvailableTemplateIds();
+    return availableIds.includes(templateId);
   };
 
   const generateWithBestSource = (stepId: TemplateId): { draft: DocumentDraft; actualSource: string } => {
@@ -422,6 +493,12 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   const isStepEnabled = (stepId: TemplateId): boolean => {
     const step = WORKFLOW_STEPS.find(s => s.id === stepId);
     if (!step) return false;
+    
+    // Phase 31.5: Check if template is available for this session
+    if (!isTemplateAvailable(stepId)) {
+      return false;
+    }
+    
     // Step is enabled if all dependencies are satisfied
     return step.dependsOn.every(dep => !!documents[dep]);
   };
@@ -1005,11 +1082,56 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
               <p className="text-sm text-blue-700">Create your first PPAP session to get started</p>
             </div>
             <button
-              onClick={createNewSession}
+              onClick={handleCreateNewSession}
               className="px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors"
             >
               Create First Session
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 31.5: Customer Selector Modal */}
+      {showCustomerSelector && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-blue-900 mb-4">Create New Session</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Customer (Optional)
+              </label>
+              <select
+                value={selectedCustomerForNewSession}
+                onChange={(e) => setSelectedCustomerForNewSession(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">No Customer (Use All Templates)</option>
+                {availableCustomers.map(customer => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs text-gray-600">
+                {selectedCustomerForNewSession 
+                  ? 'Session will use templates assigned to this customer'
+                  : 'Session will have access to all available templates'}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={createNewSessionWithCustomer}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors"
+              >
+                Create Session
+              </button>
+              <button
+                onClick={cancelCustomerSelection}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1054,12 +1176,21 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                     <span>Operations: <strong>{normalizedBOM.summary.totalOperations}</strong></span>
                     <span>Components: <strong>{normalizedBOM.summary.totalComponents}</strong> ({normalizedBOM.summary.wires}W / {normalizedBOM.summary.terminals}T / {normalizedBOM.summary.hardware}H)</span>
                   </div>
-                  {/* Phase 31: Customer template info */}
-                  {customerName && customerTemplates.length > 0 && (
-                    <div className="text-sm text-green-700 mt-2">
-                      <span>📋 Customer Templates: <strong>{customerTemplates.length}</strong> assigned to {customerName}</span>
-                    </div>
-                  )}
+                  {/* Phase 31.5: Template source indicator */}
+                  <div className="text-sm text-green-700 mt-2 flex items-center gap-2">
+                    {customerName && customerTemplates.length > 0 ? (
+                      <>
+                        <span className="inline-block px-2 py-1 bg-purple-100 text-purple-800 text-xs font-medium rounded">
+                          Using {customerName} Templates
+                        </span>
+                        <span>({customerTemplates.length} templates available)</span>
+                      </>
+                    ) : (
+                      <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
+                        Using Default Templates
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex gap-3">
                   <button
@@ -1181,6 +1312,27 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                               : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
                           }`}
                         >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className={`font-semibold ${activeStep === step.id ? 'text-blue-700' : 'text-gray-900'}`}>
+                              {step.label}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {!isTemplateAvailable(step.id) && (
+                                <span className="text-xs px-2 py-1 rounded bg-red-100 text-red-800">
+                                  Not Available
+                                </span>
+                              )}
+                              {documents[step.id] && (
+                                <span className={`text-xs px-2 py-1 rounded ${
+                                  validationResults[step.id]?.isValid
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-yellow-100 text-yellow-800'
+                                }`}>
+                                  {validationResults[step.id]?.isValid ? '✓ Valid' : '⚠ Issues'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                           <div className="flex items-center gap-2">
                             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                               isActive
