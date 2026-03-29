@@ -27,13 +27,9 @@ import {
   DocumentStatus
 } from '../persistence/sessionService';
 import { getCurrentUser, canApprove, getRoleDisplayName, getRoleColor, type PPAPUser } from '@/src/features/auth/userService';
-import { 
-  createVersion, 
-  getVersions, 
-  getLatestVersion, 
-  generateDocumentId,
-  type DocumentVersion 
-} from '../persistence/versionService';
+import { createVersion, getVersions, getVersionByNumber, generateDocumentId, DocumentVersion } from '../persistence/versionService';
+import { compareVersions, VersionComparison } from '../persistence/versionDiffService';
+import { VersionDiffView } from './VersionDiffView';
 
 type AppPhase = 'upload' | 'workflow';
 
@@ -122,6 +118,10 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   // Phase 33: Mapping metadata and debug visibility
   const [mappingMetadata, setMappingMetadata] = useState<Record<string, any>>({});
   const [showMappingDebug, setShowMappingDebug] = useState(false);
+  
+  // Phase 36: Version comparison state
+  const [versionComparison, setVersionComparison] = useState<VersionComparison | null>(null);
+  const [selectedVersionsForCompare, setSelectedVersionsForCompare] = useState<Record<string, number[]>>({});
 
   // Phase 23: Load current authenticated user
   useEffect(() => {
@@ -1649,11 +1649,23 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
               {/* Phase 25: Version History Panel */}
               {currentEditableDraft && activeStep && showVersionHistory[activeStep] && documentVersions[activeStep] && (
                 <div className="bg-white rounded-lg shadow-md p-4 mb-4 border border-gray-200">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Version History</h4>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold text-gray-700">Version History</h4>
+                    {/* Phase 36: Compare button */}
+                    {(selectedVersionsForCompare[activeStep]?.length || 0) === 2 && (
+                      <button
+                        onClick={() => compareSelectedVersions(activeStep)}
+                        className="px-3 py-1 text-xs font-medium bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors"
+                      >
+                        Compare Selected
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-2">
                     {documentVersions[activeStep].map((version) => {
                       const isCurrent = version.versionNumber === currentVersionNumbers[activeStep];
                       const isViewing = version.versionNumber === viewingVersionNumber[activeStep];
+                      const isSelected = selectedVersionsForCompare[activeStep]?.includes(version.versionNumber) || false;
                       
                       return (
                         <div
@@ -1663,10 +1675,20 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                               ? 'border-blue-300 bg-blue-50'
                               : isViewing
                               ? 'border-blue-400 bg-blue-100'
+                              : isSelected
+                              ? 'border-indigo-300 bg-indigo-50'
                               : 'border-gray-200 hover:bg-gray-50'
                           }`}
                         >
                           <div className="flex items-center gap-3">
+                            {/* Phase 36: Checkbox for comparison */}
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleVersionSelection(activeStep, version.versionNumber)}
+                              className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                              title="Select for comparison"
+                            />
                             <span className={`text-sm font-semibold ${
                               isCurrent && !isViewingOldVersion ? 'text-blue-800' : 'text-gray-700'
                             }`}>
