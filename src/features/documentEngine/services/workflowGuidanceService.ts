@@ -3,6 +3,7 @@
  * Phase 39: Guidance Intelligence Refinement
  * Phase 40: Adaptive Guidance Weighting
  * Phase 41: Risk Prediction Layer
+ * Phase 42: System Health Scoring and Risk Aggregation
  * 
  * Service for providing proactive workflow recommendations based on:
  * - Current workflow state
@@ -27,6 +28,12 @@
  * - Proactive issue detection
  * - Risk-based warnings (high/medium/low severity)
  * - Advisory only (non-blocking)
+ * 
+ * Phase 42 enhancements:
+ * - System health scoring (0-100)
+ * - Risk aggregation into health status
+ * - Health drivers identification
+ * - At-risk status warning elevation
  */
 
 import { TemplateId } from '../templates/types';
@@ -35,6 +42,7 @@ import { DocumentMetadata } from '../persistence/sessionService';
 import { VersionComparison } from '../persistence/versionDiffService';
 import { analyzeRisk, RiskSeverity } from './riskAnalysisService';
 import { MappingMetadata } from '../templates/templateMappingService';
+import { calculateSystemHealth, SystemHealth } from './systemHealthService';
 
 /**
  * Guidance types for categorization
@@ -72,6 +80,7 @@ export interface GuidanceItem {
 /**
  * Complete guidance result
  * Phase 40: Added workflow phase info
+ * Phase 42: Added system health
  */
 export interface WorkflowGuidance {
   recommendedAction: string | null;
@@ -79,6 +88,7 @@ export interface WorkflowGuidance {
   insights: GuidanceItem[];
   workflowPhase?: WorkflowPhase; // Phase 40: Current workflow phase
   phaseLabel?: string; // Phase 40: Human-readable phase description
+  systemHealth?: SystemHealth; // Phase 42: Aggregated health assessment
 }
 
 /**
@@ -346,6 +356,9 @@ export function getWorkflowGuidance(state: WorkflowState): WorkflowGuidance {
     mappingMetadata: state.mappingMetadata
   });
 
+  // Phase 42: Calculate system health from risks
+  const systemHealth = calculateSystemHealth(riskAnalysis.risks);
+
   for (const risk of riskAnalysis.risks) {
     // Convert risk severity to priority and relevance
     let priority = 70;
@@ -360,6 +373,12 @@ export function getWorkflowGuidance(state: WorkflowState): WorkflowGuidance {
       priority = 75;
       relevance = 70;
       isCritical = false;
+      
+      // Phase 42: Elevate medium risks if system is at_risk
+      if (systemHealth.status === 'at_risk') {
+        priority = 85; // Boost priority
+        isCritical = true; // Make it sticky
+      }
     } else {
       priority = 50;
       relevance = 60;
@@ -419,7 +438,8 @@ export function getWorkflowGuidance(state: WorkflowState): WorkflowGuidance {
     warnings: finalWarnings, // Phase 39: Top 2 (down from 3)
     insights: relevantInsights.slice(0, 2), // Phase 39: Top 2 (down from 3)
     workflowPhase, // Phase 40: Current phase
-    phaseLabel // Phase 40: Human-readable phase label
+    phaseLabel, // Phase 40: Human-readable phase label
+    systemHealth // Phase 42: Aggregated health assessment
   };
 }
 

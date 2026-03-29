@@ -4,6 +4,553 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 15:22 CT - Phase 41 - Risk Prediction Layer
+
+- Summary: Added deterministic risk prediction engine for proactive issue detection
+- Files created:
+  - `src/features/documentEngine/services/riskAnalysisService.ts` — Risk analysis engine with rule-based predictions
+- Files modified:
+  - `src/features/documentEngine/services/workflowGuidanceService.ts` — Integrated risk warnings into guidance
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Added risk severity badges (🔴 HIGH RISK, 🟡 MEDIUM RISK)
+- Impact: System now proactively predicts and warns about high-risk conditions before they cause failures
+- Objective: Predictive awareness through deterministic, rule-based risk analysis (no AI/ML)
+
+---
+
+**Problem Statement**
+
+Previous phases provided reactive guidance based on current state:
+- Validation errors shown **after** they occur
+- Mapping failures detected **after** generation
+- High RPN values visible **only in PFMEA**
+- Approval risks discovered **during** approval process
+
+Users needed **predictive warnings** to catch issues earlier, but:
+- Must remain deterministic (no AI/probabilistic models)
+- Must be advisory only (non-blocking)
+- Must not replace validation
+- Must integrate seamlessly with existing guidance
+
+**Before Phase 41:**
+```
+⚠️ PFMEA has 5 validation error(s) [HIGH PRIORITY]  ← Reactive
+⚠️ You have unsaved changes                         ← Reactive
+```
+
+**After Phase 41:**
+```
+⚠️ High process risk: 3 failure mode(s) exceed RPN threshold (max: 240) 🔴 HIGH RISK  ← Predictive
+⚠️ PFMEA has 5 validation error(s) [HIGH PRIORITY]                                     ← Reactive
+⚠️ High validation risk: PFMEA has 5 errors and may fail approval 🔴 HIGH RISK         ← Predictive
+```
+
+---
+
+**Architecture**
+
+**Risk Analysis Service:**
+```typescript
+export type RiskSeverity = 'low' | 'medium' | 'high';
+export type RiskType = 'validation_risk' | 'mapping_risk' | 'process_risk' | 'coverage_risk';
+
+interface RiskItem {
+  message: string;
+  severity: RiskSeverity;
+  type: RiskType;
+  templateId?: TemplateId;
+  details?: string;
+}
+
+interface RiskAnalysis {
+  risks: RiskItem[];
+  overallRiskLevel: RiskSeverity;
+}
+
+function analyzeRisk(state: RiskAnalysisState): RiskAnalysis
+```
+
+**Risk Categories:**
+1. **Validation Risk** - Predicts approval failure based on error count
+2. **Mapping Risk** - Detects high automated mapping failure rates
+3. **Process Risk** - Identifies RPN threshold violations
+4. **Coverage Risk** - Checks PFMEA → Control Plan alignment
+5. **Approval Risk** - Warns about submitting invalid documents
+
+---
+
+**Deterministic Risk Rules**
+
+**1. Validation Risk (Error Count)**
+```typescript
+THRESHOLDS:
+  MANY_ERRORS: 5  → High risk
+  SOME_ERRORS: 2  → Medium risk
+
+RULE:
+  if (errorCount >= 5) {
+    "High validation risk: document has X errors and may fail approval"
+    severity: 'high'
+  }
+```
+
+**2. Mapping Risk (Failure Rate)**
+```typescript
+THRESHOLDS:
+  MAPPING_FAILURE_RATE: 0.3  → 30% failures = High risk
+
+RULE:
+  failureRate = failedMappings / totalMappings
+  
+  if (failureRate >= 0.3) {
+    "High mapping risk: X% of automated mappings failed"
+    severity: 'high'
+    details: "Y of Z fields require manual data entry"
+  }
+```
+
+**3. Process Risk (RPN Threshold)**
+```typescript
+THRESHOLDS:
+  HIGH_RPN: 200   → High risk
+  MEDIUM_RPN: 100 → Medium risk
+
+RULE:
+  highRPNItems = failureModes.filter(fm => fm.rpn > 200)
+  
+  if (highRPNItems.length > 0) {
+    "High process risk: X failure mode(s) exceed RPN threshold"
+    severity: 'high'
+    details: "RPN exceeds acceptable limits - immediate action required"
+  }
+```
+
+**4. Coverage Risk (PFMEA ↔ Control Plan)**
+```typescript
+RULE:
+  highRiskFailureModes = pfmea.filter(rpn > 100)
+  controlMethods = controlPlan.controls
+  
+  if (highRiskFailureModes.length > controlMethods.length) {
+    "Coverage risk: Control Plan may not fully address all high-risk PFMEA items"
+    severity: 'medium'
+    details: "X high-risk failure modes, but only Y control methods defined"
+  }
+```
+
+**5. Approval Risk (Invalid Document Submitted)**
+```typescript
+RULE:
+  if (!validationResult.isValid && documentStatus === 'in_review') {
+    "Approval risk: document in review but has validation errors"
+    severity: 'high'
+    details: "Document will likely be rejected - fix validation errors first"
+  }
+```
+
+---
+
+**Integration with Guidance System**
+
+**Risk → Warning Conversion:**
+```typescript
+for (const risk of riskAnalysis.risks) {
+  let priority, relevance, isCritical;
+
+  if (risk.severity === 'high') {
+    priority = 95;      // Very high priority
+    relevance = 95;     // Always relevant
+    isCritical = true;  // Always show (sticky priority)
+  } else if (risk.severity === 'medium') {
+    priority = 75;
+    relevance = 70;
+    isCritical = false; // Subject to filtering
+  } else {
+    priority = 50;
+    relevance = 60;
+    isCritical = false;
+  }
+
+  warnings.push({
+    type: 'warning',
+    message: risk.message,
+    priority,
+    relevanceScore: relevance,
+    isCritical,
+    riskSeverity: risk.severity  // NEW: Mark as risk-based
+  });
+}
+```
+
+**High-Risk Override:**
+- High-severity risks: `isCritical = true` → bypass all filtering
+- Medium-severity risks: Subject to Phase 39/40 filtering
+- Low-severity risks: May be suppressed if relevance < 50
+
+---
+
+**UI Enhancement**
+
+**Risk Severity Badges:**
+```tsx
+{warning.riskSeverity === 'high' && (
+  <span className="bg-red-100 text-red-700">
+    🔴 HIGH RISK
+  </span>
+)}
+
+{warning.riskSeverity === 'medium' && (
+  <span className="bg-orange-100 text-orange-700">
+    🟡 MEDIUM RISK
+  </span>
+)}
+```
+
+**Visual Hierarchy:**
+```
+⚠️ High process risk: RPN exceeds threshold 🔴 HIGH RISK       ← Red badge, always visible
+⚠️ Moderate mapping risk: 25% mapping failures 🟡 MEDIUM RISK   ← Orange badge, filterable
+⚠️ You have unsaved changes [HIGH PRIORITY]                     ← No risk badge (validation)
+```
+
+---
+
+**Example Risk Scenarios**
+
+**Scenario 1: High RPN Detected**
+
+**State:**
+- PFMEA with 3 failure modes
+- RPN values: 240, 180, 150
+- Threshold: 200
+
+**Risk Analysis:**
+```typescript
+{
+  message: "High process risk: 1 failure mode(s) exceed RPN threshold (max: 240)",
+  severity: 'high',
+  type: 'process_risk',
+  templateId: 'pfmea',
+  details: "Risk Priority Number exceeds acceptable limits - immediate action required"
+}
+```
+
+**Guidance Output:**
+```
+⚠️ High process risk: 1 failure mode(s) exceed RPN threshold (max: 240) 🔴 HIGH RISK
+```
+
+**Behavior:**
+- Always visible (isCritical = true)
+- Priority = 95
+- Overrides all filtering
+
+---
+
+**Scenario 2: High Mapping Failure Rate**
+
+**State:**
+- Process Flow generated
+- 10 fields attempted mapping
+- 4 fields failed (40% failure rate)
+- Threshold: 30%
+
+**Risk Analysis:**
+```typescript
+{
+  message: "High mapping risk: 40% of automated mappings failed for processFlow",
+  severity: 'high',
+  type: 'mapping_risk',
+  templateId: 'processFlow',
+  details: "4 of 10 fields require manual data entry"
+}
+```
+
+**Guidance Output:**
+```
+⚠️ High mapping risk: 40% of automated mappings failed for processFlow 🔴 HIGH RISK
+```
+
+**Benefit:** User warned immediately about poor mapping coverage, can investigate BOM data issues early.
+
+---
+
+**Scenario 3: Validation Error Prediction**
+
+**State:**
+- PFMEA has 7 validation errors
+- Not yet submitted for approval
+- Threshold: 5 errors = high risk
+
+**Risk Analysis:**
+```typescript
+{
+  message: "High validation risk: pfmea has 7 errors and may fail approval",
+  severity: 'high',
+  type: 'validation_risk',
+  templateId: 'pfmea',
+  details: "Document likely to be rejected during approval process"
+}
+```
+
+**Guidance Output:**
+```
+⚠️ High validation risk: pfmea has 7 errors and may fail approval 🔴 HIGH RISK
+⚠️ PFMEA has 7 validation error(s) [HIGH PRIORITY]
+```
+
+**Benefit:** Predictive warning complements reactive validation error, emphasizing approval failure risk.
+
+---
+
+**Scenario 4: Coverage Gap**
+
+**State:**
+- PFMEA: 5 failure modes with RPN > 100
+- Control Plan: 3 control methods defined
+
+**Risk Analysis:**
+```typescript
+{
+  message: "Coverage risk: Control Plan may not fully address all 5 high-risk PFMEA items",
+  severity: 'medium',
+  type: 'coverage_risk',
+  templateId: 'controlPlan',
+  details: "5 high-risk failure modes, but only 3 control methods defined"
+}
+```
+
+**Guidance Output:**
+```
+⚠️ Coverage risk: Control Plan may not fully address all 5 high-risk PFMEA items 🟡 MEDIUM RISK
+```
+
+**Benefit:** Proactive detection of potential gaps in process control coverage.
+
+---
+
+**Scenario 5: Approval Risk (Document in Review)**
+
+**State:**
+- PFMEA status: 'in_review'
+- PFMEA validation: 3 errors
+
+**Risk Analysis:**
+```typescript
+{
+  message: "Approval risk: pfmea is in review but has validation errors",
+  severity: 'high',
+  type: 'validation_risk',
+  templateId: 'pfmea',
+  details: "Document will likely be rejected - fix validation errors first"
+}
+```
+
+**Guidance Output:**
+```
+⚠️ Approval risk: pfmea is in review but has validation errors 🔴 HIGH RISK
+```
+
+**Benefit:** Warns user about likely rejection before approval completes.
+
+---
+
+**Benefits**
+
+**Proactive Issue Detection:**
+- Predict approval failures before submission
+- Detect process risks (high RPN) early
+- Identify mapping coverage gaps immediately
+- Warn about PFMEA/Control Plan misalignment
+
+**Non-Blocking Advisory:**
+- Risks are warnings, not blockers
+- Do not replace validation
+- Do not prevent workflow progression
+- Purely informational
+
+**Deterministic & Transparent:**
+- All rules are explicit and documented
+- No AI/ML black boxes
+- Thresholds are configurable
+- Behavior is predictable
+
+**Seamless Integration:**
+- Risks converted to standard GuidanceItems
+- Subject to existing filtering (except high-severity)
+- Adaptive weighting applies to risk items
+- UI displays risk badges automatically
+
+---
+
+**Risk Thresholds (Configurable)**
+
+```typescript
+const RISK_THRESHOLDS = {
+  HIGH_RPN: 200,              // Process risk
+  MEDIUM_RPN: 100,
+  MANY_ERRORS: 5,             // Validation risk
+  SOME_ERRORS: 2,
+  MAPPING_FAILURE_RATE: 0.3,  // 30% mapping failures
+};
+```
+
+**Future Customization:**
+- User-specific thresholds
+- Industry-specific RPN limits
+- Document-type-specific error tolerances
+- Organization-level risk policies
+
+---
+
+**Technical Implementation**
+
+**Analysis Pipeline:**
+```
+1. analyzeValidationRisks() → Check error counts
+2. analyzeMappingRisks()    → Check mapping failure rates
+3. analyzeProcessRisks()    → Check RPN thresholds
+4. analyzeCoverageRisks()   → Check PFMEA/Control Plan alignment
+5. analyzeApprovalRisks()   → Check in-review documents with errors
+6. determineOverallRisk()   → Aggregate severity
+```
+
+**Performance:**
+- O(n) for validation risks (n = documents)
+- O(n) for mapping risks (n = mapped fields)
+- O(m) for process risks (m = failure modes)
+- O(1) for coverage comparison
+- No database queries (uses in-memory state)
+- Negligible performance impact
+
+**State Requirements:**
+```typescript
+interface RiskAnalysisState {
+  documents: Record<TemplateId, any>;
+  validationResults: Record<TemplateId, ValidationResult>;
+  documentMeta: Record<TemplateId, DocumentMetadata>;
+  mappingMetadata?: Record<TemplateId, MappingMetadata>;
+}
+```
+
+---
+
+**Non-Blocking Design**
+
+**Critical Principle:** Risks are **advisory only**
+
+**What Risks DO:**
+- ✅ Provide early warning
+- ✅ Suggest proactive action
+- ✅ Highlight potential failures
+- ✅ Complement existing validation
+
+**What Risks DO NOT:**
+- ❌ Block workflow progression
+- ❌ Prevent document generation
+- ❌ Replace validation logic
+- ❌ Enforce approval gates
+
+**Example:**
+```
+User can generate Control Plan with high RPN in PFMEA
+  → Risk warning shown: "High process risk detected"
+  → But generation proceeds normally
+  → User decides when/if to address
+```
+
+---
+
+**Extensibility**
+
+**Future Risk Types:**
+
+**1. Temporal Risks:**
+```typescript
+// Predict deadline misses
+const daysSinceLastChange = ...;
+if (daysSinceLastChange > 30 && status === 'draft') {
+  risk: "Inactivity risk: Document inactive for 30+ days"
+}
+```
+
+**2. Dependency Risks:**
+```typescript
+// Detect circular dependencies
+if (processFlowReferencesControlPlan && controlPlanReferencesPFMEA) {
+  risk: "Dependency risk: Circular reference detected"
+}
+```
+
+**3. Data Quality Risks:**
+```typescript
+// Check for placeholder values
+const placeholders = fields.filter(f => f.value.includes('TBD') || f.value.includes('XXX'));
+if (placeholders.length > 3) {
+  risk: "Data quality risk: Multiple placeholder values detected"
+}
+```
+
+**4. Compliance Risks:**
+```typescript
+// Check regulatory requirements
+if (requiredFields.some(f => !f.completed) && daysUntilAudit < 7) {
+  risk: "Compliance risk: Audit approaching with incomplete required fields"
+}
+```
+
+---
+
+**Testing Scenarios**
+
+**Verify High RPN Detection:**
+1. Create PFMEA with failure mode RPN > 200
+2. Check guidance panel
+3. Verify "High process risk" warning with 🔴 HIGH RISK badge
+
+**Verify Mapping Risk:**
+1. Generate document with 40% mapping failures
+2. Check guidance panel
+3. Verify "High mapping risk" warning with 🔴 HIGH RISK badge
+
+**Verify Validation Risk:**
+1. Create document with 6+ validation errors
+2. Check guidance panel
+3. Verify "High validation risk" warning predicting approval failure
+
+**Verify Coverage Risk:**
+1. Create PFMEA with 5 high-RPN items
+2. Create Control Plan with 2 controls
+3. Verify "Coverage risk" warning with 🟡 MEDIUM RISK badge
+
+**Verify High-Risk Override:**
+1. Set active document != document with high risk
+2. Verify high-risk warning still appears (relevance override)
+
+---
+
+**Phase 41 Complete.**
+
+Risk prediction layer successfully integrated with:
+- ✅ Deterministic risk analysis engine (no AI/ML)
+- ✅ 5 risk categories (validation, mapping, process, coverage, approval)
+- ✅ Rule-based thresholds (configurable)
+- ✅ Seamless guidance integration
+- ✅ Visual risk severity badges (🔴 🟡)
+- ✅ High-risk sticky priority (always visible)
+- ✅ Non-blocking advisory warnings
+- ✅ No regression in existing features
+
+**Quality Metrics:**
+- Risk categories: 5 (validation, mapping, process, coverage, approval)
+- Severity levels: 3 (high, medium, low)
+- Deterministic rules: 100% (no probabilistic models)
+- High-risk override: Always visible
+- Performance: O(n) analysis, negligible impact
+
+**Next:** User-specific thresholds, temporal risk analysis, or compliance tracking (optional).
+
+---
+
 ## 2026-03-29 15:12 CT - Phase 40 - Adaptive Guidance Weighting
 
 - Summary: Implemented adaptive weighting system that adjusts guidance behavior based on workflow phase

@@ -1532,11 +1532,30 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                         </svg>
                         Workflow Guidance
                       </h3>
-                      {workflowGuidance.phaseLabel && (
-                        <span className="text-xs text-indigo-100 bg-indigo-700 bg-opacity-50 px-2 py-1 rounded">
-                          {workflowGuidance.phaseLabel}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {workflowGuidance.systemHealth && (
+                          <div className="flex items-center gap-1.5 bg-white bg-opacity-20 px-2.5 py-1 rounded">
+                            <span className="text-base">
+                              {workflowGuidance.systemHealth.status === 'healthy' && '🟢'}
+                              {workflowGuidance.systemHealth.status === 'warning' && '🟡'}
+                              {workflowGuidance.systemHealth.status === 'at_risk' && '🔴'}
+                            </span>
+                            <span className="text-xs font-semibold text-white">
+                              {workflowGuidance.systemHealth.status === 'healthy' && 'Healthy'}
+                              {workflowGuidance.systemHealth.status === 'warning' && 'Warning'}
+                              {workflowGuidance.systemHealth.status === 'at_risk' && 'At Risk'}
+                            </span>
+                            <span className="text-xs text-indigo-100">
+                              ({workflowGuidance.systemHealth.score})
+                            </span>
+                          </div>
+                        )}
+                        {workflowGuidance.phaseLabel && (
+                          <span className="text-xs text-indigo-100 bg-indigo-700 bg-opacity-50 px-2 py-1 rounded">
+                            {workflowGuidance.phaseLabel}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
