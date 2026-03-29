@@ -30,6 +30,7 @@ import { getCurrentUser, canApprove, getRoleDisplayName, getRoleColor, type PPAP
 import { createVersion, getVersions, getVersionByNumber, generateDocumentId, DocumentVersion } from '../persistence/versionService';
 import { compareVersions, VersionComparison } from '../persistence/versionDiffService';
 import { VersionDiffView } from './VersionDiffView';
+import { getWorkflowGuidance, WorkflowGuidance } from '../services/workflowGuidanceService';
 
 type AppPhase = 'upload' | 'workflow';
 
@@ -122,6 +123,13 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   // Phase 36: Version comparison state
   const [versionComparison, setVersionComparison] = useState<VersionComparison | null>(null);
   const [selectedVersionsForCompare, setSelectedVersionsForCompare] = useState<Record<string, number[]>>({});
+  
+  // Phase 38: Workflow guidance state
+  const [workflowGuidance, setWorkflowGuidance] = useState<WorkflowGuidance>({
+    recommendedAction: null,
+    warnings: [],
+    insights: []
+  });
 
   // Phase 23: Load current authenticated user
   useEffect(() => {
@@ -167,7 +175,23 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     loadCustomers();
   }, []);
   
-  // Phase 25: Load version history when activeStep changes
+  // Phase 38: Update workflow guidance when state changes
+  useEffect(() => {
+    const guidance = getWorkflowGuidance({
+      activeStep,
+      documents,
+      editableDocuments,
+      documentMeta,
+      validationResults,
+      bomData: normalizedBOM,
+      hasChanges: hasChanges(),
+      isViewingOldVersion,
+      recentComparison: versionComparison
+    });
+    setWorkflowGuidance(guidance);
+  }, [activeStep, documents, editableDocuments, documentMeta, validationResults, normalizedBOM, isViewingOldVersion, versionComparison]);
+  
+  // Phase 25: Load version history when activeSessionId or activeStep changes
   useEffect(() => {
     async function loadVersionHistory() {
       if (activeStep && activeSessionId) {
@@ -1497,8 +1521,65 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
 
             {/* Main Content Area */}
             <div className="flex-1 min-w-0">
-              {/* Guidance Banner */}
-              {!activeStep && (
+              {/* Guidance Panel */}
+              {(workflowGuidance.recommendedAction || workflowGuidance.warnings.length > 0 || workflowGuidance.insights.length > 0) && (
+                <div className="mb-6 bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+                  <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-3">
+                    <h3 className="text-white font-semibold flex items-center">
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                      Workflow Guidance
+                    </h3>
+                  </div>
+
+                  <div className="p-4 space-y-3">
+                    {/* Recommended Action */}
+                    {workflowGuidance.recommendedAction && (
+                      <div className="flex items-start gap-3 p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+                        <svg className="w-5 h-5 text-indigo-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-indigo-900">Next Action</p>
+                          <p className="text-sm text-indigo-700 mt-1">{workflowGuidance.recommendedAction}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Warnings */}
+                    {workflowGuidance.warnings.length > 0 && (
+                      <div className="space-y-2">
+                        {workflowGuidance.warnings.map((warning, index) => (
+                          <div key={index} className="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <svg className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <p className="text-sm text-yellow-800">{warning.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Insights */}
+                    {workflowGuidance.insights.length > 0 && (
+                      <div className="space-y-2">
+                        {workflowGuidance.insights.map((insight, index) => (
+                          <div key={index} className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <p className="text-sm text-blue-800">{insight.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Error Display */}
+              {error && (
                 <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3">
                   <div className="flex items-center gap-2">
                     <span className="text-indigo-600 text-lg">👉</span>
