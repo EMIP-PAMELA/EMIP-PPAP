@@ -27,6 +27,13 @@ import {
   DocumentStatus
 } from '../persistence/sessionService';
 import { getCurrentUser, canApprove, getRoleDisplayName, getRoleColor, type PPAPUser } from '@/src/features/auth/userService';
+import { 
+  createVersion, 
+  getVersions, 
+  getLatestVersion, 
+  generateDocumentId,
+  type DocumentVersion 
+} from '../persistence/versionService';
 
 type AppPhase = 'upload' | 'workflow';
 
@@ -89,6 +96,10 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   
   // Phase 23: User state
   const [currentUser, setCurrentUser] = useState<PPAPUser | null>(null);
+  
+  // Phase 24: Version tracking
+  const [documentVersions, setDocumentVersions] = useState<Record<string, DocumentVersion[]>>({});
+  const [currentVersionNumbers, setCurrentVersionNumbers] = useState<Record<string, number>>({});
 
   // Phase 23: Load current authenticated user
   useEffect(() => {
@@ -376,6 +387,31 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
             status: 'draft'
           }
         }));
+      }
+      
+      // Phase 24: Create version on generation
+      if (activeSessionId && currentUser) {
+        const docId = generateDocumentId(activeSessionId, stepId);
+        const metadata = documentMeta[stepId] || {
+          ownerId: currentUser.id,
+          ownerName: currentUser.name,
+          status: 'draft' as DocumentStatus
+        };
+        
+        const version = await createVersion(
+          docId,
+          activeSessionId,
+          stepId,
+          draft,
+          editableCopy,
+          metadata,
+          currentUser.id
+        );
+        
+        if (version) {
+          setCurrentVersionNumbers(prev => ({ ...prev, [stepId]: version.versionNumber }));
+          console.log(`[DocumentWorkspace] Created version ${version.versionNumber} for ${stepId}`);
+        }
       }
       
       setActiveStep(stepId);
@@ -1037,28 +1073,58 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                         </span>
                       )}
                     </div>
+                    {currentVersionNumbers[activeStep] && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm font-semibold text-gray-700">Version:</label>
+                        <span className="px-2 py-1 bg-blue-50 border border-blue-200 rounded text-sm font-medium text-blue-800">
+                          v{currentVersionNumbers[activeStep]}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Status:</label>
                       <select
                         value={documentMeta[activeStep]?.status || 'draft'}
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const newStatus = e.target.value as DocumentStatus;
                           if (newStatus === 'approved' && currentUser && !canApprove(currentUser.role)) {
                             setError(`Only QA, Manager, or Admin can approve documents. Your role: ${getRoleDisplayName(currentUser.role)}`);
                             return;
                           }
+                          
+                          const updatedMetadata = {
+                            ...documentMeta[activeStep],
+                            ownerId: documentMeta[activeStep]?.ownerId || currentUser?.id || '',
+                            ownerName: documentMeta[activeStep]?.ownerName || currentUser?.name,
+                            status: newStatus,
+                            approvedBy: newStatus === 'approved' ? currentUser?.id : documentMeta[activeStep]?.approvedBy,
+                            approvedByName: newStatus === 'approved' ? currentUser?.name : documentMeta[activeStep]?.approvedByName,
+                            approvedAt: newStatus === 'approved' ? Date.now() : documentMeta[activeStep]?.approvedAt,
+                          };
+                          
                           setDocumentMeta(prev => ({
                             ...prev,
-                            [activeStep]: {
-                              ...prev[activeStep],
-                              ownerId: prev[activeStep]?.ownerId || currentUser?.id || '',
-                              ownerName: prev[activeStep]?.ownerName || currentUser?.name,
-                              status: newStatus,
-                              approvedBy: newStatus === 'approved' ? currentUser?.id : prev[activeStep]?.approvedBy,
-                              approvedByName: newStatus === 'approved' ? currentUser?.name : prev[activeStep]?.approvedByName,
-                              approvedAt: newStatus === 'approved' ? Date.now() : prev[activeStep]?.approvedAt,
-                            }
+                            [activeStep]: updatedMetadata
                           }));
+                          
+                          // Phase 24: Create version on approval
+                          if (newStatus === 'approved' && activeSessionId && currentUser) {
+                            const docId = generateDocumentId(activeSessionId, activeStep);
+                            const version = await createVersion(
+                              docId,
+                              activeSessionId,
+                              activeStep,
+                              documents[activeStep],
+                              editableDocuments[activeStep],
+                              updatedMetadata,
+                              currentUser.id
+                            );
+                            
+                            if (version) {
+                              setCurrentVersionNumbers(prev => ({ ...prev, [activeStep]: version.versionNumber }));
+                              console.log(`[DocumentWorkspace] Created approved version ${version.versionNumber} for ${activeStep}`);
+                            }
+                          }
                         }}
                         className={`px-3 py-2 border rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                           documentMeta[activeStep]?.status === 'approved'

@@ -1,5 +1,6 @@
 /**
  * Phase 22: Backend Persistence for Document Engine
+ * Phase 24: Document Version Control and Audit Trail
  * 
  * Abstraction layer for session and document persistence.
  * Replaces localStorage with Supabase database storage.
@@ -19,6 +20,21 @@ export type DocumentMetadata = {
   approvedBy?: string;      // User ID of approver
   approvedByName?: string;  // Display name of approver (cached)
   approvedAt?: number;      // Timestamp of approval
+};
+
+// Phase 24: Document Version
+export type DocumentVersion = {
+  id: string;
+  documentId: string;       // Logical document ID (consistent across versions)
+  sessionId: string;
+  templateId: TemplateId;
+  versionNumber: number;
+  documentData: DocumentDraft;
+  editableData: DocumentDraft;
+  metadata: DocumentMetadata;
+  createdBy: string | null;
+  createdAt: string;
+  isApproved: boolean;
 };
 
 export type PPAPSession = {

@@ -4,6 +4,298 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 10:15 CT - Phase 23 - User System & Role-Based Approval Authority
+
+- Summary: Replaced free-text ownership with authenticated user system and role-based approval permissions
+- Files created:
+  - `supabase/migrations/20260329_create_ppap_users.sql` — User table, roles, RLS policies, session ownership
+  - `src/features/auth/userService.ts` — User authentication and permission utilities
+- Files modified:
+  - `src/features/documentEngine/persistence/sessionService.ts` — Updated types for userId ownership and approval tracking
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Integrated authenticated user, role-based approval UI
+- Impact: Multi-user system with role-based permissions; approval authority enforced; audit trail for document approvals
+- Objective: Upgrade from single-user tool to multi-user PPAP system with proper access control
+
+---
+
+**From Single-User Tool → Multi-User PPAP System**
+
+This phase introduces **real user authentication**, **role-based permissions**, and **approval authority** to the Document Engine.
+
+---
+
+**Database Changes:**
+
+**1. User Roles Enum**
+```sql
+CREATE TYPE user_role AS ENUM ('engineer', 'qa', 'manager', 'admin');
+```
+
+**2. ppap_users Table**
+- `id` (UUID, references auth.users)
+- `email` (TEXT, unique)
+- `name` (TEXT)
+- `role` (user_role)
+- `created_at`, `updated_at`
+
+**Auto-create user record on Supabase Auth signup via trigger**
+
+**3. Session Ownership**
+- Added `created_by` column to `ppap_document_sessions`
+- Links sessions to users
+- RLS policies filter sessions by `created_by = auth.uid()`
+
+**4. RLS Policies**
+- Users can view own sessions + unowned sessions (backward compat)
+- Users can only create/update/delete own sessions
+- All users can view all users (for assignment dropdowns)
+- Only admins can manually insert users (auto-trigger handles normal case)
+
+---
+
+**Type System Changes:**
+
+**DocumentMetadata (Breaking Change)**
+```typescript
+// BEFORE (Phase 22)
+type DocumentMetadata = {
+  owner: string;  // Free-text
+  status: DocumentStatus;
+}
+
+// AFTER (Phase 23)
+type DocumentMetadata = {
+  ownerId: string;          // User ID (auth.uid)
+  ownerName?: string;       // Cached display name
+  status: DocumentStatus;
+  approvedBy?: string;      // User ID of approver
+  approvedByName?: string;  // Cached approver name
+  approvedAt?: number;      // Timestamp
+}
+```
+
+**StoredSession**
+```typescript
+type StoredSession = {
+  // ... existing fields
+  createdBy?: string | null;  // NEW: User ID of session creator
+}
+```
+
+**createSession Signature**
+```typescript
+// BEFORE
+createSession(name: string, ppapId?: string | null, initialData?: PPAPSession)
+
+// AFTER
+createSession(name: string, ppapId?: string | null, createdBy?: string | null, initialData?: PPAPSession)
+```
+
+---
+
+**Permission Model:**
+
+**Roles:**
+- **Engineer** — Can create/edit documents, cannot approve
+- **QA** — Can approve documents
+- **Manager** — Can approve documents + full control
+- **Admin** — Full system access
+
+**Approval Authority:**
+```typescript
+canApprove(role: UserRole): boolean {
+  return role === 'qa' || role === 'manager' || role === 'admin';
+}
+```
+
+**UI Enforcement:**
+- Engineers see warning: "Your role (Engineer) does not have approval authority"
+- Approval dropdown blocked for non-QA/Manager/Admin users
+- Error message displayed if engineer attempts to approve
+
+---
+
+**UI Changes:**
+
+**Owner Field**
+- ❌ REMOVED: Free-text input `<input type="text" value={owner} />`
+- ✅ REPLACED: Read-only display with role badge
+  ```tsx
+  <span>{documentMeta[activeStep]?.ownerName || currentUser?.name}</span>
+  <span className={roleColor}>{getRoleDisplayName(currentUser.role)}</span>
+  ```
+
+**Status Dropdown**
+- Added approval authority check on `onChange`
+- Tracks `approvedBy`, `approvedByName`, `approvedAt` when status → 'approved'
+- Displays approval info: "✓ Approved by [Name] (date)"
+
+**Permission Warning**
+- Shows amber badge for engineers: "Your role (Engineer) does not have approval authority"
+
+**Sidebar Document Cards**
+- Display `ownerName` instead of `owner`
+- Show approver name below status: "✓ by [Name]"
+
+---
+
+**Authentication Flow:**
+
+**1. Component Mount**
+```typescript
+useEffect(() => {
+  async function initUser() {
+    const user = await getCurrentUser();  // Fetches from Supabase Auth + ppap_users
+    setCurrentUser(user);
+  }
+  initUser();
+}, []);
+```
+
+**2. Session Creation**
+```typescript
+const newSession = await createSession(name, ppapId, currentUser?.id || null);
+```
+
+**3. Document Metadata Initialization**
+```typescript
+if (!documentMeta[stepId] && currentUser) {
+  setDocumentMeta(prev => ({
+    ...prev,
+    [stepId]: {
+      ownerId: currentUser.id,
+      ownerName: currentUser.name,
+      status: 'draft'
+    }
+  }));
+}
+```
+
+**4. Approval**
+```typescript
+if (newStatus === 'approved') {
+  if (!canApprove(currentUser.role)) {
+    setError('Only QA, Manager, or Admin can approve');
+    return;
+  }
+  metadata.approvedBy = currentUser.id;
+  metadata.approvedByName = currentUser.name;
+  metadata.approvedAt = Date.now();
+}
+```
+
+---
+
+**Backward Compatibility:**
+
+**Old Sessions (No created_by)**
+- RLS policy allows viewing sessions where `created_by IS NULL`
+- Users can adopt orphaned sessions
+
+**Old Documents (No ownerId)**
+- UI shows `ownerName || currentUser?.name || 'Unknown'`
+- First edit sets `ownerId` to current user
+
+**Migration Safe:**
+- No data loss
+- Existing sessions remain accessible
+- New sessions automatically linked to creator
+
+---
+
+**User Service API:**
+
+```typescript
+// Get current authenticated user
+getCurrentUser(): Promise<PPAPUser | null>
+
+// Get user by ID (for displaying names)
+getUserById(userId: string): Promise<PPAPUser | null>
+
+// Get all users (for assignment dropdowns)
+getAllUsers(): Promise<PPAPUser[]>
+
+// Permission checks
+canApprove(role: UserRole): boolean
+isAdmin(role: UserRole): boolean
+isManager(role: UserRole): boolean
+
+// UI utilities
+getRoleDisplayName(role: UserRole): string
+getRoleColor(role: UserRole): string  // Tailwind classes
+```
+
+---
+
+**Security Features:**
+
+**1. Row Level Security (RLS)**
+- Sessions filtered by `auth.uid()`
+- Users cannot view other users' sessions
+- Admins have full visibility (future enhancement)
+
+**2. Server-Side Enforcement**
+- RLS enforced at database level
+- Cannot bypass with client-side code
+
+**3. Approval Authority**
+- Enforced in UI (user experience)
+- Should add server-side validation in future (database trigger/function)
+
+---
+
+**Testing Validation:**
+
+**Functional:**
+- ✅ User loads on mount
+- ✅ Session created with `created_by` = current user ID
+- ✅ BOM upload auto-creates session with user ownership
+- ✅ Metadata initialized with user ID and name
+- ✅ Owner displayed as read-only with role badge
+- ✅ Status dropdown works for all roles
+- ✅ Approval blocked for engineers (UI error shown)
+- ✅ Approval records approvedBy, approvedByName, approvedAt
+- ✅ Approval info displayed in UI
+- ✅ Role badges color-coded correctly
+
+**TypeScript:**
+- ✅ All type errors resolved
+- ✅ DocumentMetadata updated (owner → ownerId/ownerName)
+- ✅ createSession signature includes createdBy parameter
+- ✅ StoredSession includes createdBy field
+
+---
+
+**Known Limitations (Future Work):**
+
+⚠️ **Server-side approval validation not yet implemented**
+- Approval authority only enforced in UI
+- Malicious user could bypass by modifying API calls
+- **Phase 24:** Add database trigger to validate approver role
+
+⚠️ **No admin panel for user management**
+- Users auto-created on signup
+- Role assignment requires manual database update
+- **Phase 24:** Admin UI for user role management
+
+⚠️ **Session sharing not yet implemented**
+- Users can only see own sessions
+- **Future:** Add collaboration features (shared sessions, co-owners)
+
+⚠️ **Audit log incomplete**
+- Only approval tracked (approvedBy, approvedAt)
+- **Future:** Full edit history, change log
+
+---
+
+**Phase 23 Complete.**
+
+System now supports **multi-user workflows** with **role-based approval authority**. Engineers can create and edit documents, but only QA/Manager/Admin can approve. All sessions and documents track ownership and approval status.
+
+Next: Phase 24 - Server-side validation, admin panel, user role management.
+
+---
+
 ## 2026-03-29 09:45 CT - Phase 22.5 - Stabilization & Architecture Hardening
 
 - Summary: Post-Phase 22 stabilization, bug fixes, and performance improvements
