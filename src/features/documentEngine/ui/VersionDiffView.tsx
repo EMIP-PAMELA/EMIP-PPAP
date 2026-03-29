@@ -16,8 +16,26 @@ interface VersionDiffViewProps {
 export function VersionDiffView({ comparison, onClose }: VersionDiffViewProps) {
   const changedFields = getChangedFields(comparison);
   const changedMappings = getChangedMappings(comparison);
+  const impactAnalysis = analyzeImpact(comparison);
   
   const hasChanges = Object.keys(changedFields).length > 0 || Object.keys(changedMappings).length > 0;
+  const hasImpacts = impactAnalysis.impacts.length > 0;
+  
+  // Helper to get impact icon and color
+  const getImpactStyle = (impact: ImpactResult) => {
+    switch (impact.impactType) {
+      case 'derived_change':
+        return { icon: '🔗', bgColor: 'bg-purple-50', textColor: 'text-purple-800', borderColor: 'border-purple-200' };
+      case 'mapping_change':
+        return { icon: '🔄', bgColor: 'bg-blue-50', textColor: 'text-blue-800', borderColor: 'border-blue-200' };
+      case 'value_change':
+        return impact.severity === 'high' 
+          ? { icon: '⚠️', bgColor: 'bg-red-50', textColor: 'text-red-800', borderColor: 'border-red-200' }
+          : { icon: '📝', bgColor: 'bg-yellow-50', textColor: 'text-yellow-800', borderColor: 'border-yellow-200' };
+      default:
+        return { icon: 'ℹ️', bgColor: 'bg-gray-50', textColor: 'text-gray-800', borderColor: 'border-gray-200' };
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -55,6 +73,58 @@ export function VersionDiffView({ comparison, onClose }: VersionDiffViewProps) {
 
           {hasChanges && (
             <div className="space-y-6">
+              {/* Phase 37: Impact Summary */}
+              {hasImpacts && (
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                    <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Impact Summary ({impactAnalysis.impacts.length})
+                  </h3>
+                  
+                  <div className="space-y-2">
+                    {impactAnalysis.impacts.map((impact, index) => {
+                      const style = getImpactStyle(impact);
+                      return (
+                        <div
+                          key={index}
+                          className={`p-3 rounded-lg border ${style.bgColor} ${style.borderColor}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <span className="text-lg">{style.icon}</span>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`font-medium ${style.textColor}`}>
+                                  {impact.field}
+                                </span>
+                                {impact.severity && (
+                                  <span className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                                    impact.severity === 'high' ? 'bg-red-100 text-red-700' :
+                                    impact.severity === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-blue-100 text-blue-700'
+                                  }`}>
+                                    {impact.severity.toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+                              <p className={`text-sm ${style.textColor}`}>
+                                {impact.description}
+                              </p>
+                              {impact.relatedFields && impact.relatedFields.length > 0 && (
+                                <p className="text-xs text-gray-600 mt-1">
+                                  Related: {impact.relatedFields.join(', ')}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              
               {/* Field Changes */}
               {Object.keys(changedFields).length > 0 && (
                 <div>
@@ -152,6 +222,7 @@ export function VersionDiffView({ comparison, onClose }: VersionDiffViewProps) {
             {hasChanges && (
               <span>
                 {Object.keys(changedFields).length} field(s) • {Object.keys(changedMappings).length} mapping(s) changed
+                {hasImpacts && <> • {impactAnalysis.impacts.length} impact(s) detected</>}
               </span>
             )}
           </div>

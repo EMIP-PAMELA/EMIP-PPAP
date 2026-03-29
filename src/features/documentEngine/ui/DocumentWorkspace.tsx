@@ -753,59 +753,6 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     console.log(`[DocumentWorkspace] Returned to latest version for ${templateId}`);
   };
   
-  // Phase 36: Version comparison handlers
-  const toggleVersionSelection = (templateId: TemplateId, versionNumber: number) => {
-    setSelectedVersionsForCompare(prev => {
-      const current = prev[templateId] || [];
-      
-      if (current.includes(versionNumber)) {
-        // Deselect
-        return {
-          ...prev,
-          [templateId]: current.filter(v => v !== versionNumber)
-        };
-      } else if (current.length < 2) {
-        // Select (max 2)
-        return {
-          ...prev,
-          [templateId]: [...current, versionNumber].sort((a, b) => a - b)
-        };
-      }
-      
-      return prev;
-    });
-  };
-  
-  const compareSelectedVersions = async (templateId: TemplateId) => {
-    const selected = selectedVersionsForCompare[templateId];
-    
-    if (!selected || selected.length !== 2 || !activeSessionId) {
-      setError('Please select exactly 2 versions to compare');
-      return;
-    }
-    
-    const docId = generateDocumentId(activeSessionId, templateId);
-    const versions = documentVersions[templateId];
-    
-    if (!versions) return;
-    
-    const oldVersion = versions.find(v => v.versionNumber === selected[0]);
-    const newVersion = versions.find(v => v.versionNumber === selected[1]);
-    
-    if (!oldVersion || !newVersion) {
-      setError('Failed to load selected versions');
-      return;
-    }
-    
-    const comparison = compareVersions(oldVersion, newVersion);
-    setVersionComparison(comparison);
-    console.log(`[DocumentWorkspace] Comparing versions ${selected[0]} and ${selected[1]}`);
-  };
-  
-  const clearVersionComparison = () => {
-    setVersionComparison(null);
-  };
-  
   const createNewRevision = async (templateId: TemplateId) => {
     if (!activeSessionId || !currentUser) return;
     
@@ -1789,6 +1736,51 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                     onFieldChange={handleFieldChange}
                     onReset={handleResetToGenerated}
                     hasChanges={hasChanges()}
+                    readOnly={isViewingOldVersion || isCurrentVersionApproved(activeStep)}
+                    mappingMeta={mappingMetadata[activeStep]}
+                    showMappingDebug={showMappingDebug}
+                  />
+                ) : (
+                  <div className="text-center py-16">
+                    <div className="text-5xl mb-4">📄</div>
+                    <p className="text-lg font-medium text-gray-500">Select a document step to get started</p>
+                    <p className="text-sm text-gray-400 mt-2">Click any step on the left to generate that document</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              {currentEditableDraft && (
+                <div className="mt-4 flex gap-3">
+                  <button
+                    onClick={handleExportPDF}
+                    className="flex-1 py-2.5 px-4 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition-colors text-sm"
+                  >
+                    Download PDF
+                  </button>
+                  <button
+                    onClick={() => activeStep && handleStepClick(activeStep)}
+                    className="py-2.5 px-4 bg-gray-100 text-gray-700 rounded-md font-semibold hover:bg-gray-200 transition-colors text-sm border border-gray-200"
+                  >
+                    Regenerate
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+      
+      {/* Phase 36: Version Comparison Modal */}
+      {versionComparison && (
+        <VersionDiffView
+          comparison={versionComparison}
+          onClose={clearVersionComparison}
+        />
+      )}
+    </div>
+  );
+}
                     readOnly={isViewingOldVersion || isCurrentVersionApproved(activeStep)}
                     mappingMeta={mappingMetadata[activeStep]}
                     showMappingDebug={showMappingDebug}

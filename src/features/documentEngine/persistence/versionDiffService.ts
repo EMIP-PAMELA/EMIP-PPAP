@@ -37,6 +37,25 @@ export interface VersionComparison {
 }
 
 /**
+ * Phase 37: Impact analysis types
+ */
+export type ImpactType = 'value_change' | 'derived_change' | 'mapping_change';
+
+export interface ImpactResult {
+  field: string;
+  impactType: ImpactType;
+  description: string;
+  severity?: 'low' | 'medium' | 'high';
+  relatedFields?: string[];
+}
+
+export interface ImpactAnalysis {
+  impacts: ImpactResult[];
+  derivedChanges: string[];
+  mappingChanges: string[];
+}
+
+/**
  * Compare two document versions and return differences
  * 
  * @param oldVersion - Earlier version
@@ -191,4 +210,106 @@ export function formatMapping(mapping: FieldMappingMeta | null): string {
   } else {
     return `✗ ${source} (${mapping.error || 'failed'})`;
   }
+}
+
+/**
+ * Phase 37: Derived field definitions
+ * Defines which fields are calculated from other fields
+ */
+const DERIVED_FIELD_RULES: Record<string, { inputs: string[]; description: string }> = {
+  'RPN': {
+    inputs: ['Severity', 'Occurrence', 'Detection'],
+    description: 'Risk Priority Number (Severity × Occurrence × Detection)'
+  },
+  'riskPriorityNumber': {
+    inputs: ['severity', 'occurrence', 'detection'],
+    description: 'Risk Priority Number'
+  }
+};
+
+/**
+ * Phase 37: Analyze impact of version changes
+ * Detects derived field changes, mapping changes, and relationships
+ */
+export function analyzeImpact(comparison: VersionComparison): ImpactAnalysis {
+  const impacts: ImpactResult[] = [];
+  const derivedChanges: string[] = [];
+  const mappingChanges: string[] = [];
+  
+  // 1. Detect direct value changes
+  for (const [fieldKey, diff] of Object.entries(comparison.fieldDiffs)) {
+    if (!diff.changed) continue;
+    
+    // Check if this field is an input to derived fields
+    for (const [derivedField, rule] of Object.entries(DERIVED_FIELD_RULES)) {
+      if (rule.inputs.includes(fieldKey)) {
+        // Check if derived field also changed
+        const derivedDiff = comparison.fieldDiffs[derivedField];
+        if (derivedDiff && derivedDiff.changed) {
+          impacts.push({
+            field: derivedField,
+            impactType: 'derived_change',
+            description: `${derivedField} changed due to ${fieldKey} update`,
+            severity: 'medium',
+            relatedFields: [fieldKey]
+          });
+          
+          if (!derivedChanges.includes(derivedField)) {
+            derivedChanges.push(derivedField);
+          }
+        }
+      }
+    }
+  }
+  
+  // 2. Detect mapping changes
+  for (const [fieldKey, diff] of Object.entries(comparison.mappingDiffs)) {
+    if (!diff.changed) continue;
+    
+    const oldSource = diff.oldMapping ? `${diff.oldMapping.sourceModel}.${diff.oldMapping.sourceField}` : 'none';
+    const newSource = diff.newMapping ? `${diff.newMapping.sourceModel}.${diff.newMapping.sourceField}` : 'none';
+    
+    impacts.push({
+      field: fieldKey,
+      impactType: 'mapping_change',
+      description: `Mapping source changed: ${oldSource} → ${newSource}`,
+      severity: 'low'
+    });
+    
+    mappingChanges.push(fieldKey);
+  }
+  
+  // 3. Detect high-severity changes (required fields, critical fields)
+  const criticalFields = ['partNumber', 'revision', 'customerName'];
+  for (const [fieldKey, diff] of Object.entries(comparison.fieldDiffs)) {
+    if (diff.changed && criticalFields.includes(fieldKey)) {
+      impacts.push({
+        field: fieldKey,
+        impactType: 'value_change',
+        description: `Critical field ${fieldKey} changed`,
+        severity: 'high'
+      });
+    }
+  }
+  
+  return {
+    impacts,
+    derivedChanges,
+    mappingChanges
+  };
+}
+
+/**
+ * Check if a field is derived from other fields
+ */
+export function isDerivedField(fieldKey: string): boolean {
+  return fieldKey in DERIVED_FIELD_RULES;
+}
+
+/**
+ * Get the inputs for a derived field
+ */
+export function getDerivedFieldInputs(fieldKey: string): string[] {
+  const rule = DERIVED_FIELD_RULES[fieldKey];
+  return rule ? rule.inputs : [];
 }

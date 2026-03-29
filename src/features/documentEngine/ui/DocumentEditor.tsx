@@ -24,6 +24,36 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
   const getFieldDef = (fieldKey: string) => {
     return fieldDefinitions.find(def => def.key === fieldKey);
   };
+  
+  // Phase 33: Get mapping indicator for field
+  const getMappingIndicator = (fieldKey: string) => {
+    if (!showMappingDebug || !mappingMeta || !mappingMeta[fieldKey]) {
+      return null;
+    }
+    
+    const meta = mappingMeta[fieldKey];
+    const sourceInfo = `${meta.sourceModel}.${meta.sourceField}`;
+    
+    if (meta.success) {
+      return (
+        <span 
+          className="ml-2 px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded font-mono"
+          title={`Mapped from ${sourceInfo}`}
+        >
+          ✓ {sourceInfo}
+        </span>
+      );
+    } else {
+      return (
+        <span 
+          className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded"
+          title={meta.error || 'Mapping failed'}
+        >
+          ⚠ {meta.error || 'Mapping failed'}
+        </span>
+      );
+    }
+  };
 
   return (
     <div className="space-y-6">
