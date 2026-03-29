@@ -2,6 +2,7 @@
  * Phase 38: Intelligent Workflow Guidance Layer
  * Phase 39: Guidance Intelligence Refinement
  * Phase 40: Adaptive Guidance Weighting
+ * Phase 41: Risk Prediction Layer
  * 
  * Service for providing proactive workflow recommendations based on:
  * - Current workflow state
@@ -20,12 +21,20 @@
  * - Adaptive weighting of priority vs relevance based on workflow stage
  * - Early stages: exploratory (favor relevance)
  * - Late stages: strict (favor priority)
+ * 
+ * Phase 41 enhancements:
+ * - Deterministic risk prediction (no AI/ML)
+ * - Proactive issue detection
+ * - Risk-based warnings (high/medium/low severity)
+ * - Advisory only (non-blocking)
  */
 
 import { TemplateId } from '../templates/types';
 import { ValidationResult } from '../validation/types';
 import { DocumentMetadata } from '../persistence/sessionService';
 import { VersionComparison } from '../persistence/versionDiffService';
+import { analyzeRisk, RiskSeverity } from './riskAnalysisService';
+import { MappingMetadata } from '../templates/templateMappingService';
 
 /**
  * Guidance types for categorization
@@ -48,6 +57,7 @@ export interface GuidanceWeights {
 /**
  * Individual guidance item
  * Phase 39: Added relevance scoring and critical flag
+ * Phase 41: Added risk severity
  */
 export interface GuidanceItem {
   type: GuidanceType;
@@ -55,6 +65,7 @@ export interface GuidanceItem {
   priority: number; // Higher = more important
   relevanceScore: number; // Phase 39: Contextual relevance (0-100)
   isCritical?: boolean; // Phase 39: Sticky priority - always show
+  riskSeverity?: RiskSeverity; // Phase 41: Risk level for predictive warnings
   templateId?: TemplateId;
 }
 
@@ -72,6 +83,7 @@ export interface WorkflowGuidance {
 
 /**
  * Workflow state for guidance analysis
+ * Phase 41: Added mapping metadata for risk analysis
  */
 export interface WorkflowState {
   activeStep: TemplateId | null;
@@ -83,6 +95,7 @@ export interface WorkflowState {
   hasChanges: boolean;
   isViewingOldVersion: boolean;
   recentComparison?: VersionComparison | null;
+  mappingMetadata?: Record<TemplateId, MappingMetadata>; // Phase 41: For risk analysis
 }
 
 /**
@@ -322,6 +335,45 @@ export function getWorkflowGuidance(state: WorkflowState): WorkflowGuidance {
       message: 'All generated documents pass validation',
       priority: 40,
       relevanceScore: 55 // Phase 39: Moderate relevance
+    });
+  }
+
+  // Phase 41: Analyze risks and add predictive warnings
+  const riskAnalysis = analyzeRisk({
+    documents: state.documents,
+    validationResults: state.validationResults,
+    documentMeta: state.documentMeta,
+    mappingMetadata: state.mappingMetadata
+  });
+
+  for (const risk of riskAnalysis.risks) {
+    // Convert risk severity to priority and relevance
+    let priority = 70;
+    let relevance = 75;
+    let isCritical = false;
+
+    if (risk.severity === 'high') {
+      priority = 95; // Very high priority
+      relevance = 95; // Always relevant
+      isCritical = true; // High risks always show
+    } else if (risk.severity === 'medium') {
+      priority = 75;
+      relevance = 70;
+      isCritical = false;
+    } else {
+      priority = 50;
+      relevance = 60;
+      isCritical = false;
+    }
+
+    warnings.push({
+      type: 'warning',
+      message: risk.message,
+      priority,
+      relevanceScore: relevance,
+      isCritical,
+      riskSeverity: risk.severity, // Phase 41: Mark as risk-based warning
+      templateId: risk.templateId
     });
   }
 

@@ -4,6 +4,475 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 15:12 CT - Phase 40 - Adaptive Guidance Weighting
+
+- Summary: Implemented adaptive weighting system that adjusts guidance behavior based on workflow phase
+- Files modified:
+  - `src/features/documentEngine/services/workflowGuidanceService.ts` — Added phase detection and dynamic weighting
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Added phase label indicator to guidance panel
+- Impact: Guidance adapts from exploratory (early stages) to strict (validation/approval stages)
+- Objective: Context-sensitive guidance that matches workflow progression
+
+---
+
+**Problem Statement**
+
+Phase 39 introduced relevance scoring with static weights (60% priority, 40% relevance), but this doesn't adapt to workflow context:
+- **Early stages**: Users exploring → should favor **relevance** (what's contextually important now)
+- **Validation stage**: Errors exist → should favor **priority** (fix critical issues first)
+- **Approval stage**: Ready to submit → should favor **priority** (complete required tasks)
+
+Static weighting treats all workflow stages the same, missing opportunities to guide users appropriately.
+
+**Before Phase 40:**
+```typescript
+// Static weighting for all phases
+const scoreA = a.priority * 0.6 + a.relevanceScore * 0.4;
+```
+
+**After Phase 40:**
+```typescript
+// Adaptive weighting based on workflow phase
+const weights = getGuidanceWeights(workflowPhase);
+const scoreA = a.priority * weights.priorityWeight + a.relevanceScore * weights.relevanceWeight;
+```
+
+---
+
+**Architecture**
+
+**Workflow Phase Detection:**
+```typescript
+export type WorkflowPhase = 'initial' | 'in_progress' | 'validation' | 'approval' | 'complete';
+
+function detectWorkflowPhase(
+  completedCount: number,
+  totalCount: number,
+  hasValidationErrors: boolean,
+  hasUnapprovedDocs: boolean
+): WorkflowPhase {
+  // Logic determines current phase
+}
+```
+
+**Phase Detection Rules:**
+1. **initial**: No documents generated yet
+2. **validation**: Documents exist but have validation errors
+3. **approval**: All docs valid but awaiting approval
+4. **complete**: All docs valid and approved
+5. **in_progress**: Default for active development
+
+**Priority:** validation → approval → complete → in_progress → initial
+
+---
+
+**Adaptive Weight Configuration**
+
+```typescript
+interface GuidanceWeights {
+  priorityWeight: number;    // Weight for priority score (0-1)
+  relevanceWeight: number;   // Weight for relevance score (0-1)
+}
+
+function getGuidanceWeights(phase: WorkflowPhase): GuidanceWeights {
+  switch (phase) {
+    case 'initial':
+      // Early exploration - favor relevance
+      return { priorityWeight: 0.4, relevanceWeight: 0.6 };
+    
+    case 'in_progress':
+      // Balanced approach
+      return { priorityWeight: 0.5, relevanceWeight: 0.5 };
+    
+    case 'validation':
+      // Strict focus on critical issues
+      return { priorityWeight: 0.7, relevanceWeight: 0.3 };
+    
+    case 'approval':
+      // Emphasis on completion
+      return { priorityWeight: 0.8, relevanceWeight: 0.2 };
+    
+    case 'complete':
+      // Maintenance mode
+      return { priorityWeight: 0.6, relevanceWeight: 0.4 };
+  }
+}
+```
+
+**Weight Strategy:**
+- **Initial (40/60)**: Exploratory - "What should I look at first?"
+- **In Progress (50/50)**: Balanced - "What's important AND relevant?"
+- **Validation (70/30)**: Strict - "Fix critical errors NOW"
+- **Approval (80/20)**: Focused - "Complete required tasks to finish"
+- **Complete (60/40)**: Maintenance - "Monitor and maintain"
+
+---
+
+**Combined Score Calculation**
+
+**Phase 39 (Static):**
+```typescript
+const score = priority * 0.6 + relevanceScore * 0.4; // Always 60/40
+```
+
+**Phase 40 (Adaptive):**
+```typescript
+const weights = getGuidanceWeights(workflowPhase);
+const score = priority * weights.priorityWeight + relevanceScore * weights.relevanceWeight;
+```
+
+**Example - Validation Error Warning:**
+```
+Priority: 90
+Relevance: 60 (not active document)
+
+Initial phase (40/60):
+  score = 90 * 0.4 + 60 * 0.6 = 36 + 36 = 72
+
+Validation phase (70/30):
+  score = 90 * 0.7 + 60 * 0.3 = 63 + 18 = 81  ← Higher priority!
+```
+
+In validation phase, the critical error gets higher weight regardless of relevance.
+
+---
+
+**UI Enhancement**
+
+**Phase Label Indicator:**
+```tsx
+{workflowGuidance.phaseLabel && (
+  <span className="text-xs text-indigo-100 bg-indigo-700 bg-opacity-50 px-2 py-1 rounded">
+    {workflowGuidance.phaseLabel}
+  </span>
+)}
+```
+
+**Phase Labels:**
+- "Guidance Mode: Exploration" (initial)
+- "Guidance Mode: Development" (in_progress)
+- "Guidance Mode: Validation Focus" (validation)
+- "Guidance Mode: Approval Focus" (approval)
+- "Guidance Mode: Complete" (complete)
+
+**Visual Location:** Top-right corner of Guidance Panel header
+
+---
+
+**Example Scenarios**
+
+**Scenario 1: Initial Phase - First Time User**
+
+**State:**
+- No documents generated
+- BOM uploaded
+
+**Detected Phase:** `initial`  
+**Weights:** 40% priority, 60% relevance  
+**Label:** "Guidance Mode: Exploration"
+
+**Behavior:**
+- Favors contextually relevant suggestions
+- Exploratory tone
+- Less strict about absolute priority
+
+**Guidance Output:**
+```
+✅ Next Action: Upload a BOM file to begin generating PPAP documents
+💡 Insight: Start with Process Flow diagram (relevance: 80)
+```
+
+---
+
+**Scenario 2: Validation Phase - Errors Detected**
+
+**State:**
+- 3 documents generated
+- PFMEA has 5 validation errors
+- Process Flow has 1 validation error (old)
+- Active document: Control Plan (no errors)
+
+**Detected Phase:** `validation`  
+**Weights:** 70% priority, 30% relevance  
+**Label:** "Guidance Mode: Validation Focus"
+
+**Behavior:**
+- Strict prioritization of critical issues
+- Validation errors dominate
+- Less influenced by what's currently active
+
+**Guidance Output:**
+```
+✅ Next Action: Fix validation errors in PFMEA
+⚠️ PFMEA has 5 validation error(s) [HIGH PRIORITY]
+⚠️ Process Flow has 1 validation error(s) [HIGH PRIORITY]
+```
+
+Both errors shown despite Process Flow not being active, because validation phase prioritizes critical issues.
+
+**Phase 39 (static 60/40) would have suppressed Process Flow error due to lower relevance.**  
+**Phase 40 (adaptive 70/30) surfaces it because priority weighs more heavily.**
+
+---
+
+**Scenario 3: Approval Phase - Ready to Submit**
+
+**State:**
+- All 5 documents generated
+- All valid (no errors)
+- 4 approved, 1 unapproved (Inspection Plan)
+
+**Detected Phase:** `approval`  
+**Weights:** 80% priority, 20% relevance  
+**Label:** "Guidance Mode: Approval Focus"
+
+**Behavior:**
+- Maximum emphasis on completion tasks
+- Approval-related guidance dominates
+- Minimal context sensitivity
+
+**Guidance Output:**
+```
+✅ Next Action: Submit Inspection Plan for approval
+💡 Insight: 4 of 5 documents approved
+💡 Insight: Workflow 100% complete
+```
+
+---
+
+**Scenario 4: In Progress Phase - Active Development**
+
+**State:**
+- 2 documents generated (Process Flow, PFMEA)
+- Both valid
+- Working on Control Plan
+
+**Detected Phase:** `in_progress`  
+**Weights:** 50% priority, 50% relevance  
+**Label:** "Guidance Mode: Development"
+
+**Behavior:**
+- Balanced guidance
+- Equal weight to priority and context
+- Standard workflow progression
+
+**Guidance Output:**
+```
+✅ Next Action: Generate Control Plan to continue workflow
+💡 Insight: Workflow 40% complete (2/5 documents)
+💡 Insight: All generated documents pass validation
+```
+
+---
+
+**Scenario 5: Complete Phase - Maintenance**
+
+**State:**
+- All 5 documents generated
+- All valid and approved
+
+**Detected Phase:** `complete`  
+**Weights:** 60% priority, 40% relevance  
+**Label:** "Guidance Mode: Complete"
+
+**Behavior:**
+- Slight priority bias for maintenance
+- Monitor for changes
+- Informational guidance
+
+**Guidance Output:**
+```
+✅ Next Action: All documents complete and approved - ready for submission
+💡 Insight: Workflow 100% complete (5/5 documents)
+```
+
+---
+
+**Benefits**
+
+**Context-Sensitive Behavior:**
+- Early stages feel exploratory and flexible
+- Validation stage becomes strict and focused
+- Approval stage emphasizes completion
+- Adapts to user's current needs
+
+**Improved User Experience:**
+- Beginners get gentle, relevant guidance
+- Users with errors get strict, critical-first guidance
+- Users nearing completion get task-focused guidance
+- Behavior matches mental model of workflow stages
+
+**Smart Prioritization:**
+- Validation errors surface even if not active doc (validation phase)
+- Contextual relevance matters more early on (initial phase)
+- Completion tasks dominate at end (approval phase)
+- System "understands" where user is in journey
+
+**No Regression:**
+- Preserves all Phase 39 filtering logic
+- Maintains critical warning sticky priority
+- Keeps top 2 warnings/insights limit
+- Only changes scoring weights dynamically
+
+---
+
+**Technical Implementation**
+
+**Phase Detection Logic:**
+```typescript
+// Priority order:
+1. No docs → initial
+2. All complete + valid + approved → complete
+3. Has validation errors → validation
+4. All docs + has unapproved → approval
+5. Default → in_progress
+```
+
+**Weight Application:**
+```typescript
+// Before (Phase 39):
+const sortByRelevance = (a, b) => {
+  const scoreA = a.priority * 0.6 + a.relevanceScore * 0.4;
+  return scoreB - scoreA;
+};
+
+// After (Phase 40):
+const weights = getGuidanceWeights(workflowPhase);
+const sortByRelevance = (a, b) => {
+  const scoreA = a.priority * weights.priorityWeight + a.relevanceScore * weights.relevanceWeight;
+  return scoreB - scoreA;
+};
+```
+
+**Guidance Interface Extension:**
+```typescript
+export interface WorkflowGuidance {
+  recommendedAction: string | null;
+  warnings: GuidanceItem[];
+  insights: GuidanceItem[];
+  workflowPhase?: WorkflowPhase;    // NEW
+  phaseLabel?: string;              // NEW
+}
+```
+
+---
+
+**Weight Rationale**
+
+**Why 40/60 for Initial?**
+- New users need context-aware exploration
+- "What's relevant to me now?" > "What's most important overall?"
+- Encourages discovery
+
+**Why 70/30 for Validation?**
+- Errors must be fixed regardless of context
+- Critical issues can't be ignored
+- "Fix this NOW" > "Is this relevant to what I'm doing?"
+
+**Why 80/20 for Approval?**
+- Maximum focus on completing required tasks
+- Approval workflow is linear and strict
+- Context matters less than completion
+
+**Why 50/50 for In Progress?**
+- Balanced guidance during active work
+- Neither too exploratory nor too strict
+- Standard workflow behavior
+
+**Why 60/40 for Complete?**
+- Slight priority bias for monitoring
+- Less strict than validation/approval
+- Maintenance mode
+
+---
+
+**Performance**
+
+- Phase detection: O(1) - simple conditionals
+- Weight lookup: O(1) - switch statement
+- No additional loops or complexity
+- Same sorting algorithm, just different weights
+- Negligible performance impact
+
+---
+
+**Extensibility**
+
+**Future: User Role-Based Weighting**
+```typescript
+if (userRole === 'qa') {
+  // QA users always get strict validation focus
+  return { priorityWeight: 0.9, relevanceWeight: 0.1 };
+}
+```
+
+**Future: Time-Based Adaptation**
+```typescript
+const daysSinceLastChange = ...;
+if (daysSinceLastChange > 30) {
+  // Long inactive → more exploratory
+  return { priorityWeight: 0.3, relevanceWeight: 0.7 };
+}
+```
+
+**Future: Custom Phase Thresholds**
+```typescript
+// User preference: strict mode
+const strictMode = userPreferences.guidanceStrictness === 'high';
+if (strictMode) {
+  weights.priorityWeight += 0.1;
+  weights.relevanceWeight -= 0.1;
+}
+```
+
+---
+
+**Testing Scenarios**
+
+**Verify Initial Phase:**
+1. Clear all documents
+2. Upload BOM
+3. Check label: "Guidance Mode: Exploration"
+4. Verify context-aware suggestions
+
+**Verify Validation Phase:**
+1. Generate document with errors
+2. Check label: "Guidance Mode: Validation Focus"
+3. Verify errors surface even if not active
+
+**Verify Approval Phase:**
+1. Complete all documents (valid)
+2. Leave some unapproved
+3. Check label: "Guidance Mode: Approval Focus"
+4. Verify approval-related guidance dominates
+
+**Verify Complete Phase:**
+1. Approve all documents
+2. Check label: "Guidance Mode: Complete"
+3. Verify informational guidance
+
+---
+
+**Phase 40 Complete.**
+
+Guidance system now adapts intelligently to workflow stage with:
+- ✅ 5 distinct workflow phases
+- ✅ Adaptive weighting (40/60 to 80/20)
+- ✅ Phase-aware scoring algorithm
+- ✅ UI phase label indicator
+- ✅ Context-sensitive behavior
+- ✅ No regression in filtering logic
+
+**Quality Metrics:**
+- Phases: 5 (initial, in_progress, validation, approval, complete)
+- Weight range: 40/60 (exploratory) to 80/20 (strict)
+- UI enhancement: Phase label in guidance header
+- Performance: O(1) phase detection
+
+**Next:** Additional workflow analytics or user customization features (optional).
+
+---
+
 ## 2026-03-29 14:57 CT - Phase 39 - Guidance Intelligence Refinement
 
 - Summary: Enhanced guidance system with relevance scoring and context-aware filtering to reduce noise
