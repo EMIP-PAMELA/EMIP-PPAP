@@ -252,7 +252,6 @@ export function getWorkflowGuidance(state: WorkflowState): WorkflowGuidance {
     insights: relevantInsights.slice(0, 2) // Phase 39: Top 2 (down from 3)
   };
 }
-}
 
 /**
  * Get display name for template
