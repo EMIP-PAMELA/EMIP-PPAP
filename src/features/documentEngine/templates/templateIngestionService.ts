@@ -99,14 +99,18 @@ function createDefaultGenerateFunction(
       }
       
       // Apply mappings to populate fields
-      const mappedDraft = applyTemplateMappings(
+      const mappingResult = applyTemplateMappings(
         templateId as TemplateId,
         fieldMappings!,
         sourceData,
         fields // Start with base empty fields
       );
       
-      return mappedDraft;
+      // Phase 33: Mapping metadata is available in mappingResult.mappingMeta
+      // For now, we only return the draft (metadata stored separately in workspace)
+      console.log(`[TemplateIngestion] Generated ${Object.keys(mappingResult.mappingMeta).length} field mappings`);
+      
+      return mappingResult.draft;
     }
 
     // No mappings - use default behavior

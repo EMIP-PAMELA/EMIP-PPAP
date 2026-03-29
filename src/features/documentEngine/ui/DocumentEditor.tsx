@@ -6,13 +6,16 @@ import { getTemplate } from '../templates/registry';
 interface DocumentEditorProps {
   draft: DocumentDraft;
   templateId: TemplateId;
-  onFieldChange: (fieldKey: string, value: any) => void;
-  onReset: () => void;
-  hasChanges: boolean;
-  readOnly?: boolean;  // Phase 25: Support read-only mode for approved/old versions
-}
+  onFieldChange: (fieldPath: string, value: any) => void;
+  onReset?: () => void;
+  hasChanges?: boolean;
+  readOnly?: boolean;
+  // Phase 33: Mapping metadata for debug visibility
+  mappingMeta?: Record<string, any>;
+  showMappingDebug?: boolean;
+}  // Phase 25: Support read-only mode for approved/old versions
 
-export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasChanges, readOnly = false }: DocumentEditorProps) {
+export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasChanges, readOnly = false, mappingMeta, showMappingDebug }: DocumentEditorProps) {
   const template = getTemplate(templateId);
   const layout = template.layout;
   const fieldDefinitions = template.fieldDefinitions;
@@ -106,6 +109,7 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       {fieldDef.label}
                       {fieldDef.required && <span className="text-red-500 ml-1">*</span>}
+                      {getMappingIndicator(fieldKey)}
                       {!fieldDef.editable && <span className="text-gray-500 ml-2 text-xs">(Read-only)</span>}
                     </label>
                     

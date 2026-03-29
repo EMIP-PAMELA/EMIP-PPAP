@@ -119,6 +119,10 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   const [showCustomerSelector, setShowCustomerSelector] = useState(false);
   const [selectedCustomerForNewSession, setSelectedCustomerForNewSession] = useState<string>('');
 
+  // Phase 33: Mapping metadata and debug visibility
+  const [mappingMetadata, setMappingMetadata] = useState<Record<string, any>>({});
+  const [showMappingDebug, setShowMappingDebug] = useState(false);
+
   // Phase 23: Load current authenticated user
   useEffect(() => {
     async function initUser() {
@@ -1190,6 +1194,18 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                         Using Default Templates
                       </span>
                     )}
+                    {/* Phase 33: Mapping debug toggle */}
+                    <button
+                      onClick={() => setShowMappingDebug(!showMappingDebug)}
+                      className={`ml-4 px-3 py-1 text-xs font-medium rounded transition-colors ${
+                        showMappingDebug
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                      title={showMappingDebug ? 'Hide mapping details' : 'Show mapping details'}
+                    >
+                      {showMappingDebug ? '🔍 Mapping Debug: ON' : '🔍 Mapping Debug'}
+                    </button>
                   </div>
                 </div>
                 <div className="flex gap-3">
@@ -1689,6 +1705,8 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                     onReset={handleResetToGenerated}
                     hasChanges={hasChanges()}
                     readOnly={isViewingOldVersion || isCurrentVersionApproved(activeStep)}
+                    mappingMeta={mappingMetadata[activeStep]}
+                    showMappingDebug={showMappingDebug}
                   />
                 ) : (
                   <div className="text-center py-16">
