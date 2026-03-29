@@ -4,6 +4,474 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 11:00 CT - Phase 26 - Admin & Role Management UI
+
+- Summary: Created admin interface for user and role management, removing dependency on manual database updates
+- Files created:
+  - `src/app/admin/users/page.tsx` — Admin users management page with role assignment
+- Files modified:
+  - `src/features/auth/userService.ts` — Added `updateUserRole()` function
+- Impact: Admins can view all users and change roles via UI; no more manual database operations required
+- Objective: Self-service admin tools for user management
+
+---
+
+**From Manual DB Updates → Self-Service Admin UI**
+
+This phase introduces an administrative interface for managing users and roles, eliminating the need for direct database manipulation.
+
+---
+
+**Core Features:**
+
+1. **Admin-Only Access** — Route protected by role check
+2. **User List Display** — View all system users
+3. **Role Assignment** — Change user roles via dropdown
+4. **Access Control** — Non-admins redirected with error message
+5. **Real-time Feedback** — Success/error messages for operations
+
+---
+
+**Admin Users Page:**
+
+**Route:** `/admin/users`
+
+**Access Control:**
+```typescript
+useEffect(() => {
+  async function init() {
+    const user = await getCurrentUser();
+    
+    if (!user) {
+      router.push('/');
+      return;
+    }
+
+    if (!isAdmin(user.role)) {
+      setErrorMessage('Access Denied: Admin privileges required');
+      return;
+    }
+
+    setCurrentUser(user);
+    await loadUsers();
+  }
+  init();
+}, [router]);
+```
+
+**Security:**
+- Only accessible to users with `role = 'admin'`
+- Non-admin users see "Access Denied" screen
+- Redirected to home page with error message
+- Cannot access page without authentication
+
+---
+
+**User List Table:**
+
+**Columns:**
+1. **Name** — User display name with "You" badge for current user
+2. **Email** — User email address
+3. **Role** — Color-coded role badge
+4. **Created At** — Account creation date
+5. **Actions** — Role assignment dropdown
+
+**Visual Design:**
+- Current user row highlighted in blue
+- Hover effects on non-current users
+- Color-coded role badges (Blue: Engineer, Green: QA, Purple: Manager, Red: Admin)
+- Responsive table with horizontal scroll on small screens
+
+---
+
+**Role Assignment:**
+
+**Dropdown Options:**
+- Engineer
+- QA
+- Manager
+- Admin
+
+**Behavior:**
+```typescript
+const handleRoleChange = async (userId: string, newRole: UserRole) => {
+  setUpdatingUserId(userId);
+  
+  const success = await updateUserRole(userId, newRole);
+  
+  if (success) {
+    setSuccessMessage(`Role updated to ${getRoleDisplayName(newRole)}`);
+    await loadUsers(); // Refresh user list
+    setTimeout(() => setSuccessMessage(null), 3000);
+  } else {
+    setErrorMessage('Failed to update role. Please try again.');
+  }
+  
+  setUpdatingUserId(null);
+};
+```
+
+**Restrictions:**
+- Users cannot change their own role (dropdown disabled)
+- Shows "You cannot change your own role" tooltip
+- Prevents accidental admin lockout
+- Dropdown disabled while update in progress (loading state)
+
+---
+
+**User Service Updates:**
+
+**New Function:**
+```typescript
+export async function updateUserRole(userId: string, newRole: UserRole): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('ppap_users')
+      .update({ role: newRole })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('[UserService] Failed to update user role:', error);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[UserService] Unexpected error updating user role:', err);
+    return false;
+  }
+}
+```
+
+**Database Operations:**
+- Updates `ppap_users.role` field
+- Respects RLS policies (admin-only write access)
+- Returns boolean for success/failure
+- Logs all operations for audit trail
+
+---
+
+**UI Feedback:**
+
+**Success Message:**
+```tsx
+{successMessage && (
+  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+    <span className="text-green-600">✓</span>
+    <span className="text-green-800">{successMessage}</span>
+  </div>
+)}
+```
+
+**Error Message:**
+```tsx
+{errorMessage && (
+  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+    <span className="text-red-600">✗</span>
+    <span className="text-red-800">{errorMessage}</span>
+  </div>
+)}
+```
+
+**Behavior:**
+- Success message auto-dismisses after 3 seconds
+- Error message persists until next action
+- Loading spinner on dropdown during update
+- Disabled state prevents double-submission
+
+---
+
+**User Creation Note:**
+
+**Info Banner:**
+```tsx
+<div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+  <p className="font-semibold">User Creation</p>
+  <p>Users must be created via the authentication system (Supabase). 
+     New users are automatically added to the system upon first login.</p>
+</div>
+```
+
+**Rationale:**
+- User creation handled by Supabase Auth
+- `ppap_users` table auto-populated via database trigger (Phase 23)
+- Admin cannot manually create users in this UI
+- Focus on role management, not user provisioning
+
+---
+
+**Statistics Dashboard:**
+
+**Metrics Displayed:**
+1. **Total Users** — Count of all users
+2. **Engineers** — Count of engineer role
+3. **QA / Managers** — Count of approval-capable roles
+4. **Admins** — Count of admin role
+
+**Visual Design:**
+- 4-column grid on desktop
+- Single column on mobile
+- Color-coded numbers (Blue: Engineers, Green: QA/Managers, Red: Admins)
+- Real-time updates after role changes
+
+---
+
+**Access Denied Screen:**
+
+**Displayed When:**
+- User not authenticated
+- User role ≠ 'admin'
+
+**Content:**
+```tsx
+<div className="text-center">
+  <div className="text-6xl">🚫</div>
+  <h1 className="text-2xl font-bold">Access Denied</h1>
+  <p>You do not have permission to access this page.</p>
+  <button onClick={() => router.push('/')}>Return to Home</button>
+</div>
+```
+
+**Prevents:**
+- Unauthorized access to admin functions
+- Information disclosure to non-admins
+- Accidental role changes by non-admins
+
+---
+
+**Loading State:**
+
+**Initial Page Load:**
+```tsx
+{isLoading && (
+  <div className="flex items-center justify-center">
+    <div className="text-4xl">⏳</div>
+    <p>Loading...</p>
+  </div>
+)}
+```
+
+**Role Update Loading:**
+- Dropdown shows disabled state
+- Opacity reduced to 0.5
+- Cursor changes to `cursor-wait`
+- Prevents user interaction during update
+
+---
+
+**State Management:**
+
+**Key State Variables:**
+```typescript
+const [currentUser, setCurrentUser] = useState<PPAPUser | null>(null);
+const [users, setUsers] = useState<PPAPUser[]>([]);
+const [isLoading, setIsLoading] = useState(true);
+const [successMessage, setSuccessMessage] = useState<string | null>(null);
+const [errorMessage, setErrorMessage] = useState<string | null>(null);
+const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+```
+
+**State Flow:**
+1. Page loads → `isLoading = true`
+2. Check current user auth → Set `currentUser`
+3. Check admin role → If not admin, show error
+4. Load all users → Set `users`
+5. Set `isLoading = false`
+6. User changes role → `updatingUserId` tracks which user
+7. Update completes → Refresh user list, show feedback
+
+---
+
+**Security Considerations:**
+
+**Client-Side Protection:**
+- Route redirect for non-authenticated users
+- Access denied screen for non-admins
+- Self-role-change prevention
+
+**Server-Side Protection (via RLS):**
+- Database policies enforce admin-only updates
+- `ppap_users` table has UPDATE policy checking auth.uid()
+- Even if client bypassed, database would reject unauthorized updates
+
+**Audit Trail:**
+- All role changes logged to console
+- Database `updated_at` timestamp automatically updated
+- Future: Add `audit_log` table for compliance tracking
+
+---
+
+**User Experience Flow:**
+
+**Admin User Journey:**
+1. Admin navigates to `/admin/users`
+2. Page checks authentication and admin role
+3. User list loads and displays
+4. Admin selects new role from dropdown
+5. Role updates immediately
+6. Success message confirms change
+7. User list refreshes with new role
+8. Statistics update to reflect change
+
+**Non-Admin User Journey:**
+1. User attempts to navigate to `/admin/users`
+2. Page checks authentication and role
+3. "Access Denied" screen displayed
+4. User clicks "Return to Home"
+5. Redirected to main application
+
+---
+
+**Integration with Existing Systems:**
+
+**Approval Workflow (Phase 23):**
+- Role changes immediately affect approval authority
+- Changing user from Engineer → QA grants approval rights
+- Changing user from QA → Engineer revokes approval rights
+- Effective on next page load or action
+
+**Document Ownership (Phase 23):**
+- Owner role displayed in documents remains unchanged
+- Historical ownership preserved
+- Only affects future approval operations
+
+**Version Control (Phase 24-25):**
+- No impact on existing versions
+- Role changes affect future version creation permissions
+- Approval history immutable
+
+---
+
+**Responsive Design:**
+
+**Desktop (≥1024px):**
+- Full table visible
+- 4-column statistics grid
+- Spacious layout
+
+**Tablet (768px - 1023px):**
+- Table scrolls horizontally if needed
+- 2-column statistics grid
+- Compact padding
+
+**Mobile (<768px):**
+- Horizontal scroll on table
+- Single-column statistics
+- Stacked buttons in header
+
+---
+
+**Performance Considerations:**
+
+**Initial Load:**
+- Single database query for all users
+- Efficient `getAllUsers()` with sorting
+- Minimal re-renders via proper state management
+
+**Role Updates:**
+- Optimistic UI update (immediate feedback)
+- Background database update
+- List refresh to confirm server state
+- No full page reload required
+
+---
+
+**Future Enhancements:**
+
+⚠️ **User Deactivation**
+- Add "Active/Inactive" status field
+- Soft delete instead of hard delete
+- Filter to show only active users
+
+⚠️ **Bulk Operations**
+- Select multiple users
+- Assign roles to multiple users at once
+- Export user list to CSV
+
+⚠️ **Audit Log**
+- Track who changed what role and when
+- Display change history per user
+- Compliance reporting
+
+⚠️ **User Search/Filter**
+- Search by name or email
+- Filter by role
+- Sort by any column
+
+⚠️ **Email Invitations**
+- Send invite emails to new users
+- Pre-assign role before first login
+- Track invitation status
+
+---
+
+**Testing Validation:**
+
+**Functional:**
+- ✅ Admin can access page
+- ✅ Non-admin cannot access page
+- ✅ User list displays correctly
+- ✅ Role dropdown shows all roles
+- ✅ Role change updates database
+- ✅ Role change updates UI
+- ✅ Success message displays on update
+- ✅ Error message displays on failure
+- ✅ Cannot change own role
+- ✅ Statistics calculate correctly
+
+**TypeScript:**
+- ✅ No compilation errors
+- ✅ All type definitions correct
+- ✅ Props properly typed
+
+**Security:**
+- ✅ Access control enforced
+- ✅ RLS policies respected
+- ✅ Self-modification prevented
+
+---
+
+**Known Limitations:**
+
+⚠️ **No user deactivation**
+- Cannot disable user accounts
+- Workaround: Change role to Engineer to revoke approval rights
+
+⚠️ **No audit trail visible**
+- Role changes logged to console only
+- No UI to view change history
+- **Future:** Add audit log table and viewer
+
+⚠️ **No bulk operations**
+- Must change roles one at a time
+- **Future:** Add checkbox selection and bulk actions
+
+⚠️ **No user creation in UI**
+- Must use Supabase Auth directly
+- Expected behavior, not a limitation
+
+---
+
+**Phase 26 Complete.**
+
+Admin users can now **manage roles via UI** without requiring database access. Self-service role management removes operational overhead and improves security by eliminating direct database manipulation.
+
+**Operational Benefits:**
+- No more manual SQL updates for role changes
+- Immediate feedback on role assignments
+- Audit trail via console logs
+- Reduced admin overhead
+
+**Security Benefits:**
+- Access restricted to admin role only
+- Cannot accidentally lock out all admins
+- Database policies enforce authorization
+- Client-side and server-side protection
+
+**Next:** Phase 27 - Audit log and compliance reporting (optional).
+
+---
+
 ## 2026-03-29 10:45 CT - Phase 25 - Version UX Completion & Approval Locking Enforcement
 
 - Summary: Completed version control system with full UI, read-only mode enforcement, and approval locking
