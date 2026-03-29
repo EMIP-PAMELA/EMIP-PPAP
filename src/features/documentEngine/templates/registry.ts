@@ -6,14 +6,20 @@
  * 
  * Architecture layer: Template System
  * 
- * Phase 29: Extended to support dynamic template registration
+ * Phase 29: Extended template registry with dynamic template support
+ * Phase 30.1: Auto-load persisted dynamic templates from database
+ * 
+ * Manages both static (built-in) and dynamic (ingested) templates
  */
 
-import { TemplateId, TemplateDefinition } from './types';
+import { TemplateDefinition, TemplateId } from './types';
 import { PSW_TEMPLATE } from './pswTemplate';
 import { PROCESS_FLOW_TEMPLATE } from './processFlowTemplate';
 import { PFMEA_TEMPLATE } from './pfmeaTemplate';
 import { CONTROL_PLAN_TEMPLATE } from './controlPlanTemplate';
+
+// Phase 30.1: Import persistence service
+let persistenceServiceImported = false;
 
 // Static templates (original system templates)
 const staticTemplates: Record<string, TemplateDefinition> = {
@@ -73,18 +79,25 @@ export function registerDynamicTemplate(template: TemplateDefinition): void {
 }
 
 /**
- * Phase 29: Load templates from external sources
- * This function can be extended to load from files, APIs, etc.
+ * Phase 29: Load templates from external source (placeholder for future implementation)
+ * Phase 29: Future implementation for loading from /public/templates/, database, or API
+ * Phase 30.1: Load persisted dynamic templates from database
  */
 export async function loadTemplatesFromSource(): Promise<void> {
-  // Placeholder for future implementation
-  // Could load from:
-  // - JSON files in /public/templates
-  // - Database
-  // - API endpoint
-  // - Configuration service
-  
-  console.log('[TemplateRegistry] Dynamic template loading not yet implemented');
+  if (persistenceServiceImported) {
+    return; // Already loaded
+  }
+
+  try {
+    // Dynamic import to avoid circular dependencies
+    const { loadAndRegisterDynamicTemplates } = await import('./templatePersistenceService');
+    await loadAndRegisterDynamicTemplates();
+    persistenceServiceImported = true;
+    console.log('[TemplateRegistry] Dynamic templates loaded from database');
+  } catch (err) {
+    console.error('[TemplateRegistry] Error loading dynamic templates from database:', err);
+    // Don't throw - allow app to continue with static templates
+  }
 }
 
 /**

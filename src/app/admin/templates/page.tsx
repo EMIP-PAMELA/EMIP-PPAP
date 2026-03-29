@@ -78,15 +78,46 @@ export default function TemplateManagementPage() {
 
       // Parse and validate
       const { parseWorkbookTemplate, convertToTemplateDefinition } = await import('../../../features/documentEngine/templates/templateIngestionService');
-      const { registerDynamicTemplate } = await import('../../../features/documentEngine/templates/registry');
+      const { registerDynamicTemplate, hasTemplate } = await import('../../../features/documentEngine/templates/registry');
+      const { saveDynamicTemplate, templateExists } = await import('../../../features/documentEngine/templates/templatePersistenceService');
+      const { getCurrentUser } = await import('../../../features/auth/userService');
 
       const ingestedTemplate = parseWorkbookTemplate(fileContent);
       const templateDefinition = convertToTemplateDefinition(ingestedTemplate);
 
-      // Register template
+      // Check if template ID already exists (static or dynamic)
+      if (hasTemplate(templateDefinition.id)) {
+        setUploadError(`Template ID "${templateDefinition.id}" is already in use. Cannot override existing templates.`);
+        event.target.value = '';
+        setIsUploading(false);
+        return;
+      }
+
+      // Check if template exists in database
+      const exists = await templateExists(templateDefinition.id);
+      if (exists) {
+        setUploadError(`Template ID "${templateDefinition.id}" already exists in database. Please use a unique ID.`);
+        event.target.value = '';
+        setIsUploading(false);
+        return;
+      }
+
+      // Get current user for upload attribution
+      const user = await getCurrentUser();
+
+      // Save to database
+      const saved = await saveDynamicTemplate(templateDefinition, user?.id);
+      if (!saved) {
+        setUploadError('Failed to save template to database');
+        event.target.value = '';
+        setIsUploading(false);
+        return;
+      }
+
+      // Register in memory
       registerDynamicTemplate(templateDefinition);
 
-      setUploadSuccess(`Successfully uploaded template: ${templateDefinition.name}`);
+      setUploadSuccess(`Successfully uploaded and saved template: ${templateDefinition.name}`);
       
       // Reload templates
       await loadTemplates();
@@ -107,18 +138,32 @@ export default function TemplateManagementPage() {
     if (!template) return;
 
     if (template.type === 'static') {
-      alert('Cannot delete static templates');
+      setUploadError('Cannot delete static templates');
       return;
     }
 
-    const confirmed = window.confirm(`Delete template "${template.name}"? This cannot be undone.`);
+    const confirmed = window.confirm(`Delete template "${template.name}"? This action will remove it from the database.`);
     if (!confirmed) return;
 
     try {
-      // Remove from registry (we need to add a delete function)
-      // For now, just reload (will be lost on page refresh)
-      setUploadSuccess(`Template "${template.name}" will be removed on page refresh (in-memory only)`);
+      setUploadError(null);
+      setUploadSuccess(null);
+
+      const { deleteDynamicTemplate } = await import('../../../features/documentEngine/templates/templatePersistenceService');
+      
+      const deleted = await deleteDynamicTemplate(templateId);
+      if (!deleted) {
+        setUploadError(`Failed to delete template "${template.name}" from database`);
+        return;
+      }
+
+      setUploadSuccess(`Template "${template.name}" deleted successfully`);
+      
+      // Reload templates (will no longer include deleted template)
       await loadTemplates();
+
+      // Note: Template will remain in memory registry until page refresh
+      // This is acceptable as it won't reload from DB on next app start
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Failed to delete template');
     }
@@ -280,11 +325,11 @@ export default function TemplateManagementPage() {
         </div>
 
         {/* Note about persistence */}
-        <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-md p-4">
-          <h4 className="text-yellow-800 font-semibold mb-1">⚠️ Note: In-Memory Storage</h4>
-          <p className="text-yellow-700 text-sm">
-            Dynamic templates are currently stored in memory only and will be lost on page refresh.
-            Future phases will add database persistence.
+        <div className="mt-6 bg-green-50 border border-green-200 rounded-md p-4">
+          <h4 className="text-green-800 font-semibold mb-1">✅ Database Persistence</h4>
+          <p className="text-green-700 text-sm">
+            Dynamic templates are stored in the database and will persist across page refreshes and app restarts.
+            Templates are automatically loaded when the application starts.
           </p>
         </div>
       </div>

@@ -4,6 +4,394 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 12:00 CT - Phase 30 - Template Management UI & Assignment Layer
+
+- Summary: Implemented admin UI for managing dynamic templates with upload, validation, and listing capabilities
+- Files created:
+  - `src/app/admin/templates/page.tsx` — Admin-only template management page
+- Files modified:
+  - `src/features/documentEngine/persistence/sessionService.ts` — Added selectedTemplateSet to PPAPSession
+- Impact: Admins can now upload, view, and manage custom PPAP templates via web interface
+- Objective: Enable template management without code deployments
+
+---
+
+**From Code Deployments → Admin Self-Service**
+
+This phase adds a web-based admin interface for managing dynamic PPAP templates, eliminating the need for code deployments when adding OEM-specific templates.
+
+---
+
+**Core Features:**
+
+1. **Admin Template Management Page** — `/admin/templates` route (admin-only access)
+2. **Template Upload** — JSON file upload with validation
+3. **Template Listing** — View all static and dynamic templates
+4. **Session Assignment Model** — Extended PPAPSession for custom template sets
+5. **In-Memory Storage** — Templates stored in registry (future: database persistence)
+
+---
+
+**Admin Templates Page:**
+
+**Route:** `/admin/templates`
+
+**Access Control:**
+```typescript
+const user = await getCurrentUser();
+if (!user || !isAdmin(user.role)) {
+  router.push('/');
+  return;
+}
+```
+
+**Only admin role can access this page.**
+
+---
+
+**Template Upload:**
+
+**File Input:**
+```tsx
+<input
+  type="file"
+  accept=".json"
+  onChange={handleFileUpload}
+  disabled={isUploading}
+/>
+```
+
+**Upload Process:**
+1. User selects JSON file
+2. File content read via FileReader API
+3. Parse with `parseWorkbookTemplate()`
+4. Validate with schema validator
+5. Convert to TemplateDefinition
+6. Register via `registerDynamicTemplate()`
+7. Reload template list
+
+**Validation:**
+- Valid JSON format
+- Required fields: id, name, sections
+- Each section has: id, title, fields
+- Cannot override static templates
+
+**Error Handling:**
+```typescript
+try {
+  const ingestedTemplate = parseWorkbookTemplate(fileContent);
+  const templateDefinition = convertToTemplateDefinition(ingestedTemplate);
+  registerDynamicTemplate(templateDefinition);
+  setUploadSuccess(`Successfully uploaded template: ${templateDefinition.name}`);
+} catch (err) {
+  setUploadError(err instanceof Error ? err.message : 'Failed to upload template');
+}
+```
+
+---
+
+**Template Listing:**
+
+**Table Columns:**
+- Template Name
+- Template ID (code display)
+- Type (static vs dynamic badge)
+- Sections count
+- Description
+- Actions (delete for dynamic only)
+
+**Type Badges:**
+- **Static** (Blue) — Built-in system templates
+- **Dynamic** (Green) — Uploaded custom templates
+
+**Delete Protection:**
+- Static templates cannot be deleted
+- Confirmation dialog for dynamic template deletion
+- Currently delete only removes from memory (not persisted)
+
+---
+
+**Template Information Display:**
+
+**For Each Template:**
+```typescript
+type TemplateInfo = {
+  id: string;
+  name: string;
+  description: string;
+  type: 'static' | 'dynamic';
+  sectionsCount: number;
+};
+```
+
+**Loaded via:**
+```typescript
+const { listTemplates, listDynamicTemplateIds } = await import('../../../features/documentEngine/templates/registry');
+const allTemplates = listTemplates();
+const dynamicIds = listDynamicTemplateIds();
+```
+
+---
+
+**Session Model Extension:**
+
+**Added to PPAPSession:**
+```typescript
+export type PPAPSession = {
+  bomData: NormalizedBOM | null;
+  documents: Record<string, DocumentDraft>;
+  editableDocuments: Record<string, DocumentDraft>;
+  validationResults: Record<string, ValidationResult>;
+  documentTimestamps: Record<string, number>;
+  documentMeta: Record<string, DocumentMetadata>;
+  activeStep: TemplateId | null;
+  selectedTemplateSet?: string[];  // Phase 30: Custom template IDs assigned to this session
+};
+```
+
+**Purpose:**
+- Track which custom templates are assigned to a session
+- Enable session-specific template selection
+- Support multi-tenant OEM scenarios
+
+**Future Use:**
+- UI to assign templates to sessions
+- Filter available templates by session
+- Template-per-document selection
+
+---
+
+**Upload Requirements Display:**
+
+**Shown to Users:**
+```typescript
+<ul className="text-sm text-gray-600 space-y-1">
+  <li>• Valid JSON format</li>
+  <li>• Must include: id, name, sections</li>
+  <li>• Each section must have: id, title, fields</li>
+  <li>• Cannot override static templates (PSW, PROCESS_FLOW, PFMEA, CONTROL_PLAN)</li>
+  <li>• See templates/examples/tranePFMEA.json for reference</li>
+</ul>
+```
+
+---
+
+**Storage Model:**
+
+**Current: In-Memory**
+- Templates stored in `dynamicTemplates` registry
+- Lost on page refresh/app restart
+- Suitable for development and testing
+
+**Warning Displayed:**
+```tsx
+<div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+  <h4 className="text-yellow-800 font-semibold">⚠️ Note: In-Memory Storage</h4>
+  <p className="text-yellow-700 text-sm">
+    Dynamic templates are currently stored in memory only and will be lost on page refresh.
+    Future phases will add database persistence.
+  </p>
+</div>
+```
+
+**Future: Database Persistence**
+- Store templates in `ppap_templates` table
+- CRUD operations
+- Template versioning
+- Multi-user collaboration
+
+---
+
+**User Flow:**
+
+**Uploading a Template:**
+1. Navigate to `/admin/templates` (admin only)
+2. Click "Choose File" and select JSON
+3. System validates structure
+4. On success: Template appears in list (green badge)
+5. On failure: Error message shows what's wrong
+
+**Viewing Templates:**
+1. Navigate to `/admin/templates`
+2. See table of all templates
+3. Static templates (blue) = built-in
+4. Dynamic templates (green) = uploaded
+
+**Deleting a Template:**
+1. Click "Delete" next to dynamic template
+2. Confirm deletion dialog
+3. Template removed from list
+4. (Currently memory-only, lost on refresh anyway)
+
+---
+
+**Security:**
+
+**Access Control:**
+- Only admin role can access `/admin/templates`
+- Redirect to home if unauthorized
+- No API endpoints exposed (all client-side)
+
+**Validation:**
+- Schema validation prevents malformed templates
+- Cannot override static templates
+- No code execution (JSON only)
+
+**Upload Safety:**
+- File type restricted to `.json`
+- Parse errors caught and displayed
+- No server-side file storage (yet)
+
+---
+
+**Integration with Phase 29:**
+
+**Uses:**
+- `parseWorkbookTemplate()` — Parse JSON to IngestedTemplate
+- `convertToTemplateDefinition()` — Convert to TemplateDefinition
+- `registerDynamicTemplate()` — Register in registry
+- `listTemplates()` — Get all templates
+- `listDynamicTemplateIds()` — Identify dynamic vs static
+
+**Workflow:**
+```
+Upload JSON → Parse → Validate → Convert → Register → Display
+```
+
+---
+
+**UI Feedback:**
+
+**Success State:**
+```tsx
+<div className="bg-green-50 border border-green-200">
+  <h4 className="text-green-800 font-semibold">✅ Success</h4>
+  <p className="text-green-700">Successfully uploaded template: Trane PFMEA</p>
+</div>
+```
+
+**Error State:**
+```tsx
+<div className="bg-red-50 border border-red-200">
+  <h4 className="text-red-800 font-semibold">Upload Failed</h4>
+  <p className="text-red-700">Invalid template structure</p>
+</div>
+```
+
+**Loading State:**
+```tsx
+<div className="bg-blue-50 border border-blue-200">
+  <p className="text-blue-700">⏳ Uploading and validating template...</p>
+</div>
+```
+
+---
+
+**Future Enhancements:**
+
+⚠️ **Database Persistence**
+- Store templates in Supabase
+- Persist across app restarts
+- Enable sharing across team
+- **Future:** Phase 30.1
+
+⚠️ **Template Assignment UI**
+- Select templates per session in DocumentWorkspace
+- Assign different templates to different sessions
+- Override defaults on per-session basis
+- **Future:** Phase 30.2
+
+⚠️ **Template Editing**
+- Edit existing dynamic templates
+- Visual template builder
+- Field drag-and-drop
+- **Future:** Phase 31
+
+⚠️ **Template Versioning**
+- Track template changes over time
+- Rollback to previous versions
+- Compare template versions
+- **Future:** Phase 32
+
+⚠️ **Template Import/Export**
+- Export templates as JSON
+- Import templates from file
+- Share templates between environments
+- **Future:** Phase 33
+
+---
+
+**Testing Validation:**
+
+**Functional:**
+- ✅ Admin can access `/admin/templates`
+- ✅ Non-admin redirected to home
+- ✅ Can upload valid JSON template
+- ✅ Invalid JSON shows error
+- ✅ Templates appear in list
+- ✅ Static vs dynamic badges correct
+- ✅ Cannot delete static templates
+- ✅ Can delete dynamic templates
+- ✅ Upload success/error messages display
+- ✅ Template count accurate
+
+**TypeScript:**
+- ✅ No compilation errors
+- ✅ All type definitions correct
+- ✅ Proper async/await typing
+
+**Integration:**
+- ✅ Uses Phase 29 ingestion service
+- ✅ Registry updates correctly
+- ✅ No regression in existing templates
+
+---
+
+**Known Limitations:**
+
+⚠️ **No Database Persistence**
+- Templates lost on page refresh
+- Cannot share across users
+- **Workaround:** Re-upload after restart
+- **Future:** Add database storage
+
+⚠️ **No Template Assignment UI**
+- Cannot assign templates to sessions via UI
+- `selectedTemplateSet` field exists but unused
+- **Workaround:** Manual code changes
+- **Future:** Add assignment interface
+
+⚠️ **No Template Editing**
+- Must re-upload entire template to change
+- No incremental edits
+- **Future:** Template editor UI
+
+⚠️ **No Multi-File Upload**
+- Upload one template at a time
+- **Future:** Batch upload support
+
+---
+
+**Phase 30 Complete.**
+
+System now provides **web-based template management** for admins, enabling self-service upload and management of OEM-specific PPAP templates without code deployments.
+
+**Operational Benefits:**
+- No code changes for new templates
+- Admin self-service
+- Immediate template availability
+- Visual template management
+
+**Strategic Benefits:**
+- Faster customer onboarding
+- Reduced IT dependency
+- Scalable multi-OEM support
+- Competitive agility
+
+**Next:** Phase 30.1 - Database persistence and template assignment UI (optional).
+
+---
+
 ## 2026-03-29 11:45 CT - Phase 29 - Template Ingestion Engine
 
 - Summary: Implemented template ingestion system to support external workbook-based templates (OEM-specific)

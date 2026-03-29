@@ -123,6 +123,21 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     }
     initUser();
   }, []);
+
+  // Phase 30.1: Load persisted dynamic templates from database
+  useEffect(() => {
+    async function loadDynamicTemplates() {
+      try {
+        const { loadTemplatesFromSource } = await import('../templates/registry');
+        await loadTemplatesFromSource();
+        console.log('[DocumentWorkspace] Dynamic templates loaded');
+      } catch (err) {
+        console.error('[DocumentWorkspace] Error loading dynamic templates:', err);
+        // Don't block app - continue with static templates
+      }
+    }
+    loadDynamicTemplates();
+  }, []);
   
   // Phase 25: Load version history when activeStep changes
   useEffect(() => {
