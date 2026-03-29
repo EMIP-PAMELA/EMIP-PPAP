@@ -1,12 +1,18 @@
 /**
  * Phase 29: Template Ingestion Service
+ * Phase 32: Intelligent Template Mapping Layer
  * 
  * Converts external template definitions (JSON-based) into TemplateDefinition objects
  * that can be used by the document engine.
+ * Phase 32: Enhanced to support field mappings for auto-population from process models.
  */
 
 import { TemplateDefinition, TemplateId, FieldDefinition, DocumentDraft, TemplateInput, DocumentLayout } from './types';
 import { IngestedTemplate, IngestedFieldDefinition, validateIngestedTemplate } from './templateSchema';
+import { applyTemplateMappings, hasFieldMappings, MappingSourceData } from './templateMappingService';
+import { mapBOMToProcessFlow } from '../mapping/bomToProcessFlow';
+import { mapProcessFlowToPFMEA } from '../mapping/processFlowToPFMEA';
+import { mapPFMEAToControlPlan } from '../mapping/pfmeaToControlPlan';
 
 /**
  * Convert ingested field definition to full FieldDefinition
@@ -50,12 +56,13 @@ function generateDefaultMetadata(templateId: string): Record<string, any> {
 
 /**
  * Default generate function for ingested templates
- * Initializes fields with empty values
+ * Phase 32: Uses mapping service if fieldMappings are provided
  */
 function createDefaultGenerateFunction(
   templateId: string,
   fieldDefinitions: FieldDefinition[],
-  metadataFields?: string[]
+  metadataFields?: string[],
+  fieldMappings?: IngestedTemplate['fieldMappings']
 ): (input: TemplateInput) => DocumentDraft {
   return (input: TemplateInput) => {
     const fields: Record<string, any> = {};
@@ -71,7 +78,38 @@ function createDefaultGenerateFunction(
       }
     }
 
-    // Generate metadata
+    // Phase 32: Apply field mappings if defined
+    if (hasFieldMappings(fieldMappings) && input.bom) {
+      console.log(`[TemplateIngestion] Template '${templateId}' has field mappings - generating source models`);
+      
+      // Build mapping source data from BOM
+      const sourceData: MappingSourceData = {
+        bom: input.bom,
+      };
+      
+      // Generate process models from BOM (mapping chain)
+      try {
+        sourceData.processFlow = mapBOMToProcessFlow(input.bom);
+        sourceData.pfmea = mapProcessFlowToPFMEA(sourceData.processFlow);
+        sourceData.controlPlan = mapPFMEAToControlPlan(sourceData.pfmea);
+        console.log(`[TemplateIngestion] Generated process models for mapping`);
+      } catch (err) {
+        console.error(`[TemplateIngestion] Error generating process models:`, err);
+        // Continue with empty fields if mapping fails
+      }
+      
+      // Apply mappings to populate fields
+      const mappedDraft = applyTemplateMappings(
+        templateId as TemplateId,
+        fieldMappings!,
+        sourceData,
+        fields // Start with base empty fields
+      );
+      
+      return mappedDraft;
+    }
+
+    // No mappings - use default behavior
     const metadata = generateDefaultMetadata(templateId);
 
     // Add custom metadata fields from BOM if specified
@@ -130,7 +168,8 @@ export function convertToTemplateDefinition(ingested: IngestedTemplate): Templat
     generate: createDefaultGenerateFunction(
       ingested.id,
       allFieldDefinitions,
-      ingested.metadataFields
+      ingested.metadataFields,
+      ingested.fieldMappings // Phase 32: Pass field mappings
     ),
   };
 

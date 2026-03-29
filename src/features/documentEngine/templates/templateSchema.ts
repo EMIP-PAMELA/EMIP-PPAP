@@ -1,11 +1,31 @@
 /**
  * Phase 29: Template Ingestion Engine
+ * Phase 32: Intelligent Template Mapping Layer
  * 
  * Schema definition for ingested templates (e.g., from OEM workbooks).
  * Provides a simplified, JSON-friendly format that can be converted to TemplateDefinition.
  */
 
 import { FieldType } from './types';
+
+/**
+ * Phase 32: Field mapping definition for auto-population
+ * Maps template fields to source model fields
+ */
+export type SourceModel = 'processFlow' | 'pfmea' | 'controlPlan' | 'bom';
+
+export interface FieldMapping {
+  targetField: string;           // Field key in template
+  sourceField: string;            // Field key in source model
+  sourceModel: SourceModel;       // Which model to pull from
+  isTableMapping?: boolean;       // True if mapping entire table rows
+  columnMappings?: ColumnMapping[]; // For table fields: map specific columns
+}
+
+export interface ColumnMapping {
+  targetColumn: string;           // Column key in template table
+  sourceColumn: string;            // Column key in source model table
+}
 
 /**
  * Simplified field definition for ingested templates
@@ -46,6 +66,8 @@ export interface IngestedTemplate {
   sections: IngestedSection[];
   // Optional metadata generation function (as string to be evaluated)
   metadataFields?: string[];
+  // Phase 32: Optional field mappings for auto-population
+  fieldMappings?: FieldMapping[];
 }
 
 /**
