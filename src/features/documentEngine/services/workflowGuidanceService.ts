@@ -1,6 +1,7 @@
 /**
  * Phase 38: Intelligent Workflow Guidance Layer
  * Phase 39: Guidance Intelligence Refinement
+ * Phase 40: Adaptive Guidance Weighting
  * 
  * Service for providing proactive workflow recommendations based on:
  * - Current workflow state
@@ -13,6 +14,12 @@
  * - Context-aware filtering
  * - Sticky priority for critical warnings
  * - Reduced noise (top 2 instead of top 3)
+ * 
+ * Phase 40 enhancements:
+ * - Workflow phase detection (initial, in_progress, validation, approval, complete)
+ * - Adaptive weighting of priority vs relevance based on workflow stage
+ * - Early stages: exploratory (favor relevance)
+ * - Late stages: strict (favor priority)
  */
 
 import { TemplateId } from '../templates/types';
@@ -24,6 +31,19 @@ import { VersionComparison } from '../persistence/versionDiffService';
  * Guidance types for categorization
  */
 export type GuidanceType = 'action' | 'warning' | 'insight';
+
+/**
+ * Phase 40: Workflow phases for adaptive weighting
+ */
+export type WorkflowPhase = 'initial' | 'in_progress' | 'validation' | 'approval' | 'complete';
+
+/**
+ * Phase 40: Guidance weights configuration
+ */
+export interface GuidanceWeights {
+  priorityWeight: number;    // Weight for priority score (0-1)
+  relevanceWeight: number;   // Weight for relevance score (0-1)
+}
 
 /**
  * Individual guidance item
@@ -40,11 +60,14 @@ export interface GuidanceItem {
 
 /**
  * Complete guidance result
+ * Phase 40: Added workflow phase info
  */
 export interface WorkflowGuidance {
   recommendedAction: string | null;
   warnings: GuidanceItem[];
   insights: GuidanceItem[];
+  workflowPhase?: WorkflowPhase; // Phase 40: Current workflow phase
+  phaseLabel?: string; // Phase 40: Human-readable phase description
 }
 
 /**
@@ -72,6 +95,89 @@ const WORKFLOW_ORDER: TemplateId[] = [
   'workInstructions',
   'inspectionPlan'
 ];
+
+/**
+ * Phase 40: Detect current workflow phase based on state
+ */
+function detectWorkflowPhase(
+  completedCount: number,
+  totalCount: number,
+  hasValidationErrors: boolean,
+  hasUnapprovedDocs: boolean
+): WorkflowPhase {
+  // No documents generated yet
+  if (completedCount === 0) {
+    return 'initial';
+  }
+  
+  // All documents complete and approved
+  if (completedCount === totalCount && !hasValidationErrors && !hasUnapprovedDocs) {
+    return 'complete';
+  }
+  
+  // Documents exist but have validation errors
+  if (hasValidationErrors) {
+    return 'validation';
+  }
+  
+  // Documents valid but awaiting approval
+  if (completedCount === totalCount && hasUnapprovedDocs) {
+    return 'approval';
+  }
+  
+  // Some documents generated, work in progress
+  return 'in_progress';
+}
+
+/**
+ * Phase 40: Get adaptive guidance weights based on workflow phase
+ */
+function getGuidanceWeights(phase: WorkflowPhase): GuidanceWeights {
+  switch (phase) {
+    case 'initial':
+      // Early exploration - favor relevance (what's contextually important now)
+      return { priorityWeight: 0.4, relevanceWeight: 0.6 };
+    
+    case 'in_progress':
+      // Balanced approach during active development
+      return { priorityWeight: 0.5, relevanceWeight: 0.5 };
+    
+    case 'validation':
+      // Strict focus on critical issues - favor priority (fix errors first)
+      return { priorityWeight: 0.7, relevanceWeight: 0.3 };
+    
+    case 'approval':
+      // Emphasis on completion and approval - favor priority
+      return { priorityWeight: 0.8, relevanceWeight: 0.2 };
+    
+    case 'complete':
+      // Maintenance mode - balanced with slight priority bias
+      return { priorityWeight: 0.6, relevanceWeight: 0.4 };
+    
+    default:
+      return { priorityWeight: 0.6, relevanceWeight: 0.4 };
+  }
+}
+
+/**
+ * Phase 40: Get human-readable phase label
+ */
+function getPhaseLabel(phase: WorkflowPhase): string {
+  switch (phase) {
+    case 'initial':
+      return 'Guidance Mode: Exploration';
+    case 'in_progress':
+      return 'Guidance Mode: Development';
+    case 'validation':
+      return 'Guidance Mode: Validation Focus';
+    case 'approval':
+      return 'Guidance Mode: Approval Focus';
+    case 'complete':
+      return 'Guidance Mode: Complete';
+    default:
+      return 'Guidance Mode: Active';
+  }
+}
 
 /**
  * Get intelligent workflow guidance based on current state
@@ -219,16 +325,26 @@ export function getWorkflowGuidance(state: WorkflowState): WorkflowGuidance {
     });
   }
 
+  // Phase 40: Detect workflow phase for adaptive weighting
+  const workflowPhase = detectWorkflowPhase(
+    completedSteps.length,
+    WORKFLOW_ORDER.length,
+    invalidSteps.length > 0,
+    unapprovedSteps.length > 0
+  );
+  const weights = getGuidanceWeights(workflowPhase);
+  const phaseLabel = getPhaseLabel(workflowPhase);
+  
   // Phase 39: Enhanced filtering with relevance scoring and sticky priority
   
   // Separate critical warnings (always show)
   const criticalWarnings = warnings.filter(w => w.isCritical);
   const nonCriticalWarnings = warnings.filter(w => !w.isCritical);
   
-  // Sort by combined score (priority + relevance)
+  // Phase 40: Adaptive sorting with dynamic weights
   const sortByRelevance = (a: GuidanceItem, b: GuidanceItem) => {
-    const scoreA = a.priority * 0.6 + a.relevanceScore * 0.4;
-    const scoreB = b.priority * 0.6 + b.relevanceScore * 0.4;
+    const scoreA = a.priority * weights.priorityWeight + a.relevanceScore * weights.relevanceWeight;
+    const scoreB = b.priority * weights.priorityWeight + b.relevanceScore * weights.relevanceWeight;
     return scoreB - scoreA;
   };
   
@@ -249,7 +365,9 @@ export function getWorkflowGuidance(state: WorkflowState): WorkflowGuidance {
   return {
     recommendedAction,
     warnings: finalWarnings, // Phase 39: Top 2 (down from 3)
-    insights: relevantInsights.slice(0, 2) // Phase 39: Top 2 (down from 3)
+    insights: relevantInsights.slice(0, 2), // Phase 39: Top 2 (down from 3)
+    workflowPhase, // Phase 40: Current phase
+    phaseLabel // Phase 40: Human-readable phase label
   };
 }
 
