@@ -4,6 +4,447 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 15:50 CT - Phase 37 - Impact Analysis Layer
+
+- Summary: Enhanced version comparison with impact detection and derived field tracking
+- Files modified:
+  - `src/features/documentEngine/persistence/versionDiffService.ts` — Added impact analysis logic
+  - `src/features/documentEngine/ui/VersionDiffView.tsx` — Added Impact Summary section
+  - `src/features/documentEngine/ui/DocumentEditor.tsx` — Fixed missing getMappingIndicator function
+- Impact: Version diffs now show causal relationships and derived changes
+- Objective: Transform diff from visual comparison into actionable insight
+
+---
+
+**Problem Statement**
+
+Phase 36 enabled visual comparison of versions, but provided no insight into:
+- Why fields changed (derived vs. manual)
+- Impact of changes on related fields
+- Causal relationships between changes
+- Severity of different changes
+
+**Before:**
+- Side-by-side diff shows what changed
+- No indication of field relationships
+- Manual changes indistinguishable from derived
+- No severity/priority indication
+
+**After:**
+- Impact Summary shows consequences
+- Derived field changes identified
+- Mapping source changes highlighted
+- Critical changes marked high severity
+
+---
+
+**Architecture**
+
+**Impact Types:**
+```typescript
+export type ImpactType = 'value_change' | 'derived_change' | 'mapping_change';
+
+export interface ImpactResult {
+  field: string;
+  impactType: ImpactType;
+  description: string;
+  severity?: 'low' | 'medium' | 'high';
+  relatedFields?: string[];
+}
+
+export interface ImpactAnalysis {
+  impacts: ImpactResult[];
+  derivedChanges: string[];
+  mappingChanges: string[];
+}
+```
+
+**Derived Field Rules:**
+```typescript
+const DERIVED_FIELD_RULES: Record<string, { inputs: string[]; description: string }> = {
+  'RPN': {
+    inputs: ['Severity', 'Occurrence', 'Detection'],
+    description: 'Risk Priority Number (Severity × Occurrence × Detection)'
+  },
+  'riskPriorityNumber': {
+    inputs: ['severity', 'occurrence', 'detection'],
+    description: 'Risk Priority Number'
+  }
+};
+```
+
+---
+
+**Impact Detection Logic**
+
+**1. Derived Field Changes:**
+```typescript
+// Check if changed field is an input to derived fields
+for (const [derivedField, rule] of Object.entries(DERIVED_FIELD_RULES)) {
+  if (rule.inputs.includes(fieldKey)) {
+    // Check if derived field also changed
+    const derivedDiff = comparison.fieldDiffs[derivedField];
+    if (derivedDiff && derivedDiff.changed) {
+      impacts.push({
+        field: derivedField,
+        impactType: 'derived_change',
+        description: `${derivedField} changed due to ${fieldKey} update`,
+        severity: 'medium',
+        relatedFields: [fieldKey]
+      });
+    }
+  }
+}
+```
+
+**Example:**
+- User changes `Severity` from 7 to 9
+- System detects `RPN` is derived from `Severity`
+- If `RPN` also changed, create impact:
+  - Field: `RPN`
+  - Type: `derived_change`
+  - Description: "RPN changed due to Severity update"
+  - Related: `[Severity]`
+
+**2. Mapping Source Changes:**
+```typescript
+for (const [fieldKey, diff] of Object.entries(comparison.mappingDiffs)) {
+  if (!diff.changed) continue;
+  
+  const oldSource = diff.oldMapping ? `${diff.oldMapping.sourceModel}.${diff.oldMapping.sourceField}` : 'none';
+  const newSource = diff.newMapping ? `${diff.newMapping.sourceModel}.${diff.newMapping.sourceField}` : 'none';
+  
+  impacts.push({
+    field: fieldKey,
+    impactType: 'mapping_change',
+    description: `Mapping source changed: ${oldSource} → ${newSource}`,
+    severity: 'low'
+  });
+}
+```
+
+**Example:**
+- Template updated
+- `partNumber` now maps from `bom.partNumber` instead of `processFlow.partNumber`
+- Impact created showing source change
+
+**3. Critical Field Changes:**
+```typescript
+const criticalFields = ['partNumber', 'revision', 'customerName'];
+for (const [fieldKey, diff] of Object.entries(comparison.fieldDiffs)) {
+  if (diff.changed && criticalFields.includes(fieldKey)) {
+    impacts.push({
+      field: fieldKey,
+      impactType: 'value_change',
+      description: `Critical field ${fieldKey} changed`,
+      severity: 'high'
+    });
+  }
+}
+```
+
+---
+
+**UI Implementation**
+
+**Impact Summary Section:**
+```tsx
+{hasImpacts && (
+  <div>
+    <h3>Impact Summary ({impactAnalysis.impacts.length})</h3>
+    
+    <div className="space-y-2">
+      {impactAnalysis.impacts.map((impact) => {
+        const style = getImpactStyle(impact);
+        return (
+          <div className={`${style.bgColor} ${style.borderColor}`}>
+            <span>{style.icon}</span>
+            <div>
+              <span>{impact.field}</span>
+              {impact.severity && (
+                <span className={severityBadge}>
+                  {impact.severity.toUpperCase()}
+                </span>
+              )}
+              <p>{impact.description}</p>
+              {impact.relatedFields && (
+                <p>Related: {impact.relatedFields.join(', ')}</p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
+```
+
+**Visual Indicators by Impact Type:**
+
+| Impact Type | Icon | Color | Example |
+|-------------|------|-------|---------|
+| `derived_change` | 🔗 | Purple | RPN changed due to Severity update |
+| `mapping_change` | 🔄 | Blue | Mapping source changed: bom → pfmea |
+| `value_change` (high) | ⚠️ | Red | Critical field partNumber changed |
+| `value_change` (normal) | 📝 | Yellow | Field value updated |
+
+**Severity Badges:**
+- **HIGH**: Red badge - critical fields (partNumber, revision)
+- **MEDIUM**: Yellow badge - derived field changes
+- **LOW**: Blue badge - mapping source changes
+
+---
+
+**Example: Complete Flow**
+
+**User Action:**
+1. Compares Version 1 → Version 3
+2. Changes detected:
+   - `Severity`: 7 → 9
+   - `Occurrence`: 3 → 3 (no change)
+   - `Detection`: 4 → 4 (no change)
+   - `RPN`: 84 → 108
+   - `partNumber`: ABC-123 → ABC-124
+
+**Impact Analysis:**
+```typescript
+{
+  impacts: [
+    {
+      field: 'RPN',
+      impactType: 'derived_change',
+      description: 'RPN changed due to Severity update',
+      severity: 'medium',
+      relatedFields: ['Severity']
+    },
+    {
+      field: 'partNumber',
+      impactType: 'value_change',
+      description: 'Critical field partNumber changed',
+      severity: 'high'
+    }
+  ],
+  derivedChanges: ['RPN'],
+  mappingChanges: []
+}
+```
+
+**User Sees:**
+```
+┌────────────────────────────────────────┐
+│ Impact Summary (2)                     │
+├────────────────────────────────────────┤
+│ 🔗 RPN                    [MEDIUM]     │
+│    RPN changed due to Severity update  │
+│    Related: Severity                   │
+│                                        │
+│ ⚠️ partNumber              [HIGH]      │
+│    Critical field partNumber changed   │
+└────────────────────────────────────────┘
+
+┌────────────────────────────────────────┐
+│ Field Changes (2)                      │
+├────────────────────────────────────────┤
+│ Severity                               │
+│ │ Version 1  │ Version 3 │             │
+│ │ 7          │ 9         │             │
+│                                        │
+│ RPN                                    │
+│ │ Version 1  │ Version 3 │             │
+│ │ 84         │ 108       │             │
+└────────────────────────────────────────┘
+```
+
+---
+
+**Use Cases**
+
+**1. Understanding Derived Changes:**
+- User sees RPN changed
+- Impact shows: "RPN changed due to Severity update"
+- User understands this is automatic, not manual edit
+
+**2. Validating Template Updates:**
+- Template author updates field mappings
+- Impact shows all mapping source changes
+- Verify intended fields affected
+
+**3. Reviewing Critical Changes:**
+- Reviewer sees partNumber changed
+- High severity badge draws attention
+- Ensures critical changes reviewed carefully
+
+**4. Debugging Unexpected Changes:**
+- User finds field changed unexpectedly
+- Impact shows derived vs. manual
+- Trace back to root cause
+
+**5. Compliance Auditing:**
+- Auditor reviews version history
+- Impact analysis shows change rationale
+- Distinguish intentional from calculated changes
+
+---
+
+**Benefits**
+
+**For Users:**
+- Understand why fields changed
+- See causal relationships
+- Distinguish manual from derived
+- Focus on important changes
+
+**For Reviewers:**
+- Prioritize critical changes
+- Verify derived changes correct
+- Catch unintended consequences
+- Approve with understanding
+
+**For Template Authors:**
+- Validate mapping changes work
+- See impact of template updates
+- Debug mapping issues
+- Test derived field logic
+
+**For Auditors:**
+- Trace change causality
+- Verify compliance
+- Document change rationale
+- Understand system behavior
+
+---
+
+**Non-Breaking Design**
+
+**Key Principles:**
+- Impact analysis is additive
+- Only shows if impacts detected
+- Does not affect diff display
+- Optional information layer
+
+**Preserved:**
+- ✅ All Phase 36 diff functionality
+- ✅ Field changes display unchanged
+- ✅ Mapping changes display unchanged
+- ✅ Empty state handling
+
+**Added:**
+- Impact Summary section (conditional)
+- Impact type detection
+- Severity classification
+- Visual indicators
+
+**Graceful Degradation:**
+```typescript
+// If no impacts detected
+if (impactAnalysis.impacts.length === 0) {
+  // Impact Summary section not rendered
+  // User sees standard diff view
+}
+```
+
+---
+
+**Extensibility**
+
+**Adding New Derived Fields:**
+```typescript
+const DERIVED_FIELD_RULES = {
+  // Existing
+  'RPN': { inputs: ['Severity', 'Occurrence', 'Detection'] },
+  
+  // Add new
+  'totalCost': {
+    inputs: ['unitCost', 'quantity'],
+    description: 'Total Cost (Unit Cost × Quantity)'
+  }
+};
+```
+
+**Adding New Critical Fields:**
+```typescript
+const criticalFields = [
+  'partNumber',
+  'revision',
+  'customerName',
+  'supplierName'  // Add new
+];
+```
+
+**Custom Impact Types:**
+```typescript
+export type ImpactType = 
+  | 'value_change'
+  | 'derived_change'
+  | 'mapping_change'
+  | 'validation_change'  // Add new
+  | 'approval_change';   // Add new
+```
+
+---
+
+**Technical Notes**
+
+**Performance:**
+- Impact analysis runs client-side
+- O(n) complexity where n = changed fields
+- Negligible overhead for typical diffs
+- Results cached in component state
+
+**Accuracy:**
+- Derived field detection based on rules
+- Only detects defined relationships
+- May miss custom calculations
+- Rule-based, not runtime analysis
+
+**Limitations:**
+- Only tracks predefined derived fields
+- Does not detect all possible relationships
+- Cannot analyze custom validation logic
+- Manual relationship definition required
+
+**Future Enhancements:**
+- Dynamic derived field detection
+- Cross-template impact analysis
+- Historical impact trending
+- Impact prediction for proposed changes
+
+---
+
+**Bug Fixes in This Phase**
+
+**1. Missing getMappingIndicator Function:**
+- **Issue**: DocumentEditor.tsx called undefined function
+- **Fix**: Added getMappingIndicator function to DocumentEditor
+- **Impact**: Phase 33 mapping debug now fully functional
+
+**2. Duplicate JSX in DocumentWorkspace:**
+- **Issue**: Duplicate closing tags causing syntax errors
+- **Fix**: Removed duplicate JSX fragments
+- **Impact**: TypeScript compilation now passes
+
+---
+
+**Phase 37 Complete.**
+
+Impact analysis layer now transforms version comparison from visual diff into **actionable insight** with causal relationship tracking, derived change detection, and severity-based prioritization.
+
+**Operational Benefits:**
+- Understand change causality
+- Identify derived changes
+- Prioritize critical updates
+- Debug unexpected behavior
+
+**Strategic Benefits:**
+- Enhanced review quality
+- Better compliance documentation
+- Improved template debugging
+- Stronger audit trail
+
+**Next:** Phase 38 - Bulk version operations (optional).
+
+---
+
 ## 2026-03-29 15:20 CT - Phase 36 - Version Comparison and Diff Layer
 
 - Summary: Added version comparison functionality to visualize changes between document versions
