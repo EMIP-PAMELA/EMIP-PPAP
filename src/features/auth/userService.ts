@@ -167,3 +167,28 @@ export function getRoleColor(role: UserRole): string {
   };
   return roleColors[role];
 }
+
+/**
+ * Phase 26: Update user role (admin only)
+ */
+export async function updateUserRole(userId: string, newRole: UserRole): Promise<boolean> {
+  try {
+    console.log(`[UserService] Updating user ${userId} role to ${newRole}`);
+    
+    const { error } = await supabase
+      .from('ppap_users')
+      .update({ role: newRole })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('[UserService] Failed to update user role:', error);
+      return false;
+    }
+
+    console.log(`[UserService] Successfully updated user ${userId} role to ${newRole}`);
+    return true;
+  } catch (err) {
+    console.error('[UserService] Unexpected error updating user role:', err);
+    return false;
+  }
+}

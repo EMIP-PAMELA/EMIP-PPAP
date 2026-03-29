@@ -4,6 +4,418 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 10:45 CT - Phase 25 - Version UX Completion & Approval Locking Enforcement
+
+- Summary: Completed version control system with full UI, read-only mode enforcement, and approval locking
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Added version history UI, viewing modes, locking enforcement
+  - `src/features/documentEngine/ui/DocumentEditor.tsx` — Added read-only mode support with disabled inputs
+- Impact: Users can view version history, switch between versions safely, and approved documents are fully locked
+- Objective: Complete usable version control system without architectural drift
+
+---
+
+**From Version Tracking → Complete Version UX**
+
+This phase completes the version control system introduced in Phase 24 by adding full user interface, enforcement, and safety mechanisms.
+
+---
+
+**Core Additions:**
+
+1. **Version History UI** — Visual list of all versions
+2. **Version Viewing** — Safe read-only viewing of previous versions
+3. **Approval Locking** — Enforced read-only mode for approved documents
+4. **New Revision Flow** — Create new versions from approved documents
+5. **Version Switching** — Navigate between versions without data loss
+
+---
+
+**Version History Panel:**
+
+**UI Components:**
+```tsx
+{documentVersions[activeStep] && documentVersions[activeStep].length > 1 && (
+  <button onClick={() => setShowVersionHistory(...)}>
+    {showVersionHistory[activeStep] ? 'Hide History' : 'Show History'}
+  </button>
+)}
+```
+
+**Version List Display:**
+- Version number (v1, v2, v3...)
+- Approved badge (green) for approved versions
+- Current badge (blue) for active version
+- Timestamp of creation
+- "View" button for previous versions
+
+**Visual States:**
+- **Current version** — Blue background, highlighted
+- **Viewing old version** — Blue border, darker background
+- **Approved version** — Green "Approved" badge
+- **Other versions** — Gray, hover effect
+
+---
+
+**Version Viewing (Read-Only Mode):**
+
+**Banner Display:**
+```tsx
+{isViewingOldVersion && viewingVersionNumber[activeStep] && (
+  <div className="bg-blue-50 border border-blue-200">
+    <span>👁️ Viewing Version {viewingVersionNumber[activeStep]} (Read-Only)</span>
+    <button onClick={() => returnToLatestVersion(activeStep)}>
+      Return to Latest
+    </button>
+  </div>
+)}
+```
+
+**Behavior:**
+- Loads version data into UI
+- Sets `isViewingOldVersion = true`
+- Disables ALL editing inputs
+- Shows blue banner with "Return to Latest" button
+- No validation changes allowed
+- No save operations allowed
+
+**State Management:**
+```typescript
+const [viewingVersionNumber, setViewingVersionNumber] = useState<Record<string, number | null>>({});
+const [isViewingOldVersion, setIsViewingOldVersion] = useState(false);
+```
+
+---
+
+**Approval Locking Enforcement:**
+
+**Banner Display:**
+```tsx
+{isCurrentVersionApproved(activeStep) && !isViewingOldVersion && (
+  <div className="bg-green-50 border border-green-200">
+    <span>🔒 This version is approved and locked</span>
+    <button onClick={() => createNewRevision(activeStep)}>
+      Create New Revision
+    </button>
+  </div>
+)}
+```
+
+**Enforcement:**
+- Status dropdown **disabled** for approved versions
+- DocumentEditor receives `readOnly={true}` prop
+- All inputs in editor **disabled**
+- Reset button **hidden**
+- "Read-Only" badge displayed in editor header
+
+**Check Function:**
+```typescript
+const isCurrentVersionApproved = (templateId: TemplateId): boolean => {
+  return documentMeta[templateId]?.status === 'approved';
+};
+```
+
+---
+
+**New Revision Flow:**
+
+**User Journey:**
+1. Document is approved (status = 'approved')
+2. User sees green "This version is approved and locked" banner
+3. User clicks "Create New Revision" button
+4. System creates new version:
+   - Clones current document content
+   - Sets status = 'draft'
+   - Assigns current user as owner
+   - Increments version number
+5. New version becomes active and editable
+
+**Implementation:**
+```typescript
+const createNewRevision = async (templateId: TemplateId) => {
+  const currentDoc = documents[templateId];
+  const currentEditable = editableDocuments[templateId];
+  
+  const newMetadata: DocumentMetadata = {
+    ownerId: currentUser.id,
+    ownerName: currentUser.name,
+    status: 'draft'
+  };
+  
+  const version = await createVersion(
+    docId, sessionId, templateId,
+    currentDoc, currentEditable,
+    newMetadata, currentUser.id
+  );
+  
+  // Update UI state to new version
+  setCurrentVersionNumbers(prev => ({ ...prev, [templateId]: version.versionNumber }));
+  setDocumentMeta(prev => ({ ...prev, [templateId]: newMetadata }));
+  setIsViewingOldVersion(false);
+};
+```
+
+---
+
+**Version Switching Logic:**
+
+**Switch to Previous Version:**
+```typescript
+const switchToVersion = async (templateId: TemplateId, versionNumber: number) => {
+  const version = await getVersions(docId).then(versions => 
+    versions.find(v => v.versionNumber === versionNumber)
+  );
+  
+  // Load version data (read-only)
+  setDocuments(prev => ({ ...prev, [templateId]: version.documentData }));
+  setEditableDocuments(prev => ({ ...prev, [templateId]: version.editableData }));
+  setDocumentMeta(prev => ({ ...prev, [templateId]: version.metadata }));
+  setViewingVersionNumber(prev => ({ ...prev, [templateId]: versionNumber }));
+  setIsViewingOldVersion(true);
+};
+```
+
+**Return to Latest Version:**
+```typescript
+const returnToLatestVersion = async (templateId: TemplateId) => {
+  const latestVersion = await getVersions(docId).then(versions => versions[0]);
+  
+  // Reload latest version
+  setDocuments(...);
+  setEditableDocuments(...);
+  setDocumentMeta(...);
+  setViewingVersionNumber(prev => ({ ...prev, [templateId]: null }));
+  setIsViewingOldVersion(false);
+};
+```
+
+**Safety Rules:**
+- Only ONE active editable version at a time
+- Switching versions does NOT mutate data
+- Version data loaded from database (immutable)
+- No accidental overwrites
+
+---
+
+**DocumentEditor Read-Only Mode:**
+
+**Interface Update:**
+```typescript
+interface DocumentEditorProps {
+  draft: DocumentDraft;
+  templateId: TemplateId;
+  onFieldChange: (fieldKey: string, value: any) => void;
+  onReset: () => void;
+  hasChanges: boolean;
+  readOnly?: boolean;  // Phase 25
+}
+```
+
+**Disabled Elements:**
+- ✅ Text inputs — `disabled={readOnly}`
+- ✅ Textareas — `disabled={readOnly}`
+- ✅ Select dropdowns — `disabled={readOnly}`
+- ✅ Table cell inputs — `disabled={readOnly}`
+- ✅ "Add Row" button — `disabled={readOnly}`
+- ✅ "Delete Row" buttons — `disabled={readOnly}`
+- ✅ "Reset to Generated" button — Hidden when `readOnly`
+
+**Visual Indicators:**
+- Read-only inputs: `bg-gray-50 cursor-not-allowed`
+- "Read-Only" badge in editor header
+- Disabled buttons: `opacity-50 cursor-not-allowed`
+
+---
+
+**UI State Management:**
+
+**New State Variables:**
+```typescript
+// Phase 25: Version viewing and locking
+const [viewingVersionNumber, setViewingVersionNumber] = useState<Record<string, number | null>>({});
+const [showVersionHistory, setShowVersionHistory] = useState<Record<string, boolean>>({});
+const [isViewingOldVersion, setIsViewingOldVersion] = useState(false);
+```
+
+**State Transitions:**
+1. **Normal editing** — `isViewingOldVersion = false`, no version selected
+2. **Viewing old version** — `isViewingOldVersion = true`, `viewingVersionNumber[step] = X`
+3. **Approved version** — `isCurrentVersionApproved() = true`, read-only enforced
+4. **New revision created** — Reset to normal editing mode
+
+---
+
+**Version History Loading:**
+
+**Auto-load on Step Change:**
+```typescript
+useEffect(() => {
+  async function loadVersionHistory() {
+    if (activeStep && activeSessionId) {
+      const docId = generateDocumentId(activeSessionId, activeStep);
+      const versions = await getVersions(docId);
+      if (versions.length > 0) {
+        setDocumentVersions(prev => ({ ...prev, [activeStep]: versions }));
+      }
+    }
+  }
+  loadVersionHistory();
+}, [activeStep, activeSessionId]);
+```
+
+**Auto-load on Version Creation:**
+```typescript
+// After creating version in handleGenerateDocument
+const versions = await getVersions(docId);
+setDocumentVersions(prev => ({ ...prev, [stepId]: versions }));
+```
+
+---
+
+**UI Indicators:**
+
+**Badges:**
+- 🔒 **Approved and Locked** — Green banner, "Create New Revision" button
+- 👁️ **Viewing Old Version** — Blue banner, "Return to Latest" button
+- **Approved** — Green badge in version list
+- **Current** — Blue badge in version list
+- **Read-Only** — Gray badge in editor header
+
+**Color Scheme:**
+- **Green** — Approved, locked, ready for submission
+- **Blue** — Current version, active editing, version number
+- **Yellow** — Modified (not saved), validation warnings
+- **Red** — Errors, delete actions
+- **Gray** — Read-only, disabled states
+
+---
+
+**Prevented Actions:**
+
+**When viewing old version:**
+- ❌ Cannot edit fields
+- ❌ Cannot change status
+- ❌ Cannot save changes
+- ❌ Cannot regenerate
+- ❌ Cannot validate (no changes possible)
+
+**When current version is approved:**
+- ❌ Cannot edit fields
+- ❌ Cannot change status
+- ❌ Cannot reset to generated
+- ✅ CAN create new revision
+- ✅ CAN view version history
+
+---
+
+**Preserved Existing Behavior:**
+
+**No Regressions:**
+- ✅ Document generation still works
+- ✅ Approval workflow still works
+- ✅ Validation still works
+- ✅ Session persistence still works
+- ✅ Auto-save still works
+- ✅ Multi-session still works
+
+**Additive Changes Only:**
+- No database schema changes
+- No breaking changes to existing APIs
+- All new features are opt-in (click to show history)
+- Default behavior unchanged
+
+---
+
+**User Experience Flow:**
+
+**Scenario 1: Normal Editing**
+1. User generates document → Version 1 created
+2. User edits document
+3. User approves → Version 2 created (approved)
+4. Document locked, green banner shown
+
+**Scenario 2: Creating Revision**
+1. Document is approved (Version 2)
+2. User clicks "Create New Revision"
+3. Version 3 created (draft status)
+4. User can now edit Version 3
+5. Version 2 remains locked and immutable
+
+**Scenario 3: Viewing History**
+1. User clicks "Show History"
+2. Version list appears (v3, v2, v1)
+3. User clicks "View" on v1
+4. v1 content loaded (read-only)
+5. Blue banner: "Viewing Version 1 (Read-Only)"
+6. User clicks "Return to Latest"
+7. Back to v3 (editable)
+
+---
+
+**Testing Validation:**
+
+**Functional:**
+- ✅ Version history loads correctly
+- ✅ Version list displays all versions
+- ✅ Clicking "View" switches to old version
+- ✅ Old versions are read-only (no editing possible)
+- ✅ "Return to Latest" restores current version
+- ✅ Approved versions show lock banner
+- ✅ Status dropdown disabled for approved versions
+- ✅ DocumentEditor shows "Read-Only" badge
+- ✅ All inputs disabled in read-only mode
+- ✅ "Create New Revision" creates new draft version
+- ✅ New revision becomes active and editable
+
+**TypeScript:**
+- ✅ No compilation errors
+- ✅ All type definitions correct
+- ✅ readOnly prop added to DocumentEditor interface
+
+**UI:**
+- ✅ Banners display correctly
+- ✅ Badges color-coded appropriately
+- ✅ Version history panel styled correctly
+- ✅ Read-only inputs visually disabled
+- ✅ No layout issues
+
+---
+
+**Known Limitations (Future Work):**
+
+⚠️ **No version comparison/diff**
+- Cannot see what changed between versions
+- **Future:** Add side-by-side diff view
+
+⚠️ **No version comments/annotations**
+- Cannot add notes to explain why version was created
+- **Future:** Add comment field to version records
+
+⚠️ **No version restoration**
+- Cannot "restore" old version as new current version
+- Workaround: View old version, click "Create New Revision"
+- **Future:** Add "Restore as New Version" button
+
+⚠️ **No collaborative editing indicators**
+- Cannot see if another user is viewing same document
+- **Future:** Add presence indicators
+
+---
+
+**Phase 25 Complete.**
+
+Version control system is now **fully functional** with complete UI, safety mechanisms, and approval locking enforcement. Users can safely view historical versions, create new revisions from approved documents, and the system prevents accidental modifications to approved content.
+
+**User-Facing Benefits:**
+- Clear visibility into document history
+- Safe exploration of previous versions
+- Protection against accidental edits to approved documents
+- Smooth workflow for creating new revisions
+
+**Next:** Phase 26 - Version comparison and diff view (optional enhancement).
+
+---
+
 ## 2026-03-29 10:30 CT - Phase 24 - Document Version Control & Audit Trail
 
 - Summary: Implemented version control for documents with immutable approved versions and complete audit trail
