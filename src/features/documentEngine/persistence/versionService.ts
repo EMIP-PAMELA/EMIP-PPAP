@@ -1,12 +1,15 @@
 /**
  * Phase 24: Document Version Control and Audit Trail
+ * Phase 35: Persistent Mapping Metadata
  * 
  * Service for managing document versions, history, and immutable approved versions.
+ * Phase 35: Stores mapping metadata for audit trail and historical debugging.
  */
 
 import { supabase } from '@/src/lib/supabaseClient';
 import { DocumentDraft, TemplateId } from '../templates/types';
 import { DocumentMetadata } from './sessionService';
+import { MappingMetadata } from '../templates/templateMappingService';
 
 export type DocumentVersion = {
   id: string;
@@ -20,10 +23,12 @@ export type DocumentVersion = {
   createdBy: string | null;
   createdAt: string;
   isApproved: boolean;
+  mappingMetadata?: MappingMetadata;  // Phase 35: Mapping provenance for audit trail
 };
 
 /**
  * Create a new version of a document
+ * Phase 35: Stores mapping metadata for audit trail
  * Called when:
  * - Document is first generated
  * - Document is re-generated
@@ -36,7 +41,8 @@ export async function createVersion(
   documentData: DocumentDraft,
   editableData: DocumentDraft,
   metadata: DocumentMetadata,
-  createdBy: string | null
+  createdBy: string | null,
+  mappingMetadata?: MappingMetadata  // Phase 35: Optional mapping metadata
 ): Promise<DocumentVersion | null> {
   try {
     console.log('[VersionService] Creating version for document:', { documentId, templateId });
@@ -65,6 +71,7 @@ export async function createVersion(
         metadata: metadata,
         created_by: createdBy,
         is_approved: metadata.status === 'approved',
+        mapping_metadata: mappingMetadata || null,  // Phase 35: Store mapping metadata
       })
       .select()
       .single();
@@ -88,6 +95,7 @@ export async function createVersion(
       createdBy: version.created_by,
       createdAt: version.created_at,
       isApproved: version.is_approved,
+      mappingMetadata: version.mapping_metadata as MappingMetadata | undefined,  // Phase 35
     };
   } catch (err) {
     console.error('[VersionService] Unexpected error creating version:', err);
@@ -126,6 +134,7 @@ export async function getVersions(documentId: string): Promise<DocumentVersion[]
       createdBy: v.created_by,
       createdAt: v.created_at,
       isApproved: v.is_approved,
+      mappingMetadata: v.mapping_metadata as MappingMetadata | undefined,  // Phase 35
     }));
   } catch (err) {
     console.error('[VersionService] Unexpected error getting versions:', err);
@@ -165,6 +174,7 @@ export async function getLatestVersion(documentId: string): Promise<DocumentVers
       createdBy: data.created_by,
       createdAt: data.created_at,
       isApproved: data.is_approved,
+      mappingMetadata: data.mapping_metadata as MappingMetadata | undefined,  // Phase 35
     };
   } catch (err) {
     console.error('[VersionService] Unexpected error getting latest version:', err);
@@ -206,6 +216,7 @@ export async function getVersionByNumber(
       createdBy: data.created_by,
       createdAt: data.created_at,
       isApproved: data.is_approved,
+      mappingMetadata: data.mapping_metadata as MappingMetadata | undefined,  // Phase 35
     };
   } catch (err) {
     console.error('[VersionService] Unexpected error getting version by number:', err);

@@ -585,7 +585,8 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
           draft,
           editableCopy,
           metadata,
-          currentUser.id
+          currentUser.id,
+          mappingMetadata[stepId]  // Phase 35: Pass mapping metadata
         );
         
         if (version) {
@@ -703,8 +704,6 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   const isCurrentVersionApproved = (templateId: TemplateId): boolean => {
     return documentMeta[templateId]?.status === 'approved';
   };
-  
-  const switchToVersion = async (templateId: TemplateId, versionNumber: number) => {
     if (!activeSessionId) return;
     
     const docId = generateDocumentId(activeSessionId, templateId);
@@ -721,13 +720,18 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     setDocuments(prev => ({ ...prev, [templateId]: version.documentData }));
     setEditableDocuments(prev => ({ ...prev, [templateId]: version.editableData }));
     setDocumentMeta(prev => ({ ...prev, [templateId]: version.metadata }));
+    
+    // Phase 35: Restore mapping metadata from version
+    if (version.mappingMetadata) {
+      setMappingMetadata(prev => ({ ...prev, [templateId]: version.mappingMetadata }));
+      console.log(`[DocumentWorkspace] Restored mapping metadata for version ${versionNumber}`);
+    }
+    
     setViewingVersionNumber(prev => ({ ...prev, [templateId]: versionNumber }));
     setIsViewingOldVersion(versionNumber !== currentVersionNumbers[templateId]);
     
     console.log(`[DocumentWorkspace] Switched to version ${versionNumber} for ${templateId}`);
   };
-  
-  const returnToLatestVersion = async (templateId: TemplateId) => {
     if (!activeSessionId) return;
     
     const docId = generateDocumentId(activeSessionId, templateId);
@@ -773,7 +777,8 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
       currentDoc,
       currentEditable,
       newMetadata,
-      currentUser.id
+      currentUser.id,
+      mappingMetadata[templateId]  // Phase 35: Pass mapping metadata
     );
     
     if (version) {
@@ -1559,7 +1564,8 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                               documents[activeStep],
                               editableDocuments[activeStep],
                               updatedMetadata,
-                              currentUser.id
+                              currentUser.id,
+                              mappingMetadata[activeStep]  // Phase 35: Pass mapping metadata
                             );
                             
                             if (version) {
