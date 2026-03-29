@@ -4,6 +4,547 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 11:45 CT - Phase 29 - Template Ingestion Engine
+
+- Summary: Implemented template ingestion system to support external workbook-based templates (OEM-specific)
+- Files created:
+  - `src/features/documentEngine/templates/templateSchema.ts` — Schema definition for ingested templates
+  - `src/features/documentEngine/templates/templateIngestionService.ts` — Template conversion service
+  - `src/features/documentEngine/templates/examples/tranePFMEA.json` — Example Trane-style PFMEA template
+- Files modified:
+  - `src/features/documentEngine/templates/types.ts` — Extended TemplateId to support dynamic IDs
+  - `src/features/documentEngine/templates/registry.ts` — Added dynamic template registration
+- Impact: System can now ingest and use external template definitions without code changes
+- Objective: Enable OEM-specific template customization via JSON configuration
+
+---
+
+**From Hard-Coded Templates → Data-Driven Template System**
+
+This phase extends the template system to support external template definitions, allowing OEMs (like Trane) to define custom document structures via JSON files without modifying application code.
+
+---
+
+**Core Features:**
+
+1. **Template Schema Definition** — Simplified JSON-friendly format for external templates
+2. **Ingestion Service** — Converts external templates to TemplateDefinition objects
+3. **Dynamic Registration** — Register templates at runtime without code changes
+4. **Example Templates** — Trane-style PFMEA template as reference implementation
+5. **Backward Compatibility** — Existing static templates unchanged
+
+---
+
+**Template Schema (IngestedTemplate):**
+
+**Structure:**
+```typescript
+export interface IngestedTemplate {
+  id: string;
+  name: string;
+  description: string;
+  sections: IngestedSection[];
+  metadataFields?: string[];
+}
+
+export interface IngestedSection {
+  id: string;
+  title: string;
+  fields: IngestedFieldDefinition[];
+}
+
+export interface IngestedFieldDefinition {
+  key: string;
+  label: string;
+  type: FieldType;
+  required?: boolean;
+  editable?: boolean;
+  options?: string[];
+  validation?: { min?: number; max?: number; pattern?: string; };
+  columns?: IngestedFieldDefinition[]; // For table fields
+}
+```
+
+**Purpose:**
+- JSON-serializable format
+- Simpler than full TemplateDefinition
+- No generate() function in JSON (auto-generated)
+- Easy for non-developers to create
+
+**Validation:**
+```typescript
+export function validateIngestedTemplate(template: any): template is IngestedTemplate {
+  // Validates structure
+  // Checks required fields
+  // Validates field types
+  // Ensures data integrity
+}
+```
+
+---
+
+**Ingestion Service:**
+
+**Core Functions:**
+
+**1. Parse Template:**
+```typescript
+export function parseWorkbookTemplate(source: string | object): IngestedTemplate {
+  // Parse JSON string or object
+  // Validate structure
+  // Return typed IngestedTemplate
+}
+```
+
+**2. Convert to TemplateDefinition:**
+```typescript
+export function convertToTemplateDefinition(ingested: IngestedTemplate): TemplateDefinition {
+  // Convert fields to FieldDefinitions
+  // Create document layout
+  // Generate default generate() function
+  // Return full TemplateDefinition
+}
+```
+
+**3. Load from JSON:**
+```typescript
+export async function loadTemplateFromJSON(jsonContent: string): Promise<TemplateDefinition> {
+  const ingested = parseWorkbookTemplate(jsonContent);
+  return convertToTemplateDefinition(ingested);
+}
+```
+
+---
+
+**Field Conversion:**
+
+**Ingested Field → FieldDefinition:**
+```typescript
+function convertFieldDefinition(ingestedField: IngestedFieldDefinition): FieldDefinition {
+  const fieldDef: FieldDefinition = {
+    key: ingestedField.key,
+    label: ingestedField.label,
+    type: ingestedField.type,
+    required: ingestedField.required ?? false,
+    editable: ingestedField.editable ?? true,
+  };
+
+  // Add options for select fields
+  if (ingestedField.options) {
+    fieldDef.options = ingestedField.options;
+  }
+
+  // Add validation rules
+  if (ingestedField.validation) {
+    fieldDef.validation = ingestedField.validation;
+  }
+
+  // Handle table fields with columns
+  if (ingestedField.type === 'table' && ingestedField.columns) {
+    fieldDef.rowFields = ingestedField.columns.map(convertFieldDefinition);
+  }
+
+  return fieldDef;
+}
+```
+
+**Supports:**
+- Text, number, select, table fields
+- Required/editable flags
+- Validation rules (min/max/pattern)
+- Dropdown options
+- Nested table structures
+
+---
+
+**Default Generate Function:**
+
+**Auto-Generated:**
+```typescript
+function createDefaultGenerateFunction(
+  templateId: string,
+  fieldDefinitions: FieldDefinition[],
+  metadataFields?: string[]
+): (input: TemplateInput) => DocumentDraft {
+  return (input: TemplateInput) => {
+    const fields: Record<string, any> = {};
+
+    // Initialize fields with empty values
+    for (const fieldDef of fieldDefinitions) {
+      if (fieldDef.type === 'table') {
+        fields[fieldDef.key] = [];
+      } else if (fieldDef.type === 'number') {
+        fields[fieldDef.key] = 0;
+      } else {
+        fields[fieldDef.key] = '';
+      }
+    }
+
+    // Generate metadata
+    const metadata = generateDefaultMetadata(templateId);
+
+    // Add BOM metadata if specified
+    if (metadataFields && input.bom) {
+      for (const metaKey of metadataFields) {
+        if (metaKey in input.bom) {
+          metadata[metaKey] = (input.bom as any)[metaKey];
+        }
+      }
+    }
+
+    return { templateId, metadata, fields };
+  };
+}
+```
+
+**Behavior:**
+- Initializes all fields with type-appropriate empty values
+- Generates standard metadata (generatedBy, generatedAt, etc.)
+- Pulls specified fields from BOM into metadata
+- No custom mapping logic (for now)
+
+---
+
+**Template Registry Extension:**
+
+**Static vs Dynamic Templates:**
+```typescript
+// Static templates (original system)
+const staticTemplates: Record<string, TemplateDefinition> = {
+  'PSW': PSW_TEMPLATE,
+  'PROCESS_FLOW': PROCESS_FLOW_TEMPLATE,
+  'PFMEA': PFMEA_TEMPLATE,
+  'CONTROL_PLAN': CONTROL_PLAN_TEMPLATE
+};
+
+// Dynamic templates (ingested from external sources)
+const dynamicTemplates: Record<string, TemplateDefinition> = {};
+
+// Combined registry
+function getAllTemplates(): Record<string, TemplateDefinition> {
+  return { ...staticTemplates, ...dynamicTemplates };
+}
+```
+
+**New Functions:**
+
+**Register Dynamic Template:**
+```typescript
+export function registerDynamicTemplate(template: TemplateDefinition): void {
+  if (staticTemplates[template.id]) {
+    console.warn(`Cannot override static template: ${template.id}`);
+    return;
+  }
+
+  dynamicTemplates[template.id] = template;
+  console.log(`Registered dynamic template: ${template.id}`);
+}
+```
+
+**Load from Source (Placeholder):**
+```typescript
+export async function loadTemplatesFromSource(): Promise<void> {
+  // Future implementation:
+  // - Load from /public/templates/*.json
+  // - Load from database
+  // - Load from API endpoint
+  // - Load from configuration service
+}
+```
+
+**List Dynamic Templates:**
+```typescript
+export function listDynamicTemplateIds(): string[] {
+  return Object.keys(dynamicTemplates);
+}
+```
+
+**Clear Dynamic Templates:**
+```typescript
+export function clearDynamicTemplates(): void {
+  for (const key of Object.keys(dynamicTemplates)) {
+    delete dynamicTemplates[key];
+  }
+}
+```
+
+---
+
+**TemplateId Extension:**
+
+**Before:**
+```typescript
+export type TemplateId = 'PSW' | 'PROCESS_FLOW' | 'PFMEA' | 'CONTROL_PLAN';
+```
+
+**After:**
+```typescript
+// Phase 29: Support dynamic template IDs from ingested templates
+export type TemplateId = 'PSW' | 'PROCESS_FLOW' | 'PFMEA' | 'CONTROL_PLAN' | string;
+```
+
+**Impact:**
+- Allows dynamic template IDs (e.g., 'TRANE_PFMEA', 'GM_CONTROL_PLAN')
+- Backward compatible (original IDs still valid)
+- TypeScript accepts any string as TemplateId
+
+---
+
+**Example: Trane PFMEA Template:**
+
+**File:** `templates/examples/tranePFMEA.json`
+
+**Structure:**
+```json
+{
+  "id": "TRANE_PFMEA",
+  "name": "Trane PFMEA (Process Failure Mode and Effects Analysis)",
+  "description": "Trane-specific PFMEA template based on OEM workbook structure",
+  "metadataFields": ["partNumber", "partName", "customer", "supplier"],
+  "sections": [
+    {
+      "id": "header",
+      "title": "PFMEA Header Information",
+      "fields": [
+        {
+          "key": "pfmeaNumber",
+          "label": "PFMEA Number",
+          "type": "text",
+          "required": true
+        },
+        // ... more header fields
+      ]
+    },
+    {
+      "id": "process_analysis",
+      "title": "Process Analysis",
+      "fields": [
+        {
+          "key": "processSteps",
+          "label": "Process Steps and Failure Modes",
+          "type": "table",
+          "required": true,
+          "columns": [
+            { "key": "processStep", "label": "Process Step / Function", "type": "text" },
+            { "key": "potentialFailureMode", "label": "Potential Failure Mode", "type": "text" },
+            { "key": "severity", "label": "Severity (SEV)", "type": "number", "validation": { "min": 1, "max": 10 } },
+            // ... more columns
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Features:**
+- 13 table columns for PFMEA analysis
+- Severity/Occurrence/Detection ratings (1-10)
+- RPN calculation field (read-only)
+- Recommended actions tracking
+- Matches Trane workbook structure
+
+---
+
+**Integration with Existing System:**
+
+**DocumentEditor:**
+- No changes required
+- Renders ingested templates automatically
+- Schema-driven rendering works for any TemplateDefinition
+- Table fields render correctly
+
+**Validation Engine:**
+- Works with ingested templates
+- Respects `required` flags
+- Applies validation rules (min/max/pattern)
+- No changes needed
+
+**Export System:**
+- Exports ingested templates to PDF
+- Uses template layout for rendering
+- Includes all sections and fields
+- No changes needed
+
+**Mapping Chain:**
+- Currently uses default generate() function (empty fields)
+- Future: Map BOM → Process Flow → PFMEA → Control Plan
+- Field key alignment required for auto-mapping
+- No inference logic allowed
+
+---
+
+**Usage Example:**
+
+**Loading a Template:**
+```typescript
+import { loadTemplateFromJSON } from './templateIngestionService';
+import { registerDynamicTemplate } from './registry';
+
+// Load JSON template
+const jsonContent = await fetch('/templates/tranePFMEA.json').then(r => r.text());
+const template = await loadTemplateFromJSON(jsonContent);
+
+// Register in system
+registerDynamicTemplate(template);
+
+// Now available via getTemplate('TRANE_PFMEA')
+```
+
+**Generating Document:**
+```typescript
+const template = getTemplate('TRANE_PFMEA');
+const draft = template.generate({ bom: normalizedBOM });
+// Returns document with empty fields initialized
+```
+
+---
+
+**Backward Compatibility:**
+
+**Preserved:**
+- ✅ Static templates unchanged
+- ✅ Existing template IDs work
+- ✅ DocumentEditor renders all templates
+- ✅ Validation engine works
+- ✅ Export system works
+- ✅ Version control works
+- ✅ Approval system works
+
+**No Breaking Changes:**
+- All existing code continues to work
+- Dynamic templates are additive
+- Cannot override static templates
+- Registry combines both template types
+
+---
+
+**Future Enhancements:**
+
+⚠️ **Auto-Loading from Directory**
+- Scan `/public/templates/` for JSON files
+- Auto-register on app startup
+- Hot reload on file changes
+- **Future:** Implement in loadTemplatesFromSource()
+
+⚠️ **Database-Backed Templates**
+- Store templates in Supabase
+- CRUD operations via admin UI
+- Version control for templates
+- **Future:** Template management interface
+
+⚠️ **Field Mapping Configuration**
+- Define BOM field → template field mappings in JSON
+- Auto-populate fields from mapping chain
+- Support calculated fields
+- **Future:** Mapping configuration schema
+
+⚠️ **Template Validation Rules**
+- Custom validation functions
+- Cross-field validation
+- Conditional requirements
+- **Future:** Extended validation schema
+
+⚠️ **Template Inheritance**
+- Base templates + overrides
+- OEM variants of standard templates
+- Shared sections across templates
+- **Future:** Template composition system
+
+---
+
+**Security Considerations:**
+
+**Template Source Trust:**
+- Only load templates from trusted sources
+- Validate structure before registration
+- Prevent code injection via generate() functions
+- Currently no user-uploaded templates
+
+**Field Key Sanitization:**
+- Field keys must be valid identifiers
+- No special characters allowed
+- Prevents object property injection
+
+**Generate Function Safety:**
+- Auto-generated functions are safe (no eval)
+- No custom JavaScript execution
+- All operations type-safe
+
+---
+
+**Testing Validation:**
+
+**Functional:**
+- ✅ Parse valid JSON template
+- ✅ Convert to TemplateDefinition
+- ✅ Register dynamic template
+- ✅ Retrieve via getTemplate()
+- ✅ List includes dynamic templates
+- ✅ Cannot override static templates
+- ✅ Validate schema correctly
+- ✅ Generate empty document draft
+- ✅ Field types convert correctly
+- ✅ Table fields with columns work
+
+**TypeScript:**
+- ✅ No compilation errors
+- ✅ All type definitions correct
+- ✅ TemplateId accepts dynamic strings
+
+**Integration:**
+- ✅ DocumentEditor renders ingested templates
+- ✅ Validation engine works
+- ✅ Export system works
+- ✅ No regression in static templates
+
+---
+
+**Known Limitations:**
+
+⚠️ **No Auto-Mapping**
+- Default generate() returns empty fields
+- Manual population required
+- **Workaround:** Extend generate() function manually
+- **Future:** Mapping configuration system
+
+⚠️ **No Template UI Management**
+- Must manually create JSON files
+- No visual template editor
+- **Future:** Admin UI for template creation
+
+⚠️ **No Template Versioning**
+- Templates loaded at runtime
+- No version history
+- **Future:** Template version control
+
+⚠️ **No Conditional Fields**
+- All fields always visible
+- No dynamic show/hide logic
+- **Future:** Conditional rendering rules
+
+---
+
+**Phase 29 Complete.**
+
+System now supports **data-driven template ingestion** from external sources (JSON files, workbooks). OEMs can define custom document structures without modifying application code, enabling rapid deployment of customer-specific PPAP requirements.
+
+**Operational Benefits:**
+- No code changes for new templates
+- Faster OEM onboarding
+- Reduced development overhead
+- Template reuse across customers
+
+**Strategic Benefits:**
+- Scalable to multiple OEMs
+- Customer-specific branding/language
+- Competitive differentiation
+- Reduced time-to-market
+
+**Next:** Phase 30 - Field mapping configuration and auto-population (optional).
+
+---
+
 ## 2026-03-29 11:30 CT - Phase 28 - PPAP Package Export & Submission Layer
 
 - Summary: Implemented complete PPAP package export with validation gating and submission-ready PDF generation

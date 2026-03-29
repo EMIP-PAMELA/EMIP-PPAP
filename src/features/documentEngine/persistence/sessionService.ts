@@ -45,6 +45,7 @@ export type PPAPSession = {
   documentTimestamps: Record<string, number>;
   documentMeta: Record<string, DocumentMetadata>;
   activeStep: TemplateId | null;
+  selectedTemplateSet?: string[];  // Phase 30: Custom template IDs assigned to this session
 };
 
 export type StoredSession = {
