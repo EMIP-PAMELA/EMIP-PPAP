@@ -753,6 +753,59 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     console.log(`[DocumentWorkspace] Returned to latest version for ${templateId}`);
   };
   
+  // Phase 36: Version comparison handlers
+  const toggleVersionSelection = (templateId: TemplateId, versionNumber: number) => {
+    setSelectedVersionsForCompare(prev => {
+      const current = prev[templateId] || [];
+      
+      if (current.includes(versionNumber)) {
+        // Deselect
+        return {
+          ...prev,
+          [templateId]: current.filter(v => v !== versionNumber)
+        };
+      } else if (current.length < 2) {
+        // Select (max 2)
+        return {
+          ...prev,
+          [templateId]: [...current, versionNumber].sort((a, b) => a - b)
+        };
+      }
+      
+      return prev;
+    });
+  };
+  
+  const compareSelectedVersions = async (templateId: TemplateId) => {
+    const selected = selectedVersionsForCompare[templateId];
+    
+    if (!selected || selected.length !== 2 || !activeSessionId) {
+      setError('Please select exactly 2 versions to compare');
+      return;
+    }
+    
+    const docId = generateDocumentId(activeSessionId, templateId);
+    const versions = documentVersions[templateId];
+    
+    if (!versions) return;
+    
+    const oldVersion = versions.find(v => v.versionNumber === selected[0]);
+    const newVersion = versions.find(v => v.versionNumber === selected[1]);
+    
+    if (!oldVersion || !newVersion) {
+      setError('Failed to load selected versions');
+      return;
+    }
+    
+    const comparison = compareVersions(oldVersion, newVersion);
+    setVersionComparison(comparison);
+    console.log(`[DocumentWorkspace] Comparing versions ${selected[0]} and ${selected[1]}`);
+  };
+  
+  const clearVersionComparison = () => {
+    setVersionComparison(null);
+  };
+  
   const createNewRevision = async (templateId: TemplateId) => {
     if (!activeSessionId || !currentUser) return;
     
