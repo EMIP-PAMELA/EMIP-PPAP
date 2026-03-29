@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { VersionComparison, formatFieldValue, formatMapping, getChangedFields, getChangedMappings } from '../persistence/versionDiffService';
+import { VersionComparison, formatFieldValue, formatMapping, getChangedFields, getChangedMappings, analyzeImpact, ImpactResult } from '../persistence/versionDiffService';
 
 interface VersionDiffViewProps {
   comparison: VersionComparison;
