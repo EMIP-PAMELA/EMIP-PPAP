@@ -411,14 +411,22 @@ export async function migrateLocalStorageSessions(): Promise<number> {
     // Migrate each session
     let migratedCount = 0;
     for (const session of sessionsToMigrate) {
-      const created = await createSession(session.name, session.ppapId, null, session.data);
-      if (created) {
-        // Save full session data
-        const saved = await saveSession({ ...session, id: created.id });
-        if (saved) {
-          migratedCount++;
-          console.log(`[SessionService] Migrated session: ${session.name}`);
-        }
+      const newSession = await createSession(
+        session.name,
+        session.ppapId || null,
+        session.createdBy || null
+      );
+      
+      if (!newSession) {
+        console.error(`[SessionService] Failed to create session for migration: ${session.name}`);
+        continue;
+      }
+      
+      // Save full session data
+      const saved = await saveSession({ ...session, id: newSession.id });
+      if (saved) {
+        migratedCount++;
+        console.log(`[SessionService] Migrated session: ${session.name}`);
       }
     }
 
