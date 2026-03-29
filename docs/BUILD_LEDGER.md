@@ -4,6 +4,578 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 12:15 CT - Phase 30.1 - Dynamic Template Persistence
+
+- Summary: Added database persistence for dynamic templates, enabling templates to survive app restarts
+- Files created:
+  - `supabase/migrations/20260329_create_dynamic_templates.sql` — Database schema for template storage
+  - `src/features/documentEngine/templates/templatePersistenceService.ts` — Template persistence service
+- Files modified:
+  - `src/features/documentEngine/templates/registry.ts` — Auto-load persisted templates
+  - `src/app/admin/templates/page.tsx` — Database integration for upload/delete
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Initialize dynamic templates on mount
+- Impact: Dynamic templates persist in database and load automatically on app startup
+- Objective: Make uploaded templates durable system assets
+
+---
+
+**From In-Memory → Database Persistence**
+
+This phase adds durable storage for dynamic templates, transforming them from ephemeral (lost on refresh) to permanent system assets stored in Supabase.
+
+---
+
+**Core Features:**
+
+1. **Database Schema** — `ppap_dynamic_templates` table with RLS policies
+2. **Persistence Service** — CRUD operations for template storage
+3. **Auto-Loading** — Templates load from database on app startup
+4. **Admin Integration** — Upload/delete operations persist to database
+5. **Workspace Integration** — Templates available immediately after upload
+
+---
+
+**Database Schema:**
+
+**Table:** `ppap_dynamic_templates`
+
+**Columns:**
+```sql
+id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+template_id TEXT NOT NULL UNIQUE
+name TEXT NOT NULL
+description TEXT
+template_json JSONB NOT NULL
+uploaded_by UUID REFERENCES ppap_users(id)
+created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+is_active BOOLEAN DEFAULT true
+```
+
+**Indexes:**
+- `idx_dynamic_templates_template_id` — Fast lookup by template ID
+- `idx_dynamic_templates_is_active` — Filter active templates
+- `idx_dynamic_templates_uploaded_by` — Track uploader
+
+**Constraints:**
+- `UNIQUE(template_id)` — Prevent duplicate template IDs
+- `uploaded_by` references `ppap_users(id)` — Track who uploaded
+
+**Triggers:**
+```sql
+CREATE TRIGGER trigger_update_dynamic_template_timestamp
+  BEFORE UPDATE ON ppap_dynamic_templates
+  FOR EACH ROW
+  EXECUTE FUNCTION update_dynamic_template_timestamp();
+```
+
+**Auto-updates `updated_at` on modifications**
+
+---
+
+**Row Level Security (RLS):**
+
+**Read Access:**
+```sql
+CREATE POLICY "Allow authenticated users to read active templates"
+  ON ppap_dynamic_templates
+  FOR SELECT
+  TO authenticated
+  USING (is_active = true);
+```
+
+**All authenticated users can read active templates**
+
+**Write Access (Admin Only):**
+```sql
+-- INSERT
+CREATE POLICY "Allow admins to insert templates"
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM ppap_users WHERE id = auth.uid() AND role = 'admin')
+  );
+
+-- UPDATE
+CREATE POLICY "Allow admins to update templates"
+  USING (
+    EXISTS (SELECT 1 FROM ppap_users WHERE id = auth.uid() AND role = 'admin')
+  );
+
+-- DELETE
+CREATE POLICY "Allow admins to delete templates"
+  USING (
+    EXISTS (SELECT 1 FROM ppap_users WHERE id = auth.uid() AND role = 'admin')
+  );
+```
+
+**Only admins can create, modify, or delete templates**
+
+---
+
+**Template Persistence Service:**
+
+**Type Definition:**
+```typescript
+export type PersistedTemplate = {
+  id: string;
+  template_id: string;
+  name: string;
+  description: string | null;
+  template_json: any;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+};
+```
+
+**Core Functions:**
+
+**1. Get Active Templates:**
+```typescript
+export async function getDynamicTemplates(): Promise<PersistedTemplate[]> {
+  const { data, error } = await supabase
+    .from('ppap_dynamic_templates')
+    .select('*')
+    .eq('is_active', true)
+    .order('created_at', { ascending: true });
+
+  return data || [];
+}
+```
+
+**2. Save Template:**
+```typescript
+export async function saveDynamicTemplate(
+  templateDefinition: TemplateDefinition,
+  uploadedBy?: string | null
+): Promise<PersistedTemplate | null> {
+  // Serialize template to JSON format
+  const templateJson = { /* ... */ };
+
+  const { data, error } = await supabase
+    .from('ppap_dynamic_templates')
+    .insert({
+      template_id: templateDefinition.id,
+      name: templateDefinition.name,
+      description: templateDefinition.description,
+      template_json: templateJson,
+      uploaded_by: uploadedBy || null,
+    })
+    .select()
+    .single();
+
+  return data;
+}
+```
+
+**3. Delete Template (Soft Delete):**
+```typescript
+export async function deleteDynamicTemplate(templateId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('ppap_dynamic_templates')
+    .update({ is_active: false })
+    .eq('template_id', templateId);
+
+  return !error;
+}
+```
+
+**Soft delete preserves history while hiding template**
+
+**4. Check Existence:**
+```typescript
+export async function templateExists(templateId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('ppap_dynamic_templates')
+    .select('id')
+    .eq('template_id', templateId)
+    .eq('is_active', true)
+    .single();
+
+  return !!data;
+}
+```
+
+**5. Load and Register:**
+```typescript
+export async function loadAndRegisterDynamicTemplates(): Promise<void> {
+  const persistedTemplates = await getDynamicTemplates();
+  
+  for (const persisted of persistedTemplates) {
+    try {
+      const ingestedTemplate = parseWorkbookTemplate(persisted.template_json);
+      const templateDefinition = convertToTemplateDefinition(ingestedTemplate);
+      registerDynamicTemplate(templateDefinition);
+    } catch (err) {
+      console.error(`Failed to load template ${persisted.template_id}:`, err);
+      // Continue loading other templates - don't let one bad template break app
+    }
+  }
+}
+```
+
+**Graceful failure - bad templates don't crash app**
+
+---
+
+**Template Serialization:**
+
+**Challenge:** TemplateDefinition contains a `generate()` function which cannot be serialized to JSON.
+
+**Solution:** Store the ingested template format (which has no functions) and regenerate the `generate()` function on load.
+
+**Serialization:**
+```typescript
+const templateJson = {
+  id: templateDefinition.id,
+  name: templateDefinition.name,
+  description: templateDefinition.description,
+  sections: templateDefinition.layout.sections.map(section => ({
+    id: section.id,
+    title: section.title,
+    fields: section.fields.map(fieldKey => {
+      const field = templateDefinition.fieldDefinitions.find(f => f.key === fieldKey);
+      return {
+        key: field.key,
+        label: field.label,
+        type: field.type,
+        required: field.required,
+        editable: field.editable,
+        options: field.options,
+        validation: field.validation,
+        columns: field.rowFields?.map(rowField => ({ /* ... */ })),
+      };
+    }),
+  })),
+};
+```
+
+**Deserialization:**
+```typescript
+const ingestedTemplate = parseWorkbookTemplate(persisted.template_json);
+const templateDefinition = convertToTemplateDefinition(ingestedTemplate);
+// convertToTemplateDefinition() recreates the generate() function
+```
+
+---
+
+**Registry Auto-Loading:**
+
+**Modified:** `loadTemplatesFromSource()`
+
+**Before (Phase 29):**
+```typescript
+export async function loadTemplatesFromSource(): Promise<void> {
+  // Placeholder - not implemented
+  console.log('[TemplateRegistry] loadTemplatesFromSource not yet implemented');
+}
+```
+
+**After (Phase 30.1):**
+```typescript
+export async function loadTemplatesFromSource(): Promise<void> {
+  if (persistenceServiceImported) {
+    return; // Already loaded
+  }
+
+  try {
+    const { loadAndRegisterDynamicTemplates } = await import('./templatePersistenceService');
+    await loadAndRegisterDynamicTemplates();
+    persistenceServiceImported = true;
+    console.log('[TemplateRegistry] Dynamic templates loaded from database');
+  } catch (err) {
+    console.error('[TemplateRegistry] Error loading templates:', err);
+    // Don't throw - allow app to continue with static templates
+  }
+}
+```
+
+**Called from DocumentWorkspace on mount**
+
+---
+
+**Admin Page Integration:**
+
+**Upload Process (Updated):**
+```typescript
+const handleFileUpload = async (event) => {
+  // 1. Parse and validate JSON
+  const ingestedTemplate = parseWorkbookTemplate(fileContent);
+  const templateDefinition = convertToTemplateDefinition(ingestedTemplate);
+
+  // 2. Check for duplicates
+  if (hasTemplate(templateDefinition.id)) {
+    setUploadError('Template ID already in use');
+    return;
+  }
+
+  const exists = await templateExists(templateDefinition.id);
+  if (exists) {
+    setUploadError('Template ID already exists in database');
+    return;
+  }
+
+  // 3. Save to database
+  const user = await getCurrentUser();
+  const saved = await saveDynamicTemplate(templateDefinition, user?.id);
+  
+  if (!saved) {
+    setUploadError('Failed to save template to database');
+    return;
+  }
+
+  // 4. Register in memory
+  registerDynamicTemplate(templateDefinition);
+
+  setUploadSuccess('Successfully uploaded and saved template');
+};
+```
+
+**Delete Process (Updated):**
+```typescript
+const handleDeleteTemplate = async (templateId) => {
+  const deleted = await deleteDynamicTemplate(templateId);
+  
+  if (!deleted) {
+    setUploadError('Failed to delete template from database');
+    return;
+  }
+
+  setUploadSuccess('Template deleted successfully');
+  await loadTemplates(); // Refresh list
+};
+```
+
+---
+
+**Workspace Integration:**
+
+**Added to DocumentWorkspace:**
+```typescript
+// Phase 30.1: Load persisted dynamic templates from database
+useEffect(() => {
+  async function loadDynamicTemplates() {
+    try {
+      const { loadTemplatesFromSource } = await import('../templates/registry');
+      await loadTemplatesFromSource();
+      console.log('[DocumentWorkspace] Dynamic templates loaded');
+    } catch (err) {
+      console.error('[DocumentWorkspace] Error loading dynamic templates:', err);
+      // Don't block app - continue with static templates
+    }
+  }
+  loadDynamicTemplates();
+}, []);
+```
+
+**Runs once on component mount**
+
+---
+
+**Load Order:**
+
+1. **Static templates** — Always loaded first (PSW, PROCESS_FLOW, PFMEA, CONTROL_PLAN)
+2. **Dynamic templates** — Loaded from database via `loadTemplatesFromSource()`
+3. **Validation** — Each template validated before registration
+4. **Graceful failure** — Bad templates logged but don't crash app
+
+**This ensures static templates are always available even if database load fails**
+
+---
+
+**Duplicate Prevention:**
+
+**Template ID Protection:**
+```typescript
+// 1. Check static registry
+if (hasTemplate(templateDefinition.id)) {
+  throw new Error('Cannot override static template');
+}
+
+// 2. Check database
+const exists = await templateExists(templateDefinition.id);
+if (exists) {
+  throw new Error('Template ID already exists');
+}
+
+// 3. Database constraint
+UNIQUE(template_id) -- Enforced at database level
+```
+
+**Three layers of protection**
+
+---
+
+**Error Handling:**
+
+**Template Load Failure:**
+```typescript
+for (const persisted of persistedTemplates) {
+  try {
+    // Load and register template
+  } catch (err) {
+    console.error(`Failed to load template ${persisted.template_id}:`, err);
+    // Continue with next template - don't crash
+  }
+}
+```
+
+**Database Query Failure:**
+```typescript
+export async function getDynamicTemplates(): Promise<PersistedTemplate[]> {
+  try {
+    const { data, error } = await supabase.from('ppap_dynamic_templates').select('*');
+    
+    if (error) {
+      console.error('[TemplatePersistence] Error fetching templates:', error);
+      return []; // Return empty array, not throw
+    }
+    
+    return data || [];
+  } catch (err) {
+    console.error('[TemplatePersistence] Unexpected error:', err);
+    return []; // Graceful degradation
+  }
+}
+```
+
+**Admin UI Feedback:**
+```typescript
+// Success
+setUploadSuccess('Successfully uploaded and saved template');
+
+// Failure
+setUploadError('Failed to save template to database');
+```
+
+---
+
+**User Experience:**
+
+**Before (Phase 30):**
+- Upload template → Appears in list
+- Refresh page → Template lost ❌
+- Warning: "Templates stored in memory only"
+
+**After (Phase 30.1):**
+- Upload template → Saved to database
+- Refresh page → Template still there ✅
+- Message: "Templates persist across restarts"
+
+**Templates now durable system assets**
+
+---
+
+**Testing Validation:**
+
+**Functional:**
+- ✅ Upload template → Saved to database
+- ✅ Refresh page → Template still available
+- ✅ Delete template → Removed from database
+- ✅ Duplicate template ID → Rejected
+- ✅ Override static template → Rejected
+- ✅ Bad template JSON → Skipped gracefully
+- ✅ Database error → App continues with static templates
+- ✅ Templates load on DocumentWorkspace mount
+
+**Database:**
+- ✅ RLS policies enforce admin-only writes
+- ✅ All users can read active templates
+- ✅ Unique constraint prevents duplicates
+- ✅ Soft delete preserves history
+- ✅ Timestamps auto-update
+
+**TypeScript:**
+- ✅ No compilation errors
+- ✅ All type definitions correct
+
+---
+
+**Backward Compatibility:**
+
+**Preserved:**
+- ✅ All static templates unchanged
+- ✅ Existing template rendering
+- ✅ Validation engine
+- ✅ Export system
+- ✅ Version control
+- ✅ Approval workflow
+
+**No Breaking Changes:**
+- Static templates still load first
+- Dynamic templates are additive only
+- Template failures don't crash app
+- Admin UI still works with or without database
+
+---
+
+**Future Enhancements:**
+
+⚠️ **Template Versioning**
+- Track template changes over time
+- Rollback to previous versions
+- Compare template versions
+- **Future:** Phase 32
+
+⚠️ **Template Sharing**
+- Export template as JSON
+- Import template from file
+- Share between environments
+- **Future:** Phase 33
+
+⚠️ **Template Metadata**
+- Tags for categorization
+- Search and filter
+- Usage analytics
+- **Future:** Phase 34
+
+⚠️ **Hard Delete Cleanup**
+- Admin UI to permanently remove soft-deleted templates
+- Bulk operations
+- **Future:** Phase 35
+
+---
+
+**Known Limitations:**
+
+⚠️ **No Template Editing**
+- Must delete and re-upload to modify
+- No incremental updates
+- **Workaround:** Download, edit JSON, re-upload with new ID
+- **Future:** Add edit functionality
+
+⚠️ **No Template Validation on Edit**
+- Templates validated on upload only
+- Corrupted templates may break on load
+- **Mitigation:** Load errors logged but don't crash app
+
+⚠️ **Memory Registry Stale After Delete**
+- Deleted template remains in memory until refresh
+- Won't reload from DB on next startup
+- **Acceptable:** Minor UX issue, functionally correct
+
+---
+
+**Phase 30.1 Complete.**
+
+Dynamic templates are now **durable database-backed assets** that persist across app restarts and page refreshes. Admins can upload OEM-specific templates with confidence that they will remain available to all users.
+
+**Operational Benefits:**
+- Templates persist permanently
+- No re-upload after restarts
+- Database backup protects templates
+- Multi-user template sharing
+
+**Strategic Benefits:**
+- Templates as data, not code
+- Rapid OEM onboarding
+- Scalable template management
+- Production-ready persistence
+
+**Next:** Phase 30.2 - Template assignment UI (optional).
+
+---
+
 ## 2026-03-29 12:00 CT - Phase 30 - Template Management UI & Assignment Layer
 
 - Summary: Implemented admin UI for managing dynamic templates with upload, validation, and listing capabilities

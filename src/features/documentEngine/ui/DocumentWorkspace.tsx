@@ -181,6 +181,35 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     checkEligibility();
   }, [activeSessionId, documents, documentMeta, validationResults]);
 
+  // Phase 31: Load customer and templates when active session changes
+  useEffect(() => {
+    async function loadCustomerTemplates() {
+      const activeSession = sessions.find(s => s.id === activeSessionId);
+      if (!activeSession?.data.customerId) {
+        setCustomerName(null);
+        setCustomerTemplates([]);
+        return;
+      }
+
+      try {
+        const { getCustomerById, getTemplatesForCustomer } = await import('../../customer/customerService');
+        
+        const customer = await getCustomerById(activeSession.data.customerId);
+        if (customer) {
+          setCustomerName(customer.name);
+          
+          const templates = await getTemplatesForCustomer(customer.id);
+          setCustomerTemplates(templates);
+          
+          console.log(`[DocumentWorkspace] Loaded ${templates.length} templates for customer: ${customer.name}`);
+        }
+      } catch (err) {
+        console.error('[DocumentWorkspace] Error loading customer templates:', err);
+      }
+    }
+    loadCustomerTemplates();
+  }, [activeSessionId, sessions]);
+
   // Load session into workspace state
   const loadSessionIntoWorkspace = (session: StoredSession) => {
     console.log(`[DocumentWorkspace] Loading session: ${session.name}`);
@@ -921,6 +950,12 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                   Active: <strong>{activeSession.name}</strong>
                 </span>
               )}
+              {/* Phase 31: Customer indicator */}
+              {customerName && (
+                <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-medium rounded">
+                  Customer: {customerName}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -1008,13 +1043,19 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
           {normalizedBOM && (
             <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1">
                   <h4 className="text-green-800 font-semibold mb-1">BOM Loaded</h4>
                   <div className="text-sm text-green-700 flex gap-6">
                     <span>Part: <strong>{normalizedBOM.masterPartNumber}</strong></span>
                     <span>Operations: <strong>{normalizedBOM.summary.totalOperations}</strong></span>
                     <span>Components: <strong>{normalizedBOM.summary.totalComponents}</strong> ({normalizedBOM.summary.wires}W / {normalizedBOM.summary.terminals}T / {normalizedBOM.summary.hardware}H)</span>
                   </div>
+                  {/* Phase 31: Customer template info */}
+                  {customerName && customerTemplates.length > 0 && (
+                    <div className="text-sm text-green-700 mt-2">
+                      <span>📋 Customer Templates: <strong>{customerTemplates.length}</strong> assigned to {customerName}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-3">
                   <button

@@ -46,6 +46,7 @@ export type PPAPSession = {
   documentMeta: Record<string, DocumentMetadata>;
   activeStep: TemplateId | null;
   selectedTemplateSet?: string[];  // Phase 30: Custom template IDs assigned to this session
+  customerId?: string;  // Phase 31: Customer ID for template assignment
 };
 
 export type StoredSession = {
@@ -88,7 +89,7 @@ export async function createSession(
     }
 
     // Create session state record
-    const emptyData = initialData || {
+    const emptyData = {
       bomData: null,
       documents: {},
       editableDocuments: {},
@@ -96,6 +97,7 @@ export async function createSession(
       documentTimestamps: {},
       documentMeta: {},
       activeStep: null,
+      customerId: customerId
     };
 
     const { error: stateError } = await supabase
