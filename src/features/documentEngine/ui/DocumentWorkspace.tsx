@@ -106,6 +106,10 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   const [showVersionHistory, setShowVersionHistory] = useState<Record<string, boolean>>({});
   const [isViewingOldVersion, setIsViewingOldVersion] = useState(false);
 
+  // Phase 28: Package export
+  const [packageEligibility, setPackageEligibility] = useState<{ isEligible: boolean; message: string } | null>(null);
+  const [isExportingPackage, setIsExportingPackage] = useState(false);
+
   // Phase 23: Load current authenticated user
   useEffect(() => {
     async function initUser() {
@@ -133,6 +137,34 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     }
     loadVersionHistory();
   }, [activeStep, activeSessionId]);
+
+  // Phase 28: Check package export eligibility when documents change
+  useEffect(() => {
+    async function checkEligibility() {
+      if (!activeSessionId) {
+        setPackageEligibility(null);
+        return;
+      }
+
+      try {
+        const { checkExportEligibility } = await (0, eval)("import('../export/packageExporter')");
+        const eligibility = await checkExportEligibility(
+          activeSessionId,
+          documents,
+          documentMeta,
+          validationResults
+        );
+        setPackageEligibility({
+          isEligible: eligibility.isEligible,
+          message: eligibility.message
+        });
+      } catch (err) {
+        console.error('[DocumentWorkspace] Error checking export eligibility:', err);
+      }
+    }
+
+    checkEligibility();
+  }, [activeSessionId, documents, documentMeta, validationResults]);
 
   // Load session into workspace state
   const loadSessionIntoWorkspace = (session: StoredSession) => {
@@ -744,6 +776,50 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     }
   };
 
+  // Phase 28: Export complete PPAP package
+  const handleExportPackage = async () => {
+    if (!activeSessionId || !packageEligibility?.isEligible) {
+      setError(packageEligibility?.message || 'Cannot export PPAP package');
+      return;
+    }
+
+    setIsExportingPackage(true);
+    setError(null);
+
+    try {
+      console.log('[DocumentWorkspace] Exporting PPAP package...');
+      
+      const packageModule = await (0, eval)("import('../export/packageExporter')");
+      const { getApprovedDocuments, generatePackagePDF, downloadPackage } = packageModule;
+
+      // Get all approved documents
+      const approvedDocs = await getApprovedDocuments(activeSessionId, documents, documentMeta);
+      
+      if (approvedDocs.length === 0) {
+        setError('No approved documents found for export');
+        setIsExportingPackage(false);
+        return;
+      }
+
+      console.log(`[DocumentWorkspace] Generating package with ${approvedDocs.length} documents...`);
+
+      // Generate combined PDF
+      const activeSession = sessions.find(s => s.id === activeSessionId);
+      const sessionName = activeSession?.name || 'PPAP-Session';
+      const pdfBytes = await generatePackagePDF(approvedDocs, sessionName);
+
+      // Download
+      downloadPackage(pdfBytes, sessionName);
+      
+      console.log('[DocumentWorkspace] PPAP package exported successfully');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export PPAP package');
+      console.error('[DocumentWorkspace] Error exporting package:', err);
+    } finally {
+      setIsExportingPackage(false);
+    }
+  };
+
   const currentEditableDraft = activeStep ? editableDocuments[activeStep] ?? null : null;
   const currentValidation = activeStep ? validationResults[activeStep] ?? null : null;
 
@@ -844,6 +920,21 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                   className="px-3 py-2 bg-red-50 text-red-700 text-sm font-medium rounded-md hover:bg-red-100 transition-colors"
                 >
                   Delete
+                </button>
+              )}
+              {/* Phase 28: Export PPAP Package */}
+              {activeSessionId && packageEligibility && (
+                <button
+                  onClick={handleExportPackage}
+                  disabled={!packageEligibility.isEligible || isExportingPackage}
+                  title={packageEligibility.message}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    packageEligibility.isEligible && !isExportingPackage
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {isExportingPackage ? '⏳ Exporting...' : '📦 Export PPAP Package'}
                 </button>
               )}
             </div>
