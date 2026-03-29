@@ -4,6 +4,420 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 14:40 CT - Phase 38 - Intelligent Workflow Guidance Layer
+
+- Summary: Added proactive workflow guidance to transform system from reactive tool to intelligent assistant
+- Files created:
+  - `src/features/documentEngine/services/workflowGuidanceService.ts` — Guidance engine with recommendation logic
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Integrated guidance panel and state management
+- Impact: Users now receive real-time recommendations, warnings, and insights
+- Objective: Enhance user experience with intelligent, context-aware workflow assistance
+
+---
+
+**Problem Statement**
+
+Users working with PPAP documents needed to understand:
+- What to do next in the workflow
+- Which issues require immediate attention
+- How their changes impact the overall process
+- When documents are ready for approval
+
+**Before:**
+- Users had to manually determine next steps
+- Validation errors only visible after generation
+- No proactive warnings about workflow issues
+- No insights about progress or impact
+
+**After:**
+- Dynamic recommendations for next best action
+- Proactive warnings about validation and prerequisites
+- Real-time insights about workflow progress
+- Context-aware guidance based on current state
+
+---
+
+**Architecture**
+
+**Guidance Service:**
+```typescript
+export interface WorkflowGuidance {
+  recommendedAction: string | null;  // Primary recommendation
+  warnings: GuidanceItem[];          // Top 3 warnings
+  insights: GuidanceItem[];          // Top 3 insights
+}
+
+export interface GuidanceItem {
+  type: GuidanceType;
+  message: string;
+  priority: number;
+  templateId?: TemplateId;
+}
+
+export function getWorkflowGuidance(state: WorkflowState): WorkflowGuidance
+```
+
+**Workflow State Analysis:**
+```typescript
+interface WorkflowState {
+  activeStep: TemplateId | null;
+  documents: Record<TemplateId, any>;
+  editableDocuments: Record<TemplateId, any>;
+  documentMeta: Record<TemplateId, DocumentMetadata>;
+  validationResults: Record<TemplateId, ValidationResult>;
+  bomData: any;
+  hasChanges: boolean;
+  isViewingOldVersion: boolean;
+  recentComparison?: VersionComparison | null;
+}
+```
+
+---
+
+**Guidance Rules**
+
+**1. Workflow Progression:**
+```typescript
+// No BOM uploaded
+if (!state.bomData) {
+  recommendedAction = 'Upload a BOM file to begin generating PPAP documents';
+}
+
+// Next incomplete step
+if (incompleteSteps.length > 0) {
+  const nextStep = incompleteSteps[0];
+  recommendedAction = `Generate ${nextStep} to continue workflow`;
+}
+
+// Validation errors present
+if (invalidSteps.length > 0) {
+  recommendedAction = `Fix validation errors in ${firstInvalid}`;
+}
+```
+
+**2. Warnings:**
+```typescript
+// Unsaved changes
+if (state.hasChanges && !state.isViewingOldVersion) {
+  warnings.push({
+    message: 'You have unsaved changes - create a new version to preserve them',
+    priority: 80
+  });
+}
+
+// Validation errors
+if (validation && !validation.isValid) {
+  warnings.push({
+    message: `${templateId} has ${validation.errors.length} validation error(s)`,
+    priority: 90
+  });
+}
+
+// Prerequisite issues
+if (hasPFMEA && !hasProcessFlow) {
+  warnings.push({
+    message: 'PFMEA typically requires Process Flow as prerequisite',
+    priority: 70
+  });
+}
+```
+
+**3. Insights:**
+```typescript
+// Progress tracking
+const progressPercent = (completedSteps / totalSteps) * 100;
+insights.push({
+  message: `Workflow ${progressPercent}% complete (${completed}/${total} documents)`,
+  priority: 50
+});
+
+// Validation status
+if (totalErrors === 0 && completedSteps.length > 0) {
+  insights.push({
+    message: 'All generated documents pass validation',
+    priority: 40
+  });
+}
+
+// Version comparison insights
+if (recentComparison && fieldChanges > 0) {
+  insights.push({
+    message: `Recent comparison detected ${fieldChanges} field change(s)`,
+    priority: 60
+  });
+}
+```
+
+---
+
+**UI Implementation**
+
+**Guidance Panel:**
+```tsx
+{/* Phase 38: Guidance Panel */}
+{(workflowGuidance.recommendedAction || warnings.length > 0 || insights.length > 0) && (
+  <div className="bg-white rounded-lg shadow-md border">
+    {/* Header */}
+    <div className="bg-gradient-to-r from-indigo-600 to-purple-600">
+      <h3>🔮 Workflow Guidance</h3>
+    </div>
+    
+    {/* Recommended Action (Primary) */}
+    {recommendedAction && (
+      <div className="bg-indigo-50 border-indigo-200">
+        ➡️ Next Action: {recommendedAction}
+      </div>
+    )}
+    
+    {/* Warnings (Yellow) */}
+    {warnings.map(warning => (
+      <div className="bg-yellow-50 border-yellow-200">
+        ⚠️ {warning.message}
+      </div>
+    ))}
+    
+    {/* Insights (Blue) */}
+    {insights.map(insight => (
+      <div className="bg-blue-50 border-blue-200">
+        ℹ️ {insight.message}
+      </div>
+    ))}
+  </div>
+)}
+```
+
+**Dynamic Updates:**
+```typescript
+// Phase 38: Update workflow guidance when state changes
+useEffect(() => {
+  const guidance = getWorkflowGuidance({
+    activeStep,
+    documents,
+    editableDocuments,
+    documentMeta,
+    validationResults,
+    bomData: normalizedBOM,
+    hasChanges: hasChanges(),
+    isViewingOldVersion,
+    recentComparison: versionComparison
+  });
+  setWorkflowGuidance(guidance);
+}, [activeStep, documents, editableDocuments, documentMeta, validationResults, normalizedBOM, isViewingOldVersion, versionComparison]);
+```
+
+---
+
+**Example Scenarios**
+
+**Scenario 1: New User**
+```
+State:
+- No BOM uploaded
+- No documents generated
+
+Guidance:
+✅ Next Action: "Upload a BOM file to begin generating PPAP documents"
+```
+
+**Scenario 2: Mid-Workflow**
+```
+State:
+- Process Flow: ✅ Complete, Approved
+- PFMEA: ✅ Complete, Draft
+- Control Plan: ❌ Not generated
+
+Guidance:
+✅ Next Action: "Generate Control Plan to continue workflow"
+💡 Insight: "Workflow 40% complete (2/5 documents)"
+```
+
+**Scenario 3: Validation Errors**
+```
+State:
+- PFMEA: Generated but invalid (3 errors)
+- Unsaved changes present
+
+Guidance:
+✅ Next Action: "Fix validation errors in PFMEA"
+⚠️ Warning: "PFMEA has 3 validation error(s)"
+⚠️ Warning: "You have unsaved changes - create a new version to preserve them"
+```
+
+**Scenario 4: Prerequisite Issue**
+```
+State:
+- Process Flow: ❌ Not generated
+- PFMEA: ✅ Generated
+
+Guidance:
+⚠️ Warning: "PFMEA typically requires Process Flow as prerequisite"
+💡 Insight: "Workflow 20% complete (1/5 documents)"
+```
+
+**Scenario 5: Complete Workflow**
+```
+State:
+- All documents: ✅ Complete, Approved
+- All validation: ✅ Passing
+
+Guidance:
+✅ Next Action: "All documents complete and approved - ready for submission"
+💡 Insight: "All generated documents pass validation"
+💡 Insight: "Workflow 100% complete (5/5 documents)"
+```
+
+---
+
+**Prioritization Logic**
+
+**Priority Levels:**
+- **90-100:** Critical issues (validation errors)
+- **70-89:** Important warnings (unsaved changes, prerequisites)
+- **50-69:** Progress insights
+- **0-49:** General information
+
+**Display Limits:**
+- Recommended Action: 1 (highest priority)
+- Warnings: Top 3 (sorted by priority)
+- Insights: Top 3 (sorted by priority)
+
+**Sorting:**
+```typescript
+warnings.sort((a, b) => b.priority - a.priority);
+insights.sort((a, b) => b.priority - a.priority);
+
+return {
+  recommendedAction,
+  warnings: warnings.slice(0, 3),
+  insights: insights.slice(0, 3)
+};
+```
+
+---
+
+**Integration Points**
+
+**Data Sources:**
+1. **Validation Results** → Detect errors and invalid documents
+2. **Document Metadata** → Check approval status
+3. **Workflow State** → Determine completed/incomplete steps
+4. **Version Comparison** → Extract impact insights
+5. **BOM Data** → Verify initial prerequisite
+
+**State Dependencies:**
+```typescript
+useEffect(() => {
+  // Recalculate guidance when any dependency changes
+}, [
+  activeStep,
+  documents,
+  editableDocuments,
+  documentMeta,
+  validationResults,
+  normalizedBOM,
+  isViewingOldVersion,
+  versionComparison
+]);
+```
+
+**Non-Blocking Design:**
+- Guidance is **informational only**
+- Does NOT override workflow gating
+- Does NOT block user actions
+- Does NOT modify validation logic
+- Complements existing systems
+
+---
+
+**Benefits**
+
+**For New Users:**
+- Clear guidance on getting started
+- Step-by-step workflow progression
+- Reduced learning curve
+- Confidence in next actions
+
+**For Experienced Users:**
+- Quick identification of issues
+- Proactive warning about problems
+- Progress tracking at a glance
+- Impact awareness
+
+**For Reviewers:**
+- Immediate visibility into document status
+- Validation warnings surfaced early
+- Prerequisite compliance checks
+- Quality assurance support
+
+**For Administrators:**
+- Reduced support requests
+- Improved workflow compliance
+- Better user adoption
+- Enhanced productivity
+
+---
+
+**Technical Notes**
+
+**Performance:**
+- Guidance computed on state change only
+- No polling or background updates
+- Lightweight priority-based sorting
+- Minimal UI re-renders
+
+**Extensibility:**
+```typescript
+// Add new guidance rules
+if (customCondition) {
+  warnings.push({
+    type: 'warning',
+    message: 'Custom warning message',
+    priority: 85
+  });
+}
+
+// Add template-specific insights
+if (templateId === 'pfmea') {
+  insights.push({
+    type: 'insight',
+    message: 'PFMEA-specific insight',
+    priority: 55,
+    templateId: 'pfmea'
+  });
+}
+```
+
+**Future Enhancements:**
+- Machine learning for personalized recommendations
+- Historical pattern analysis
+- Cross-user workflow insights
+- Automated action triggers
+- Custom guidance rule editor
+- A/B testing for recommendation effectiveness
+
+---
+
+**Phase 38 Complete.**
+
+Intelligent workflow guidance layer successfully transforms the system from a reactive document generation tool into a **proactive workflow assistant** that understands context, anticipates needs, and guides users toward successful PPAP completion.
+
+**Operational Benefits:**
+- Reduced time-to-productivity for new users
+- Fewer validation errors reaching review
+- Better prerequisite compliance
+- Increased workflow completion rates
+
+**Strategic Benefits:**
+- Enhanced user experience
+- Reduced training requirements
+- Improved quality assurance
+- Foundation for AI-assisted workflows
+
+**Next:** Phase 39 - Advanced analytics and reporting (optional).
+
+---
+
 ## 2026-03-29 16:00 CT - Phase 37.1 - System Stabilization and TypeScript Cleanup
 
 - Summary: Resolved all TypeScript errors and stabilized system after Phase 37

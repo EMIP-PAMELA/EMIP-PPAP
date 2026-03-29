@@ -9,8 +9,8 @@
  */
 
 import { TemplateId } from '../templates/types';
-import { ValidationResult } from '../validation/validateDocument';
-import { DocumentMetadata } from '../types/bomTypes';
+import { ValidationResult } from '../validation/types';
+import { DocumentMetadata } from '../persistence/sessionService';
 import { VersionComparison } from '../persistence/versionDiffService';
 
 /**
