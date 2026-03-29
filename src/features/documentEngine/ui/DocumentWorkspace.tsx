@@ -100,6 +100,11 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
   // Phase 24: Version tracking
   const [documentVersions, setDocumentVersions] = useState<Record<string, DocumentVersion[]>>({});
   const [currentVersionNumbers, setCurrentVersionNumbers] = useState<Record<string, number>>({});
+  
+  // Phase 25: Version viewing and locking
+  const [viewingVersionNumber, setViewingVersionNumber] = useState<Record<string, number | null>>({});
+  const [showVersionHistory, setShowVersionHistory] = useState<Record<string, boolean>>({});
+  const [isViewingOldVersion, setIsViewingOldVersion] = useState(false);
 
   // Phase 23: Load current authenticated user
   useEffect(() => {
@@ -114,6 +119,20 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     }
     initUser();
   }, []);
+  
+  // Phase 25: Load version history when activeStep changes
+  useEffect(() => {
+    async function loadVersionHistory() {
+      if (activeStep && activeSessionId) {
+        const docId = generateDocumentId(activeSessionId, activeStep);
+        const versions = await getVersions(docId);
+        if (versions.length > 0) {
+          setDocumentVersions(prev => ({ ...prev, [activeStep]: versions }));
+        }
+      }
+    }
+    loadVersionHistory();
+  }, [activeStep, activeSessionId]);
 
   // Load session into workspace state
   const loadSessionIntoWorkspace = (session: StoredSession) => {
@@ -411,6 +430,10 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
         if (version) {
           setCurrentVersionNumbers(prev => ({ ...prev, [stepId]: version.versionNumber }));
           console.log(`[DocumentWorkspace] Created version ${version.versionNumber} for ${stepId}`);
+          
+          // Phase 25: Load version history after creating version
+          const versions = await getVersions(docId);
+          setDocumentVersions(prev => ({ ...prev, [stepId]: versions }));
         }
       }
       
@@ -515,6 +538,97 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     }
   };
   
+  // Phase 25: Helper functions for version operations
+  const isCurrentVersionApproved = (templateId: TemplateId): boolean => {
+    return documentMeta[templateId]?.status === 'approved';
+  };
+  
+  const switchToVersion = async (templateId: TemplateId, versionNumber: number) => {
+    if (!activeSessionId) return;
+    
+    const docId = generateDocumentId(activeSessionId, templateId);
+    const version = await getVersions(docId).then(versions => 
+      versions.find(v => v.versionNumber === versionNumber)
+    );
+    
+    if (!version) {
+      setError('Version not found');
+      return;
+    }
+    
+    // Load version data into UI (read-only)
+    setDocuments(prev => ({ ...prev, [templateId]: version.documentData }));
+    setEditableDocuments(prev => ({ ...prev, [templateId]: version.editableData }));
+    setDocumentMeta(prev => ({ ...prev, [templateId]: version.metadata }));
+    setViewingVersionNumber(prev => ({ ...prev, [templateId]: versionNumber }));
+    setIsViewingOldVersion(versionNumber !== currentVersionNumbers[templateId]);
+    
+    console.log(`[DocumentWorkspace] Switched to version ${versionNumber} for ${templateId}`);
+  };
+  
+  const returnToLatestVersion = async (templateId: TemplateId) => {
+    if (!activeSessionId) return;
+    
+    const docId = generateDocumentId(activeSessionId, templateId);
+    const latestVersion = await getVersions(docId).then(versions => versions[0]);
+    
+    if (!latestVersion) return;
+    
+    // Reload latest version
+    setDocuments(prev => ({ ...prev, [templateId]: latestVersion.documentData }));
+    setEditableDocuments(prev => ({ ...prev, [templateId]: latestVersion.editableData }));
+    setDocumentMeta(prev => ({ ...prev, [templateId]: latestVersion.metadata }));
+    setViewingVersionNumber(prev => ({ ...prev, [templateId]: null }));
+    setIsViewingOldVersion(false);
+    
+    console.log(`[DocumentWorkspace] Returned to latest version for ${templateId}`);
+  };
+  
+  const createNewRevision = async (templateId: TemplateId) => {
+    if (!activeSessionId || !currentUser) return;
+    
+    // Clone current document
+    const currentDoc = documents[templateId];
+    const currentEditable = editableDocuments[templateId];
+    
+    if (!currentDoc || !currentEditable) {
+      setError('No document to create revision from');
+      return;
+    }
+    
+    // Create new metadata with draft status
+    const newMetadata: DocumentMetadata = {
+      ownerId: currentUser.id,
+      ownerName: currentUser.name,
+      status: 'draft'
+    };
+    
+    // Create new version
+    const docId = generateDocumentId(activeSessionId, templateId);
+    const version = await createVersion(
+      docId,
+      activeSessionId,
+      templateId,
+      currentDoc,
+      currentEditable,
+      newMetadata,
+      currentUser.id
+    );
+    
+    if (version) {
+      setCurrentVersionNumbers(prev => ({ ...prev, [templateId]: version.versionNumber }));
+      setDocumentMeta(prev => ({ ...prev, [templateId]: newMetadata }));
+      setViewingVersionNumber(prev => ({ ...prev, [templateId]: null }));
+      setIsViewingOldVersion(false);
+      
+      // Reload version history
+      const versions = await getVersions(docId);
+      setDocumentVersions(prev => ({ ...prev, [templateId]: versions }));
+      
+      console.log(`[DocumentWorkspace] Created new revision ${version.versionNumber} for ${templateId}`);
+    }
+  };
+
   const resetSession = async () => {
     if (!activeSessionId) return;
     
@@ -1079,12 +1193,21 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                         <span className="px-2 py-1 bg-blue-50 border border-blue-200 rounded text-sm font-medium text-blue-800">
                           v{currentVersionNumbers[activeStep]}
                         </span>
+                        {documentVersions[activeStep] && documentVersions[activeStep].length > 1 && (
+                          <button
+                            onClick={() => setShowVersionHistory(prev => ({ ...prev, [activeStep]: !prev[activeStep] }))}
+                            className="px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                          >
+                            {showVersionHistory[activeStep] ? 'Hide History' : 'Show History'}
+                          </button>
+                        )}
                       </div>
                     )}
                     <div className="flex items-center gap-2">
                       <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">Status:</label>
                       <select
                         value={documentMeta[activeStep]?.status || 'draft'}
+                        disabled={isViewingOldVersion || isCurrentVersionApproved(activeStep)}
                         onChange={async (e) => {
                           const newStatus = e.target.value as DocumentStatus;
                           if (newStatus === 'approved' && currentUser && !canApprove(currentUser.role)) {
@@ -1155,10 +1278,100 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                       ℹ️ Your role ({getRoleDisplayName(currentUser.role)}) does not have approval authority. Only QA, Manager, or Admin can approve documents.
                     </div>
                   )}
+                  
+                  {/* Phase 25: Approval Lock Banner */}
+                  {isCurrentVersionApproved(activeStep) && !isViewingOldVersion && (
+                    <div className="mt-2 flex items-center justify-between bg-green-50 border border-green-200 rounded px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-green-800">
+                          🔒 This version is approved and locked
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => createNewRevision(activeStep)}
+                        className="px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors"
+                      >
+                        Create New Revision
+                      </button>
+                    </div>
+                  )}
+                  
+                  {/* Phase 25: View-Only Mode Banner */}
+                  {isViewingOldVersion && viewingVersionNumber[activeStep] && (
+                    <div className="mt-2 flex items-center justify-between bg-blue-50 border border-blue-200 rounded px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-blue-800">
+                          👁️ Viewing Version {viewingVersionNumber[activeStep]} (Read-Only)
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => returnToLatestVersion(activeStep)}
+                        className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                      >
+                        Return to Latest
+                      </button>
+                    </div>
+                  )}
+                  
                   <div className="mt-2 text-xs text-gray-600">
                     {documentMeta[activeStep]?.status === 'draft' && '📝 Complete and review document before submission'}
                     {documentMeta[activeStep]?.status === 'in_review' && '⏳ Awaiting approval'}
                     {documentMeta[activeStep]?.status === 'approved' && '✅ Ready for submission'}
+                  </div>
+                </div>
+              )}
+              
+              {/* Phase 25: Version History Panel */}
+              {currentEditableDraft && activeStep && showVersionHistory[activeStep] && documentVersions[activeStep] && (
+                <div className="bg-white rounded-lg shadow-md p-4 mb-4 border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Version History</h4>
+                  <div className="space-y-2">
+                    {documentVersions[activeStep].map((version) => {
+                      const isCurrent = version.versionNumber === currentVersionNumbers[activeStep];
+                      const isViewing = version.versionNumber === viewingVersionNumber[activeStep];
+                      
+                      return (
+                        <div
+                          key={version.id}
+                          className={`flex items-center justify-between p-3 rounded border ${
+                            isCurrent && !isViewingOldVersion
+                              ? 'border-blue-300 bg-blue-50'
+                              : isViewing
+                              ? 'border-blue-400 bg-blue-100'
+                              : 'border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className={`text-sm font-semibold ${
+                              isCurrent && !isViewingOldVersion ? 'text-blue-800' : 'text-gray-700'
+                            }`}>
+                              v{version.versionNumber}
+                            </span>
+                            {version.isApproved && (
+                              <span className="px-2 py-0.5 bg-green-100 text-green-800 text-xs font-medium rounded">
+                                Approved
+                              </span>
+                            )}
+                            {isCurrent && !isViewingOldVersion && (
+                              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs font-medium rounded">
+                                Current
+                              </span>
+                            )}
+                            <div className="text-xs text-gray-500">
+                              {new Date(version.createdAt).toLocaleString()}
+                            </div>
+                          </div>
+                          {!isCurrent && (
+                            <button
+                              onClick={() => switchToVersion(activeStep, version.versionNumber)}
+                              className="px-3 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                            >
+                              View
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1172,6 +1385,7 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                     onFieldChange={handleFieldChange}
                     onReset={handleResetToGenerated}
                     hasChanges={hasChanges()}
+                    readOnly={isViewingOldVersion || isCurrentVersionApproved(activeStep)}
                   />
                 ) : (
                   <div className="text-center py-16">

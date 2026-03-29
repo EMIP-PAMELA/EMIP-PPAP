@@ -9,9 +9,10 @@ interface DocumentEditorProps {
   onFieldChange: (fieldKey: string, value: any) => void;
   onReset: () => void;
   hasChanges: boolean;
+  readOnly?: boolean;  // Phase 25: Support read-only mode for approved/old versions
 }
 
-export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasChanges }: DocumentEditorProps) {
+export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasChanges, readOnly = false }: DocumentEditorProps) {
   const template = getTemplate(templateId);
   const layout = template.layout;
   const fieldDefinitions = template.fieldDefinitions;
@@ -34,11 +35,16 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
               Modified
             </span>
           )}
+          {readOnly && (
+            <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-medium">
+              Read-Only
+            </span>
+          )}
         </div>
-        {hasChanges && (
+        {hasChanges && !readOnly && (
           <button
             onClick={onReset}
-            className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors font-medium"
+            className="px-4 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 font-medium text-sm transition-colors"
           >
             Reset to Generated
           </button>
@@ -86,7 +92,10 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                         type="text"
                         value={String(value)}
                         onChange={(e) => onFieldChange(fieldKey, e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={readOnly}
+                        className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          readOnly ? 'bg-gray-50 cursor-not-allowed' : ''
+                        }`}
                       />
                     </div>
                   );
@@ -178,8 +187,10 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                                             }
                                             handleCellChange(v);
                                           }}
-                                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[80px]"
-                                          placeholder={col.type === 'number' ? '1–10' : ''}
+                                          disabled={readOnly}
+                                          className={`w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[80px] ${
+                                            readOnly ? 'bg-gray-50 cursor-not-allowed' : ''
+                                          }`}
                                         />
                                       </td>
                                     );
