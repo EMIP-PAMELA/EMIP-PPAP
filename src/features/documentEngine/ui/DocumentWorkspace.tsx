@@ -31,6 +31,7 @@ import { createVersion, getVersions, getVersionByNumber, generateDocumentId, Doc
 import { compareVersions, VersionComparison } from '../persistence/versionDiffService';
 import { VersionDiffView } from './VersionDiffView';
 import { getWorkflowGuidance, WorkflowGuidance } from '../services/workflowGuidanceService';
+import { runSystemCheck, SystemCheckResult, getReadinessDisplay, getDocumentTrace, DocumentTrace } from '../services/systemValidationService';
 
 type AppPhase = 'upload' | 'workflow';
 
@@ -131,6 +132,11 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
     insights: []
   });
 
+  // Phase 43: System validation and confidence state
+  const [systemCheckResult, setSystemCheckResult] = useState<SystemCheckResult | null>(null);
+  const [showSystemStatus, setShowSystemStatus] = useState(false);
+  const [activeDocumentTrace, setActiveDocumentTrace] = useState<DocumentTrace | null>(null);
+
   // Phase 23: Load current authenticated user
   useEffect(() => {
     async function initUser() {
@@ -186,10 +192,40 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
       bomData: normalizedBOM,
       hasChanges: hasChanges(),
       isViewingOldVersion,
-      recentComparison: versionComparison
+      recentComparison: versionComparison,
+      mappingMetadata
     });
     setWorkflowGuidance(guidance);
-  }, [activeStep, documents, editableDocuments, documentMeta, validationResults, normalizedBOM, isViewingOldVersion, versionComparison]);
+  }, [activeStep, documents, editableDocuments, documentMeta, validationResults, normalizedBOM, isViewingOldVersion, versionComparison, mappingMetadata]);
+
+  // Phase 43: Update system check when documents change
+  useEffect(() => {
+    const expectedTemplates: TemplateId[] = ['processFlow', 'pfmea', 'controlPlan', 'workInstructions', 'inspectionPlan'];
+    const checkResult = runSystemCheck(
+      documents,
+      validationResults,
+      documentMeta,
+      mappingMetadata,
+      expectedTemplates
+    );
+    setSystemCheckResult(checkResult);
+  }, [documents, validationResults, documentMeta, mappingMetadata]);
+
+  // Phase 43: Update active document trace when active step changes
+  useEffect(() => {
+    if (activeStep) {
+      const trace = getDocumentTrace(
+        activeStep,
+        editableDocuments[activeStep],
+        validationResults[activeStep],
+        documentMeta[activeStep],
+        mappingMetadata[activeStep]
+      );
+      setActiveDocumentTrace(trace);
+    } else {
+      setActiveDocumentTrace(null);
+    }
+  }, [activeStep, editableDocuments, validationResults, documentMeta, mappingMetadata]);
   
   // Phase 25: Load version history when activeSessionId or activeStep changes
   useEffect(() => {
@@ -1292,6 +1328,18 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                     >
                       {showMappingDebug ? '🔍 Mapping Debug: ON' : '🔍 Mapping Debug'}
                     </button>
+                    {/* Phase 43: System status toggle */}
+                    <button
+                      onClick={() => setShowSystemStatus(!showSystemStatus)}
+                      className={`ml-2 px-3 py-1 text-xs font-medium rounded transition-colors ${
+                        showSystemStatus
+                          ? 'bg-green-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                      title={showSystemStatus ? 'Hide system status' : 'Show system status'}
+                    >
+                      {showSystemStatus ? '✅ System Status: ON' : '✅ System Status'}
+                    </button>
                   </div>
                 </div>
                 <div className="flex gap-3">
@@ -1617,6 +1665,101 @@ export function DocumentWorkspace({ ppapId }: DocumentWorkspaceProps = {}) {
                             <p className="text-sm text-blue-800">{insight.message}</p>
                           </div>
                         ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Phase 43: System Status Panel */}
+              {showSystemStatus && systemCheckResult && (
+                <div className="mb-6 bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+                  <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3">
+                    <h3 className="text-white font-semibold flex items-center">
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      System Status
+                    </h3>
+                  </div>
+
+                  <div className="p-4 space-y-4">
+                    {/* Readiness Status */}
+                    {(() => {
+                      const readinessDisplay = getReadinessDisplay(systemCheckResult.status.readinessStatus);
+                      return (
+                        <div className={`flex items-center gap-3 p-4 rounded-lg border ${readinessDisplay.bgColor}`}>
+                          <span className="text-2xl">{readinessDisplay.icon}</span>
+                          <div className="flex-1">
+                            <p className={`font-semibold ${readinessDisplay.color}`}>{readinessDisplay.label}</p>
+                            <div className="text-xs text-gray-600 mt-1 flex gap-4">
+                              <span>Generated: {systemCheckResult.summary.generatedDocuments}/{systemCheckResult.summary.totalDocuments}</span>
+                              <span>Valid: {systemCheckResult.summary.validDocuments}/{systemCheckResult.summary.totalDocuments}</span>
+                              <span>Approved: {systemCheckResult.summary.approvedDocuments}/{systemCheckResult.summary.totalDocuments}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* System Summary */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-gray-50 rounded p-3 border border-gray-200">
+                        <p className="text-xs text-gray-500 mb-1">Total Validation Errors</p>
+                        <p className="text-lg font-bold text-gray-900">{systemCheckResult.summary.totalValidationErrors}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded p-3 border border-gray-200">
+                        <p className="text-xs text-gray-500 mb-1">System Health</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {workflowGuidance.systemHealth?.score || 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Active Document Trace */}
+                    {activeDocumentTrace && activeStep && (
+                      <div className="border-t pt-4">
+                        <p className="text-sm font-semibold text-gray-700 mb-2">Active Document: {activeStep}</p>
+                        <div className="bg-blue-50 rounded p-3 border border-blue-200 space-y-2">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">Source:</span>
+                            <span className="font-medium text-gray-900">{activeDocumentTrace.source}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">Mapping Coverage:</span>
+                            <span className="font-medium text-gray-900">{activeDocumentTrace.mappingCoverage}% populated</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">Validation Errors:</span>
+                            <span className={`font-medium ${activeDocumentTrace.validationErrorCount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                              {activeDocumentTrace.validationErrorCount}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">Status:</span>
+                            <span className={`font-medium ${activeDocumentTrace.isApproved ? 'text-green-600' : 'text-gray-600'}`}>
+                              {activeDocumentTrace.isApproved ? '✓ Approved' : activeDocumentTrace.isValid ? 'Valid' : 'Invalid'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Missing/Invalid Documents */}
+                    {(systemCheckResult.status.missingDocuments.length > 0 || systemCheckResult.status.invalidDocuments.length > 0) && (
+                      <div className="border-t pt-4 space-y-2">
+                        {systemCheckResult.status.missingDocuments.length > 0 && (
+                          <div className="bg-red-50 rounded p-3 border border-red-200">
+                            <p className="text-sm font-semibold text-red-700 mb-1">Missing Documents:</p>
+                            <p className="text-xs text-red-600">{systemCheckResult.status.missingDocuments.join(', ')}</p>
+                          </div>
+                        )}
+                        {systemCheckResult.status.invalidDocuments.length > 0 && systemCheckResult.status.missingDocuments.length === 0 && (
+                          <div className="bg-yellow-50 rounded p-3 border border-yellow-200">
+                            <p className="text-sm font-semibold text-yellow-700 mb-1">Invalid Documents:</p>
+                            <p className="text-xs text-yellow-600">{systemCheckResult.status.invalidDocuments.join(', ')}</p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
