@@ -27,16 +27,22 @@ function generatePfmeaSummaryWizard(input: TemplateInput): DocumentDraft {
     const pfmeaDefaults = getPfmeaDefaults(insights.category);
 
     console.log(`[W2C AUTOFILL] Operation: ${op.description}`);
-    console.log(`[W2C AUTOFILL] FailureMode: ${insights.suggestedFailureMode}`);
-    console.log(`[W2C AUTOFILL] Effect: ${insights.suggestedEffect}`);
-    console.log(`[W2C AUTOFILL] Severity: ${insights.suggestedSeverity}`);
+    console.log(`[W2C AUTOFILL] FailureMode: ${insights.failureMode.value}`);
+    console.log(`[W2C AUTOFILL] Effect: ${insights.effect.value}`);
+    console.log(`[W2C AUTOFILL] Severity: ${insights.severity.value}`);
+    console.log(`[W2D REASON] Field: failureMode`);
+    console.log(`[W2D REASON] Reason: ${insights.failureMode.reason}`);
+    console.log(`[W2D REASON] Field: effect`);
+    console.log(`[W2D REASON] Reason: ${insights.effect.reason}`);
+    console.log(`[W2D REASON] Field: severity`);
+    console.log(`[W2D REASON] Reason: ${insights.severity.reason}`);
 
     return {
       stepNumber: op.step,
       processFunction: op.description,
-      failureMode: insights.suggestedFailureMode,
-      effect: insights.suggestedEffect,
-      severity: insights.suggestedSeverity,
+      failureMode: insights.failureMode.value,
+      effect: insights.effect.value,
+      severity: insights.severity.value,
       occurrence: pfmeaDefaults.occurrence,
       detection: pfmeaDefaults.detection,
       rpn: null // Calculated by UI layer
@@ -54,7 +60,12 @@ function generatePfmeaSummaryWizard(input: TemplateInput): DocumentDraft {
     generatedAt: new Date().toISOString(),
     bomMasterPartNumber: bom.masterPartNumber,
     templateVersion: '1.0',
-    templateType: 'wizard'
+    templateType: 'wizard',
+    autofillTransparency: {
+      enabled: true,
+      version: 'W2D',
+      note: 'Each row includes autofill reasoning for failureMode, effect, severity, occurrence, and detection fields'
+    }
   };
 
   return {

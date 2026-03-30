@@ -27,15 +27,17 @@ function generateControlPlanWizard(input: TemplateInput): DocumentDraft {
     const controlDefaults = getControlPlanDefaults(insights.category);
 
     console.log(`[W2C AUTOFILL] Operation: ${op.description}`);
-    console.log(`[W2C AUTOFILL] Method: ${insights.suggestedMethod}`);
+    console.log(`[W2C AUTOFILL] Method: ${insights.method.value}`);
     console.log(`[W2C AUTOFILL] Sample Size: ${controlDefaults.sampleSize}`);
+    console.log(`[W2D REASON] Field: method`);
+    console.log(`[W2D REASON] Reason: ${insights.method.reason}`);
 
     return {
       stepNumber: op.step,
       process: op.description,
       machine: op.resourceId || '',
       characteristic: '',
-      method: insights.suggestedMethod,
+      method: insights.method.value,
       sampleSize: controlDefaults.sampleSize
     };
   });
@@ -51,7 +53,12 @@ function generateControlPlanWizard(input: TemplateInput): DocumentDraft {
     generatedAt: new Date().toISOString(),
     bomMasterPartNumber: bom.masterPartNumber,
     templateVersion: '1.0',
-    templateType: 'wizard'
+    templateType: 'wizard',
+    autofillTransparency: {
+      enabled: true,
+      version: 'W2D',
+      note: 'Each row includes autofill reasoning for method and sampleSize fields'
+    }
   };
 
   return {
