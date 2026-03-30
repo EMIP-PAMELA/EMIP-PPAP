@@ -4,6 +4,7 @@ import { useState, useMemo, useRef } from 'react';
 import { DocumentDraft, TemplateId, FieldMetadata } from '../templates/types';
 import { getTemplate } from '../templates/registry';
 import { useWizardValidation } from '../wizard/useWizardValidation';
+import { OPTION_REGISTRY } from '../options/optionRegistry';
 
 interface DocumentEditorProps {
   draft: DocumentDraft;
@@ -466,13 +467,28 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                                     // V2.6Y: Get row-level certainty metadata
                                     const rowMeta = row._meta?.[col.key];
                                     const cellPath = `${fieldKey}[${rowIndex}].${col.key}`;
-                                    // V2.6Z: Check if field has dropdown options
-                                    const hasOptions = rowMeta?.options && rowMeta.options.length > 0;
+                                    
+                                    // V2.7A: Resolve options from registry or inline
+                                    let resolvedOptions: string[] | undefined;
+                                    if (rowMeta?.options) {
+                                      // V2.6Z: Legacy inline options (backward compatibility)
+                                      resolvedOptions = rowMeta.options;
+                                    } else if (rowMeta?.optionsKey) {
+                                      // V2.7A: Resolve from centralized registry
+                                      const registryOptions = OPTION_REGISTRY[rowMeta.optionsKey as keyof typeof OPTION_REGISTRY];
+                                      if (registryOptions) {
+                                        resolvedOptions = registryOptions as unknown as string[];
+                                      } else {
+                                        console.warn(`[V2.7A] Invalid optionsKey: ${rowMeta.optionsKey}`);
+                                      }
+                                    }
+                                    
+                                    const hasOptions = resolvedOptions && resolvedOptions.length > 0;
 
                                     return (
                                       <td key={col.key} className="px-2 py-1 border-b border-gray-100 align-top">
                                         {hasOptions ? (
-                                          // V2.6Z: Render dropdown with manual override capability
+                                          // V2.6Z/V2.7A: Render dropdown with manual override capability
                                           <select
                                             ref={(el) => { fieldRefs.current.set(cellPath, el as any); }}
                                             value={cellValue ?? ''}
@@ -485,7 +501,7 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                                             } ${getCertaintyStyle(rowMeta?.certainty, cellValue)}`}
                                           >
                                             <option value="">-- Select or type custom --</option>
-                                            {rowMeta.options!.map((opt: string) => (
+                                            {resolvedOptions!.map((opt: string) => (
                                               <option key={opt} value={opt}>{opt}</option>
                                             ))}
                                           </select>

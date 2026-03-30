@@ -48,23 +48,23 @@ function generateControlPlanWizard(input: TemplateInput): DocumentDraft {
           certainty: 'required', 
           source: 'user', 
           changeTrackingMode: 'required-input',
-          // V2.6Z: Common characteristic types
-          options: ['Dimensional', 'Visual', 'Functional', 'Material', 'Performance', 'Safety']
+          // V2.7A: Reference centralized option registry
+          optionsKey: 'characteristics'
         },
         method: { 
           certainty: 'suggested', 
           source: 'rule', 
           changeTrackingMode: 'normal-edit', 
           autofillReason: insights.method.reason,
-          // V2.6Z: Common control methods
-          options: ['Visual Inspection', 'Measurement', 'Functional Test', 'Audit', 'SPC', 'Automated Check', 'Manual Check']
+          // V2.7A: Reference centralized option registry
+          optionsKey: 'controlMethods'
         },
         sampleSize: { 
           certainty: 'suggested', 
           source: 'rule', 
           changeTrackingMode: 'normal-edit',
-          // V2.6Z: Common sample sizes
-          options: ['1', '3', '5', '10', '20', '50', '100%']
+          // V2.7A: Reference centralized option registry
+          optionsKey: 'sampleSizes'
         }
       }
     };

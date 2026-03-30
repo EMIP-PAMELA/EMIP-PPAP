@@ -55,38 +55,38 @@ function generatePfmeaSummaryWizard(input: TemplateInput): DocumentDraft {
           source: 'rule', 
           changeTrackingMode: 'normal-edit', 
           autofillReason: insights.failureMode.reason,
-          // V2.6Z: Common failure modes
-          options: ['Incorrect dimension', 'Missing component', 'Wrong material', 'Surface defect', 'Incomplete operation', 'Tool wear', 'Contamination']
+          // V2.7A: Reference centralized option registry
+          optionsKey: 'failureModes'
         },
         effect: { 
           certainty: 'suggested', 
           source: 'rule', 
           changeTrackingMode: 'normal-edit', 
           autofillReason: insights.effect.reason,
-          // V2.6Z: Common effects
-          options: ['Part rejection', 'Assembly failure', 'Customer complaint', 'Safety hazard', 'Performance degradation', 'Rework required']
+          // V2.7A: Reference centralized option registry
+          optionsKey: 'effects'
         },
         severity: { 
           certainty: 'suggested', 
           source: 'rule', 
           changeTrackingMode: 'normal-edit', 
           autofillReason: insights.severity.reason,
-          // V2.6Z: Severity ratings (1-10)
-          options: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+          // V2.7A: Reference centralized option registry
+          optionsKey: 'severityRatings'
         },
         occurrence: { 
           certainty: 'suggested', 
           source: 'rule', 
           changeTrackingMode: 'normal-edit',
-          // V2.6Z: Occurrence ratings (1-10)
-          options: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+          // V2.7A: Reference centralized option registry
+          optionsKey: 'occurrenceRatings'
         },
         detection: { 
           certainty: 'suggested', 
           source: 'rule', 
           changeTrackingMode: 'normal-edit',
-          // V2.6Z: Detection ratings (1-10)
-          options: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+          // V2.7A: Reference centralized option registry
+          optionsKey: 'detectionRatings'
         },
         rpn: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' }
       }
