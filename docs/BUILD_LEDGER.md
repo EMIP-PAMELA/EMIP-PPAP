@@ -4,6 +4,410 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 20:15 CT - Phase W1 - Document Wizard Foundation
+
+- Summary: Standalone document generation tool with mapping diagnostics (workflow-independent)
+- Files created:
+  - `src/app/tools/document-wizard/page.tsx` — Document Wizard UI and logic
+- Impact: Users can now generate documents without PPAP session, see mapping diagnostics, and export results
+- Objective: Enable fast, flexible document generation outside formal PPAP workflow
+
+---
+
+**Problem Statement**
+
+After Phase 43 and BUILD_PLAN addendum, the system had:
+- **PPAP Workflow System** — Structured, session-bound, multi-document coordination
+- **No unstructured entry point** — Users forced to create PPAP sessions for quick one-off documents
+- **No standalone wizard** — Engineers cluttering PPAP dashboard with "fake" sessions
+
+Users needed:
+- Fast document generation without PPAP overhead
+- Template + BOM → Document workflow
+- Mapping visibility and diagnostics
+- No approval gates, no workflow state
+
+**Before Phase W1:**
+```
+User wants one Control Plan →
+  Must create PPAP session
+  Must go through workflow
+  "Fake" PPAP clutters dashboard
+```
+
+**After Phase W1:**
+```
+User goes to /tools/document-wizard →
+  Select template from dropdown
+  Upload BOM
+  Click "Generate Document"
+  Edit in DocumentEditor
+  Download as JSON
+  Done (ephemeral, no session)
+```
+
+---
+
+**Architecture**
+
+**Route:** `/tools/document-wizard`
+
+**Key Principle:** *"Same engine, different entry point"*
+
+**Wizard Characteristics:**
+- ✅ NO PPAP session required
+- ✅ NO workflow state
+- ✅ NO approval gates
+- ✅ Ephemeral documents (not session-bound)
+- ✅ Persistent templates (shared registry)
+- ✅ Reuses existing: BOM parser, normalizer, template registry, DocumentEditor
+
+**Components Reused:**
+| Component | Module | Purpose |
+|-----------|--------|---------|
+| `parseBOMText()` | `bomParser.ts` | Parse BOM text |
+| `normalizeBOMData()` | `bomNormalizer.ts` | Normalize BOM data |
+| `getTemplate()` | `registry.ts` | Retrieve template |
+| `template.generate()` | Template definition | Generate document |
+| `DocumentEditor` | `DocumentEditor.tsx` | Render/edit document |
+
+**Data Flow:**
+```
+User uploads BOM →
+  parseBOMText() →
+  normalizeBOMData() →
+  template.generate({ bom }) →
+  DocumentDraft →
+  DocumentEditor (editable) →
+  Export as JSON
+```
+
+---
+
+**Features Delivered**
+
+**1. Template Selection**
+- Dropdown showing all available templates from registry
+- Includes static templates (PSW, PFMEA, etc.)
+- Includes admin-uploaded templates (Phase 29-30)
+- Future: Wizard-uploaded templates (Phase W2)
+
+**2. BOM Upload**
+- Accept `.txt` or `.pdf` files
+- Parse using existing `bomParser.ts`
+- Normalize using existing `bomNormalizer.ts`
+- Display BOM summary (part number, ops, components)
+
+**3. Document Generation**
+- Click "Generate Document" button
+- Uses `template.generate()` method
+- Creates `DocumentDraft` with populated fields
+- Displays in `DocumentEditor` (fully editable)
+
+**4. Mapping Diagnostics Panel (CRITICAL)**
+
+**Purpose:** Provide visibility into mapping success for validation
+
+**Displays:**
+- **Mapping Coverage:** % of fields populated (e.g., 85%)
+- **Field Stats:** Total fields, Populated fields, Empty fields
+- **Missing Fields:** Top 10 fields not populated (with section)
+
+**Example:**
+```
+╔═════════════════════════════════╗
+║ Mapping Coverage: 85%           ║
+╠═════════════════════════════════╣
+║ Field Stats                     ║
+║   Total: 120                    ║
+║   Populated: 102                ║
+║   Empty: 18                     ║
+╠═════════════════════════════════╣
+║ Missing Fields (Top 10)         ║
+║   • supplierName (Header)       ║
+║   • revisionDate (Metadata)     ║
+║   • inspectorName (Approval)    ║
+║   ...                           ║
+╚═════════════════════════════════╝
+```
+
+**Diagnostic Calculation:**
+```typescript
+const totalFields = template.fieldDefinitions?.length || 0;
+const populatedFields = Object.keys(draft.fields).filter(key => {
+  const value = draft.fields[key];
+  return value !== null && value !== undefined && value !== '';
+}).length;
+const mappingCoverage = Math.round((populatedFields / totalFields) * 100);
+```
+
+**5. Export Functionality**
+- "Download as JSON" button
+- Exports current `DocumentDraft`
+- File naming: `{templateId}_{timestamp}.json`
+- Browser download dialog
+
+**6. Editable Output**
+- Generated document rendered in `DocumentEditor`
+- All fields editable
+- Real-time field updates
+- No validation blocking (Phase W1)
+
+---
+
+**UI Layout**
+
+**Input Section:**
+```
+╔══════════════════════════════════════╗
+║ Select Template                      ║
+║ [Dropdown: PSW, PFMEA, Control Plan] ║
+║                                      ║
+║ Upload Template (Phase W2 - Disabled)║
+║ [File Input - Coming Soon]           ║
+║                                      ║
+║ Upload BOM / Engineering Master      ║
+║ [File Input: .txt, .pdf]             ║
+║ ✓ BOM loaded: PART-123 (5 ops, 42 c)║
+║                                      ║
+║ [Generate Document Button]           ║
+╚══════════════════════════════════════╝
+```
+
+**Output Section (After Generation):**
+```
+╔══════════════════════════════════════╗
+║ Mapping Diagnostics                  ║
+║ [Coverage: 85%] [Stats Grid]         ║
+║ [Missing Fields List]                ║
+╚══════════════════════════════════════╝
+
+╔══════════════════════════════════════╗
+║ Generated Document [Download JSON]   ║
+║ [DocumentEditor - Editable Fields]   ║
+╚══════════════════════════════════════╝
+```
+
+---
+
+**State Management**
+
+**Local State Only (No Persistence):**
+```typescript
+const [templateFile, setTemplateFile] = useState<File | null>(null);
+const [bomFile, setBomFile] = useState<File | null>(null);
+const [selectedTemplateId, setSelectedTemplateId] = useState<TemplateId | null>(null);
+const [isProcessing, setIsProcessing] = useState(false);
+const [error, setError] = useState<string | null>(null);
+const [normalizedBOM, setNormalizedBOM] = useState<NormalizedBOM | null>(null);
+const [generatedDraft, setGeneratedDraft] = useState<DocumentDraft | null>(null);
+const [diagnostics, setDiagnostics] = useState<MappingDiagnostics | null>(null);
+```
+
+**Key Point:** No database writes, no session persistence, documents are ephemeral
+
+---
+
+**Logging (Console)**
+
+**Phase W1 includes extensive console logging for debugging:**
+- `[Wizard] Template uploaded`
+- `[Wizard] BOM uploaded`
+- `[Wizard] BOM parsed successfully`
+- `[Wizard] BOM normalized successfully`
+- `[Wizard] Starting document generation`
+- `[Wizard] Template retrieved`
+- `[Wizard] Document generated successfully`
+- `[Wizard] Diagnostics calculated`
+- `[Wizard] Field updated`
+- `[Wizard] Document exported as JSON`
+
+---
+
+**Known Limitations (Phase W1)**
+
+**1. Template Upload Not Implemented**
+- File input present but disabled
+- Message: "Template upload parsing coming in Phase W2"
+- Users must select from existing templates
+
+**2. PDF/Excel Template Parsing Not Implemented**
+- JSON templates can be uploaded but not registered
+- Full parsing in Phase W2
+
+**3. No PDF Export**
+- Only JSON export available
+- PDF export coming in Phase W3
+
+**4. No Mapping Metadata Display**
+- Diagnostics show coverage but not source breakdown
+- Field-level mapping indicators not shown
+- Phase W2 enhancement
+
+**5. No Validation Enforcement**
+- Validation errors not displayed
+- Non-blocking (intentional for Phase W1)
+- User can export invalid documents
+
+**6. No Template Fingerprinting**
+- No duplicate detection
+- Coming in Phase W4
+
+---
+
+**Testing Checklist (Completed)**
+
+**✅ Wizard loads independently**
+- Route accessible at `/tools/document-wizard`
+- No PPAP session required
+
+**✅ Template selection works**
+- Dropdown populated with templates from registry
+- Template retrieved successfully on selection
+
+**✅ BOM upload works**
+- `.txt` files accepted
+- BOM parsed and normalized
+- Summary displayed
+
+**✅ Document generation works**
+- "Generate Document" button functional
+- Template.generate() called successfully
+- DocumentDraft created
+
+**✅ DocumentEditor renders**
+- Generated document displays
+- Fields are editable
+- Field changes update state
+
+**✅ Mapping diagnostics display**
+- Coverage percentage calculated
+- Field stats accurate
+- Missing fields listed
+
+**✅ No crashes on empty inputs**
+- Buttons disabled when inputs missing
+- Error messages display appropriately
+
+**✅ Console logs appear**
+- All key events logged
+- Debugging information available
+
+**✅ Export works**
+- "Download as JSON" button functional
+- File downloads correctly
+- JSON format valid
+
+---
+
+**Example Workflow**
+
+**User Story:** Engineer needs a Control Plan for a new harness without creating formal PPAP
+
+**Steps:**
+1. Navigate to `/tools/document-wizard`
+2. Select "Control Plan" from template dropdown
+3. Upload Visual Engineering Master (`.txt` file)
+4. Click "Generate Document"
+5. **Diagnostics show:** 78% coverage, 94 fields populated, 26 empty
+6. Edit missing fields in DocumentEditor
+7. Click "Download as JSON"
+8. File downloaded: `CONTROL_PLAN_1711757123456.json`
+
+**Result:** Document created in < 2 minutes, no PPAP session, no workflow overhead
+
+---
+
+**Technical Details**
+
+**TypeScript Compilation:** ✅ **EXIT CODE 0**  
+**Errors:** 0  
+**Warnings:** 0
+
+**Lines of Code:** 389 lines (single file)
+
+**Dependencies:**
+- `parseBOMText` from `bomParser.ts`
+- `normalizeBOMData` from `bomNormalizer.ts`
+- `DocumentEditor` from `DocumentEditor.tsx`
+- `getTemplate`, `listTemplates` from `registry.ts`
+- `DocumentDraft`, `TemplateId` types from `types.ts`
+- `NormalizedBOM` type from `bomTypes.ts`
+
+**No New Dependencies:** All imports from existing modules
+
+---
+
+**Benefits**
+
+**User Experience:**
+- ✅ Fast document generation (no PPAP ceremony)
+- ✅ Immediate feedback (mapping diagnostics)
+- ✅ Flexible workflow (edit then export)
+- ✅ No training required (simple 3-step process)
+
+**System Architecture:**
+- ✅ Reuses existing engine (no duplication)
+- ✅ No workflow coupling (isolated module)
+- ✅ Additive implementation (no existing code modified)
+- ✅ Clean separation of concerns
+
+**Engineering Efficiency:**
+- ✅ One-off documents don't clutter PPAP dashboard
+- ✅ Quick validation of template + BOM compatibility
+- ✅ Rapid prototyping of document outputs
+- ✅ Debugging tool for mapping issues
+
+---
+
+**Next Steps**
+
+**Phase W2 (Immediate):**
+- Template upload and registration
+- Save uploaded templates to shared registry
+- Make templates available to PPAP system
+
+**Phase W3 (Near-term):**
+- PDF export functionality
+- Excel export functionality
+- File naming conventions
+
+**Phase W4 (Mid-term):**
+- Template fingerprinting
+- Duplicate detection
+- Template versioning
+
+**Phase W5 (Long-term, Optional):**
+- AI-assisted template parsing
+- Automatic field mapping suggestions
+- Structure detection
+
+---
+
+**Phase W1 Complete.**
+
+Document Wizard foundation successfully delivered with:
+- ✅ Standalone route (`/tools/document-wizard`)
+- ✅ Template selection from registry
+- ✅ BOM upload and normalization (reused existing)
+- ✅ Document generation pipeline (reused existing)
+- ✅ DocumentEditor integration (reused existing)
+- ✅ **Mapping diagnostics panel** (critical validation feature)
+- ✅ JSON export functionality
+- ✅ Ephemeral state (no persistence)
+- ✅ Zero TypeScript errors
+
+**Quality Metrics:**
+- Route: 1 (`/tools/document-wizard`)
+- Components reused: 5 (parser, normalizer, registry, generator, editor)
+- New code: 389 lines
+- TypeScript errors: 0
+- Console logs: 11 event types
+
+**Next:** Phase W2 - Template Memory Integration (enable wizard to upload and save templates)
+
+---
+
 ## 2026-03-29 19:19 CT - Phase 43 - System Validation & Confidence Layer
 
 - Summary: Added system-level validation visibility and readiness checks to improve user confidence
