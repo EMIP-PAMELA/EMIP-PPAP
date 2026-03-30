@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { parseVisualMaster } from '@/src/features/bom/visualMasterParser';
 import { normalizeVisualMasterText, getPreprocessingSummary, getTextPreview, PreprocessingSummary } from '@/src/features/bom/visualMasterPreprocessor';
 import { validateParsedVisualMaster, isCriticallyEmpty, getValidationStatusMessage, ParserValidationResult } from '@/src/features/bom/visualMasterValidator';
+import { extractTextFromPDF, isRawPDFBinary, getExtractionPreview, PDFExtractionResult } from '@/src/features/bom/pdfTextExtractor';
 import { DocumentEditor } from '@/src/features/documentEngine/ui/DocumentEditor';
 import { DocumentDraft, TemplateId } from '@/src/features/documentEngine/templates/types';
 import { getTemplate, listTemplates } from '@/src/features/documentEngine/templates/registry';
@@ -13,6 +14,7 @@ import { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
  * Phase W1: Document Wizard Foundation
  * Phase W1.2: Visual Master Parser Integration
  * Phase W1.4: Parser Stabilization Layer
+ * Phase W1.5: PDF Text Extraction Layer
  * 
  * Standalone document generation tool (workflow-independent)
  * - No PPAP session required
@@ -21,6 +23,7 @@ import { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
  * - Ephemeral documents (not session-bound)
  * - Persistent templates (shared registry)
  * - W1.4: Preprocessing and validation for robust parsing
+ * - W1.5: PDF text extraction before preprocessing
  */
 
 interface MappingDiagnostics {
@@ -54,6 +57,9 @@ export default function DocumentWizardPage() {
   const [preprocessingSummary, setPreprocessingSummary] = useState<PreprocessingSummary | null>(null);
   const [validationResult, setValidationResult] = useState<ParserValidationResult | null>(null);
   const [showDebugPanel, setShowDebugPanel] = useState<boolean>(false);
+  
+  // W1.5: PDF extraction state
+  const [pdfExtractionResult, setPdfExtractionResult] = useState<PDFExtractionResult | null>(null);
 
   // Available templates from registry
   const availableTemplates = listTemplates();
@@ -107,10 +113,43 @@ export default function DocumentWizardPage() {
     console.log('[Wizard] BOM uploaded:', file.name, file.type);
     
     try {
-      // STEP 1: Extract raw text from file
-      const rawText = await file.text();
+      // STEP 1: W1.5 PDF EXTRACTION - Extract text from PDF
+      let rawText: string;
+      
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        console.log('[W1.5 PIPELINE] PDF file detected, extracting text...');
+        
+        const extractionResult = await extractTextFromPDF(file);
+        setPdfExtractionResult(extractionResult);
+        
+        if (!extractionResult.success) {
+          setError(`PDF extraction failed: ${extractionResult.error}`);
+          return;
+        }
+        
+        rawText = extractionResult.text;
+        console.log('[W1.5 PIPELINE] PDF extraction complete');
+        console.log('[W1.5 PIPELINE] Pages:', extractionResult.pageCount);
+        console.log('[W1.5 PIPELINE] Extracted lines:', extractionResult.extractedLineCount);
+        console.log('[W1.5 PIPELINE] Text length:', rawText.length, 'characters');
+        console.log('[W1.5 PIPELINE] Text preview (first 20 lines):');
+        console.log(getExtractionPreview(rawText, 20));
+        
+        // CRITICAL CHECK: Verify extraction worked
+        if (isRawPDFBinary(rawText)) {
+          console.error('[W1.5 CRITICAL] Extraction failed — raw PDF binary detected');
+          console.error('[W1.5 CRITICAL] First 100 chars:', rawText.substring(0, 100));
+          setError('❌ PDF extraction failed: Raw binary detected instead of text');
+          return;
+        }
+      } else {
+        // Plain text file - use direct reading
+        console.log('[W1.5 PIPELINE] Plain text file detected');
+        rawText = await file.text();
+      }
+      
       setRawExtractedText(rawText);
-      console.log('[W1.4 PREPROCESS] Raw text extracted:', rawText.length, 'characters');
+      console.log('[W1.5 PIPELINE] Passing to preprocessing...');
       
       // STEP 2: W1.4 PREPROCESSING - Normalize text before parsing
       const normalized = normalizeVisualMasterText(rawText);
@@ -455,8 +494,8 @@ export default function DocumentWizardPage() {
           </div>
         </div>
 
-        {/* W1.4: Debug Preview Panel */}
-        {(rawExtractedText || normalizedText || parsedBOM) && (
+        {/* W1.4/W1.5: Debug Preview Panel */}
+        {(rawExtractedText || normalizedText || parsedBOM || pdfExtractionResult) && (
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-gray-800">Debug Preview</h2>
@@ -470,6 +509,39 @@ export default function DocumentWizardPage() {
             
             {showDebugPanel && (
               <div className="space-y-4">
+                {/* W1.5: PDF Extraction Preview */}
+                {pdfExtractionResult && (
+                  <div className="bg-green-50 border border-green-200 rounded p-4">
+                    <h3 className="text-sm font-semibold text-green-800 mb-2">
+                      PDF Extraction Results
+                    </h3>
+                    <div className="grid grid-cols-3 gap-3 text-xs text-green-700 mb-3">
+                      <div>
+                        <span className="font-medium">Pages:</span> {pdfExtractionResult.pageCount}
+                      </div>
+                      <div>
+                        <span className="font-medium">Extracted lines:</span> {pdfExtractionResult.extractedLineCount}
+                      </div>
+                      <div>
+                        <span className="font-medium">Success:</span> {pdfExtractionResult.success ? '✅' : '❌'}
+                      </div>
+                    </div>
+                    {pdfExtractionResult.success && (
+                      <div>
+                        <p className="text-xs font-medium text-green-700 mb-2">First 20 lines:</p>
+                        <pre className="bg-white border border-green-300 rounded p-2 text-xs overflow-auto max-h-48 font-mono">
+                          {getExtractionPreview(pdfExtractionResult.text, 20)}
+                        </pre>
+                      </div>
+                    )}
+                    {!pdfExtractionResult.success && pdfExtractionResult.error && (
+                      <div className="text-xs text-red-600 mt-2">
+                        Error: {pdfExtractionResult.error}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
                 {/* Raw Extracted Text Preview */}
                 {rawExtractedText && (
                   <div>
