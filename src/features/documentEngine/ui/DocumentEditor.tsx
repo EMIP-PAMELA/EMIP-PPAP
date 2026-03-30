@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { DocumentDraft, TemplateId, FieldMetadata } from '../templates/types';
 import { getTemplate } from '../templates/registry';
 import { useWizardValidation } from '../wizard/useWizardValidation';
@@ -35,6 +35,80 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
     timestamp: string;
   }>>(draft.fieldChanges || []);
 
+  // V2.6Y: Guided completion mode - required field tracking
+  const fieldRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
+
+  // V2.6Y: Detect and count required fields
+  const requiredFieldsStatus = useMemo(() => {
+    const requiredFields: Array<{ path: string; label: string; completed: boolean }> = [];
+
+    // Check header-level required fields
+    if (draft.fieldMetadata) {
+      for (const [fieldPath, meta] of Object.entries(draft.fieldMetadata)) {
+        if (meta.certainty === 'required') {
+          const value = draft.fields[fieldPath];
+          const isCompleted = value !== null && value !== undefined && value !== '';
+          const fieldDef = getFieldDef(fieldPath);
+          requiredFields.push({
+            path: fieldPath,
+            label: fieldDef?.label || fieldPath,
+            completed: isCompleted
+          });
+        }
+      }
+    }
+
+    // Check table row-level required fields
+    for (const fieldDef of fieldDefinitions) {
+      if (fieldDef.type === 'table' && fieldDef.rowFields) {
+        const tableData = draft.fields[fieldDef.key];
+        if (Array.isArray(tableData)) {
+          tableData.forEach((row: any, rowIndex: number) => {
+            // Check row-level metadata if available
+            const rowMeta = row._meta;
+            if (rowMeta) {
+              for (const col of fieldDef.rowFields!) {
+                const colMeta = rowMeta[col.key];
+                if (colMeta?.certainty === 'required') {
+                  const cellValue = row[col.key];
+                  const isCompleted = cellValue !== null && cellValue !== undefined && cellValue !== '';
+                  requiredFields.push({
+                    path: `${fieldDef.key}[${rowIndex}].${col.key}`,
+                    label: `${fieldDef.label} Row ${rowIndex + 1} - ${col.label}`,
+                    completed: isCompleted
+                  });
+                }
+              }
+            }
+          });
+        }
+      }
+    }
+
+    const totalRequired = requiredFields.length;
+    const completedRequired = requiredFields.filter(f => f.completed).length;
+    const remainingRequired = totalRequired - completedRequired;
+
+    return {
+      requiredFields,
+      totalRequired,
+      completedRequired,
+      remainingRequired
+    };
+  }, [draft.fields, draft.fieldMetadata, fieldDefinitions]);
+
+  // V2.6Y: Navigate to next incomplete required field
+  const navigateToNextRequiredField = () => {
+    const nextIncomplete = requiredFieldsStatus.requiredFields.find(f => !f.completed);
+    if (nextIncomplete) {
+      const fieldElement = fieldRefs.current.get(nextIncomplete.path);
+      if (fieldElement) {
+        fieldElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        fieldElement.focus();
+      }
+    }
+  };
+
   // Helper to find field definition
   const getFieldDef = (fieldKey: string) => {
     return fieldDefinitions.find(def => def.key === fieldKey);
@@ -45,8 +119,8 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
     return draft.fieldMetadata?.[fieldPath];
   };
   
-  // V2.6X: Get certainty styling classes
-  const getCertaintyStyle = (certainty: 'system' | 'suggested' | 'required' | undefined): string => {
+  // V2.6X + V2.6Y: Get certainty styling classes with completion state
+  const getCertaintyStyle = (certainty: 'system' | 'suggested' | 'required' | undefined, value?: any): string => {
     if (!certainty) return '';
     switch (certainty) {
       case 'system':
@@ -54,7 +128,9 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
       case 'suggested':
         return 'bg-yellow-50 border-yellow-200';
       case 'required':
-        return 'bg-red-50 border-red-200';
+        // V2.6Y: Reduce intensity if field is completed
+        const isCompleted = value !== null && value !== undefined && value !== '';
+        return isCompleted ? 'bg-red-50 border-red-200' : 'bg-red-100 border-red-300';
       default:
         return '';
     }
@@ -164,6 +240,39 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
           </button>
         )}
       </div>
+
+      {/* V2.6Y: Guided Completion Status */}
+      {requiredFieldsStatus.totalRequired > 0 && (
+        <div className="bg-blue-50 border border-blue-300 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-semibold text-blue-900 mb-1">📋 Guided Completion</h4>
+              <p className="text-xs text-blue-700">
+                This document contains required fields that should be completed before export.
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl font-bold text-blue-900">
+                {requiredFieldsStatus.remainingRequired}
+              </div>
+              <div className="text-xs text-blue-700">Required Remaining</div>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-between">
+            <div className="text-sm text-blue-800">
+              Completed: <strong>{requiredFieldsStatus.completedRequired}</strong> / <strong>{requiredFieldsStatus.totalRequired}</strong>
+            </div>
+            {requiredFieldsStatus.remainingRequired > 0 && (
+              <button
+                onClick={navigateToNextRequiredField}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium text-sm transition-colors"
+              >
+                Go to Next Required Field →
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* V2.6X: Field Certainty Legend */}
       {draft.fieldMetadata && Object.keys(draft.fieldMetadata).length > 0 && (
@@ -354,9 +463,14 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                                       );
                                     }
 
+                                    // V2.6Y: Get row-level certainty metadata
+                                    const rowMeta = row._meta?.[col.key];
+                                    const cellPath = `${fieldKey}[${rowIndex}].${col.key}`;
+
                                     return (
                                       <td key={col.key} className="px-2 py-1 border-b border-gray-100 align-top">
                                         <input
+                                          ref={(el) => { fieldRefs.current.set(cellPath, el); }}
                                           type={col.type === 'number' ? 'number' : 'text'}
                                           value={cellValue ?? ''}
                                           min={col.validation?.min}
@@ -369,9 +483,9 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                                             handleCellChange(v);
                                           }}
                                           disabled={readOnly}
-                                          className={`w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[80px] ${
+                                          className={`w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[80px] ${
                                             readOnly ? 'bg-gray-50 cursor-not-allowed' : ''
-                                          }`}
+                                          } ${getCertaintyStyle(rowMeta?.certainty, cellValue)}`}
                                         />
                                       </td>
                                     );
@@ -437,6 +551,7 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                     ) : fieldDef.editable ? (
                       <>
                         <input
+                          ref={(el) => { fieldRefs.current.set(fieldKey, el); }}
                           type={fieldDef.type === 'number' ? 'number' : 'text'}
                           value={String(value)}
                           onChange={(e) => {
@@ -451,7 +566,7 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                           pattern={fieldDef.validation?.pattern}
                           required={fieldDef.required}
                           className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                            getCertaintyStyle(getFieldCertainty(fieldKey)?.certainty)
+                            getCertaintyStyle(getFieldCertainty(fieldKey)?.certainty, value)
                           }`}
                         />
                         {fieldWarnings[fieldKey] && (

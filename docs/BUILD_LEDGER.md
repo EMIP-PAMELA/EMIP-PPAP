@@ -4,6 +4,65 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-30 15:30 CT - Phase V2.6B.1 - Fix Workbook Public Asset Path
+
+**Summary:** Fixed Excel template export by moving workbook to public/ directory for browser accessibility
+
+**Problem Statement:**
+- Excel export failed in deployed/browser environments
+- Workbook template path pointed to `/docs/QUAL TM 0027 - 01 PPAP Package.xlsx`
+- `/docs` directory not served as public static asset in Next.js/Vercel
+- Browser fetch returned 404 for workbook file
+
+**Solution: Public Static Asset Serving**
+
+Moved workbook to Next.js public directory and updated runtime path:
+
+**Changes:**
+1. Copied workbook: `docs/` → `public/QUAL TM 0027 - 01 PPAP Package.xlsx`
+2. Updated path: `/docs/QUAL...` → `/QUAL TM 0027 - 01 PPAP Package.xlsx`
+3. Kept original in `docs/` for planning/reference purposes
+
+**Files Created:**
+- `public/QUAL TM 0027 - 01 PPAP Package.xlsx` — Workbook template for browser serving
+
+**Files Modified:**
+- `src/features/documentEngine/export/excelTemplateInjector.ts` — Updated `WORKBOOK_TEMPLATE_PATH` constant
+
+**Technical Details:**
+
+Path change in excelTemplateInjector.ts:
+```typescript
+// Before (V2.6B):
+const WORKBOOK_TEMPLATE_PATH = '/docs/QUAL TM 0027 - 01 PPAP Package.xlsx';
+
+// After (V2.6B.1):
+const WORKBOOK_TEMPLATE_PATH = '/QUAL TM 0027 - 01 PPAP Package.xlsx';
+```
+
+Next.js serves files from `public/` directory at root URL path `/`.
+
+**Governance:**
+- ✅ No parser modifications
+- ✅ No normalizer modifications
+- ✅ No wizard template changes
+- ✅ No field certainty changes
+- ✅ No validation engine changes
+- ✅ Export architecture unchanged (path fix only)
+
+**Impact:**
+- ✅ Excel export now works in deployed/browser environments
+- ✅ Workbook accessible via standard Next.js public asset serving
+- ✅ 404 errors on workbook fetch resolved
+- ✅ Original workbook preserved in docs/ for reference
+
+**Verification:**
+- TypeScript check: ✅ Passed
+- Workbook exists in public/: ✅ Confirmed
+- Runtime path updated: ✅ `/QUAL TM 0027 - 01 PPAP Package.xlsx`
+
+---
+
 ## 2026-03-30 14:50 CT - Phase V2.6B - Process Flow Excel Template Injection
 
 **Summary:** Implemented row-based Process Flow workbook export to PPAP Package template
