@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { parseBOMText } from '@/src/features/documentEngine/core/bomParser';
-import { normalizeBOMData } from '@/src/features/documentEngine/core/bomNormalizer';
+import { useState, useEffect } from 'react';
+import { parseVisualMaster } from '@/src/features/bom/visualMasterParser';
 import { DocumentEditor } from '@/src/features/documentEngine/ui/DocumentEditor';
 import { DocumentDraft, TemplateId } from '@/src/features/documentEngine/templates/types';
 import { getTemplate, listTemplates } from '@/src/features/documentEngine/templates/registry';
@@ -40,12 +39,20 @@ export default function DocumentWizardPage() {
   const [error, setError] = useState<string | null>(null);
   
   // State: Outputs
-  const [normalizedBOM, setNormalizedBOM] = useState<NormalizedBOM | null>(null);
+  const [parsedBOM, setParsedBOM] = useState<any>(null);
   const [generatedDraft, setGeneratedDraft] = useState<DocumentDraft | null>(null);
   const [diagnostics, setDiagnostics] = useState<MappingDiagnostics | null>(null);
 
   // Available templates from registry
   const availableTemplates = listTemplates();
+
+  // W1.2 UI FIX: Auto-regenerate when template changes (if BOM already loaded)
+  useEffect(() => {
+    if (selectedTemplateId && parsedBOM && !isProcessing) {
+      console.log('[W1.2] Template changed, regenerating document...');
+      handleGenerate();
+    }
+  }, [selectedTemplateId]); // Only trigger on template change
 
   // Handle template file upload
   const handleTemplateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,20 +97,21 @@ export default function DocumentWizardPage() {
       const text = await file.text();
       console.log('[Wizard] BOM text length:', text.length);
       
-      // Parse BOM using existing parser
-      const rawBOM = parseBOMText(text);
-      console.log('[Wizard] BOM parsed successfully');
-      console.log('[Wizard] Operations:', rawBOM.operations.length);
+      // Parse BOM using Visual Master Parser v5.0
+      const parsedData = parseVisualMaster(text);
       
-      // Count total components across all operations
-      const totalComponents = rawBOM.operations.reduce((sum, op) => sum + op.components.length, 0);
-      console.log('[Wizard] Total components:', totalComponents);
+      // W1.2 DEBUG LOGGING (CRITICAL)
+      console.log('[W1.2] Parsed Operations:', parsedData.operations.length);
+      console.log('[W1.2] Parsed Components:', parsedData.parts.length);
+      console.log('[W1.2] Master PN:', parsedData.masterPartNumber);
       
-      // Normalize BOM using existing normalizer
-      const normalized = normalizeBOMData(rawBOM);
-      console.log('[Wizard] BOM normalized successfully');
+      // VALIDATION GUARD: Warn if no operations detected
+      if (parsedData.operations.length === 0) {
+        console.warn('[W1.2] ⚠️ No operations detected — possible OCR or parsing issue');
+        setError('⚠️ No operations detected — possible OCR or parsing issue. Please check your BOM file.');
+      }
       
-      setNormalizedBOM(normalized);
+      setParsedBOM(parsedData);
       console.log('[Wizard] BOM stored');
       
     } catch (err) {
@@ -119,7 +127,7 @@ export default function DocumentWizardPage() {
       return;
     }
     
-    if (!normalizedBOM) {
+    if (!parsedBOM) {
       setError('Please upload a BOM file');
       return;
     }
@@ -130,10 +138,39 @@ export default function DocumentWizardPage() {
     try {
       console.log('[Wizard] Starting document generation');
       console.log('[Wizard] Template:', selectedTemplateId);
-      console.log('[Wizard] BOM part:', normalizedBOM.masterPartNumber);
+      console.log('[Wizard] BOM part:', parsedBOM.masterPartNumber);
       
       const template = getTemplate(selectedTemplateId);
       console.log('[Wizard] Template retrieved:', template.name);
+      
+      // Adapt Visual Master Parser output to NormalizedBOM format
+      const normalizedBOM = {
+        masterPartNumber: parsedBOM.masterPartNumber,
+        operations: parsedBOM.operations.map((op: any) => ({
+          step: op.step,
+          resourceId: op.resourceId,
+          description: op.description,
+          components: op.components.map((comp: any) => ({
+            partId: comp.partId,
+            aciCode: comp.aciCode,
+            description: comp.fullDescription,
+            quantity: comp.quantity,
+            uom: comp.unitOfMeasure,
+            componentType: comp.componentClass
+          })),
+          processLines: [],
+          metadataLines: op.rawLines || []
+        })),
+        summary: {
+          totalOperations: parsedBOM.operationCount,
+          totalComponents: parsedBOM.componentCount,
+          wires: parsedBOM.parts.filter((p: any) => p.componentClass === 'Consumable/Wire').length,
+          terminals: parsedBOM.parts.filter((p: any) => p.isTerminal).length,
+          hardware: parsedBOM.parts.filter((p: any) => p.componentClass === 'Hardware').length
+        }
+      };
+      
+      console.log('[W1.2] Adapted to NormalizedBOM:', normalizedBOM.operations.length, 'operations');
       
       // Use template.generate() method (Phase W1: basic generation)
       const draft = template.generate({ bom: normalizedBOM });
@@ -289,9 +326,9 @@ export default function DocumentWizardPage() {
                 onChange={handleBOMUpload}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
-              {normalizedBOM && (
+              {parsedBOM && (
                 <div className="mt-2 text-sm text-green-600">
-                  ✓ BOM loaded: {normalizedBOM.masterPartNumber} ({normalizedBOM.summary.totalOperations} ops, {normalizedBOM.summary.totalComponents} components)
+                  ✓ BOM loaded: {parsedBOM.masterPartNumber} ({parsedBOM.operationCount} ops, {parsedBOM.componentCount} components)
                 </div>
               )}
             </div>
@@ -299,9 +336,9 @@ export default function DocumentWizardPage() {
             {/* Generate Button */}
             <button
               onClick={handleGenerate}
-              disabled={!selectedTemplateId || !normalizedBOM || isProcessing}
+              disabled={!selectedTemplateId || !parsedBOM || isProcessing}
               className={`w-full py-3 px-4 rounded-md font-semibold text-white transition-colors ${
-                !selectedTemplateId || !normalizedBOM || isProcessing
+                !selectedTemplateId || !parsedBOM || isProcessing
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-indigo-600 hover:bg-indigo-700'
               }`}
