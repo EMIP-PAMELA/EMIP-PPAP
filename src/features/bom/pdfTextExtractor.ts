@@ -41,10 +41,13 @@ export async function extractTextFromPDF(file: File): Promise<PDFExtractionResul
     // SSR Fix: Dynamically import pdfjs-dist to prevent server-side execution
     const pdfjsLib = await import('pdfjs-dist');
     
-    // Configure PDF.js worker (browser-only)
-    if (typeof window !== 'undefined') {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-    }
+    // W1.5.1 WORKER FIX: Use local worker instead of CDN (prevents 404 errors)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.mjs',
+      import.meta.url
+    ).toString();
+    
+    console.log('[W1.5.1 PDF] Worker source:', pdfjsLib.GlobalWorkerOptions.workerSrc);
     
     // Step 1: Read file as ArrayBuffer
     const arrayBuffer = await file.arrayBuffer();
