@@ -4,6 +4,467 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 19:19 CT - Phase 43 - System Validation & Confidence Layer
+
+- Summary: Added system-level validation visibility and readiness checks to improve user confidence
+- Files created:
+  - `src/features/documentEngine/services/systemValidationService.ts` — System completeness and readiness checks
+- Files modified:
+  - `src/features/documentEngine/ui/DocumentWorkspace.tsx` — Added System Status Panel with readiness state and document traces
+- Impact: Users can now see overall system readiness, completeness status, and document-level trace information
+- Objective: Enable user confidence through transparent system validation visibility
+
+---
+
+**Problem Statement**
+
+After Phases 38-42, users had powerful guidance, risk prediction, and health scoring, but faced:
+- **No clear "ready vs not ready" indicator** for overall system
+- **No visibility into document completeness** (which docs generated, valid, approved)
+- **No document-level trace view** showing source and mapping coverage
+- **Uncertainty about submission readiness** without manual inspection
+
+Users needed a **confidence layer** that:
+- Shows overall system readiness at a glance
+- Displays completeness metrics (generated, valid, approved)
+- Provides document-level trace information (source, mapping, validation)
+- Remains non-intrusive (hidden by default, toggle to view)
+
+**Before Phase 43:**
+```
+User manually checks:
+- Which documents are generated? (look at workflow cards)
+- Which documents are valid? (check each document)
+- Which documents are approved? (check status badges)
+- Ready to submit? (guess based on visual inspection)
+```
+
+**After Phase 43:**
+```
+Click "System Status" button →
+
+System Status Panel shows:
+ Ready for Submission
+Generated: 5/5 | Valid: 5/5 | Approved: 5/5
+Total Validation Errors: 0
+System Health: 100
+
+Active Document: pfmea
+  Source: Process Flow
+  Mapping Coverage: 92% populated
+  Validation Errors: 0
+  Status: Approved
+```
+
+---
+
+**Architecture**
+
+**System Validation Service:**
+```typescript
+export type ReadinessStatus = 'ready' | 'needs_attention' | 'not_ready';
+
+interface SystemStatus {
+  allDocumentsGenerated: boolean;
+  allDocumentsValid: boolean;
+  allDocumentsApproved: boolean;
+  readyForSubmission: boolean;
+  readinessStatus: ReadinessStatus;
+  missingDocuments: TemplateId[];
+  invalidDocuments: TemplateId[];
+  unapprovedDocuments: TemplateId[];
+}
+
+interface DocumentTrace {
+  templateId: TemplateId;
+  source: 'BOM' | 'Process Flow' | 'PFMEA' | 'Unknown';
+  mappingCoverage: number;  // Percentage (0-100)
+  validationErrorCount: number;
+  isValid: boolean;
+  isApproved: boolean;
+}
+
+function checkSystemCompleteness(...): SystemStatus
+function getDocumentTrace(...): DocumentTrace
+function runSystemCheck(...): SystemCheckResult
+```
+
+---
+
+**Readiness Status Logic**
+
+**Status Determination:**
+```typescript
+if (allDocumentsGenerated && allDocumentsValid && allDocumentsApproved) {
+  status = 'ready';           // Ready for Submission
+} else if (allDocumentsGenerated && allDocumentsValid) {
+  status = 'needs_attention'; // Needs Attention (just approval)
+} else {
+  status = 'not_ready';       // Not Ready (missing/invalid docs)
+}
+```
+
+**Readiness Scenarios:**
+
+**Scenario 1: Ready for Submission**
+```
+All Documents Generated: 
+All Documents Valid: 
+All Documents Approved: 
+→ Status: Ready for Submission
+```
+
+**Scenario 2: Needs Attention**
+```
+All Documents Generated: 
+All Documents Valid: 
+All Documents Approved: (2 pending approval)
+→ Status: Needs Attention
+```
+
+**Scenario 3: Not Ready**
+```
+All Documents Generated: (1 missing)
+All Documents Valid: (2 invalid)
+All Documents Approved: 
+→ Status: Not Ready
+```
+
+---
+
+**Document Trace Information**
+
+**What it shows for each document:**
+1. **Source** - Where the data came from (BOM, Process Flow, PFMEA)
+2. **Mapping Coverage** - % of fields auto-populated vs manual entry
+3. **Validation Error Count** - Number of validation errors
+4. **Validation Status** - Valid or Invalid
+5. **Approval Status** - Approved, Valid, or Invalid
+
+**Source Determination:**
+```typescript
+processFlow     → Source: BOM
+pfmea           → Source: Process Flow
+controlPlan     → Source: PFMEA
+workInstructions → Source: Unknown
+inspectionPlan  → Source: Unknown
+```
+
+**Mapping Coverage Calculation:**
+```typescript
+mappingCoverage = (successfulMappings / totalFields) * 100
+
+Example:
+  Total fields: 25
+  Successful mappings: 23
+  Coverage: 92%
+```
+
+---
+
+**UI Integration**
+
+**System Status Toggle Button:**
+- Located in BOM summary section
+- Next to "Mapping Debug" button
+- Shows " System Status" when off
+- Shows " System Status: ON" when active
+
+**System Status Panel:**
+- Appears after Guidance Panel when toggled on
+- Green gradient header (distinct from Guidance's indigo/purple)
+- Displays:
+  1. **Readiness Status** (/ with label)
+  2. **Completion Metrics** (Generated/Valid/Approved counts)
+  3. **System Summary** (Total validation errors, System health score)
+  4. **Active Document Trace** (Source, mapping, validation, status)
+  5. **Missing/Invalid Documents** (If any)
+
+**Visual Examples:**
+
+**Ready State:**
+```
+╔═══════════════════════════════════╗
+║ Ready for Submission           ║
+║ Generated: 5/5 | Valid: 5/5       ║
+║ Approved: 5/5                     ║
+╚═══════════════════════════════════╝
+```
+
+**Needs Attention State:**
+```
+╔═══════════════════════════════════╗
+║ Needs Attention                ║
+║ Generated: 5/5 | Valid: 5/5       ║
+║ Approved: 3/5                     ║
+╚═══════════════════════════════════╝
+```
+
+**Not Ready State:**
+```
+╔═══════════════════════════════════╗
+║ Not Ready                      ║
+║ Generated: 4/5 | Valid: 3/5       ║
+║ Approved: 2/5                     ║
+╚═══════════════════════════════════╝
+```
+
+---
+
+**Example System Check Result**
+
+**Complete System (Ready):**
+
+**State:**
+- All 5 documents generated
+- All documents valid
+- All documents approved
+
+**System Check Result:**
+```json
+{
+  "status": {
+    "allDocumentsGenerated": true,
+    "allDocumentsValid": true,
+    "allDocumentsApproved": true,
+    "readyForSubmission": true,
+    "readinessStatus": "ready",
+    "missingDocuments": [],
+    "invalidDocuments": [],
+    "unapprovedDocuments": []
+  },
+  "summary": {
+    "totalDocuments": 5,
+    "generatedDocuments": 5,
+    "validDocuments": 5,
+    "approvedDocuments": 5,
+    "totalValidationErrors": 0
+  }
+}
+```
+
+**UI Display:**
+```
+System Status Panel:
+  Ready for Submission
+  Generated: 5/5 | Valid: 5/5 | Approved: 5/5
+
+  Total Validation Errors: 0
+  System Health: 100
+
+  Active Document: pfmea
+    Source: Process Flow
+    Mapping Coverage: 95% populated
+    Validation Errors: 0
+    Status: Approved
+```
+
+---
+
+**Incomplete System (Not Ready):**
+
+**State:**
+- 4 documents generated (inspectionPlan missing)
+- 3 documents valid (pfmea has 2 errors)
+- 2 documents approved
+
+**System Check Result:**
+```json
+{
+  "status": {
+    "allDocumentsGenerated": false,
+    "allDocumentsValid": false,
+    "allDocumentsApproved": false,
+    "readyForSubmission": false,
+    "readinessStatus": "not_ready",
+    "missingDocuments": ["inspectionPlan"],
+    "invalidDocuments": ["pfmea", "inspectionPlan"],
+    "unapprovedDocuments": ["pfmea", "controlPlan", "inspectionPlan"]
+  },
+  "summary": {
+    "totalDocuments": 5,
+    "generatedDocuments": 4,
+    "validDocuments": 3,
+    "approvedDocuments": 2,
+    "totalValidationErrors": 2
+  }
+}
+```
+
+**UI Display:**
+```
+System Status Panel:
+  Not Ready
+  Generated: 4/5 | Valid: 3/5 | Approved: 2/5
+
+  Total Validation Errors: 2
+  System Health: 85
+
+  Active Document: pfmea
+    Source: Process Flow
+    Mapping Coverage: 88% populated
+    Validation Errors: 2
+    Status: Invalid
+
+  Missing Documents:
+    inspectionPlan
+
+  Invalid Documents:
+    pfmea
+```
+
+---
+
+**Benefits**
+
+**User Confidence:**
+- Clear "ready vs not ready" indicator
+- No guessing about submission readiness
+- Transparent system state
+
+**Visibility:**
+- See all completeness metrics at a glance
+- Document-level trace information
+- Mapping coverage percentage exposed
+
+**Non-Intrusive:**
+- Hidden by default (toggle button)
+- Only shown when user wants it
+- Doesn't clutter main workflow
+
+**Diagnostic Value:**
+- Quickly identify missing documents
+- See which documents are invalid
+- Understand mapping coverage per document
+
+---
+
+**Technical Implementation**
+
+**Auto-Update Triggers:**
+```typescript
+// System check updates when:
+useEffect(() => {
+  const checkResult = runSystemCheck(
+    documents,
+    validationResults,
+    documentMeta,
+    mappingMetadata
+  );
+  setSystemCheckResult(checkResult);
+}, [documents, validationResults, documentMeta, mappingMetadata]);
+
+// Active document trace updates when:
+useEffect(() => {
+  const trace = getDocumentTrace(
+    activeStep,
+    editableDocuments[activeStep],
+    validationResults[activeStep],
+    documentMeta[activeStep],
+    mappingMetadata[activeStep]
+  );
+  setActiveDocumentTrace(trace);
+}, [activeStep, editableDocuments, validationResults, documentMeta, mappingMetadata]);
+```
+
+**Performance:**
+- O(n) for system check (n = number of expected templates)
+- O(1) for document trace
+- No database queries
+- Negligible overhead
+
+**State Management:**
+```typescript
+const [systemCheckResult, setSystemCheckResult] = useState<SystemCheckResult | null>(null);
+const [showSystemStatus, setShowSystemStatus] = useState(false);
+const [activeDocumentTrace, setActiveDocumentTrace] = useState<DocumentTrace | null>(null);
+```
+
+---
+
+**No Logic Changes**
+
+**Critical:** Phase 43 is **purely additive** - no modifications to existing systems:
+- Validation logic unchanged (reads ValidationResult)
+- Risk logic unchanged (no interaction)
+- Health scoring logic unchanged (displayed but not modified)
+- Mapping logic unchanged (reads MappingMetadata)
+- All existing features continue to work exactly as before
+
+**What Phase 43 does:**
+- Reads existing state
+- Aggregates existing metrics
+- Displays new view of existing data
+- Provides new toggle button
+
+**What Phase 43 does NOT do:**
+- Modify validation rules
+- Change risk calculations
+- Alter health scoring
+- Mutate any existing logic
+
+---
+
+**Testing Scenarios**
+
+**Verify Ready Status:**
+1. Generate all documents
+2. Ensure all valid
+3. Approve all documents
+4. Toggle System Status
+5. Verify " Ready for Submission"
+
+**Verify Needs Attention:**
+1. Generate all documents
+2. Ensure all valid
+3. Leave 2 documents unapproved
+4. Toggle System Status
+5. Verify " Needs Attention"
+
+**Verify Not Ready:**
+1. Generate 3 of 5 documents
+2. Make 1 document invalid
+3. Toggle System Status
+4. Verify " Not Ready"
+5. Verify missing documents listed
+
+**Verify Document Trace:**
+1. Click on PFMEA document
+2. Toggle System Status
+3. Verify "Active Document: pfmea"
+4. Verify "Source: Process Flow"
+5. Verify mapping coverage percentage shown
+
+**Verify Toggle Behavior:**
+1. System Status hidden by default
+2. Click "System Status" button → panel appears
+3. Click again → panel disappears
+
+---
+
+**Phase 43 Complete.**
+
+System validation and confidence layer successfully integrated with:
+- System completeness checks (generated, valid, approved)
+- Readiness status (ready, needs_attention, not_ready)
+- Document-level trace information (source, mapping, validation)
+- Visual readiness indicators (/)
+- Toggleable System Status Panel
+- Non-intrusive design (hidden by default)
+- No modifications to existing logic (purely additive)
+- Auto-updates on state changes
+
+**Quality Metrics:**
+- Readiness statuses: 3 (ready, needs_attention, not_ready)
+- Completeness checks: 3 (generated, valid, approved)
+- Document trace fields: 5 (source, mapping%, errors, valid, approved)
+- UI toggle: 1 button
+- Performance: O(n) system check, negligible overhead
+
+**Next:** User testing for confidence layer effectiveness, or additional diagnostic features (optional).
+
+---
+
 ## 2026-03-29 15:22 CT - Phase 41 - Risk Prediction Layer
 
 - Summary: Added deterministic risk prediction engine for proactive issue detection
