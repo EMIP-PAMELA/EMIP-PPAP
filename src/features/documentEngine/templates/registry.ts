@@ -18,6 +18,11 @@ import { PROCESS_FLOW_TEMPLATE } from './processFlowTemplate';
 import { PFMEA_TEMPLATE } from './pfmeaTemplate';
 import { CONTROL_PLAN_TEMPLATE } from './controlPlanTemplate';
 
+// Phase W2B: Wizard-specific templates
+import { PROCESS_FLOW_WIZARD_TEMPLATE } from './wizard/ProcessFlowWizardTemplate';
+import { CONTROL_PLAN_WIZARD_TEMPLATE } from './wizard/ControlPlanWizardTemplate';
+import { PFMEA_SUMMARY_WIZARD_TEMPLATE } from './wizard/PfmeaSummaryWizardTemplate';
+
 // Phase 30.1: Import persistence service
 let persistenceServiceImported = false;
 
@@ -26,7 +31,11 @@ const staticTemplates: Record<string, TemplateDefinition> = {
   'PSW': PSW_TEMPLATE,
   'PROCESS_FLOW': PROCESS_FLOW_TEMPLATE,
   'PFMEA': PFMEA_TEMPLATE,
-  'CONTROL_PLAN': CONTROL_PLAN_TEMPLATE
+  'CONTROL_PLAN': CONTROL_PLAN_TEMPLATE,
+  // Phase W2B: Wizard-specific templates (direct BOM mapping, no transformation chain)
+  'process-flow-wizard': PROCESS_FLOW_WIZARD_TEMPLATE,
+  'control-plan-wizard': CONTROL_PLAN_WIZARD_TEMPLATE,
+  'pfmea-summary-wizard': PFMEA_SUMMARY_WIZARD_TEMPLATE
 };
 
 // Phase 29: Dynamic templates (ingested from external sources)
