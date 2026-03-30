@@ -259,7 +259,7 @@ export default function DocumentWizardPage() {
       let cellMap;
       let filename;
       
-      // V2.6B: Route to appropriate template mapping
+      // V2.6B/V2.7B: Route to appropriate template mapping
       switch (generatedDraft.templateId) {
         case 'process-flow-wizard': {
           const { PROCESS_FLOW_WORKBOOK_MAP } = await import('@/src/features/documentEngine/export/mappings/processFlowWorkbookMap');
@@ -275,8 +275,15 @@ export default function DocumentWizardPage() {
           break;
         }
         
+        case 'control-plan-wizard': {
+          const { CONTROL_PLAN_WORKBOOK_MAP } = await import('@/src/features/documentEngine/export/mappings/controlPlanWorkbookMap');
+          cellMap = CONTROL_PLAN_WORKBOOK_MAP;
+          filename = `control-plan-${generatedDraft.fields.partNumber || 'export'}-${Date.now()}.xlsx`;
+          break;
+        }
+        
         default:
-          alert(`Excel template export not yet implemented for: ${generatedDraft.templateId}\n\nCurrently supported:\n- Process Flow\n- PFMEA Summary`);
+          alert(`Excel template export not yet implemented for: ${generatedDraft.templateId}\n\nCurrently supported:\n- Process Flow\n- PFMEA Summary\n- Control Plan`);
           return;
       }
       

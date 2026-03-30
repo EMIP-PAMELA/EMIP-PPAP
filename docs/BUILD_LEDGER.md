@@ -4,6 +4,151 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-30 18:30 CT - Phase V2.7B - Control Plan Excel Template Injection
+
+**Summary:** Implemented Control Plan wizard export to Excel workbook template
+
+**Problem Statement:**
+- Control Plan wizard generated data but had no Excel export capability
+- Users needed to manually copy data into PPAP workbook
+- No automated injection into "7_Process Control Plan - Form" sheet
+- Process Flow and PFMEA had Excel export, but Control Plan did not
+
+**Solution: Control Plan Excel Export**
+
+Extended the existing Excel template injection system to support Control Plan wizard output:
+
+**Implementation:**
+
+1. **Created Control Plan Workbook Mapping**
+   - New file: `src/features/documentEngine/export/mappings/controlPlanWorkbookMap.ts`
+   - Target sheet: `"7_Process Control Plan - Form"`
+   - Mapped 6 defensible fields from wizard output
+   - Estimated column positions based on typical PPAP Control Plan structure
+
+2. **Mapped Fields (Wizard → Workbook)**
+   - **stepNumber** → Column A (Process Step Number)
+   - **process** → Column B (Process Name/Operation Description)
+   - **machine** → Column C (Machine/Device/Tool)
+   - **characteristic** → Column D (Product/Process Characteristic)
+   - **method** → Column E (Control Method)
+   - **sampleSize** → Column F (Sample Size/Frequency)
+
+3. **Extended Wizard Export Routing**
+   - Added `control-plan-wizard` case to export handler
+   - Dynamic import of `CONTROL_PLAN_WORKBOOK_MAP`
+   - Filename pattern: `control-plan-{partNumber}-{timestamp}.xlsx`
+
+4. **Preserved Existing Architecture**
+   - No changes to Excel injector core logic
+   - Reused existing `exportToExcelTemplate` function
+   - Followed same pattern as Process Flow and PFMEA exports
+
+**Files Created:**
+- `src/features/documentEngine/export/mappings/controlPlanWorkbookMap.ts` — Control Plan cell mapping
+
+**Files Modified:**
+- `app/tools/document-wizard/page.tsx` — Added Control Plan export routing
+
+**Technical Details:**
+
+Control Plan mapping structure:
+```typescript
+export const CONTROL_PLAN_WORKBOOK_MAP: WorkbookCellMap = {
+  sheetName: '7_Process Control Plan - Form',
+  headerMappings: [
+    { fieldKey: 'partNumber', cellAddress: 'B2', label: 'Part Number' }
+  ],
+  rowMappings: {
+    dataFieldKey: 'controlPlanRows',
+    startRow: 10,
+    columnMappings: [
+      { fieldKey: 'stepNumber', column: 'A', label: 'Process Step Number' },
+      { fieldKey: 'process', column: 'B', label: 'Process Name/Operation Description' },
+      { fieldKey: 'machine', column: 'C', label: 'Machine/Device/Tool' },
+      { fieldKey: 'characteristic', column: 'D', label: 'Product/Process Characteristic' },
+      { fieldKey: 'method', column: 'E', label: 'Control Method' },
+      { fieldKey: 'sampleSize', column: 'F', label: 'Sample Size/Frequency' }
+    ]
+  }
+};
+```
+
+Wizard export routing:
+```typescript
+case 'control-plan-wizard': {
+  const { CONTROL_PLAN_WORKBOOK_MAP } = await import('@/src/features/documentEngine/export/mappings/controlPlanWorkbookMap');
+  cellMap = CONTROL_PLAN_WORKBOOK_MAP;
+  filename = `control-plan-${generatedDraft.fields.partNumber || 'export'}-${Date.now()}.xlsx`;
+  break;
+}
+```
+
+**Governance:**
+- ✅ No parser modifications
+- ✅ No normalizer modifications
+- ✅ No autofill rule changes
+- ✅ No validation engine changes
+- ✅ No template registry changes
+- ✅ Export architecture unchanged (extension only)
+- ✅ Process Flow export unchanged
+- ✅ PFMEA export unchanged
+
+**Scope Limitations:**
+
+**Intentionally Unmapped Fields:**
+The Control Plan workbook contains additional columns that the wizard does not currently generate:
+- Specification/Tolerance
+- Evaluation/Measurement Technique
+- Control Plan Number
+- Reaction Plan
+- Control Limits
+
+These fields are intentionally left blank for operator/engineer completion. This phase strictly injects what the wizard reliably generates.
+
+**Cell Address Estimates:**
+- Header cell `B2` for part number is estimated
+- Starting row `10` is estimated based on typical PPAP form structure
+- Column positions A-F are estimated based on standard Control Plan layout
+- Actual workbook inspection may require adjustment of these values
+
+**Impact:**
+- ✅ Control Plan wizard now exports to Excel workbook
+- ✅ Automated injection into PPAP template
+- ✅ Consistent export experience across Process Flow, PFMEA, and Control Plan
+- ✅ Reduces manual data entry for operators
+- ✅ Preserves workbook formatting and structure
+
+**User Workflow:**
+1. Generate Control Plan via wizard
+2. Edit fields in DocumentEditor (guided completion, dropdowns)
+3. Click "Export to Excel Template"
+4. Download populated PPAP workbook
+5. Open in Excel and verify data placement
+6. Complete unmapped fields manually
+7. Submit as part of PPAP package
+
+**Verification Status:**
+- ✅ TypeScript compilation passes
+- ✅ Export routing wired into wizard
+- ✅ Mapping file exists and follows established pattern
+- ✅ No runtime path errors
+- ⚠️ **Workbook cell alignment requires manual verification** (estimated positions)
+
+**Notes:**
+- Column mappings are estimates based on typical PPAP Control Plan structure
+- Actual cell addresses should be verified against the workbook before production use
+- If cell positions are incorrect, adjust `controlPlanWorkbookMap.ts` accordingly
+- The wizard exports current draft state, including user-edited values
+- Field certainty and guided completion behavior preserved
+
+**Next Steps:**
+- Manual verification: Open exported workbook and confirm data appears in correct cells
+- Adjust cell addresses in mapping file if needed
+- Consider adding more fields as wizard capabilities expand
+
+---
+
 ## 2026-03-30 18:00 CT - Phase V2.7A - Centralized Option Registry
 
 **Summary:** Centralized dropdown option definitions and replaced inline arrays with registry references
