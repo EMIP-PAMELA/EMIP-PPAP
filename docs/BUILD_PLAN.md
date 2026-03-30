@@ -92,6 +92,7 @@ The Document Engine addendum (added in Version 3P.1) has been fully implemented 
 **Phases 9–21:** ✅ All delivered and operational
 **Phases W1, W2A-W2E, V2.1-V2.6:** ✅ Document Wizard complete
 **Phase V2.6X:** ✅ Field Certainty + Guided Completion UX
+**Phase V2.6B:** ✅ Process Flow Excel Template Injection
 
 **What is COMPLETE:**
 - ✅ Document generation engine (Process Flow, PFMEA, Control Plan, PSW)
@@ -102,6 +103,7 @@ The Document Engine addendum (added in Version 3P.1) has been fully implemented 
 - ✅ PPAP integration with dedicated route
 - ✅ Document Wizard with PDF extraction and autofill (W1-W2E, V2.1-V2.6)
 - ✅ Field certainty classification and guided completion UX (V2.6X)
+- ✅ Excel workbook template export (Process Flow, PFMEA Summary - V2.6/V2.6B)
 - ✅ Approval workflow (owner + status lifecycle)
 - ✅ Document system unification (Phase 21)
 

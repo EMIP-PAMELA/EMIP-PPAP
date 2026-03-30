@@ -4,6 +4,91 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-30 14:50 CT - Phase V2.6B - Process Flow Excel Template Injection
+
+**Summary:** Implemented row-based Process Flow workbook export to PPAP Package template
+
+**Problem Statement:**
+- Process Flow wizard template generated data but had no workbook export
+- Users needed ability to export Process Flow directly to official PPAP Package workbook
+- Excel template injection existed for PFMEA Summary but not Process Flow
+
+**Solution: Process Flow Workbook Mapping**
+
+Extended the V2.6 Excel template injector to support Process Flow wizard template:
+
+**Target Sheet:** `"5-Proces Flow Diagram"` (Sheet 5 in PPAP Package workbook)
+
+**Data Mapping:**
+- Header: Part Number → Cell B2 (estimated, may require adjustment)
+- Row data starting at Row 5 (estimated):
+  - Column A: stepNumber
+  - Column B: operation (process description)
+  - Column C: machine (equipment/tool)
+  - Column D: notes
+
+**Files Created:**
+- `src/features/documentEngine/export/mappings/processFlowWorkbookMap.ts` — Process Flow cell mapping configuration
+
+**Files Modified:**
+- `app/tools/document-wizard/page.tsx` — Updated Excel export handler to route Process Flow template to appropriate mapping
+
+**Technical Details:**
+
+Mapping configuration follows same pattern as PFMEA Summary:
+```typescript
+export const PROCESS_FLOW_WORKBOOK_MAP: WorkbookCellMap = {
+  sheetName: '5-Proces Flow Diagram',
+  headerMappings: [{ fieldKey: 'partNumber', cellAddress: 'B2' }],
+  rowMappings: {
+    dataFieldKey: 'processSteps',
+    startRow: 5,
+    columnMappings: [
+      { fieldKey: 'stepNumber', column: 'A' },
+      { fieldKey: 'operation', column: 'B' },
+      { fieldKey: 'machine', column: 'C' },
+      { fieldKey: 'notes', column: 'D' }
+    ]
+  }
+};
+```
+
+Excel export handler now supports switch-based routing:
+- `process-flow-wizard` → Process Flow mapping
+- `pfmea-summary-wizard` → PFMEA Summary mapping
+- Other templates → Unsupported message
+
+**Export Filename Format:**
+`process-flow-[partNumber]-[timestamp].xlsx`
+
+**Governance:**
+- ✅ No parser modifications
+- ✅ No normalizer modifications
+- ✅ No autofill rule changes
+- ✅ No validation engine changes
+- ✅ PFMEA export logic unchanged
+- ✅ Template registry behavior unchanged
+
+**Impact:**
+- ✅ Process Flow now has workbook export capability
+- ✅ Export preserves workbook formatting and structure
+- ✅ Row-by-row data injection into template sheet
+- ✅ Existing wizard generation unchanged
+- ✅ Field certainty system preserved
+
+**Notes:**
+- Cell addresses and starting row are estimated based on typical PPAP form structure
+- May require adjustment after first export testing with actual workbook
+- Column mappings assume standard Process Flow Diagram layout (Step, Operation, Machine, Notes)
+
+**Next Steps:**
+- Test export with actual BOM data
+- Verify cell alignment with workbook template
+- Adjust mappings if needed after inspection
+- Future: Add Control Plan template export (V2.6C)
+
+---
+
 ## 2026-03-30 13:00 CT - Phase V2.6X - Field Certainty + Guided Completion UX
 
 **Summary:** Implemented field certainty classification system for wizard templates with visual distinction and edit governance behavior

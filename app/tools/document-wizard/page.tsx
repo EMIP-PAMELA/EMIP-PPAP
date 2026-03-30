@@ -247,28 +247,43 @@ export default function DocumentWizardPage() {
     console.log('[Wizard] Document exported as JSON');
   };
 
-  // V2.6: Export to Excel Template
+  // V2.6 / V2.6B: Export to Excel Template
   const handleExportExcel = async () => {
     if (!generatedDraft) return;
     
     try {
-      // V2.6: Currently only implemented for PFMEA Summary Wizard
-      if (generatedDraft.templateId !== 'pfmea-summary-wizard') {
-        alert('Excel template export is currently implemented for PFMEA Summary Wizard only.\n\nOther templates coming soon.');
-        return;
-      }
-      
-      console.log('[V2.6 EXPORT] Starting Excel template export');
+      console.log('[V2.6 EXPORT] Starting Excel template export for:', generatedDraft.templateId);
       
       const { exportToExcelTemplate, downloadExcelFile } = await import('@/src/features/documentEngine/export/excelTemplateInjector');
-      const { PFMEA_SUMMARY_WORKBOOK_MAP } = await import('@/src/features/documentEngine/export/mappings/pfmeaSummaryWorkbookMap');
       
-      const blob = await exportToExcelTemplate(generatedDraft, PFMEA_SUMMARY_WORKBOOK_MAP);
-      const filename = `PFMEA_Summary_${generatedDraft.fields.partNumber || 'export'}_${Date.now()}.xlsx`;
+      let cellMap;
+      let filename;
       
+      // V2.6B: Route to appropriate template mapping
+      switch (generatedDraft.templateId) {
+        case 'process-flow-wizard': {
+          const { PROCESS_FLOW_WORKBOOK_MAP } = await import('@/src/features/documentEngine/export/mappings/processFlowWorkbookMap');
+          cellMap = PROCESS_FLOW_WORKBOOK_MAP;
+          filename = `process-flow-${generatedDraft.fields.partNumber || 'export'}-${Date.now()}.xlsx`;
+          break;
+        }
+        
+        case 'pfmea-summary-wizard': {
+          const { PFMEA_SUMMARY_WORKBOOK_MAP } = await import('@/src/features/documentEngine/export/mappings/pfmeaSummaryWorkbookMap');
+          cellMap = PFMEA_SUMMARY_WORKBOOK_MAP;
+          filename = `pfmea-summary-${generatedDraft.fields.partNumber || 'export'}-${Date.now()}.xlsx`;
+          break;
+        }
+        
+        default:
+          alert(`Excel template export not yet implemented for: ${generatedDraft.templateId}\n\nCurrently supported:\n- Process Flow\n- PFMEA Summary`);
+          return;
+      }
+      
+      const blob = await exportToExcelTemplate(generatedDraft, cellMap);
       downloadExcelFile(blob, filename);
       
-      console.log('[V2.6 EXPORT] Excel template export complete');
+      console.log('[V2.6 EXPORT] Excel template export complete:', filename);
     } catch (err) {
       console.error('[V2.6 EXPORT] Export failed:', err);
       alert(`Excel export failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
