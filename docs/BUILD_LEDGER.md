@@ -4,6 +4,168 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-30 19:45 CT - Phase V2.7D - PFMEA Excel Injection (Limited + Honest)
+
+**Summary:** Formalized limited PFMEA export approach with explicit documentation and console logging
+
+**Problem Statement:**
+- PFMEA wizard generates row-based data but workbook sheet is matrix-based (RPN heatmap)
+- Risk ratings (severity, occurrence, detection) are suggested values, not engineering-approved
+- No clear documentation explaining why PFMEA export is intentionally limited
+- Operators might expect full PFMEA data in exported workbook
+- Potential confusion about "incomplete" export behavior
+
+**Solution: Limited + Honest PFMEA Export**
+
+Formalized the intentionally limited PFMEA export approach with clear documentation and explicit console logging:
+
+**Implementation:**
+
+1. **Verified Current Export Behavior**
+   - PFMEA wizard generates row-based data: stepNumber, processFunction, failureMode, effect, severity, occurrence, detection, rpn
+   - Workbook sheet "6b_PFMEA summary - Form" is matrix-based (RPN distribution heatmap)
+   - Current mapping exports ONLY part number header (Y4)
+   - Row mappings intentionally undefined
+
+2. **Added Explicit Console Logging**
+   - When `rowMappings` is undefined, log clear explanation
+   - Messages explain limited export is intentional, not a bug
+   - Helps operators understand export behavior
+
+3. **Enhanced Mapping Documentation**
+   - Updated `pfmeaSummaryWorkbookMap.ts` header comments
+   - Documented sheet structure (matrix-based)
+   - Documented wizard data structure (row-based)
+   - Explained export approach and reasoning
+   - Clarified this is intentional design, not limitation
+
+4. **Preserved Data Integrity**
+   - No fabrication of RPN distribution counts
+   - No forced mapping of row data into matrix cells
+   - No assumption that suggested risk ratings are authoritative
+   - Matrix remains blank for engineer completion
+
+**Files Modified:**
+- `src/features/documentEngine/export/excelTemplateInjector.ts` — Added V2.7D console logging for limited export
+- `src/features/documentEngine/export/mappings/pfmeaSummaryWorkbookMap.ts` — Enhanced documentation explaining limited export
+
+**Technical Details:**
+
+Console logging for limited export:
+```typescript
+} else {
+  // V2.7D: Explicit logging for limited export (e.g., PFMEA matrix-based sheets)
+  console.log('[V2.7D EXPORT] Limited export applied - row mappings intentionally undefined');
+  console.log('[V2.7D EXPORT] Sheet structure incompatible with row-based data injection');
+  console.log('[V2.7D EXPORT] Only header fields exported');
+}
+```
+
+Enhanced mapping documentation:
+```typescript
+/**
+ * EXPORT APPROACH (V2.7D - Limited + Honest):
+ * This mapping intentionally exports ONLY header fields (Part No.) because:
+ * 
+ * 1. **Structural Incompatibility**: Wizard generates row-based data; workbook expects matrix
+ * 2. **Engineering Judgment Required**: Risk ratings (S/O/D) are suggestions, not authoritative
+ * 3. **No Forced Data**: We do not fabricate or force RPN distribution counts
+ * 4. **Operator Completion**: Matrix should be filled by engineer based on actual risk analysis
+ */
+```
+
+**Governance:**
+- ✅ No full PFMEA completion attempted
+- ✅ No risk values generated or faked
+- ✅ No RPN calculations forced
+- ✅ Autofill rules unchanged
+- ✅ Parser unchanged
+- ✅ Normalizer unchanged
+- ✅ Export architecture unchanged
+- ✅ Process Flow export unchanged
+- ✅ Control Plan export unchanged
+
+**Export Behavior:**
+
+**Fields Exported:**
+- **Part Number** (Y4) — Header field only
+
+**Fields NOT Exported (Intentionally):**
+- stepNumber — Row-based, incompatible with matrix
+- processFunction — Row-based, incompatible with matrix
+- failureMode — Suggested value, not authoritative
+- effect — Suggested value, not authoritative
+- severity — Suggested value, requires engineering validation
+- occurrence — Suggested value, requires engineering validation
+- detection — Suggested value, requires engineering validation
+- rpn — Calculated from suggested values, not authoritative
+
+**Why Matrix Mapping Is NOT Implemented:**
+
+To populate the RPN distribution matrix would require:
+1. Grouping wizard rows by (severity, occurrence, detection) combination
+2. Calculating RPN for each entry (S × O × D)
+3. Counting occurrences of each RPN value
+4. Mapping counts into matrix cells (R8-R17, columns C-AR)
+5. **Validating that suggested risk ratings are engineering-approved**
+
+Step 5 is the critical blocker. The wizard provides **suggested** risk ratings based on autofill rules, but these are NOT engineering-approved values. Forcing them into the matrix would:
+- Fabricate risk distribution data
+- Imply engineering validation that hasn't occurred
+- Violate PPAP data integrity requirements
+- Mislead operators about risk analysis completion
+
+**Impact:**
+- ✅ Clear documentation of limited export approach
+- ✅ Explicit console feedback for operators
+- ✅ Data integrity preserved
+- ✅ No fabricated or forced risk data
+- ✅ Engineering judgment requirement maintained
+- ✅ Operator awareness of manual completion needed
+
+**User Workflow:**
+1. Generate PFMEA via wizard
+2. Review and edit suggested risk ratings in DocumentEditor
+3. Click "Export to Excel Template"
+4. **[Console]** See limited export messages
+5. Download workbook with part number populated
+6. **[Manual]** Complete RPN matrix based on engineering-validated risk analysis
+7. Submit as part of PPAP package
+
+**Design Decisions:**
+- **Limited export is intentional**: Not a bug or limitation to be "fixed"
+- **Honest about capabilities**: Don't pretend to complete what requires engineering judgment
+- **Console logging**: Make behavior transparent to operators
+- **Documentation**: Explain reasoning clearly for future maintainers
+- **Data integrity first**: Never fabricate or force engineering data
+
+**Comparison with Other Templates:**
+
+| Template | Export Approach | Reasoning |
+|----------|----------------|-----------|
+| **Process Flow** | Full row-based export | Workbook is row-based, BOM data is deterministic |
+| **Control Plan** | Full row-based export | Workbook is row-based, fields are defensible |
+| **PFMEA** | Header only (limited) | Workbook is matrix-based, risk ratings are suggested |
+
+**Notes:**
+- This phase formalizes existing behavior with better documentation
+- No functional changes to export logic
+- Console logging added for operator awareness
+- Mapping file documentation significantly enhanced
+- This is the correct approach for PFMEA given structural incompatibility
+
+**Future Considerations:**
+If full PFMEA export is desired in the future, it would require:
+- Engineering validation workflow for risk ratings
+- Approval gate before export
+- RPN distribution calculation logic
+- Matrix cell mapping implementation
+- Clear indication that exported data is engineering-approved
+
+Until those requirements are met, limited export is the honest and correct approach.
+
+---
+
 ## 2026-03-30 19:30 CT - Phase V2.7E - Field-Level Context / "Why" Layer
 
 **Summary:** Added field-level context explanations based on certainty and metadata to help users understand field purpose

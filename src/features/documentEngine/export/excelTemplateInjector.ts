@@ -118,6 +118,11 @@ export async function exportToExcelTemplate(
     } else {
       console.warn('[V2.6 EXPORT] Row data field is not an array:', cellMap.rowMappings.dataFieldKey);
     }
+  } else {
+    // V2.7D: Explicit logging for limited export (e.g., PFMEA matrix-based sheets)
+    console.log('[V2.7D EXPORT] Limited export applied - row mappings intentionally undefined');
+    console.log('[V2.7D EXPORT] Sheet structure incompatible with row-based data injection');
+    console.log('[V2.7D EXPORT] Only header fields exported');
   }
   
   console.log('[V2.6 EXPORT] Workbook export complete');
