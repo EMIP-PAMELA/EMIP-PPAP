@@ -1,20 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { parseVisualMaster } from '@/src/features/bom/visualMasterParser';
-import { normalizeVisualMasterText, getPreprocessingSummary, getTextPreview, PreprocessingSummary } from '@/src/features/bom/visualMasterPreprocessor';
-import { validateParsedVisualMaster, isCriticallyEmpty, getValidationStatusMessage, ParserValidationResult } from '@/src/features/bom/visualMasterValidator';
-import { extractTextFromPDF, isRawPDFBinary, getExtractionPreview, PDFExtractionResult } from '@/src/features/bom/pdfTextExtractor';
+import { useState } from 'react';
+import { parseBOMText } from '@/src/features/documentEngine/core/bomParser';
+import { normalizeBOMData } from '@/src/features/documentEngine/core/bomNormalizer';
 import { DocumentEditor } from '@/src/features/documentEngine/ui/DocumentEditor';
 import { DocumentDraft, TemplateId } from '@/src/features/documentEngine/templates/types';
 import { getTemplate, listTemplates } from '@/src/features/documentEngine/templates/registry';
 import { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
+import { extractTextFromPDF } from '@/src/features/documentEngine/utils/pdfToText';
 
 /**
  * Phase W1: Document Wizard Foundation
- * Phase W1.2: Visual Master Parser Integration
- * Phase W1.4: Parser Stabilization Layer
- * Phase W1.5: PDF Text Extraction Layer
  * 
  * Standalone document generation tool (workflow-independent)
  * - No PPAP session required
@@ -22,8 +18,6 @@ import { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
  * - No approval gates
  * - Ephemeral documents (not session-bound)
  * - Persistent templates (shared registry)
- * - W1.4: Preprocessing and validation for robust parsing
- * - W1.5: PDF text extraction before preprocessing
  */
 
 interface MappingDiagnostics {
@@ -35,8 +29,6 @@ interface MappingDiagnostics {
 }
 
 export default function DocumentWizardPage() {
-  console.log('[Document Wizard] Page loaded successfully - Route registered');
-  
   // State: Inputs
   const [templateFile, setTemplateFile] = useState<File | null>(null);
   const [bomFile, setBomFile] = useState<File | null>(null);
@@ -47,30 +39,12 @@ export default function DocumentWizardPage() {
   const [error, setError] = useState<string | null>(null);
   
   // State: Outputs
-  const [parsedBOM, setParsedBOM] = useState<any>(null);
+  const [normalizedBOM, setNormalizedBOM] = useState<NormalizedBOM | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<DocumentDraft | null>(null);
   const [diagnostics, setDiagnostics] = useState<MappingDiagnostics | null>(null);
-  
-  // W1.4: Preprocessing and validation state
-  const [rawExtractedText, setRawExtractedText] = useState<string>('');
-  const [normalizedText, setNormalizedText] = useState<string>('');
-  const [preprocessingSummary, setPreprocessingSummary] = useState<PreprocessingSummary | null>(null);
-  const [validationResult, setValidationResult] = useState<ParserValidationResult | null>(null);
-  const [showDebugPanel, setShowDebugPanel] = useState<boolean>(false);
-  
-  // W1.5: PDF extraction state
-  const [pdfExtractionResult, setPdfExtractionResult] = useState<PDFExtractionResult | null>(null);
 
   // Available templates from registry
   const availableTemplates = listTemplates();
-
-  // W1.2 UI FIX: Auto-regenerate when template changes (if BOM already loaded)
-  useEffect(() => {
-    if (selectedTemplateId && parsedBOM && !isProcessing) {
-      console.log('[W1.2] Template changed, regenerating document...');
-      handleGenerate();
-    }
-  }, [selectedTemplateId]); // Only trigger on template change
 
   // Handle template file upload
   const handleTemplateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -108,93 +82,50 @@ export default function DocumentWizardPage() {
 
     setBomFile(file);
     setError(null);
-    setValidationResult(null);
     
     console.log('[Wizard] BOM uploaded:', file.name, file.type);
     
     try {
-      // STEP 1: W1.5 PDF EXTRACTION - Extract text from PDF
-      let rawText: string;
+      // V2.1 Fix: Extract text from PDF if needed
+      let text: string;
+      const isPDF = file.type === 'application/pdf';
       
-      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        console.log('[W1.5 PIPELINE] PDF file detected, extracting text...');
-        
-        const extractionResult = await extractTextFromPDF(file);
-        setPdfExtractionResult(extractionResult);
-        
-        if (!extractionResult.success) {
-          setError(`PDF extraction failed: ${extractionResult.error}`);
-          return;
-        }
-        
-        rawText = extractionResult.text;
-        console.log('[W1.5 PIPELINE] PDF extraction complete');
-        console.log('[W1.5 PIPELINE] Pages:', extractionResult.pageCount);
-        console.log('[W1.5 PIPELINE] Extracted lines:', extractionResult.extractedLineCount);
-        console.log('[W1.5 PIPELINE] Text length:', rawText.length, 'characters');
-        console.log('[W1.5 PIPELINE] Text preview (first 20 lines):');
-        console.log(getExtractionPreview(rawText, 20));
-        
-        // CRITICAL CHECK: Verify extraction worked
-        if (isRawPDFBinary(rawText)) {
-          console.error('[W1.5 CRITICAL] Extraction failed — raw PDF binary detected');
-          console.error('[W1.5 CRITICAL] First 100 chars:', rawText.substring(0, 100));
-          setError('❌ PDF extraction failed: Raw binary detected instead of text');
-          return;
-        }
+      if (isPDF) {
+        console.log('[Wizard] Extracting text from PDF...');
+        text = await extractTextFromPDF(file);
+        console.log('[Wizard] PDF extraction complete');
       } else {
-        // Plain text file - use direct reading
-        console.log('[W1.5 PIPELINE] Plain text file detected');
-        rawText = await file.text();
+        text = await file.text();
       }
       
-      setRawExtractedText(rawText);
-      console.log('[W1.5 PIPELINE] Passing to preprocessing...');
+      console.log('[Wizard] BOM text length:', text.length);
       
-      // STEP 2: W1.4 PREPROCESSING - Normalize text before parsing
-      const normalized = normalizeVisualMasterText(rawText);
-      setNormalizedText(normalized);
-      
-      // Get preprocessing summary for debugging
-      const prepSummary = getPreprocessingSummary(rawText, normalized);
-      setPreprocessingSummary(prepSummary);
-      
-      console.log('[W1.4 PREPROCESS] Original lines:', prepSummary.originalLineCount);
-      console.log('[W1.4 PREPROCESS] Normalized lines:', prepSummary.normalizedLineCount);
-      console.log('[W1.4 PREPROCESS] Dash normalizations:', prepSummary.dashNormalizations);
-      console.log('[W1.4 PREPROCESS] Tabs normalized:', prepSummary.tabsNormalized);
-      console.log('[W1.4 PREPROCESS] Trailing whitespace removed:', prepSummary.trailingWhitespaceRemoved);
-      
-      // STEP 3: Parse using Visual Master Parser v5.0 (with normalized text)
-      const parsedData = parseVisualMaster(normalized);
-      
-      console.log('[W1.4 PARSER] Operations:', parsedData.operations.length);
-      console.log('[W1.4 PARSER] Components:', parsedData.parts.length);
-      console.log('[W1.4 PARSER] Master PN:', parsedData.masterPartNumber);
-      
-      // STEP 4: W1.4 VALIDATION - Validate parser output
-      // Future Phase: AI verification hook can evaluate parser output here.
-      const validation = validateParsedVisualMaster(parsedData);
-      setValidationResult(validation);
-      
-      console.log('[W1.4 VALIDATION] Is valid:', validation.isValid);
-      console.log('[W1.4 VALIDATION] Warnings:', validation.warnings.length);
-      if (validation.warnings.length > 0) {
-        validation.warnings.forEach(warning => console.warn('[W1.4 VALIDATION]', warning));
+      // V2.1 Fix: Check for empty extraction
+      if (!text.trim()) {
+        throw new Error('File is empty or contains no extractable text');
       }
       
-      // STEP 5: HARD FAILURE CHECK - Don't silently pass empty results
-      if (isCriticallyEmpty(parsedData)) {
-        console.error('[W1.4 CRITICAL] Parser returned zero operations and zero components');
-        console.error('[W1.4 CRITICAL] First 10 normalized lines:', normalized.split('\n').slice(0, 10).join('\n'));
-        setError('❌ Parsing failed: No operations or components detected. See console for details.');
-      } else if (validation.warnings.length > 0) {
-        // Show warnings but don't block
-        console.warn('[W1.4] Parsing completed with warnings. See validation panel below.');
+      // Parse BOM using existing parser
+      const rawBOM = parseBOMText(text);
+      console.log('[Wizard] BOM parsed successfully');
+      console.log('[Wizard] Operations:', rawBOM.operations.length);
+      
+      // Count total components across all operations
+      const totalComponents = rawBOM.operations.reduce((sum, op) => sum + op.components.length, 0);
+      console.log('[Wizard] Total components:', totalComponents);
+      
+      // V2.1 Fix: Warn if parsing produced empty results
+      if (rawBOM.operations.length === 0) {
+        console.warn('[Wizard] ⚠️ No operations detected after parsing');
+        setError('⚠️ No operations detected — check BOM format or file content');
       }
       
-      setParsedBOM(parsedData);
-      console.log('[Wizard] BOM stored successfully');
+      // Normalize BOM using existing normalizer
+      const normalized = normalizeBOMData(rawBOM);
+      console.log('[Wizard] BOM normalized successfully');
+      
+      setNormalizedBOM(normalized);
+      console.log('[Wizard] BOM stored');
       
     } catch (err) {
       console.error('[Wizard] BOM parsing failed:', err);
@@ -209,7 +140,7 @@ export default function DocumentWizardPage() {
       return;
     }
     
-    if (!parsedBOM) {
+    if (!normalizedBOM) {
       setError('Please upload a BOM file');
       return;
     }
@@ -220,52 +151,10 @@ export default function DocumentWizardPage() {
     try {
       console.log('[Wizard] Starting document generation');
       console.log('[Wizard] Template:', selectedTemplateId);
-      console.log('[Wizard] BOM part:', parsedBOM.masterPartNumber);
+      console.log('[Wizard] BOM part:', normalizedBOM.masterPartNumber);
       
       const template = getTemplate(selectedTemplateId);
       console.log('[Wizard] Template retrieved:', template.name);
-      
-      // W1.4 ADAPTER LOGGING - Track data through adaptation layer
-      console.log('[W1.4 ADAPTER] Starting adaptation: Parser → NormalizedBOM');
-      console.log('[W1.4 ADAPTER] Parsed operations:', parsedBOM.operations.length);
-      console.log('[W1.4 ADAPTER] Parsed parts (flat):', parsedBOM.parts.length);
-      
-      // Adapt Visual Master Parser output to NormalizedBOM format
-      const normalizedBOM = {
-        masterPartNumber: parsedBOM.masterPartNumber,
-        operations: parsedBOM.operations.map((op: any) => ({
-          step: op.step,
-          resourceId: op.resourceId,
-          description: op.description,
-          components: op.components.map((comp: any) => ({
-            partId: comp.partId,
-            aciCode: comp.aciCode,
-            description: comp.fullDescription,
-            quantity: comp.quantity,
-            uom: comp.unitOfMeasure,
-            componentType: comp.componentClass
-          })),
-          processLines: [],
-          metadataLines: op.rawLines || []
-        })),
-        summary: {
-          totalOperations: parsedBOM.operationCount,
-          totalComponents: parsedBOM.componentCount,
-          wires: parsedBOM.parts.filter((p: any) => p.componentClass === 'Consumable/Wire').length,
-          terminals: parsedBOM.parts.filter((p: any) => p.isTerminal).length,
-          hardware: parsedBOM.parts.filter((p: any) => p.componentClass === 'Hardware').length
-        }
-      };
-      
-      console.log('[W1.4 ADAPTER] Adapted operations:', normalizedBOM.operations.length);
-      const totalAdaptedComponents = normalizedBOM.operations.reduce((sum: number, op: any) => sum + op.components.length, 0);
-      console.log('[W1.4 ADAPTER] Adapted components (total):', totalAdaptedComponents);
-      
-      // W1.4 HARD FAILURE CHECK - Detect data loss during adaptation
-      if (parsedBOM.parts.length > 0 && totalAdaptedComponents === 0) {
-        console.error('[W1.4 ADAPTER CRITICAL] Data loss detected: Parser had components, adapter has zero');
-        setError('⚠️ Generated shell only — source BOM structure was not detected.');
-      }
       
       // Use template.generate() method (Phase W1: basic generation)
       const draft = template.generate({ bom: normalizedBOM });
@@ -421,9 +310,9 @@ export default function DocumentWizardPage() {
                 onChange={handleBOMUpload}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
-              {parsedBOM && (
+              {normalizedBOM && (
                 <div className="mt-2 text-sm text-green-600">
-                  ✓ BOM loaded: {parsedBOM.masterPartNumber} ({parsedBOM.operationCount} ops, {parsedBOM.componentCount} components)
+                  ✓ BOM loaded: {normalizedBOM.masterPartNumber} ({normalizedBOM.summary.totalOperations} ops, {normalizedBOM.summary.totalComponents} components)
                 </div>
               )}
             </div>
@@ -431,9 +320,9 @@ export default function DocumentWizardPage() {
             {/* Generate Button */}
             <button
               onClick={handleGenerate}
-              disabled={!selectedTemplateId || !parsedBOM || isProcessing}
+              disabled={!selectedTemplateId || !normalizedBOM || isProcessing}
               className={`w-full py-3 px-4 rounded-md font-semibold text-white transition-colors ${
-                !selectedTemplateId || !parsedBOM || isProcessing
+                !selectedTemplateId || !normalizedBOM || isProcessing
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-indigo-600 hover:bg-indigo-700'
               }`}
@@ -447,151 +336,8 @@ export default function DocumentWizardPage() {
                 <p className="text-sm text-red-700">{error}</p>
               </div>
             )}
-            
-            {/* W1.4: Validation Warnings Panel */}
-            {validationResult && validationResult.warnings.length > 0 && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-                <h3 className="text-sm font-semibold text-yellow-800 mb-2">
-                  ⚠️ Parser Warnings ({validationResult.warnings.length})
-                </h3>
-                <ul className="space-y-1">
-                  {validationResult.warnings.map((warning, idx) => (
-                    <li key={idx} className="text-sm text-yellow-700">
-                      {warning}
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-3 pt-3 border-t border-yellow-200">
-                  <p className="text-xs text-yellow-600">
-                    Status: {getValidationStatusMessage(validationResult)}
-                  </p>
-                </div>
-              </div>
-            )}
-            
-            {/* W1.4: Preprocessing Summary */}
-            {preprocessingSummary && parsedBOM && (
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-                <h3 className="text-sm font-semibold text-blue-800 mb-2">
-                  Preprocessing Summary
-                </h3>
-                <div className="grid grid-cols-2 gap-3 text-xs text-blue-700">
-                  <div>
-                    <span className="font-medium">Original lines:</span> {preprocessingSummary.originalLineCount}
-                  </div>
-                  <div>
-                    <span className="font-medium">Normalized lines:</span> {preprocessingSummary.normalizedLineCount}
-                  </div>
-                  <div>
-                    <span className="font-medium">Dash normalizations:</span> {preprocessingSummary.dashNormalizations}
-                  </div>
-                  <div>
-                    <span className="font-medium">Tabs normalized:</span> {preprocessingSummary.tabsNormalized}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
-
-        {/* W1.4/W1.5: Debug Preview Panel */}
-        {(rawExtractedText || normalizedText || parsedBOM || pdfExtractionResult) && (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-gray-800">Debug Preview</h2>
-              <button
-                onClick={() => setShowDebugPanel(!showDebugPanel)}
-                className="px-3 py-1 text-sm bg-gray-200 hover:bg-gray-300 rounded-md transition-colors"
-              >
-                {showDebugPanel ? 'Hide' : 'Show'}
-              </button>
-            </div>
-            
-            {showDebugPanel && (
-              <div className="space-y-4">
-                {/* W1.5: PDF Extraction Preview */}
-                {pdfExtractionResult && (
-                  <div className="bg-green-50 border border-green-200 rounded p-4">
-                    <h3 className="text-sm font-semibold text-green-800 mb-2">
-                      PDF Extraction Results
-                    </h3>
-                    <div className="grid grid-cols-3 gap-3 text-xs text-green-700 mb-3">
-                      <div>
-                        <span className="font-medium">Pages:</span> {pdfExtractionResult.pageCount}
-                      </div>
-                      <div>
-                        <span className="font-medium">Extracted lines:</span> {pdfExtractionResult.extractedLineCount}
-                      </div>
-                      <div>
-                        <span className="font-medium">Success:</span> {pdfExtractionResult.success ? '✅' : '❌'}
-                      </div>
-                    </div>
-                    {pdfExtractionResult.success && (
-                      <div>
-                        <p className="text-xs font-medium text-green-700 mb-2">First 20 lines:</p>
-                        <pre className="bg-white border border-green-300 rounded p-2 text-xs overflow-auto max-h-48 font-mono">
-                          {getExtractionPreview(pdfExtractionResult.text, 20)}
-                        </pre>
-                      </div>
-                    )}
-                    {!pdfExtractionResult.success && pdfExtractionResult.error && (
-                      <div className="text-xs text-red-600 mt-2">
-                        Error: {pdfExtractionResult.error}
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {/* Raw Extracted Text Preview */}
-                {rawExtractedText && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-2">
-                      Raw Extracted Text (First 150 lines)
-                    </h3>
-                    <pre className="bg-gray-50 border border-gray-200 rounded p-3 text-xs overflow-auto max-h-64 font-mono">
-                      {getTextPreview(rawExtractedText, 150)}
-                    </pre>
-                  </div>
-                )}
-                
-                {/* Normalized Text Preview */}
-                {normalizedText && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-2">
-                      Normalized Text (First 150 lines)
-                    </h3>
-                    <pre className="bg-gray-50 border border-gray-200 rounded p-3 text-xs overflow-auto max-h-64 font-mono">
-                      {getTextPreview(normalizedText, 150)}
-                    </pre>
-                  </div>
-                )}
-                
-                {/* Parsed JSON Preview */}
-                {parsedBOM && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-2">
-                      Parsed JSON Preview (Summary)
-                    </h3>
-                    <pre className="bg-gray-50 border border-gray-200 rounded p-3 text-xs overflow-auto max-h-64 font-mono">
-                      {JSON.stringify({
-                        masterPartNumber: parsedBOM.masterPartNumber,
-                        operationCount: parsedBOM.operationCount,
-                        componentCount: parsedBOM.componentCount,
-                        operations: parsedBOM.operations.slice(0, 2).map((op: any) => ({
-                          step: op.step,
-                          resourceId: op.resourceId,
-                          description: op.description,
-                          componentCount: op.components.length
-                        })),
-                        note: parsedBOM.operations.length > 2 ? `... ${parsedBOM.operations.length - 2} more operations` : 'All operations shown'
-                      }, null, 2)}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Output Section */}
         {generatedDraft && (

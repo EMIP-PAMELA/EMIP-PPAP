@@ -7,6 +7,7 @@ import { DocumentEditor } from '@/src/features/documentEngine/ui/DocumentEditor'
 import { DocumentDraft, TemplateId } from '@/src/features/documentEngine/templates/types';
 import { getTemplate, listTemplates } from '@/src/features/documentEngine/templates/registry';
 import { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
+import { extractTextFromPDF } from '@/src/features/documentEngine/utils/pdfToText';
 
 /**
  * Phase W1: Document Wizard Foundation
@@ -85,8 +86,24 @@ export default function DocumentWizardPage() {
     console.log('[Wizard] BOM uploaded:', file.name, file.type);
     
     try {
-      const text = await file.text();
+      // V2.1 Fix: Extract text from PDF if needed
+      let text: string;
+      const isPDF = file.type === 'application/pdf';
+      
+      if (isPDF) {
+        console.log('[Wizard] Extracting text from PDF...');
+        text = await extractTextFromPDF(file);
+        console.log('[Wizard] PDF extraction complete');
+      } else {
+        text = await file.text();
+      }
+      
       console.log('[Wizard] BOM text length:', text.length);
+      
+      // V2.1 Fix: Check for empty extraction
+      if (!text.trim()) {
+        throw new Error('File is empty or contains no extractable text');
+      }
       
       // Parse BOM using existing parser
       const rawBOM = parseBOMText(text);
@@ -96,6 +113,12 @@ export default function DocumentWizardPage() {
       // Count total components across all operations
       const totalComponents = rawBOM.operations.reduce((sum, op) => sum + op.components.length, 0);
       console.log('[Wizard] Total components:', totalComponents);
+      
+      // V2.1 Fix: Warn if parsing produced empty results
+      if (rawBOM.operations.length === 0) {
+        console.warn('[Wizard] ⚠️ No operations detected after parsing');
+        setError('⚠️ No operations detected — check BOM format or file content');
+      }
       
       // Normalize BOM using existing normalizer
       const normalized = normalizeBOMData(rawBOM);

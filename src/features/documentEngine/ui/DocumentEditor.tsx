@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { DocumentDraft, TemplateId } from '../templates/types';
 import { getTemplate } from '../templates/registry';
+import { useWizardValidation } from '../wizard/useWizardValidation';
 
 interface DocumentEditorProps {
   draft: DocumentDraft;
@@ -19,10 +21,42 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
   const template = getTemplate(templateId);
   const layout = template.layout;
   const fieldDefinitions = template.fieldDefinitions;
+  
+  // V2.1: Wire validation engine for wizard templates
+  const validation = useWizardValidation();
+  const [fieldWarnings, setFieldWarnings] = useState<Record<string, string>>({});
+  const isWizardTemplate = draft.metadata?.templateType === 'wizard';
 
   // Helper to find field definition
   const getFieldDef = (fieldKey: string) => {
     return fieldDefinitions.find(def => def.key === fieldKey);
+  };
+  
+  // V2.1: Enhanced field change handler with validation
+  const handleFieldChangeWithValidation = (fieldPath: string, value: any) => {
+    // Always call original handler
+    onFieldChange(fieldPath, value);
+    
+    // V2.1: Run validation for wizard templates
+    if (isWizardTemplate) {
+      const result = validation.validateField({
+        fieldName: fieldPath,
+        userValue: value,
+        originalAutofill: draft.metadata?.autofillValues?.[fieldPath],
+        operationDescription: draft.metadata?.operationDescription,
+        operationCategory: draft.metadata?.operationCategory
+      });
+      
+      if (result.warning) {
+        setFieldWarnings(prev => ({ ...prev, [fieldPath]: result.warning! }));
+      } else {
+        setFieldWarnings(prev => {
+          const newWarnings = { ...prev };
+          delete newWarnings[fieldPath];
+          return newWarnings;
+        });
+      }
+    }
   };
   
   // Phase 33: Get mapping indicator for field
@@ -95,12 +129,35 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                   {key.replace(/([A-Z])/g, ' $1').trim()}:
                 </span>
                 <span className="text-sm text-gray-900 text-right ml-4">
-                  {String(value)}
+                  {typeof value === 'object' && value !== null 
+                    ? <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(value, null, 2)}</pre>
+                    : String(value)}
                 </span>
               </div>
             ))}
           </div>
         </div>
+        
+        {/* V2.1: Autofill Transparency Section (W2D) - Only for wizard templates */}
+        {isWizardTemplate && draft.metadata?.autofillTransparency && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+              <span>💡</span>
+              <span>Autofill Reasoning (W2D)</span>
+            </h4>
+            <p className="text-xs text-blue-700 mb-3">
+              This document includes intelligent field suggestions based on operation analysis. 
+              Check console logs for detailed reasoning or see metadata above.
+            </p>
+            <div className="text-xs text-blue-600 space-y-1">
+              <div><strong>Version:</strong> {String(draft.metadata.autofillTransparency.version || 'N/A')}</div>
+              <div><strong>Status:</strong> {draft.metadata.autofillTransparency.enabled ? '✓ Enabled' : '✗ Disabled'}</div>
+              {draft.metadata.autofillTransparency.note && (
+                <div><strong>Note:</strong> {String(draft.metadata.autofillTransparency.note)}</div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Section-Based Fields */}
         {layout.sections.map((section) => (
@@ -124,12 +181,18 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                       <input
                         type="text"
                         value={String(value)}
-                        onChange={(e) => onFieldChange(fieldKey, e.target.value)}
+                        onChange={(e) => handleFieldChangeWithValidation(fieldKey, e.target.value)}
                         disabled={readOnly}
                         className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                           readOnly ? 'bg-gray-50 cursor-not-allowed' : ''
                         }`}
                       />
+                      {fieldWarnings[fieldKey] && (
+                        <div className="mt-2 flex items-start gap-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-2">
+                          <span className="text-yellow-600">⚠️</span>
+                          <span>{fieldWarnings[fieldKey]}</span>
+                        </div>
+                      )}
                     </div>
                   );
                 }
@@ -269,33 +332,49 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                       </div>
                     ) : /* Render based on field type */
                     fieldDef.type === 'select' && fieldDef.editable ? (
-                      <select
-                        value={String(value)}
-                        onChange={(e) => onFieldChange(fieldKey, e.target.value)}
-                        disabled={!fieldDef.editable}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                      >
-                        {fieldDef.options?.map(option => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
+                      <>
+                        <select
+                          value={String(value)}
+                          onChange={(e) => handleFieldChangeWithValidation(fieldKey, e.target.value)}
+                          disabled={!fieldDef.editable}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        >
+                          {fieldDef.options?.map(option => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                        {fieldWarnings[fieldKey] && (
+                          <div className="mt-2 flex items-start gap-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-2">
+                            <span className="text-yellow-600">⚠️</span>
+                            <span>{fieldWarnings[fieldKey]}</span>
+                          </div>
+                        )}
+                      </>
                     ) : fieldDef.editable ? (
-                      <input
-                        type={fieldDef.type === 'number' ? 'number' : 'text'}
-                        value={String(value)}
-                        onChange={(e) => {
-                          let newValue: any = e.target.value;
-                          if (fieldDef.type === 'number') {
-                            newValue = parseFloat(e.target.value) || 0;
-                          }
-                          onFieldChange(fieldKey, newValue);
-                        }}
-                        min={fieldDef.validation?.min}
-                        max={fieldDef.validation?.max}
-                        pattern={fieldDef.validation?.pattern}
-                        required={fieldDef.required}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                      <>
+                        <input
+                          type={fieldDef.type === 'number' ? 'number' : 'text'}
+                          value={String(value)}
+                          onChange={(e) => {
+                            let newValue: any = e.target.value;
+                            if (fieldDef.type === 'number') {
+                              newValue = parseFloat(e.target.value) || 0;
+                            }
+                            handleFieldChangeWithValidation(fieldKey, newValue);
+                          }}
+                          min={fieldDef.validation?.min}
+                          max={fieldDef.validation?.max}
+                          pattern={fieldDef.validation?.pattern}
+                          required={fieldDef.required}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        {fieldWarnings[fieldKey] && (
+                          <div className="mt-2 flex items-start gap-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-2">
+                            <span className="text-yellow-600">⚠️</span>
+                            <span>{fieldWarnings[fieldKey]}</span>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700">
                         {String(value)}
