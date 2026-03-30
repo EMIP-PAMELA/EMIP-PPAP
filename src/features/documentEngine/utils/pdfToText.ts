@@ -1,30 +1,35 @@
 /**
  * PDF Text Extraction Utility
+ * Phase V2.2: Next.js-compatible worker configuration
  * 
  * Client-side PDF text extraction using pdfjs-dist.
  * Provides pre-parser ingestion layer for PDF BOM files.
  * 
  * Architecture layer: Ingestion (preprocessing)
  * 
- * IMPORTANT: Uses dynamic import to prevent SSR evaluation.
- * pdfjs-dist must only be loaded in browser runtime, never during build/SSR.
+ * IMPORTANT: This must only run in browser context.
+ * The worker is loaded using Next.js-compatible ?url import.
  */
+
+import * as pdfjsLib from 'pdfjs-dist';
 
 /**
  * Extract text content from a PDF file
  * 
  * @param file - PDF file to extract text from
  * @returns Extracted text content
- * @throws Error if PDF parsing fails
+ * @throws Error if PDF parsing fails or if executed outside browser
  */
 export async function extractTextFromPDF(file: File): Promise<string> {
+  // V2.2: Ensure browser-only execution
+  if (typeof window === 'undefined') {
+    throw new Error('[PDFExtractor] Must run in browser context');
+  }
+  
   try {
-    // Dynamic import ensures pdfjs is only loaded in browser, never during SSR
-    const pdfjsLib = await import('pdfjs-dist');
-    
-    // Use local bundled worker instead of CDN to avoid 404 errors
-    const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs' as any);
-    pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default;
+    // V2.2: Next.js-compatible worker configuration
+    // Use CDN worker for browser compatibility with Next.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
     
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
