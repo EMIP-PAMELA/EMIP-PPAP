@@ -1,6 +1,6 @@
 /**
  * PDF Text Extraction Utility
- * Phase V2.3: SSR-safe dynamic imports
+ * Phase V2.4: Local worker for stability (no CDN dependency)
  * 
  * Client-side PDF text extraction using pdfjs-dist.
  * Provides pre-parser ingestion layer for PDF BOM files.
@@ -9,6 +9,7 @@
  * 
  * IMPORTANT: This must only run in browser context.
  * All pdfjs imports are dynamic to prevent SSR DOMMatrix errors.
+ * Worker is loaded from local bundle, not CDN.
  */
 
 /**
@@ -28,8 +29,15 @@ export async function extractTextFromPDF(file: File): Promise<string> {
     // V2.3: Dynamic import to prevent SSR evaluation and DOMMatrix errors
     const pdfjsLib = await import('pdfjs-dist');
     
-    // V2.3: CDN worker configuration for Next.js compatibility
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+    // V2.4: Local worker via module URL (stable, no CDN dependency)
+    const workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.mjs',
+      import.meta.url
+    );
+    
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc.toString();
+    
+    console.log('[PDFExtractor] Worker source:', workerSrc.toString());
     
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
