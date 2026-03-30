@@ -19,8 +19,9 @@ import { DocumentDraft } from '../templates/types';
 
 /**
  * Workbook template paths
+ * V2.6B.1: Workbook served from public/ directory for browser accessibility
  */
-const WORKBOOK_TEMPLATE_PATH = '/docs/QUAL TM 0027 - 01 PPAP Package.xlsx';
+const WORKBOOK_TEMPLATE_PATH = '/QUAL TM 0027 - 01 PPAP Package.xlsx';
 
 /**
  * Cell mapping interface for template-specific injection
