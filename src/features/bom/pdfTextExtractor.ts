@@ -8,14 +8,10 @@
  * This is NOT a parser.
  * This is NOT AI.
  * This is a text extraction layer only.
+ * 
+ * SSR Fix: pdfjs-dist is dynamically imported to prevent server-side execution
+ * and DOMMatrix undefined errors during Next.js build.
  */
-
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Configure PDF.js worker
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-}
 
 export interface PDFExtractionResult {
   text: string;
@@ -42,6 +38,14 @@ export async function extractTextFromPDF(file: File): Promise<PDFExtractionResul
   console.log('[W1.5 PDF] Loading PDF...');
   
   try {
+    // SSR Fix: Dynamically import pdfjs-dist to prevent server-side execution
+    const pdfjsLib = await import('pdfjs-dist');
+    
+    // Configure PDF.js worker (browser-only)
+    if (typeof window !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    }
+    
     // Step 1: Read file as ArrayBuffer
     const arrayBuffer = await file.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
