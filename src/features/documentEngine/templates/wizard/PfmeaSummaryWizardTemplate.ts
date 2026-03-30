@@ -50,11 +50,44 @@ function generatePfmeaSummaryWizard(input: TemplateInput): DocumentDraft {
       _meta: {
         stepNumber: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
         processFunction: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
-        failureMode: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit', autofillReason: insights.failureMode.reason },
-        effect: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit', autofillReason: insights.effect.reason },
-        severity: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit', autofillReason: insights.severity.reason },
-        occurrence: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit' },
-        detection: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit' },
+        failureMode: { 
+          certainty: 'suggested', 
+          source: 'rule', 
+          changeTrackingMode: 'normal-edit', 
+          autofillReason: insights.failureMode.reason,
+          // V2.6Z: Common failure modes
+          options: ['Incorrect dimension', 'Missing component', 'Wrong material', 'Surface defect', 'Incomplete operation', 'Tool wear', 'Contamination']
+        },
+        effect: { 
+          certainty: 'suggested', 
+          source: 'rule', 
+          changeTrackingMode: 'normal-edit', 
+          autofillReason: insights.effect.reason,
+          // V2.6Z: Common effects
+          options: ['Part rejection', 'Assembly failure', 'Customer complaint', 'Safety hazard', 'Performance degradation', 'Rework required']
+        },
+        severity: { 
+          certainty: 'suggested', 
+          source: 'rule', 
+          changeTrackingMode: 'normal-edit', 
+          autofillReason: insights.severity.reason,
+          // V2.6Z: Severity ratings (1-10)
+          options: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+        },
+        occurrence: { 
+          certainty: 'suggested', 
+          source: 'rule', 
+          changeTrackingMode: 'normal-edit',
+          // V2.6Z: Occurrence ratings (1-10)
+          options: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+        },
+        detection: { 
+          certainty: 'suggested', 
+          source: 'rule', 
+          changeTrackingMode: 'normal-edit',
+          // V2.6Z: Detection ratings (1-10)
+          options: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+        },
         rpn: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' }
       }
     };

@@ -44,9 +44,28 @@ function generateControlPlanWizard(input: TemplateInput): DocumentDraft {
         stepNumber: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
         process: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
         machine: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
-        characteristic: { certainty: 'required', source: 'user', changeTrackingMode: 'required-input' },
-        method: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit', autofillReason: insights.method.reason },
-        sampleSize: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit' }
+        characteristic: { 
+          certainty: 'required', 
+          source: 'user', 
+          changeTrackingMode: 'required-input',
+          // V2.6Z: Common characteristic types
+          options: ['Dimensional', 'Visual', 'Functional', 'Material', 'Performance', 'Safety']
+        },
+        method: { 
+          certainty: 'suggested', 
+          source: 'rule', 
+          changeTrackingMode: 'normal-edit', 
+          autofillReason: insights.method.reason,
+          // V2.6Z: Common control methods
+          options: ['Visual Inspection', 'Measurement', 'Functional Test', 'Audit', 'SPC', 'Automated Check', 'Manual Check']
+        },
+        sampleSize: { 
+          certainty: 'suggested', 
+          source: 'rule', 
+          changeTrackingMode: 'normal-edit',
+          // V2.6Z: Common sample sizes
+          options: ['1', '3', '5', '10', '20', '50', '100%']
+        }
       }
     };
   });

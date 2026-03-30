@@ -466,27 +466,50 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                                     // V2.6Y: Get row-level certainty metadata
                                     const rowMeta = row._meta?.[col.key];
                                     const cellPath = `${fieldKey}[${rowIndex}].${col.key}`;
+                                    // V2.6Z: Check if field has dropdown options
+                                    const hasOptions = rowMeta?.options && rowMeta.options.length > 0;
 
                                     return (
                                       <td key={col.key} className="px-2 py-1 border-b border-gray-100 align-top">
-                                        <input
-                                          ref={(el) => { fieldRefs.current.set(cellPath, el); }}
-                                          type={col.type === 'number' ? 'number' : 'text'}
-                                          value={cellValue ?? ''}
-                                          min={col.validation?.min}
-                                          max={col.validation?.max}
-                                          onChange={(e) => {
-                                            let v: any = e.target.value;
-                                            if (col.type === 'number') {
-                                              v = e.target.value === '' ? null : (parseFloat(e.target.value) || null);
-                                            }
-                                            handleCellChange(v);
-                                          }}
-                                          disabled={readOnly}
-                                          className={`w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[80px] ${
-                                            readOnly ? 'bg-gray-50 cursor-not-allowed' : ''
-                                          } ${getCertaintyStyle(rowMeta?.certainty, cellValue)}`}
-                                        />
+                                        {hasOptions ? (
+                                          // V2.6Z: Render dropdown with manual override capability
+                                          <select
+                                            ref={(el) => { fieldRefs.current.set(cellPath, el as any); }}
+                                            value={cellValue ?? ''}
+                                            onChange={(e) => {
+                                              handleCellChange(e.target.value);
+                                            }}
+                                            disabled={readOnly}
+                                            className={`w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[80px] ${
+                                              readOnly ? 'bg-gray-50 cursor-not-allowed' : ''
+                                            } ${getCertaintyStyle(rowMeta?.certainty, cellValue)}`}
+                                          >
+                                            <option value="">-- Select or type custom --</option>
+                                            {rowMeta.options!.map((opt: string) => (
+                                              <option key={opt} value={opt}>{opt}</option>
+                                            ))}
+                                          </select>
+                                        ) : (
+                                          // V2.6Z: Standard text input (no options)
+                                          <input
+                                            ref={(el) => { fieldRefs.current.set(cellPath, el); }}
+                                            type={col.type === 'number' ? 'number' : 'text'}
+                                            value={cellValue ?? ''}
+                                            min={col.validation?.min}
+                                            max={col.validation?.max}
+                                            onChange={(e) => {
+                                              let v: any = e.target.value;
+                                              if (col.type === 'number') {
+                                                v = e.target.value === '' ? null : (parseFloat(e.target.value) || null);
+                                              }
+                                              handleCellChange(v);
+                                            }}
+                                            disabled={readOnly}
+                                            className={`w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[80px] ${
+                                              readOnly ? 'bg-gray-50 cursor-not-allowed' : ''
+                                            } ${getCertaintyStyle(rowMeta?.certainty, cellValue)}`}
+                                          />
+                                        )}
                                       </td>
                                     );
                                   })}

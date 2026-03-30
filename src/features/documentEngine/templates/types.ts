@@ -23,6 +23,8 @@ export interface FieldMetadata {
   originalValue?: any;
   changeTrackingMode: ChangeTrackingMode;
   autofillReason?: string;
+  // V2.6Z: Optional dropdown options for suggested/required fields
+  options?: string[];
 }
 
 export interface TemplateInputField {
