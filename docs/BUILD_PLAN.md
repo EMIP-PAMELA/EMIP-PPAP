@@ -96,6 +96,8 @@ The Document Engine addendum (added in Version 3P.1) has been fully implemented 
 **Phase V2.6Y:** ✅ Guided Completion Mode with Navigation
 **Phase V2.6Z:** ✅ Dropdown and Boilerplate Input System
 **Phase V2.7A:** ✅ Centralized Option Registry
+**Phase V2.7B:** ✅ Control Plan Excel Template Injection
+**Phase V2.7C:** ✅ Soft Pre-Export Completeness Warning
 
 **What is COMPLETE:**
 - ✅ Document generation engine (Process Flow, PFMEA, Control Plan, PSW)

@@ -42,6 +42,9 @@ export default function DocumentWizardPage() {
   const [normalizedBOM, setNormalizedBOM] = useState<NormalizedBOM | null>(null);
   const [generatedDraft, setGeneratedDraft] = useState<DocumentDraft | null>(null);
   const [diagnostics, setDiagnostics] = useState<MappingDiagnostics | null>(null);
+  
+  // V2.7C: Track remaining required fields for pre-export warning
+  const [remainingRequired, setRemainingRequired] = useState<number>(0);
 
   // Available templates from registry
   const availableTemplates = listTemplates();
@@ -247,9 +250,23 @@ export default function DocumentWizardPage() {
     console.log('[Wizard] Document exported as JSON');
   };
 
-  // V2.6 / V2.6B: Export to Excel Template
+  // V2.6 / V2.6B / V2.7C: Export to Excel Template
   const handleExportExcel = async () => {
     if (!generatedDraft) return;
+    
+    // V2.7C: Soft pre-export warning for incomplete required fields
+    if (remainingRequired > 0) {
+      const proceed = window.confirm(
+        `You have ${remainingRequired} required field${remainingRequired === 1 ? '' : 's'} that ${remainingRequired === 1 ? 'is' : 'are'} not completed.\n\nExport anyway?`
+      );
+      
+      if (!proceed) {
+        console.log('[V2.7C EXPORT] Export cancelled by user - incomplete required fields');
+        return;
+      }
+      
+      console.log(`[V2.7C EXPORT] Proceeding with incomplete required fields: ${remainingRequired} remaining`);
+    }
     
     try {
       console.log('[V2.6 EXPORT] Starting Excel template export for:', generatedDraft.templateId);
@@ -459,6 +476,7 @@ export default function DocumentWizardPage() {
                 draft={generatedDraft}
                 templateId={generatedDraft.templateId}
                 onFieldChange={handleFieldChange}
+                onRequiredFieldsChange={setRemainingRequired}
                 readOnly={false}
               />
             </div>

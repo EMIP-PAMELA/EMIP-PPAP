@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { DocumentDraft, TemplateId, FieldMetadata } from '../templates/types';
 import { getTemplate } from '../templates/registry';
 import { useWizardValidation } from '../wizard/useWizardValidation';
@@ -16,9 +16,11 @@ interface DocumentEditorProps {
   // Phase 33: Mapping metadata for debug visibility
   mappingMeta?: Record<string, any>;
   showMappingDebug?: boolean;
+  // V2.7C: Callback to surface required field count for pre-export warning
+  onRequiredFieldsChange?: (remainingRequired: number) => void;
 }  // Phase 25: Support read-only mode for approved/old versions
 
-export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasChanges, readOnly = false, mappingMeta, showMappingDebug }: DocumentEditorProps) {
+export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasChanges, readOnly = false, mappingMeta, showMappingDebug, onRequiredFieldsChange }: DocumentEditorProps) {
   const template = getTemplate(templateId);
   const layout = template.layout;
   const fieldDefinitions = template.fieldDefinitions;
@@ -97,6 +99,13 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
       remainingRequired
     };
   }, [draft.fields, draft.fieldMetadata, fieldDefinitions]);
+  
+  // V2.7C: Surface required field count to parent component for pre-export warning
+  useEffect(() => {
+    if (onRequiredFieldsChange) {
+      onRequiredFieldsChange(requiredFieldsStatus.remainingRequired);
+    }
+  }, [requiredFieldsStatus.remainingRequired, onRequiredFieldsChange]);
 
   // V2.6Y: Navigate to next incomplete required field
   const navigateToNextRequiredField = () => {

@@ -4,6 +4,139 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-30 19:00 CT - Phase V2.7C - Soft Pre-Export Completeness Warning
+
+**Summary:** Added soft pre-export warning for incomplete required fields with user confirmation
+
+**Problem Statement:**
+- Users could export documents with incomplete required fields without awareness
+- No feedback about missing required data before export
+- Operators might submit incomplete PPAP packages
+- No opportunity to review completeness before finalizing export
+
+**Solution: Soft Pre-Export Warning**
+
+Added a lightweight, non-blocking confirmation dialog that warns users when exporting documents with incomplete required fields:
+
+**Implementation:**
+
+1. **Surfaced Required Field Count to Export Layer**
+   - Added `remainingRequired` state to wizard page
+   - Added `onRequiredFieldsChange` callback prop to DocumentEditor
+   - DocumentEditor surfaces required field count via `useEffect` hook
+   - Reuses existing required field tracking logic (no duplication)
+
+2. **Pre-Export Check in Export Handler**
+   - Check `remainingRequired > 0` before executing export
+   - If incomplete fields exist, trigger confirmation dialog
+   - If user cancels, abort export cleanly
+   - If user confirms, proceed with export unchanged
+
+3. **Browser-Native Confirmation Dialog**
+   - Uses `window.confirm()` for lightweight implementation
+   - Message: "You have X required field(s) that is/are not completed. Export anyway?"
+   - Options: OK (proceed) or Cancel (abort)
+   - No heavy UI libraries or modal frameworks introduced
+
+4. **Console Logging for Awareness**
+   - Logs when user cancels export due to incomplete fields
+   - Logs when user proceeds with incomplete fields (count included)
+   - No persistence or audit trail (lightweight only)
+
+**Files Modified:**
+- `app/tools/document-wizard/page.tsx` — Added state tracking and pre-export check
+- `src/features/documentEngine/ui/DocumentEditor.tsx` — Added callback prop to surface required field count
+
+**Technical Details:**
+
+Wizard page state:
+```typescript
+// V2.7C: Track remaining required fields for pre-export warning
+const [remainingRequired, setRemainingRequired] = useState<number>(0);
+```
+
+Pre-export check:
+```typescript
+// V2.7C: Soft pre-export warning for incomplete required fields
+if (remainingRequired > 0) {
+  const proceed = window.confirm(
+    `You have ${remainingRequired} required field${remainingRequired === 1 ? '' : 's'} that ${remainingRequired === 1 ? 'is' : 'are'} not completed.\n\nExport anyway?`
+  );
+  
+  if (!proceed) {
+    console.log('[V2.7C EXPORT] Export cancelled by user - incomplete required fields');
+    return;
+  }
+  
+  console.log(`[V2.7C EXPORT] Proceeding with incomplete required fields: ${remainingRequired} remaining`);
+}
+```
+
+DocumentEditor callback:
+```typescript
+// V2.7C: Surface required field count to parent component for pre-export warning
+useEffect(() => {
+  if (onRequiredFieldsChange) {
+    onRequiredFieldsChange(requiredFieldsStatus.remainingRequired);
+  }
+}, [requiredFieldsStatus.remainingRequired, onRequiredFieldsChange]);
+```
+
+**Governance:**
+- ✅ Export logic unchanged (only pre-check added)
+- ✅ Parser unchanged
+- ✅ Normalizer unchanged
+- ✅ Templates unchanged
+- ✅ Guided completion unchanged
+- ✅ Dropdown system unchanged
+- ✅ Option registry unchanged
+- ✅ Non-blocking (user can always proceed)
+
+**Behavior:**
+
+**When Required Fields Are Complete:**
+- Export proceeds immediately
+- No warning displayed
+- Normal export flow
+
+**When Required Fields Are Incomplete:**
+- Confirmation dialog appears
+- User sees exact count of incomplete required fields
+- User can cancel to review/complete fields
+- User can proceed anyway if needed
+- Export is never blocked entirely
+
+**Impact:**
+- ✅ Increased operator awareness of incomplete data
+- ✅ Opportunity to review before export
+- ✅ Reduced risk of incomplete PPAP submissions
+- ✅ Non-intrusive (only appears when relevant)
+- ✅ Non-blocking (user maintains control)
+- ✅ Works for all templates (Process Flow, PFMEA, Control Plan)
+
+**User Workflow:**
+1. Generate document via wizard
+2. Edit fields in DocumentEditor
+3. Click "Export to Excel Template"
+4. **[NEW]** If required fields incomplete: See warning dialog
+5. **[NEW]** Choose: Cancel to complete fields OR OK to proceed
+6. Export completes (if user confirmed or no incomplete fields)
+
+**Design Decisions:**
+- **Browser-native confirm**: Lightweight, no dependencies, familiar UX
+- **Soft warning**: Non-blocking, user maintains control
+- **No persistence**: Minimal implementation, no audit logging
+- **Reuse existing logic**: No duplication of required field detection
+- **Console logging only**: Lightweight awareness without database overhead
+
+**Notes:**
+- Warning only appears for Excel export (JSON export unchanged)
+- Required field count updates in real-time as user edits
+- Confirmation dialog is modal but lightweight (browser-native)
+- No changes to export file content or behavior after confirmation
+
+---
+
 ## 2026-03-30 18:30 CT - Phase V2.7B - Control Plan Excel Template Injection
 
 **Summary:** Implemented Control Plan wizard export to Excel workbook template
