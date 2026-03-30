@@ -1,15 +1,17 @@
 /**
  * Control Plan Wizard Template
  * Phase W2B - Wizard-specific PPAP template implementation
+ * Phase W2C - Smart Autofill Layer
  *
  * Direct BOM operations → table rows mapping
- * No intermediate mapping layers or transformations
+ * Enhanced with deterministic rule-based field suggestions
  *
  * This template is separate from the existing CONTROL_PLAN template
  * which uses the mapping chain (bomToProcessFlow → pfmea → controlPlan).
  */
 
 import { TemplateDefinition, TemplateInput, DocumentDraft } from '../types';
+import { getOperationInsights, getControlPlanDefaults } from '../../wizard/wizardAutofillRules';
 
 /**
  * Generate Control Plan document directly from BOM operations
@@ -20,14 +22,23 @@ function generateControlPlanWizard(input: TemplateInput): DocumentDraft {
   console.log('[W2B WIZARD] Generating: control-plan-wizard');
   console.log('[W2B WIZARD] Operations:', bom.operations.length);
 
-  const rows = bom.operations.map((op) => ({
-    stepNumber: op.step,
-    process: op.description,
-    machine: op.resourceId || '',
-    characteristic: '',
-    method: '',
-    sampleSize: ''
-  }));
+  const rows = bom.operations.map((op) => {
+    const insights = getOperationInsights(op.description);
+    const controlDefaults = getControlPlanDefaults(insights.category);
+
+    console.log(`[W2C AUTOFILL] Operation: ${op.description}`);
+    console.log(`[W2C AUTOFILL] Method: ${insights.suggestedMethod}`);
+    console.log(`[W2C AUTOFILL] Sample Size: ${controlDefaults.sampleSize}`);
+
+    return {
+      stepNumber: op.step,
+      process: op.description,
+      machine: op.resourceId || '',
+      characteristic: '',
+      method: insights.suggestedMethod,
+      sampleSize: controlDefaults.sampleSize
+    };
+  });
 
   console.log('[W2B WIZARD] Rows created:', rows.length);
 

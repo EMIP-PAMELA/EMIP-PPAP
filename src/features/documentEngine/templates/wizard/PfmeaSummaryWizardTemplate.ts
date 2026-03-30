@@ -1,15 +1,17 @@
 /**
  * PFMEA Summary Wizard Template
  * Phase W2B - Wizard-specific PPAP template implementation
+ * Phase W2C - Smart Autofill Layer
  *
  * Direct BOM operations → table rows mapping
- * No intermediate mapping layers or transformations
+ * Enhanced with deterministic rule-based field suggestions
  *
  * This template is separate from the existing PFMEA template
  * which uses the mapping chain (bomToProcessFlow → pfmea).
  */
 
 import { TemplateDefinition, TemplateInput, DocumentDraft } from '../types';
+import { getOperationInsights, getPfmeaDefaults } from '../../wizard/wizardAutofillRules';
 
 /**
  * Generate PFMEA Summary document directly from BOM operations
@@ -20,16 +22,26 @@ function generatePfmeaSummaryWizard(input: TemplateInput): DocumentDraft {
   console.log('[W2B WIZARD] Generating: pfmea-summary-wizard');
   console.log('[W2B WIZARD] Operations:', bom.operations.length);
 
-  const rows = bom.operations.map((op) => ({
-    stepNumber: op.step,
-    processFunction: op.description,
-    failureMode: '',
-    effect: '',
-    severity: null,
-    occurrence: null,
-    detection: null,
-    rpn: null
-  }));
+  const rows = bom.operations.map((op) => {
+    const insights = getOperationInsights(op.description);
+    const pfmeaDefaults = getPfmeaDefaults(insights.category);
+
+    console.log(`[W2C AUTOFILL] Operation: ${op.description}`);
+    console.log(`[W2C AUTOFILL] FailureMode: ${insights.suggestedFailureMode}`);
+    console.log(`[W2C AUTOFILL] Effect: ${insights.suggestedEffect}`);
+    console.log(`[W2C AUTOFILL] Severity: ${insights.suggestedSeverity}`);
+
+    return {
+      stepNumber: op.step,
+      processFunction: op.description,
+      failureMode: insights.suggestedFailureMode,
+      effect: insights.suggestedEffect,
+      severity: insights.suggestedSeverity,
+      occurrence: pfmeaDefaults.occurrence,
+      detection: pfmeaDefaults.detection,
+      rpn: null // Calculated by UI layer
+    };
+  });
 
   console.log('[W2B WIZARD] Rows created:', rows.length);
 
