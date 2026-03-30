@@ -3235,6 +3235,983 @@ This section outlines planned future phases to extend the Document Engine system
 
 ---
 
+## BUILD PLAN ADDENDUM — POST-PHASE 43 ARCHITECTURAL EXTENSIONS
+
+**Added:** 2026-03-29 19:59 CT  
+**Status:** Architectural Definition (No Implementation)  
+**Purpose:** Define Document Wizard + PPAP Orchestration Layer
+
+This addendum extends the BUILD_PLAN with two major architectural additions:
+1. **Document Wizard Module** — Unstructured, workflow-independent document generation
+2. **PPAP Orchestration Layer** — Missing coordinator workflow and PPAP definition management
+
+These additions are **purely architectural**. No implementation has occurred. All sections below define future phases and system design.
+
+---
+
+## SYSTEM ARCHITECTURE — DUAL ENTRY MODEL (POST PHASE 43)
+
+**Architectural Clarification**
+
+As of Phase 43, the EMIP-PPAP system consists of a **shared deterministic engine** with **TWO distinct interaction layers**:
+
+### Interaction Layer 1: PPAP Workflow System (Structured)
+
+**Purpose:** Guided, multi-document PPAP lifecycle management
+
+**Characteristics:**
+- Workflow-driven (sequential phases)
+- Session-bound (persistent state)
+- Multi-document coordination
+- Approval gates enforced
+- Role-based access control
+- Audit trail required
+
+**Entry Point:** `/ppap/[id]/documents`
+
+**User Type:** Engineers executing formal PPAP programs
+
+**Workflow:**
+```
+Create PPAP → Upload BOM → Generate Documents (ordered) → 
+Complete/Edit → Validate → Approve → Submit Package
+```
+
+**Key Constraint:** Documents are bound to PPAP session lifecycle
+
+---
+
+### Interaction Layer 2: Document Wizard System (Unstructured)
+
+**Purpose:** Fast, flexible, single-document generation
+
+**Characteristics:**
+- Workflow-independent (no PPAP required)
+- Stateless or ephemeral (documents not session-bound)
+- Single-document focused
+- No approval gates
+- No role restrictions
+- Minimal persistence (optional caching)
+
+**Entry Point:** `/tools/document-wizard` (proposed)
+
+**User Type:** Engineers needing quick document generation outside formal PPAP
+
+**Workflow:**
+```
+Upload BOM (or select template) → Generate Document → 
+Edit → Export (PDF/Excel) → Done
+```
+
+**Key Constraint:** Documents are NOT bound to PPAP session; outputs are ephemeral
+
+---
+
+### Shared Engine Components
+
+**Both layers use the SAME underlying engine:**
+
+| Component | Purpose | Shared? |
+|-----------|---------|---------|
+| **Template Registry** | Store all templates (static, dynamic, uploaded) | ✅ Yes |
+| **Mapping Engine** | BOM → Template field mapping (`templateMappingService.ts`) | ✅ Yes |
+| **Validation Engine** | Template-driven validation (`validateDocument.ts`) | ✅ Yes |
+| **Document Generator** | Orchestrate generation (`documentGenerator.ts`) | ✅ Yes |
+| **DocumentEditor** | Field editing UI component | ✅ Yes |
+| **Versioning System** | Immutable version history | ✅ Yes (PPAP only) |
+| **Risk + Guidance Layers** | Intelligent warnings, health scoring | ✅ Yes (PPAP only) |
+| **Session Persistence** | Multi-session state | ❌ PPAP only |
+| **Approval Workflow** | Document approval gates | ❌ PPAP only |
+
+---
+
+### Key Architectural Principle
+
+**"Different UX layers, same deterministic engine."**
+
+- The **engine** is workflow-agnostic
+- The **PPAP layer** adds workflow, gating, persistence
+- The **Wizard layer** provides direct access without workflow overhead
+
+**Design Goal:**
+- PPAP users get structured guidance and audit trails
+- Wizard users get fast, flexible document generation
+- NO duplicate template logic
+- NO duplicate mapping logic
+- NO duplicate validation logic
+
+---
+
+### Template Flow (Unified)
+
+**All templates flow into ONE registry:**
+
+```
+Template Sources:
+├── Static Templates (built-in: PSW, Process Flow, PFMEA, Control Plan)
+├── Admin-Uploaded Templates (via admin panel, Phase 29-30)
+└── Wizard-Uploaded Templates (user-created, future Phase W2)
+    ↓
+Template Registry (shared, persistent)
+    ↓
+Available to:
+├── PPAP Workflow System
+└── Document Wizard System
+```
+
+**Persistence:** ALL templates saved to database (`dynamic_templates` table)
+
+**Lifecycle:** Templates persist indefinitely unless explicitly deleted
+
+---
+
+## DOCUMENT WIZARD MODULE (NEW — PHASE W SERIES)
+
+**Status:** Not implemented (architectural definition only)
+
+**Purpose:** Provide a standalone, workflow-independent document generation tool for users who need quick document creation without formal PPAP overhead.
+
+---
+
+### Wizard Behavior Definition (STRICT)
+
+**The Wizard MUST:**
+- ✅ NOT require PPAP session
+- ✅ NOT require workflow state
+- ✅ NOT enforce prerequisite gating
+- ✅ Allow template selection OR template upload
+- ✅ Allow BOM / engineering master upload
+- ✅ Generate documents using existing mapping engine
+- ✅ Render documents using existing `DocumentEditor` component
+- ✅ Allow export (PDF/Excel)
+- ✅ Support immediate download (no approval required)
+
+**The Wizard MUST NOT:**
+- ❌ Create PPAP sessions
+- ❌ Enforce approval workflows
+- ❌ Require role-based permissions (beyond basic auth)
+- ❌ Bind documents to long-term persistence (ephemeral by default)
+
+---
+
+### Data Model
+
+**Templates:**
+- Status: **PERSISTENT** (shared registry)
+- Storage: `dynamic_templates` table (existing)
+- Lifecycle: Survive app restarts, available to all systems
+
+**Generated Documents:**
+- Status: **EPHEMERAL** (no session binding)
+- Storage: In-memory during editing, exported on demand
+- Lifecycle: Lost on navigation away (unless explicitly saved to future "Recent Outputs" cache)
+
+**Optional (Future Enhancement):**
+- "Recent Outputs" cache: Store last N generated documents per user
+- Not critical for Phase W1-W3
+
+---
+
+### Template Handling Strategy
+
+**Template Sources (Wizard Accepts):**
+
+1. **Select Existing Template**
+   - From shared template registry
+   - Includes static templates (PSW, PFMEA, etc.)
+   - Includes admin-uploaded templates
+   - Includes wizard-uploaded templates (future)
+
+2. **Upload New Template** (Future: Phase W2)
+   - User uploads Excel/PDF template
+   - System parses structure
+   - Saves to shared registry
+   - Immediately available for generation
+
+**Template Identity (Phase W4):**
+- **Fingerprinting:** Hash-based template identity
+- **Duplicate Detection:** Check if template already exists before saving
+- **User Prompt:** "This template already exists. Reuse existing or create new version?"
+
+---
+
+### Template Types
+
+**All templates share same registry, but tagged by source:**
+
+| Type | Source | Editable? | Deletable? | Availability |
+|------|--------|-----------|------------|--------------|
+| **Static** | Built-in (code) | ❌ No | ❌ No | Always |
+| **Admin** | Admin panel upload | ✅ Yes (admin) | ✅ Yes (admin) | Always |
+| **Wizard** | Wizard upload | ✅ Yes (creator) | ✅ Yes (creator) | After Phase W2 |
+
+---
+
+### Wizard Workflow (Phase W1-W3)
+
+**Step 1: Template Selection**
+```
+User lands on /tools/document-wizard
+↓
+Two options:
+  A. Select from dropdown (existing templates)
+  B. Upload new template (future Phase W2)
+```
+
+**Step 2: BOM Upload**
+```
+User uploads BOM file (Visual Engineering Master)
+↓
+System parses using existing bomParser.ts
+↓
+System normalizes using existing bomNormalizer.ts
+```
+
+**Step 3: Generation**
+```
+System calls existing templateMappingService.ts
+↓
+Mapping engine populates fields from BOM
+↓
+Document rendered in existing DocumentEditor component
+```
+
+**Step 4: Edit (Optional)**
+```
+User edits fields directly in DocumentEditor
+↓
+Real-time validation using existing validateDocument.ts
+↓
+Errors highlighted inline
+```
+
+**Step 5: Export**
+```
+User clicks "Export"
+↓
+Two options:
+  A. Export as PDF
+  B. Export as Excel
+↓
+File downloaded immediately
+```
+
+**Step 6: Done**
+```
+User navigates away
+↓
+Document state discarded (ephemeral)
+↓
+Template remains in registry (persistent)
+```
+
+---
+
+## DOCUMENT WIZARD PHASES (W1–W5)
+
+**Note:** These phases are **independent** of main PPAP phases. They define the Wizard module only.
+
+---
+
+### Phase W1 — Wizard Foundation
+
+**Status:** Not implemented
+
+**Objective:** Basic wizard functionality with template selection and document generation
+
+**Deliverables:**
+1. New route: `/tools/document-wizard`
+2. Wizard UI:
+   - Template dropdown (existing templates only)
+   - BOM upload field
+   - Generate button
+3. Generation pipeline:
+   - Reuse `generateDocumentDraft()` from `documentGenerator.ts`
+   - Reuse `applyTemplateMapping()` from `templateMappingService.ts`
+4. Render via existing `DocumentEditor` component
+5. Basic export (PDF only, Phase W3 for Excel)
+
+**Dependencies:**
+- Template registry (existing, Phase 30.1)
+- Mapping engine (existing, Phase 32)
+- Document generator (existing)
+- DocumentEditor component (existing)
+
+**Success Criteria:**
+- User can select template, upload BOM, generate document
+- Document displays in DocumentEditor
+- User can edit fields
+- Validation errors display inline
+
+---
+
+### Phase W2 — Template Memory Integration
+
+**Status:** Not implemented
+
+**Objective:** Enable wizard to save uploaded templates to shared registry
+
+**Deliverables:**
+1. "Upload Template" button in wizard
+2. Template upload flow:
+   - Accept Excel/PDF files
+   - Parse template structure (reuse existing ingestion service)
+   - Save to `dynamic_templates` table
+3. Template selector dropdown:
+   - Show all templates (static + admin + wizard-uploaded)
+   - Filter by type (optional)
+4. Template persistence:
+   - All wizard-uploaded templates persist
+   - Available to PPAP system immediately
+
+**Dependencies:**
+- Phase W1 complete
+- Template persistence service (existing, Phase 30)
+- Template ingestion service (existing, Phase 29)
+
+**Success Criteria:**
+- User can upload new template
+- Template appears in dropdown immediately
+- Template persists across app restarts
+- Template available in PPAP system
+
+---
+
+### Phase W3 — Export System
+
+**Status:** Not implemented
+
+**Objective:** Complete export functionality (PDF + Excel)
+
+**Deliverables:**
+1. Export dialog:
+   - Choose format: PDF or Excel
+   - File naming convention: `{templateName}_{partNumber}_{timestamp}`
+2. PDF export:
+   - Reuse existing PDF export logic (if available)
+   - OR implement new PDF renderer
+3. Excel export:
+   - Generate Excel workbook from document fields
+   - Preserve template layout (future: Phase 48)
+4. Download handling:
+   - Browser download dialog
+   - Clear success message
+
+**Dependencies:**
+- Phase W1 complete
+
+**Success Criteria:**
+- User can export as PDF
+- User can export as Excel
+- Files download with correct naming
+- Exported files open correctly in respective applications
+
+---
+
+### Phase W4 — Template Fingerprinting
+
+**Status:** Not implemented
+
+**Objective:** Prevent duplicate templates, enable template reuse
+
+**Deliverables:**
+1. Template hashing:
+   - Generate SHA-256 hash of template structure
+   - Store hash in `dynamic_templates` table
+2. Duplicate detection:
+   - Check hash before saving new template
+   - If match found, prompt user:
+     - "Template already exists. Use existing template or create new version?"
+3. Template versioning (optional):
+   - Allow multiple versions of same template
+   - Tag with version number
+
+**Dependencies:**
+- Phase W2 complete
+
+**Success Criteria:**
+- Duplicate templates detected before save
+- User prompted with reuse option
+- No duplicate templates in registry (unless user explicitly creates versions)
+
+---
+
+### Phase W5 — AI-Assisted Parsing (Optional Advanced)
+
+**Status:** Not implemented (future consideration)
+
+**Objective:** Use AI to assist with template structure detection and field extraction
+
+**Deliverables:**
+1. AI-assisted template parsing:
+   - Analyze uploaded PDF/Excel template
+   - Detect field types (text, table, dropdown, etc.)
+   - Suggest field mappings to BOM
+2. Mapping suggestions:
+   - AI recommends which BOM fields map to template fields
+   - User confirms or adjusts mappings
+3. Structure detection:
+   - Identify headers, sections, tables
+   - Generate template definition automatically
+
+**Dependencies:**
+- Phase W2 complete
+- AI/ML integration (requires AI platform integration)
+
+**Success Criteria:**
+- AI correctly identifies 80%+ of template fields
+- Mapping suggestions reduce manual configuration
+- User can override AI suggestions
+
+**Note:** This phase is **optional** and **long-term**. Not required for basic wizard functionality.
+
+---
+
+## PPAP ORCHESTRATION LAYER (PHASE 44+)
+
+**Status:** Not implemented (architectural gap identified)
+
+**Problem Statement:**
+
+The current system (as of Phase 43) lacks explicit **PPAP definition management**. This creates the following gaps:
+
+1. **No PPAP Creation Workflow:**
+   - Coordinator cannot define a new PPAP in the system
+   - No way to specify required documents upfront
+   - No customer package upload capability
+
+2. **No Template Assignment:**
+   - Cannot specify which templates are required for a specific PPAP
+   - Cannot customize workflow based on customer requirements
+
+3. **No Coordinator UX:**
+   - Coordinator role defined but no dedicated workflow
+   - Engineer sees PPAP but doesn't know origin/context
+
+4. **No PPAP Initialization:**
+   - Documents generated ad-hoc by engineer
+   - No pre-population of PPAP metadata
+
+---
+
+### PPAP Orchestration Layer Definition
+
+**Purpose:** Provide coordinator-driven PPAP definition, initialization, and assignment workflow
+
+**Core Component: PPAP Definition**
+
+A PPAP Definition must include:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | UUID | Yes | Unique PPAP identifier |
+| `customerId` | UUID | Yes | Customer this PPAP is for |
+| `customerName` | String | Yes | Customer name (cached) |
+| `partNumber` | String | Yes | Part number for this PPAP |
+| `partDescription` | String | No | Part description |
+| `requiredTemplates` | TemplateId[] | Yes | List of required document templates |
+| `workflowSequence` | TemplateId[] | No | Ordered workflow (default: standard order) |
+| `assignedTo` | UserId | No | Engineer/team assigned |
+| `assignedBy` | UserId | Yes | Coordinator who created PPAP |
+| `customerPackageUrl` | String | No | Link to uploaded customer package |
+| `status` | PPAPStatus | Yes | Current PPAP status (reuse existing) |
+| `createdAt` | Timestamp | Yes | PPAP creation time |
+| `metadata` | JSON | No | Additional metadata |
+
+---
+
+### User Roles (Orchestration Layer)
+
+**Coordinator Role:**
+
+**Responsibilities:**
+- Create new PPAP definitions
+- Upload customer package (zip/folder)
+- Select required templates for PPAP
+- Assign PPAP to engineer or team
+- Monitor PPAP progress
+- Approve PPAP acknowledgement (existing)
+
+**Workflow:**
+```
+Coordinator:
+  1. Click "Create New PPAP"
+  2. Select customer
+  3. Upload customer package (BOM, drawings, etc.)
+  4. Enter part number, description
+  5. Select required templates (checkboxes)
+  6. Assign to engineer
+  7. Click "Initialize PPAP"
+     ↓
+  System creates PPAP definition
+  System notifies engineer
+```
+
+**Engineer Role:**
+
+**Responsibilities:**
+- Execute PPAP workflow (existing)
+- Generate required documents (existing)
+- Complete validations (existing)
+- Submit for approval (existing)
+
+**Workflow:**
+```
+Engineer:
+  1. Receives PPAP assignment notification
+  2. Opens PPAP via dashboard
+  3. Sees required documents list
+  4. Generates documents from BOM
+  5. Completes workflow
+  6. Submits for approval
+```
+
+---
+
+### PPAP Orchestration Phases
+
+**Phase 44: PPAP Definition Model**
+
+**Objective:** Create database schema and API for PPAP definitions
+
+**Deliverables:**
+- New table: `ppap_definitions`
+- CRUD operations: `createPPAP()`, `getPPAP()`, `updatePPAP()`, `deletePPAP()`
+- Relationship to existing `ppaps` table
+- Migration strategy (existing PPAPs grandfathered)
+
+---
+
+**Phase 45: Coordinator Workflow UI**
+
+**Objective:** Build UI for coordinator to create and manage PPAP definitions
+
+**Deliverables:**
+- "Create PPAP" wizard in coordinator dashboard
+- Customer selection dropdown
+- Customer package upload
+- Template selection (checkboxes, all available templates)
+- Engineer assignment dropdown
+- PPAP summary preview before creation
+
+---
+
+**Phase 46: PPAP Initialization Engine**
+
+**Objective:** Auto-initialize PPAP session when engineer opens assigned PPAP
+
+**Deliverables:**
+- Pre-populate PPAP metadata from definition
+- Pre-select required templates
+- Display customer package link/files
+- Auto-load BOM if included in package
+- Show workflow sequence
+
+---
+
+**Phase 47: Engineer Workflow UX Enhancements**
+
+**Objective:** Improve engineer experience with PPAP context
+
+**Deliverables:**
+- Display PPAP origin (customer, coordinator, assignment date)
+- Show required documents checklist
+- Highlight which documents are missing vs complete
+- Integration with existing workflow guidance (Phase 38-43)
+
+---
+
+**Phase 48: Template Layout Fidelity**
+
+**Objective:** Support pixel-perfect template rendering (Excel layout preservation)
+
+**Deliverables:**
+- Excel layout parser
+- Field positioning preservation
+- Cell formatting preservation
+- Export maintains original layout
+- Applies to both PPAP and Wizard systems
+
+**Note:** This is a **long-term** phase requiring significant template engine refactoring.
+
+---
+
+### Relationship: Wizard vs PPAP Orchestration
+
+**Wizard:**
+- Use case: Quick, one-off document generation
+- No PPAP required
+- No approval workflow
+- Ephemeral output
+
+**PPAP (with Orchestration):**
+- Use case: Formal PPAP program execution
+- Coordinator creates PPAP definition
+- Engineer executes structured workflow
+- Approval gates enforced
+- Persistent audit trail
+
+**Key Difference:**
+- Wizard = **"I need a Control Plan for this part"**
+- PPAP = **"Customer X requires PPAP for part Y, engineer Z must complete by date D"**
+
+---
+
+## TEMPLATE STRATEGY — UNIFIED SYSTEM
+
+**Critical Architectural Rule:**
+
+**ALL templates live in ONE registry.**
+
+**No exceptions.**
+
+---
+
+### Template Registry Rules
+
+1. **Single Source of Truth:**
+   - One database table: `dynamic_templates`
+   - One in-memory registry: `templateRegistry` (loaded from DB)
+   - One API: `getTemplate()`, `registerTemplate()`, `listTemplates()`
+
+2. **Templates are Reusable Across:**
+   - PPAP Workflow System
+   - Document Wizard System
+   - Admin panel
+   - Future systems
+
+3. **Templates Support:**
+   - Field mappings (`fieldMappings` property)
+   - Validation rules (`fieldDefinitions` property)
+   - Versioning (stored in `document_versions` table)
+   - Layout metadata (future: Phase 48)
+
+4. **Templates Evolve Toward:**
+   - **Layout fidelity** (preserve Excel formatting)
+   - **Multi-page templates** (multiple tabs/sheets)
+   - **Conditional sections** (show/hide fields based on rules)
+   - **Custom validation** (beyond built-in rules)
+
+---
+
+### Template Lifecycle
+
+**Creation:**
+```
+Template Source (code/upload/admin) 
+  → Parse template structure
+  → Define field mappings
+  → Define validation rules
+  → Save to dynamic_templates table
+  → Register in templateRegistry
+```
+
+**Usage:**
+```
+User selects template (PPAP or Wizard)
+  → Load from templateRegistry
+  → Apply mappings (BOM → fields)
+  → Validate fields
+  → Render in DocumentEditor
+  → User edits
+  → Re-validate
+  → Export
+```
+
+**Update:**
+```
+Admin/User uploads new version
+  → Check fingerprint (Phase W4)
+  → If duplicate, prompt for versioning
+  → Save new version or update existing
+  → Refresh templateRegistry
+```
+
+**Deletion:**
+```
+Admin/User deletes template
+  → Check if template in use (any PPAPs?)
+  → If in use, warn and require confirmation
+  → Delete from dynamic_templates table
+  → Remove from templateRegistry
+```
+
+---
+
+### Template Metadata (Future Enhancement)
+
+**Templates should include:**
+
+| Field | Purpose | Phase |
+|-------|---------|-------|
+| `templateId` | Unique identifier | ✅ Implemented |
+| `name` | Human-readable name | ✅ Implemented |
+| `version` | Version number | 🔲 Future (Phase W4) |
+| `fingerprint` | SHA-256 hash of structure | 🔲 Future (Phase W4) |
+| `layoutData` | Excel formatting, positioning | 🔲 Future (Phase 48) |
+| `conditionalRules` | Show/hide field logic | 🔲 Future |
+| `customValidation` | Custom validation functions | 🔲 Future |
+| `tags` | Searchable tags (e.g., "automotive", "OEM-specific") | 🔲 Future |
+
+---
+
+## KNOWN SYSTEM GAPS (POST PHASE 43)
+
+**Updated:** 2026-03-29 19:59 CT
+
+This section explicitly lists known architectural and functional gaps in the current system. These gaps do NOT represent bugs or broken functionality; they represent **missing capabilities** identified for future implementation.
+
+---
+
+### Gap 1: No PPAP Definition Layer
+
+**Description:**
+- No coordinator workflow to define PPAPs upfront
+- No way to specify required documents before engineer starts
+- No customer package upload capability
+
+**Impact:**
+- Engineers start PPAPs without clear requirements
+- No visibility into what customer originally requested
+- Ad-hoc document selection instead of requirement-driven
+
+**Resolution:** Phases 44-47 (PPAP Orchestration Layer)
+
+---
+
+### Gap 2: No Coordinator Workflow UI
+
+**Description:**
+- Coordinator role exists but has no dedicated UX
+- No "Create PPAP" wizard
+- No assignment workflow
+
+**Impact:**
+- Coordinators use external systems to manage PPAP intake
+- No integration with EMIP-PPAP system until engineer starts work
+
+**Resolution:** Phase 45 (Coordinator Workflow UI)
+
+---
+
+### Gap 3: No Template Layout Fidelity
+
+**Description:**
+- Templates are field-based (JSON), not layout-based
+- Excel export does not preserve original template formatting
+- No support for multi-page templates with complex layouts
+
+**Impact:**
+- Generated documents look generic
+- OEM-specific templates lose branding/formatting
+- Manual reformatting required after export
+
+**Resolution:** Phase 48 (Template Layout Fidelity)
+
+---
+
+### Gap 4: No Automatic Workbook Decomposition
+
+**Description:**
+- Large customer packages (e.g., Trane's 50-sheet Excel workbook) cannot be auto-parsed
+- No way to detect which sheets map to which templates
+- Manual decomposition required
+
+**Impact:**
+- Coordinator must manually extract sheets
+- Time-consuming setup for large packages
+- Error-prone process
+
+**Resolution:** Future phase (Workbook Intelligence)
+
+**Example Use Case:**
+```
+Customer uploads: Trane_PPAP_Package.xlsx (50 sheets)
+  Sheet 1: Part Info
+  Sheet 2: Process Flow
+  Sheet 3-15: PFMEA rows
+  Sheet 16: Control Plan
+  etc.
+
+Desired: System auto-detects sheet types, 
+         suggests template mappings,
+         pre-populates document fields
+```
+
+---
+
+### Gap 5: No Template Versioning (Formal)
+
+**Description:**
+- Templates can be updated, but no formal version tracking
+- No diff view between template versions
+- No rollback capability
+
+**Impact:**
+- Template changes affect all existing PPAPs
+- No audit trail for template evolution
+- Cannot compare "old" vs "new" template structure
+
+**Resolution:** Phase W4 + Template Version Control (future)
+
+---
+
+### Gap 6: No Wizard Module
+
+**Description:**
+- No unstructured document generation tool
+- Users must create PPAP session for one-off documents
+- Overhead for simple use cases
+
+**Impact:**
+- Engineers create "fake" PPAP sessions for quick docs
+- PPAP dashboard cluttered with non-PPAP entries
+- Confusion about what is a "real" PPAP
+
+**Resolution:** Phases W1-W5 (Document Wizard)
+
+---
+
+### Gap 7: No Cross-PPAP Analytics
+
+**Description:**
+- No visibility into document generation velocity
+- No identification of common templates
+- No bottleneck analysis across PPAPs
+
+**Impact:**
+- Cannot identify process improvements
+- Cannot predict resource needs
+- No data-driven optimization
+
+**Resolution:** Phase 26+ (Cross-PPAP Dashboard)
+
+---
+
+## FORWARD ROADMAP UPDATE (POST PHASE 43)
+
+**Updated:** 2026-03-29 19:59 CT
+
+This section updates the forward roadmap with newly defined tracks: **Orchestration Track** and **Wizard Track**.
+
+---
+
+### ORCHESTRATION TRACK (Phases 44-48)
+
+**Purpose:** Complete coordinator workflow and PPAP definition management
+
+**Phases:**
+
+**Phase 44: PPAP Definition Model**
+- Database schema for PPAP definitions
+- CRUD API operations
+- Integration with existing `ppaps` table
+
+**Phase 45: Coordinator Workflow UI**
+- "Create PPAP" wizard
+- Customer package upload
+- Template selection
+- Engineer assignment
+
+**Phase 46: PPAP Initialization Engine**
+- Auto-populate PPAP from definition
+- Pre-load BOM if in package
+- Display workflow sequence
+
+**Phase 47: Engineer Workflow UX Enhancements**
+- PPAP context display (origin, assignment)
+- Required documents checklist
+- Missing documents highlight
+
+**Phase 48: Template Layout Fidelity**
+- Excel layout preservation
+- Field positioning
+- Cell formatting
+- Export maintains original layout
+
+**Timeline:** Phases 44-47 (near-term), Phase 48 (long-term)
+
+---
+
+### WIZARD TRACK (Phases W1-W5)
+
+**Purpose:** Build standalone document wizard for unstructured generation
+
+**Phases:**
+
+**Phase W1: Wizard Foundation**
+- Route: `/tools/document-wizard`
+- Template selection + BOM upload
+- Generation pipeline
+- Basic export (PDF)
+
+**Phase W2: Template Memory Integration**
+- Upload new templates via wizard
+- Save to shared registry
+- Template selector with all templates
+
+**Phase W3: Export System**
+- PDF + Excel export
+- File naming conventions
+- Download handling
+
+**Phase W4: Template Fingerprinting**
+- Hash-based template identity
+- Duplicate detection
+- Template reuse prompts
+
+**Phase W5: AI-Assisted Parsing (Optional)**
+- AI-assisted field extraction
+- Structure detection
+- Mapping suggestions
+
+**Timeline:** Phases W1-W3 (near-term), Phase W4 (mid-term), Phase W5 (long-term, optional)
+
+---
+
+### PARALLEL DEVELOPMENT STRATEGY
+
+**Orchestration Track and Wizard Track can be developed in parallel:**
+
+**No Dependencies:**
+- Wizard phases do not depend on Orchestration phases
+- Orchestration phases do not depend on Wizard phases
+- Both tracks reuse same engine components
+
+**Shared Components:**
+- Template registry (already implemented)
+- Mapping engine (already implemented)
+- Validation engine (already implemented)
+- DocumentEditor (already implemented)
+
+**Development Priority:**
+- **High Priority:** Phases W1-W3 (quick wins, high user value)
+- **Medium Priority:** Phases 44-46 (coordinator workflow completion)
+- **Low Priority:** Phases 47-48, W4-W5 (enhancements)
+
+---
+
+### EXISTING ROADMAP (Phases 22-26+) PRESERVED
+
+**Note:** The original roadmap (Phases 22-26+) defined in earlier sections remains valid. The Orchestration and Wizard tracks are ADDITIVE, not replacements.
+
+**Original Future Phases (Still Valid):**
+- Phase 22: Backend Persistence (✅ Implemented)
+- Phase 23: User System (✅ Implemented)
+- Phase 24: Version Control (✅ Implemented)
+- Phase 25: Additional Templates (future)
+- Phase 26+: Cross-PPAP Dashboard (future)
+
+**Updated Roadmap Order:**
+```
+Completed: Phases 1-43
+Near-Term: Phases W1-W3 (Wizard), Phases 44-46 (Orchestration)
+Mid-Term: Phase W4, Phase 47, Phase 25 (Additional Templates)
+Long-Term: Phase 48, Phase W5, Phase 26+ (Analytics)
+```
+
+---
+
 ## Conclusion
 
 This document is the **implementation-grade source of truth** for EMIP-PPAP.
