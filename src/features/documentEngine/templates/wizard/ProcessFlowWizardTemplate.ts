@@ -9,7 +9,7 @@
  * which uses the mapping chain (bomToProcessFlow).
  */
 
-import { TemplateDefinition, TemplateInput, DocumentDraft } from '../types';
+import { TemplateDefinition, TemplateInput, DocumentDraft, FieldMetadata } from '../types';
 
 /**
  * Generate Process Flow document directly from BOM operations
@@ -20,11 +20,18 @@ function generateProcessFlowWizard(input: TemplateInput): DocumentDraft {
   console.log('[W2B WIZARD] Generating: process-flow-wizard');
   console.log('[W2B WIZARD] Operations:', bom.operations.length);
 
-  const rows = bom.operations.map((op) => ({
+  const rows = bom.operations.map((op, index) => ({
     stepNumber: op.step,
     operation: op.description,
     machine: op.resourceId || '',
-    notes: ''
+    notes: '',
+    // V2.6X: Row-level metadata stored in _meta property
+    _meta: {
+      stepNumber: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
+      operation: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
+      machine: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
+      notes: { certainty: 'required', source: 'user', changeTrackingMode: 'required-input' }
+    }
   }));
 
   console.log('[W2B WIZARD] Rows created:', rows.length);
@@ -32,6 +39,18 @@ function generateProcessFlowWizard(input: TemplateInput): DocumentDraft {
   const fields = {
     partNumber: bom.masterPartNumber,
     processSteps: rows
+  };
+
+  // V2.6X: Field certainty metadata
+  const fieldMetadata: Record<string, FieldMetadata> = {
+    partNumber: {
+      certainty: 'system',
+      source: 'bom',
+      originalValue: bom.masterPartNumber,
+      changeTrackingMode: 'log-on-change'
+    },
+    // Row-level metadata embedded in rows themselves via _meta property
+    // See rows array above for per-row field classifications
   };
 
   const metadata = {
@@ -44,7 +63,9 @@ function generateProcessFlowWizard(input: TemplateInput): DocumentDraft {
   return {
     templateId: 'process-flow-wizard',
     metadata,
-    fields
+    fields,
+    fieldMetadata,
+    fieldChanges: []
   };
 }
 

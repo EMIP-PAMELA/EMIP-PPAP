@@ -10,7 +10,7 @@
  * which uses the mapping chain (bomToProcessFlow → pfmea → controlPlan).
  */
 
-import { TemplateDefinition, TemplateInput, DocumentDraft } from '../types';
+import { TemplateDefinition, TemplateInput, DocumentDraft, FieldMetadata } from '../types';
 import { getOperationInsights, getControlPlanDefaults } from '../../wizard/wizardAutofillRules';
 
 /**
@@ -22,7 +22,7 @@ function generateControlPlanWizard(input: TemplateInput): DocumentDraft {
   console.log('[W2B WIZARD] Generating: control-plan-wizard');
   console.log('[W2B WIZARD] Operations:', bom.operations.length);
 
-  const rows = bom.operations.map((op) => {
+  const rows = bom.operations.map((op, index) => {
     const insights = getOperationInsights(op.description);
     const controlDefaults = getControlPlanDefaults(insights.category);
 
@@ -38,7 +38,16 @@ function generateControlPlanWizard(input: TemplateInput): DocumentDraft {
       machine: op.resourceId || '',
       characteristic: '',
       method: insights.method.value,
-      sampleSize: controlDefaults.sampleSize
+      sampleSize: controlDefaults.sampleSize,
+      // V2.6X: Row-level metadata stored in _meta property
+      _meta: {
+        stepNumber: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
+        process: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
+        machine: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
+        characteristic: { certainty: 'required', source: 'user', changeTrackingMode: 'required-input' },
+        method: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit', autofillReason: insights.method.reason },
+        sampleSize: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit' }
+      }
     };
   });
 
@@ -47,6 +56,21 @@ function generateControlPlanWizard(input: TemplateInput): DocumentDraft {
   const fields = {
     partNumber: bom.masterPartNumber,
     controlPlanRows: rows
+  };
+
+  // V2.6X: Field certainty metadata
+  const fieldMetadata: Record<string, FieldMetadata> = {
+    partNumber: {
+      certainty: 'system',
+      source: 'bom',
+      originalValue: bom.masterPartNumber,
+      changeTrackingMode: 'log-on-change'
+    }
+    // V2.6X Row field classifications:
+    // - stepNumber, process, machine: system (from BOM, track changes)
+    // - method, sampleSize: suggested (rule-based, editable without deviation logging)
+    // - characteristic: required (operator must provide input)
+    // Row-level metadata embedded in rows themselves via _meta property
   };
 
   const metadata = {
@@ -64,7 +88,9 @@ function generateControlPlanWizard(input: TemplateInput): DocumentDraft {
   return {
     templateId: 'control-plan-wizard',
     metadata,
-    fields
+    fields,
+    fieldMetadata,
+    fieldChanges: []
   };
 }
 

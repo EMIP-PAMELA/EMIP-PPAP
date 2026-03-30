@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { DocumentDraft, TemplateId } from '../templates/types';
+import { DocumentDraft, TemplateId, FieldMetadata } from '../templates/types';
 import { getTemplate } from '../templates/registry';
 import { useWizardValidation } from '../wizard/useWizardValidation';
 
@@ -26,14 +26,61 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
   const validation = useWizardValidation();
   const [fieldWarnings, setFieldWarnings] = useState<Record<string, string>>({});
   const isWizardTemplate = draft.metadata?.templateType === 'wizard';
+  
+  // V2.6X: Field certainty and change tracking
+  const [localFieldChanges, setLocalFieldChanges] = useState<Array<{
+    fieldPath: string;
+    originalValue: any;
+    newValue: any;
+    timestamp: string;
+  }>>(draft.fieldChanges || []);
 
   // Helper to find field definition
   const getFieldDef = (fieldKey: string) => {
     return fieldDefinitions.find(def => def.key === fieldKey);
   };
   
-  // V2.1: Enhanced field change handler with validation
+  // V2.6X: Get field certainty metadata
+  const getFieldCertainty = (fieldPath: string): FieldMetadata | undefined => {
+    return draft.fieldMetadata?.[fieldPath];
+  };
+  
+  // V2.6X: Get certainty styling classes
+  const getCertaintyStyle = (certainty: 'system' | 'suggested' | 'required' | undefined): string => {
+    if (!certainty) return '';
+    switch (certainty) {
+      case 'system':
+        return 'bg-green-50 border-green-200';
+      case 'suggested':
+        return 'bg-yellow-50 border-yellow-200';
+      case 'required':
+        return 'bg-red-50 border-red-200';
+      default:
+        return '';
+    }
+  };
+  
+  // V2.1 + V2.6X: Enhanced field change handler with validation and change tracking
   const handleFieldChangeWithValidation = (fieldPath: string, value: any) => {
+    // V2.6X: Track system-owned field changes
+    const fieldMeta = getFieldCertainty(fieldPath);
+    if (fieldMeta?.changeTrackingMode === 'log-on-change' && 
+        fieldMeta.originalValue !== undefined && 
+        fieldMeta.originalValue !== value) {
+      const changeRecord = {
+        fieldPath,
+        originalValue: fieldMeta.originalValue,
+        newValue: value,
+        timestamp: new Date().toISOString()
+      };
+      setLocalFieldChanges(prev => {
+        // Replace existing change for this field or add new
+        const filtered = prev.filter(c => c.fieldPath !== fieldPath);
+        return [...filtered, changeRecord];
+      });
+      console.log(`[V2.6X CHANGE TRACKED] Field: ${fieldPath}`, changeRecord);
+    }
+    
     // Always call original handler
     onFieldChange(fieldPath, value);
     
@@ -117,6 +164,43 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
           </button>
         )}
       </div>
+
+      {/* V2.6X: Field Certainty Legend */}
+      {draft.fieldMetadata && Object.keys(draft.fieldMetadata).length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <h4 className="text-sm font-semibold text-gray-700 mb-3">Field Certainty Legend</h4>
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-green-100 border border-green-300 rounded"></div>
+              <div>
+                <div className="font-medium text-gray-900">System</div>
+                <div className="text-xs text-gray-600">Deterministic from BOM</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-yellow-100 border border-yellow-300 rounded"></div>
+              <div>
+                <div className="font-medium text-gray-900">Suggested</div>
+                <div className="text-xs text-gray-600">Rule-based, editable</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-red-100 border border-red-300 rounded"></div>
+              <div>
+                <div className="font-medium text-gray-900">Required</div>
+                <div className="text-xs text-gray-600">Operator input needed</div>
+              </div>
+            </div>
+          </div>
+          {localFieldChanges.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="text-xs text-gray-600">
+                <strong>{localFieldChanges.length}</strong> system field change(s) tracked
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="bg-gray-50 rounded-lg p-6 space-y-6">
         {/* Metadata Section (Read-only) */}
@@ -366,7 +450,9 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                           max={fieldDef.validation?.max}
                           pattern={fieldDef.validation?.pattern}
                           required={fieldDef.required}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            getCertaintyStyle(getFieldCertainty(fieldKey)?.certainty)
+                          }`}
                         />
                         {fieldWarnings[fieldKey] && (
                           <div className="mt-2 flex items-start gap-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-2">

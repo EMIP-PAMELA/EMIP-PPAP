@@ -12,6 +12,19 @@ import { NormalizedBOM } from '../types/bomTypes';
 // Phase 29: Support dynamic template IDs from ingested templates
 export type TemplateId = 'PSW' | 'PROCESS_FLOW' | 'PFMEA' | 'CONTROL_PLAN' | string;
 
+// Phase V2.6X: Field Certainty Model
+export type FieldCertainty = 'system' | 'suggested' | 'required';
+export type FieldSource = 'bom' | 'rule' | 'user' | 'unknown';
+export type ChangeTrackingMode = 'log-on-change' | 'normal-edit' | 'required-input';
+
+export interface FieldMetadata {
+  certainty: FieldCertainty;
+  source: FieldSource;
+  originalValue?: any;
+  changeTrackingMode: ChangeTrackingMode;
+  autofillReason?: string;
+}
+
 export interface TemplateInputField {
   key: string;
   label: string;
@@ -27,6 +40,14 @@ export interface DocumentDraft {
   templateId: TemplateId;
   metadata: Record<string, any>;
   fields: Record<string, any>;
+  // Phase V2.6X: Field-level certainty and change tracking
+  fieldMetadata?: Record<string, FieldMetadata>;
+  fieldChanges?: Array<{
+    fieldPath: string;
+    originalValue: any;
+    newValue: any;
+    timestamp: string;
+  }>;
 }
 
 export interface DocumentSection {

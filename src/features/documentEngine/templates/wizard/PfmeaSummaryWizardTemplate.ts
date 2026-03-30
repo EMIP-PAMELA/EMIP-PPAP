@@ -10,7 +10,7 @@
  * which uses the mapping chain (bomToProcessFlow → pfmea).
  */
 
-import { TemplateDefinition, TemplateInput, DocumentDraft } from '../types';
+import { TemplateDefinition, TemplateInput, DocumentDraft, FieldMetadata } from '../types';
 import { getOperationInsights, getPfmeaDefaults } from '../../wizard/wizardAutofillRules';
 
 /**
@@ -22,7 +22,7 @@ function generatePfmeaSummaryWizard(input: TemplateInput): DocumentDraft {
   console.log('[W2B WIZARD] Generating: pfmea-summary-wizard');
   console.log('[W2B WIZARD] Operations:', bom.operations.length);
 
-  const rows = bom.operations.map((op) => {
+  const rows = bom.operations.map((op, index) => {
     const insights = getOperationInsights(op.description);
     const pfmeaDefaults = getPfmeaDefaults(insights.category);
 
@@ -45,7 +45,18 @@ function generatePfmeaSummaryWizard(input: TemplateInput): DocumentDraft {
       severity: insights.severity.value,
       occurrence: pfmeaDefaults.occurrence,
       detection: pfmeaDefaults.detection,
-      rpn: null // Calculated by UI layer
+      rpn: null, // Calculated by UI layer
+      // V2.6X: Row-level metadata stored in _meta property
+      _meta: {
+        stepNumber: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
+        processFunction: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' },
+        failureMode: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit', autofillReason: insights.failureMode.reason },
+        effect: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit', autofillReason: insights.effect.reason },
+        severity: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit', autofillReason: insights.severity.reason },
+        occurrence: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit' },
+        detection: { certainty: 'suggested', source: 'rule', changeTrackingMode: 'normal-edit' },
+        rpn: { certainty: 'system', source: 'bom', changeTrackingMode: 'log-on-change' }
+      }
     };
   });
 
@@ -54,6 +65,21 @@ function generatePfmeaSummaryWizard(input: TemplateInput): DocumentDraft {
   const fields = {
     partNumber: bom.masterPartNumber,
     pfmeaRows: rows
+  };
+
+  // V2.6X: Field certainty metadata
+  const fieldMetadata: Record<string, FieldMetadata> = {
+    partNumber: {
+      certainty: 'system',
+      source: 'bom',
+      originalValue: bom.masterPartNumber,
+      changeTrackingMode: 'log-on-change'
+    }
+    // V2.6X Row field classifications:
+    // - stepNumber, processFunction: system (from BOM, track changes)
+    // - failureMode, effect, severity, occurrence, detection: suggested (rule-based, editable)
+    // - rpn: system (calculated from S×O×D)
+    // Row-level metadata embedded in rows themselves via _meta property
   };
 
   const metadata = {
@@ -71,7 +97,9 @@ function generatePfmeaSummaryWizard(input: TemplateInput): DocumentDraft {
   return {
     templateId: 'pfmea-summary-wizard',
     metadata,
-    fields
+    fields,
+    fieldMetadata,
+    fieldChanges: []
   };
 }
 

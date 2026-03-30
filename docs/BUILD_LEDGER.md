@@ -4,6 +4,93 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-30 13:00 CT - Phase V2.6X - Field Certainty + Guided Completion UX
+
+**Summary:** Implemented field certainty classification system for wizard templates with visual distinction and edit governance behavior
+
+**Problem Statement:**
+- Wizard-generated fields were visually undifferentiated
+- Users couldn't distinguish between system-owned, suggested, and required-input fields
+- No tracking of system field deviations
+- No visual guidance for operator-required fields
+
+**Solution: Field Certainty Model**
+
+Introduced three-tier field classification:
+
+1. **System** (green) — Deterministic from BOM, track changes
+   - Examples: stepNumber, processFunction, partNumber, machine
+   - Behavior: Editable, but changes logged as deviations
+
+2. **Suggested** (yellow) — Rule-based autofill, editable without logging
+   - Examples: method, sampleSize, failureMode, effect, severity
+   - Behavior: Normal editing, no deviation tracking
+
+3. **Required** (red) — Operator input needed
+   - Examples: characteristic, notes, reaction plan
+   - Behavior: Visual indicator until populated
+
+**Files Created:**
+- None (extended existing types and templates)
+
+**Files Modified:**
+- `src/features/documentEngine/templates/types.ts` — Added FieldCertainty, FieldMetadata, extended DocumentDraft
+- `src/features/documentEngine/templates/wizard/ProcessFlowWizardTemplate.ts` — Added certainty metadata to fields
+- `src/features/documentEngine/templates/wizard/ControlPlanWizardTemplate.ts` — Added certainty metadata with row-level classifications
+- `src/features/documentEngine/templates/wizard/PfmeaSummaryWizardTemplate.ts` — Added certainty metadata with row-level classifications
+- `src/features/documentEngine/ui/DocumentEditor.tsx` — Implemented certainty styling, change tracking, and legend UI
+- `docs/BUILD_PLAN.md` — Added V2.6X to implementation status
+- `docs/BUILD_LEDGER.md` — This entry
+
+**Technical Details:**
+
+Type Model:
+```typescript
+export type FieldCertainty = 'system' | 'suggested' | 'required';
+export type FieldSource = 'bom' | 'rule' | 'user' | 'unknown';
+export type ChangeTrackingMode = 'log-on-change' | 'normal-edit' | 'required-input';
+
+export interface FieldMetadata {
+  certainty: FieldCertainty;
+  source: FieldSource;
+  originalValue?: any;
+  changeTrackingMode: ChangeTrackingMode;
+  autofillReason?: string;
+}
+```
+
+DocumentDraft extended with:
+- `fieldMetadata?: Record<string, FieldMetadata>`
+- `fieldChanges?: Array<{fieldPath, originalValue, newValue, timestamp}>`
+
+Row-level metadata stored in `_meta` property on each table row.
+
+**UI Features:**
+- Color-coded input fields (green/yellow/red backgrounds)
+- Field Certainty Legend explaining three categories
+- Change tracking counter for system field deviations
+- Console logging of tracked changes
+
+**Governance Rules:**
+- System fields track changes when edited from original value
+- Suggested fields do NOT log deviations
+- Required fields visually indicated when empty
+- No blocking behavior — all fields remain editable
+
+**Impact:**
+- ✅ Operators can now visually distinguish field types
+- ✅ System field changes are tracked locally
+- ✅ Required fields clearly marked
+- ✅ Existing autofill and validation behavior preserved
+- ✅ No breaking changes to existing wizard functionality
+
+**Next Steps:**
+- Future: Dropdown options for suggested fields (boilerplate library)
+- Future: Backend persistence of field change audit trail
+- Future: Required field completion workflow integration
+
+---
+
 ## 2026-03-29 22:10 CT - Phase W1.5 - PDF Text Extraction Layer
 
 - Summary: Implemented pdfjs-based PDF text extraction to fix root cause of parser receiving binary data
