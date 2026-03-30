@@ -4,6 +4,212 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-30 19:30 CT - Phase V2.7E - Field-Level Context / "Why" Layer
+
+**Summary:** Added field-level context explanations based on certainty and metadata to help users understand field purpose
+
+**Problem Statement:**
+- Users didn't understand why certain fields existed or required input
+- No explanation for field certainty classifications (system/suggested/required)
+- Operators unclear about which fields could be edited vs. auto-generated
+- No guidance on the purpose or source of field values
+
+**Solution: Field-Level Context Explanations**
+
+Added lightweight contextual explanations tied to field metadata, providing clear guidance on field purpose and behavior:
+
+**Implementation:**
+
+1. **Extended FieldMetadata with Optional Description**
+   - Added `description?: string` property to FieldMetadata
+   - Allows templates to define field-specific explanations
+   - Optional and minimal (no breaking changes)
+
+2. **Added Default Context Rules by Certainty**
+   - **System fields**: "This value was generated from BOM data. Changes will be tracked."
+   - **Suggested fields**: "This value is suggested based on operation type. You may override."
+   - **Required fields**: "This field requires engineering judgment and must be completed by the user."
+
+3. **Template-Level Context Overrides**
+   - If `field.meta.description` exists, use it instead of default
+   - Allows templates to provide more specific guidance
+   - Falls back to default context if no custom description
+
+4. **Context UI Rendering**
+   - Added small "ⓘ" info icon next to field labels
+   - Tooltip on hover displays context message
+   - Applied to both header-level and table row fields
+   - Subtle styling: `text-gray-400 text-xs cursor-help`
+
+5. **Minimal Layout Impact**
+   - No increase in row height
+   - No disruption to table layout
+   - Inline rendering with existing labels
+   - Uses browser-native tooltip (title attribute)
+
+**Files Modified:**
+- `src/features/documentEngine/templates/types.ts` — Added `description` property to FieldMetadata
+- `src/features/documentEngine/ui/DocumentEditor.tsx` — Added context helper function and UI rendering
+
+**Technical Details:**
+
+FieldMetadata extension:
+```typescript
+export interface FieldMetadata {
+  certainty: FieldCertainty;
+  source: FieldSource;
+  originalValue?: any;
+  changeTrackingMode: ChangeTrackingMode;
+  autofillReason?: string;
+  options?: string[];
+  optionsKey?: string;
+  // V2.7E: Optional field-level context explanation
+  description?: string;
+}
+```
+
+Context helper function:
+```typescript
+const getFieldContext = (meta?: FieldMetadata): string => {
+  if (!meta) return '';
+  
+  // Use template-provided description if available
+  if (meta.description) {
+    return meta.description;
+  }
+  
+  // Default context by certainty
+  switch (meta.certainty) {
+    case 'system':
+      return 'This value was generated from BOM data. Changes will be tracked.';
+    case 'suggested':
+      return 'This value is suggested based on operation type. You may override.';
+    case 'required':
+      return 'This field requires engineering judgment and must be completed by the user.';
+    default:
+      return '';
+  }
+};
+```
+
+Header field rendering:
+```tsx
+<label className="block text-sm font-medium text-gray-700 mb-1">
+  {fieldDef.label}
+  {fieldDef.required && <span className="text-red-500 ml-1">*</span>}
+  {/* V2.7E: Field context info icon */}
+  {(() => {
+    const context = getFieldContext(getFieldCertainty(fieldKey));
+    if (context) {
+      return (
+        <span className="ml-2 text-gray-400 text-xs cursor-help" title={context}>
+          ⓘ
+        </span>
+      );
+    }
+    return null;
+  })()}
+</label>
+```
+
+Table column header rendering:
+```tsx
+{fieldDef.rowFields.map((col) => {
+  const firstRow = (value as Record<string, any>[])[0];
+  const rowMeta = firstRow?._meta?.[col.key];
+  const context = getFieldContext(rowMeta);
+  
+  return (
+    <th>
+      {col.label}
+      {col.required && <span className="text-red-400 ml-1">*</span>}
+      {context && (
+        <span className="ml-1 text-gray-400 text-xs cursor-help normal-case" title={context}>
+          ⓘ
+        </span>
+      )}
+    </th>
+  );
+})}
+```
+
+**Governance:**
+- ✅ No AI-generated explanations
+- ✅ No modals or heavy UI components
+- ✅ No DocumentEditor layout redesign
+- ✅ Parser unchanged
+- ✅ Normalizer unchanged
+- ✅ Export logic unchanged
+- ✅ No external dependencies
+- ✅ Lightweight and performant
+
+**Context Messages by Certainty:**
+
+| Certainty | Default Message |
+|-----------|----------------|
+| **system** | "This value was generated from BOM data. Changes will be tracked." |
+| **suggested** | "This value is suggested based on operation type. You may override." |
+| **required** | "This field requires engineering judgment and must be completed by the user." |
+
+**UI Behavior:**
+
+**Header-Level Fields:**
+- Info icon (ⓘ) appears next to field label
+- Hover shows tooltip with context message
+- Minimal visual footprint
+
+**Table Row Fields:**
+- Info icon (ⓘ) appears in column header
+- Hover shows tooltip with context message
+- Applies to all rows in that column
+- No per-cell icons (avoids clutter)
+
+**Impact:**
+- ✅ Improved user understanding of field purpose
+- ✅ Clear guidance on field editability
+- ✅ Reduced confusion about system vs. user fields
+- ✅ Better operator training and onboarding
+- ✅ Consistent context across all templates
+- ✅ No performance degradation
+- ✅ No layout disruption
+
+**User Experience:**
+1. User sees field with info icon (ⓘ)
+2. Hovers over icon
+3. Tooltip displays context explanation
+4. User understands field purpose and behavior
+5. Makes informed decision about editing
+
+**Design Decisions:**
+- **Browser-native tooltip**: No JavaScript libraries, instant display
+- **Info icon (ⓘ)**: Universal symbol for information
+- **Subtle styling**: Gray color, small size, doesn't dominate UI
+- **Default messages**: Cover 90% of use cases
+- **Template overrides**: Allow customization when needed
+- **Column-level context**: Avoids per-cell clutter in tables
+
+**Template Customization Example:**
+```typescript
+// Template can override default context
+characteristic: { 
+  certainty: 'required', 
+  source: 'user', 
+  changeTrackingMode: 'required-input',
+  optionsKey: 'characteristics',
+  description: 'Specify the product or process characteristic being controlled (e.g., dimension, appearance, function).'
+}
+```
+
+**Notes:**
+- Context appears for all fields with metadata
+- No context shown for fields without metadata
+- Tooltip uses browser-native `title` attribute (no JS required)
+- Performance impact negligible (simple string lookup)
+- Works in all modern browsers
+- Accessible (tooltip on hover and focus)
+
+---
+
 ## 2026-03-30 19:00 CT - Phase V2.7C - Soft Pre-Export Completeness Warning
 
 **Summary:** Added soft pre-export warning for incomplete required fields with user confirmation

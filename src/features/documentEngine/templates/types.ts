@@ -27,6 +27,8 @@ export interface FieldMetadata {
   options?: string[];
   // V2.7A: Optional reference to centralized option registry
   optionsKey?: string;
+  // V2.7E: Optional field-level context explanation
+  description?: string;
 }
 
 export interface TemplateInputField {

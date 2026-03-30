@@ -146,6 +146,28 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
     }
   };
   
+  // V2.7E: Get field context explanation based on certainty and metadata
+  const getFieldContext = (meta?: FieldMetadata): string => {
+    if (!meta) return '';
+    
+    // Use template-provided description if available
+    if (meta.description) {
+      return meta.description;
+    }
+    
+    // Default context by certainty
+    switch (meta.certainty) {
+      case 'system':
+        return 'This value was generated from BOM data. Changes will be tracked.';
+      case 'suggested':
+        return 'This value is suggested based on operation type. You may override.';
+      case 'required':
+        return 'This field requires engineering judgment and must be completed by the user.';
+      default:
+        return '';
+    }
+  };
+  
   // V2.1 + V2.6X: Enhanced field change handler with validation and change tracking
   const handleFieldChangeWithValidation = (fieldPath: string, value: any) => {
     // V2.6X: Track system-owned field changes
@@ -407,6 +429,18 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                       {fieldDef.required && <span className="text-red-500 ml-1">*</span>}
                       {getMappingIndicator(fieldKey)}
                       {!fieldDef.editable && <span className="text-gray-500 ml-2 text-xs">(Read-only)</span>}
+                      {/* V2.7E: Field context info icon */}
+                      {(() => {
+                        const context = getFieldContext(getFieldCertainty(fieldKey));
+                        if (context) {
+                          return (
+                            <span className="ml-2 text-gray-400 text-xs cursor-help" title={context}>
+                              ⓘ
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                     </label>
                     
                     {/* Array value → table rendering (editable if rowFields defined) */}
@@ -419,15 +453,28 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
                           <table className="w-full text-sm border border-gray-200 rounded-md">
                             <thead className="bg-gray-100">
                               <tr>
-                                {fieldDef.rowFields.map((col) => (
-                                  <th
-                                    key={col.key}
-                                    className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b border-gray-200 whitespace-nowrap"
-                                  >
-                                    {col.label}
-                                    {col.required && <span className="text-red-400 ml-1">*</span>}
-                                  </th>
-                                ))}
+                                {fieldDef.rowFields.map((col) => {
+                                  // V2.7E: Get context for first row to show in header
+                                  const firstRow = (value as Record<string, any>[])[0];
+                                  const rowMeta = firstRow?._meta?.[col.key];
+                                  const context = getFieldContext(rowMeta);
+                                  
+                                  return (
+                                    <th
+                                      key={col.key}
+                                      className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b border-gray-200 whitespace-nowrap"
+                                    >
+                                      {col.label}
+                                      {col.required && <span className="text-red-400 ml-1">*</span>}
+                                      {/* V2.7E: Field context info icon */}
+                                      {context && (
+                                        <span className="ml-1 text-gray-400 text-xs cursor-help normal-case" title={context}>
+                                          ⓘ
+                                        </span>
+                                      )}
+                                    </th>
+                                  );
+                                })}
                               </tr>
                             </thead>
                             <tbody>
