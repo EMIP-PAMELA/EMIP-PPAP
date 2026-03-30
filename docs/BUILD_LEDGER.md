@@ -4,6 +4,331 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-29 21:00 CT - Phase W1.2 - Visual Master Parser Integration
+
+- Summary: Installed authoritative Visual Master Parser v5.0 and connected to Document Wizard
+- Files created:
+  - `src/features/bom/visualMasterParser.ts` — Visual Master Parser v5.0 "SLEDGEHAMMER" Edition (715 lines)
+- Files modified:
+  - `app/tools/document-wizard/page.tsx` — Replaced old parser with Visual Master Parser, added auto-regeneration on template change
+- Impact: Document Wizard now uses deterministic, manufacturer-agnostic BOM parsing with maximum recall
+- Objective: Establish single authoritative parser for all BOM ingestion across system
+
+---
+
+**Problem Statement**
+
+Phase W1 used temporary placeholder parsers (`parseBOMText`, `normalizeBOMData`) that:
+- Had limited pattern recognition
+- Lacked operation/component hierarchy
+- Missing ACI bridge number extraction
+- No page accountability or OCR detection
+- Not suitable for production use
+
+**Solution: Visual Master Parser v5.0 "SLEDGEHAMMER"**
+
+Installed authoritative parser with:
+- **Maximum Recall** — Captures ALL dashed lines, even if parsing partially fails
+- **Manufacturer Agnostic** — Generic patterns (no Trane/Appleton/RHEEM hardcoding)
+- **Hierarchical Structure** — Operations contain component arrays
+- **ACI Bridge Detection** — Captures ACI codes for tooling linkage
+- **Page Accountability** — Logs every page, warns on OCR issues
+- **Catch-All Regex** — Vendor#, catalog#, 10-15 digit patterns
+
+---
+
+**Parser Architecture**
+
+**Input:** Raw text from PDF extraction  
+**Output:** `VisualMasterData` with hierarchical operations
+
+**Key Features:**
+1. **Operation Detection** (`--` prefix, 2-3 dashes)
+2. **Component Detection** (`----` prefix, 4+ dashes)
+3. **ACI Bridge Extraction** (ACI03442, ACI-03442, AC103442 variants)
+4. **Candidate ID Extraction** (ALL potential part IDs on each line)
+5. **Page Logging** (warns if page has text but 0 components)
+
+**Data Structures:**
+```typescript
+interface VisualMasterData {
+  masterPartNumber: string;
+  parts: ParsedPart[];              // Flat list
+  operations: ParsedOperation[];    // Hierarchical
+  steps: Map<string, { resourceId, description }>;
+  processNotes: ProcessInstruction[];
+  rawText: string;
+  pageLogs: PageLog[];
+  operationCount: number;
+  componentCount: number;
+}
+```
+
+---
+
+**Integration Changes**
+
+**Document Wizard Updates:**
+
+**Before (W1):**
+```typescript
+const rawBOM = parseBOMText(text);
+const normalized = normalizeBOMData(rawBOM);
+```
+
+**After (W1.2):**
+```typescript
+const parsedData = parseVisualMaster(text);
+
+// W1.2 DEBUG LOGGING
+console.log('[W1.2] Parsed Operations:', parsedData.operations.length);
+console.log('[W1.2] Parsed Components:', parsedData.parts.length);
+console.log('[W1.2] Master PN:', parsedData.masterPartNumber);
+
+// VALIDATION GUARD
+if (parsedData.operations.length === 0) {
+  console.warn('[W1.2] ⚠️ No operations detected — possible OCR issue');
+  setError('⚠️ No operations detected — check BOM file');
+}
+```
+
+**Data Pipeline Adaptation:**
+```typescript
+// Adapt Visual Master output to NormalizedBOM format
+const normalizedBOM = {
+  masterPartNumber: parsedData.masterPartNumber,
+  operations: parsedData.operations.map(op => ({
+    step: op.step,
+    resourceId: op.resourceId,
+    description: op.description,
+    components: op.components.map(comp => ({
+      partId: comp.partId,
+      aciCode: comp.aciCode,
+      description: comp.fullDescription,
+      quantity: comp.quantity,
+      uom: comp.unitOfMeasure,
+      componentType: comp.componentClass
+    })),
+    processLines: [],
+    metadataLines: op.rawLines || []
+  })),
+  summary: {
+    totalOperations: parsedData.operationCount,
+    totalComponents: parsedData.componentCount,
+    wires: parsedData.parts.filter(p => p.componentClass === 'Consumable/Wire').length,
+    terminals: parsedData.parts.filter(p => p.isTerminal).length,
+    hardware: parsedData.parts.filter(p => p.componentClass === 'Hardware').length
+  }
+};
+```
+
+---
+
+**UI Bug Fix (W1.2)**
+
+**Problem:** User had to re-upload BOM every time they changed templates
+
+**Solution:** Added `useEffect` hook to auto-regenerate when template changes:
+
+```typescript
+useEffect(() => {
+  if (selectedTemplateId && parsedBOM && !isProcessing) {
+    console.log('[W1.2] Template changed, regenerating document...');
+    handleGenerate();
+  }
+}, [selectedTemplateId]);
+```
+
+**User Experience:**
+- Upload BOM once ✅
+- Switch between templates freely ✅
+- Document auto-regenerates ✅
+- No re-upload required ✅
+
+---
+
+**Validation Guard**
+
+Added defensive check for parsing failures:
+
+```typescript
+if (parsedData.operations.length === 0) {
+  console.warn('[W1.2] ⚠️ No operations detected — possible OCR or parsing issue');
+  setError('⚠️ No operations detected — possible OCR or parsing issue. Please check your BOM file.');
+}
+```
+
+**Triggers when:**
+- OCR completely failed
+- Wrong file type uploaded
+- Non-Visual Master format
+
+**User sees:**
+- Clear error message in UI
+- Console warning with details
+- Can re-upload corrected file
+
+---
+
+**Debug Logging (Critical)**
+
+Added W1.2-specific logs to verify parser integration:
+
+```typescript
+console.log('[W1.2] Parsed Operations:', parsedData.operations.length);
+console.log('[W1.2] Parsed Components:', parsedData.parts.length);
+console.log('[W1.2] Master PN:', parsedData.masterPartNumber);
+console.log('[W1.2] Adapted to NormalizedBOM:', normalizedBOM.operations.length, 'operations');
+console.log('[W1.2] Template changed, regenerating document...');
+```
+
+**Purpose:**
+- Verify parser executed
+- Confirm data extracted
+- Track template auto-regeneration
+- Debugging OCR issues
+
+---
+
+**Parser Characteristics (Sledgehammer Rules)**
+
+1. **NO EARLY EXIT** — Process EVERY line until EOF
+2. **CAPTURE ALL** — If line starts with dashes, save ENTIRE raw line
+3. **CATCH-ALL REGEX** — Find APP#, MOLEX#, 10-15 digit patterns
+4. **NOISE-TO-SIGNAL** — Store rawLine as fallback for every component
+5. **PAGE ACCOUNTABILITY** — Log every page processed
+
+**Pattern Matching:**
+- `VENDOR_CATALOG_PATTERN`: APP#123, MOLEX#456, TE#789
+- `LONG_SKU_PATTERN`: 10-15 digit numeric sequences
+- `STANDARD_PART_PATTERN`: Alphanumeric 5-25 chars with dashes
+- `ACI_PATTERN`: ACI03442, ACI-03442, ACI 03442
+- `ACI_BRIDGE_PATTERN`: AC103442 (OCR error variant)
+
+---
+
+**Example Parse Output**
+
+**Input (Visual Master text):**
+```
+--10 WR-CUTGROUP - Wire cut/strip/crimp machine Type:
+----770006-3     ACI03442 SOCKET 14-20AWG TIN REEL    9.00 EA
+----770005-3     ACI03088 PIN 20-14 AWG UNIV MATE-N-LOK   12.00 FT
+--50 WR-WIREASSY - general cable assembly work
+----770026-1     ACI09817 CAP HSG KIT 4 CKT INLINE UNML   1.00 EA
+```
+
+**Output (VisualMasterData):**
+```typescript
+{
+  masterPartNumber: "NH495337430009",
+  operationCount: 2,
+  componentCount: 3,
+  operations: [
+    {
+      step: "10",
+      resourceId: "WR-CUTGROUP",
+      description: "Wire cut/strip/crimp machine",
+      sequenceLabel: "10 - WR-CUTGROUP",
+      components: [
+        { partId: "770006-3", aciCode: "ACI03442", quantity: 9, uom: "EA", ... },
+        { partId: "770005-3", aciCode: "ACI03088", quantity: 12, uom: "FT", ... }
+      ],
+      rawLines: ["--10 WR-CUTGROUP...", "----770006-3...", "----770005-3..."]
+    },
+    {
+      step: "50",
+      resourceId: "WR-WIREASSY",
+      description: "general cable assembly work",
+      components: [
+        { partId: "770026-1", aciCode: "ACI09817", quantity: 1, uom: "EA", ... }
+      ],
+      rawLines: ["--50 WR-WIREASSY...", "----770026-1..."]
+    }
+  ],
+  parts: [/* flat list of all 3 components */],
+  pageLogs: [/* page accountability */]
+}
+```
+
+---
+
+**System Impact**
+
+**Document Wizard:**
+- ✅ Uses authoritative parser (no placeholder code)
+- ✅ Extracts hierarchical operations
+- ✅ Captures ACI bridge numbers
+- ✅ Auto-regenerates on template change
+- ✅ Validates parsing success
+
+**Future PPAP System:**
+- 🔒 Visual Master Parser is now **SYSTEM OF RECORD**
+- 🔒 All BOM ingestion MUST use this parser
+- 🔒 No fallback parsers allowed
+- 🔒 Ensures consistency across wizard and PPAP workflows
+
+---
+
+**Technical Details**
+
+**TypeScript Compilation:** ✅ **EXIT CODE 0**  
+**Errors:** 0  
+**Warnings:** 0
+
+**Files Changed:**
+- `src/features/bom/visualMasterParser.ts` — 715 lines (new)
+- `app/tools/document-wizard/page.tsx` — Multiple edits
+
+**Lines of Code:**
+- Visual Master Parser: 715 lines
+- Document Wizard changes: ~50 lines modified
+
+**Dependencies:**
+- No new external dependencies
+- Pure TypeScript implementation
+
+---
+
+**Testing Checklist (Post-Deploy)**
+
+**Expected Behavior:**
+1. Upload Visual Master BOM → Console shows `[W1.2] Parsed Operations: N`
+2. Operations count > 0 → Parsing succeeded
+3. Components count > 0 → Components extracted
+4. Master PN detected → Part number recognized
+5. Change template → Document auto-regenerates
+6. Upload bad file → Error message with "⚠️ No operations detected"
+
+**Fail Conditions:**
+- ❌ Console shows 0 operations (parser not wired)
+- ❌ Console shows 0 components (parser not wired)
+- ❌ No `[W1.2]` logs (parser not executed)
+- ❌ Template change requires BOM re-upload (useEffect not working)
+
+---
+
+**Phase W1.2 Complete.**
+
+Visual Master Parser v5.0 successfully integrated into Document Wizard:
+- ✅ Authoritative parser installed (`src/features/bom/visualMasterParser.ts`)
+- ✅ Document Wizard uses `parseVisualMaster()` instead of placeholder parsers
+- ✅ Data pipeline adapted to map Visual Master output to NormalizedBOM
+- ✅ W1.2 debug logging added (operations, components, master PN)
+- ✅ Validation guard warns on 0 operations
+- ✅ UI bug fixed: auto-regenerate on template change
+- ✅ Zero TypeScript errors
+
+**Quality Metrics:**
+- Parser: 715 lines
+- TypeScript errors: 0
+- Debug logs: 5 new entries
+- UI improvements: Auto-regeneration on template change
+
+**Next:** Deploy to production and verify parsing on real Visual Master BOMs
+
+---
+
 ## 2026-03-29 20:15 CT - Phase W1 - Document Wizard Foundation
 
 - Summary: Standalone document generation tool with mapping diagnostics (workflow-independent)
