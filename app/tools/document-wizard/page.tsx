@@ -247,6 +247,34 @@ export default function DocumentWizardPage() {
     console.log('[Wizard] Document exported as JSON');
   };
 
+  // V2.6: Export to Excel Template
+  const handleExportExcel = async () => {
+    if (!generatedDraft) return;
+    
+    try {
+      // V2.6: Currently only implemented for PFMEA Summary Wizard
+      if (generatedDraft.templateId !== 'pfmea-summary-wizard') {
+        alert('Excel template export is currently implemented for PFMEA Summary Wizard only.\n\nOther templates coming soon.');
+        return;
+      }
+      
+      console.log('[V2.6 EXPORT] Starting Excel template export');
+      
+      const { exportToExcelTemplate, downloadExcelFile } = await import('@/src/features/documentEngine/export/excelTemplateInjector');
+      const { PFMEA_SUMMARY_WORKBOOK_MAP } = await import('@/src/features/documentEngine/export/mappings/pfmeaSummaryWorkbookMap');
+      
+      const blob = await exportToExcelTemplate(generatedDraft, PFMEA_SUMMARY_WORKBOOK_MAP);
+      const filename = `PFMEA_Summary_${generatedDraft.fields.partNumber || 'export'}_${Date.now()}.xlsx`;
+      
+      downloadExcelFile(blob, filename);
+      
+      console.log('[V2.6 EXPORT] Excel template export complete');
+    } catch (err) {
+      console.error('[V2.6 EXPORT] Export failed:', err);
+      alert(`Excel export failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -388,12 +416,21 @@ export default function DocumentWizardPage() {
             <div className="bg-white rounded-lg shadow-md p-6 mb-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-gray-800">Generated Document</h2>
-                <button
-                  onClick={handleExportJSON}
-                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
-                >
-                  Download as JSON
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleExportJSON}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  >
+                    Export as JSON
+                  </button>
+                  <button
+                    onClick={handleExportExcel}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    title="Export to PPAP Package Workbook Template"
+                  >
+                    Export to Excel Template
+                  </button>
+                </div>
               </div>
               
               <DocumentEditor
