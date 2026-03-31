@@ -97,48 +97,46 @@ export async function exportToExcelTemplate(
     if (Array.isArray(rowData)) {
       let rowsWritten = 0;
       
-      // V2.9B-PF.8: Dynamic STEP table detection for Process Flow
-      // Scan worksheet to find correct "#" cell that marks the STEP table header
+      // V2.9B-PF.9: Multi-column landmark detection for Process Flow
+      // Search for row with STEP + ROUTING + OPERATION columns to identify true table header
       let actualStartRow = cellMap.rowMappings.startRow; // Default fallback
       
       if (cellMap.sheetName === '5-Proces Flow Diagram') {
-        console.log('[V2.9B-PF.8 EXPORT] Detecting STEP table header with contextual validation');
+        console.log('[V2.9B-PF.9 EXPORT] Detecting STEP table header with multi-column validation');
         
         let headerRowIndex = -1;
         
         worksheet.eachRow((row, rowNumber) => {
-          const cellA = row.getCell(1);
+          // Check multiple columns for header structure
+          const colA = String(row.getCell(1).value || '').toUpperCase();
+          const colB = String(row.getCell(2).value || '').toUpperCase();
+          const colH = String(row.getCell(8).value || '').toUpperCase();
           
-          if (cellA.value === '#') {
-            // Contextual validation: check surrounding rows
-            const prevRow = rowNumber > 1 ? worksheet.getRow(rowNumber - 1) : null;
-            const nextRow = worksheet.getRow(rowNumber + 1);
-            
-            // Validate: Previous row should contain "STEP" text
-            const hasStepHeaderAbove = prevRow && 
-              String(prevRow.getCell(1).value || '').toUpperCase().includes('STEP');
-            
-            // Validate: Next row should have numeric data (row numbers start at 1)
-            const nextCellValue = nextRow.getCell(1).value;
-            const looksLikeTable = typeof nextCellValue === 'number' && nextCellValue >= 1;
-            
-            if (hasStepHeaderAbove && looksLikeTable) {
-              console.log(`[V2.9B-PF.8 EXPORT] Found valid STEP table header at row ${rowNumber}`);
-              console.log(`[V2.9B-PF.8 EXPORT]   - Previous row has STEP label: ✓`);
-              console.log(`[V2.9B-PF.8 EXPORT]   - Next row has numeric data: ✓`);
-              headerRowIndex = rowNumber;
-              return false; // Stop iteration (found correct header)
-            } else {
-              console.log(`[V2.9B-PF.8 EXPORT] Found "#" at row ${rowNumber} but context invalid (likely false positive)`);
-            }
+          // Multi-column validation: STEP + ROUTING + OPERATION columns
+          const isStepHeader = colA.includes('STEP');
+          const hasRouting = colB.includes('ROUT');
+          const hasOperationDesc = colH.includes('OPERATION');
+          
+          if (isStepHeader && hasRouting && hasOperationDesc) {
+            console.log(`[V2.9B-PF.9 EXPORT] Found STEP table header at row ${rowNumber}`);
+            console.log(`[V2.9B-PF.9 EXPORT]   - Column A contains STEP: ✓`);
+            console.log(`[V2.9B-PF.9 EXPORT]   - Column B contains ROUTING: ✓`);
+            console.log(`[V2.9B-PF.9 EXPORT]   - Column H contains OPERATION: ✓`);
+            headerRowIndex = rowNumber;
+            return false; // Stop iteration (found correct header)
           }
         });
         
         if (headerRowIndex === -1) {
-          console.warn('[V2.9B-PF.8 EXPORT] STEP table header not found, using fallback startRow:', actualStartRow);
+          console.warn('[V2.9B-PF.9 EXPORT] STEP table header not found, using fallback startRow:', actualStartRow);
+          console.warn('[V2.9B-PF.9 EXPORT] Multi-column detection failed - template may have unexpected structure');
         } else {
-          actualStartRow = headerRowIndex + 1; // Data starts after the "#" header row
-          console.log(`[V2.9B-PF.8 EXPORT] STEP table data will start at row ${actualStartRow}`);
+          // Header row found, "#" row is next, data starts after "#" row
+          const hashRowIndex = headerRowIndex + 1;
+          actualStartRow = headerRowIndex + 2; // Data starts 2 rows after header
+          console.log(`[V2.9B-PF.9 EXPORT] STEP header row: ${headerRowIndex}`);
+          console.log(`[V2.9B-PF.9 EXPORT] # row: ${hashRowIndex}`);
+          console.log(`[V2.9B-PF.9 EXPORT] Data starts at row: ${actualStartRow}`);
         }
       }
       
