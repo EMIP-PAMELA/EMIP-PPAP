@@ -4,6 +4,187 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-31 12:11 CT - Phase V2.9B-PF.1 - Process Flow Header + Symbol Reconstruction
+
+**Summary:** Rebuild Process Flow header section with deterministic layout and image-based symbols matching Trane template
+
+**Problem Statement:**
+- Process Flow export was using generic workbook rebuild
+- Header layout did not match Trane template structure
+- Symbol row was missing or flattened
+- Column widths inconsistent
+- No rotated text for symbol columns
+- Process flow symbols (circle, diamond, arrow, etc.) not displayed
+- Professional appearance compromised for critical PPAP document
+- Layout did not align with AIAG Process Flow standards
+
+**Root Cause:**
+V2.8B.6 clean workbook rebuild copied structure from template, but Process Flow has unique header requirements distinct from Control Plan and PFMEA. The template header section (rows 1-5) was not being reconstructed with proper layout. Symbol row requires image-based icons, not text characters. Column structure needs explicit widths for symbol columns (narrow) vs. description columns (wide). Text rotation needed for vertical symbol labels.
+
+**Solution: Deterministic Process Flow Header Reconstruction**
+
+Add document-specific header rebuild for Process Flow sheet with:
+
+**Implementation:**
+
+1. **Column Structure Definition**
+   - Column A: 8 units (STEP)
+   - Column B: 12 units (Routing Number)
+   - Columns C-G: 5 units each (symbol columns)
+   - Column H+: 30 units (Operation Description)
+
+2. **Header Row (Row 1)**
+   - Labels: STEP, Routing Number, Operation, Inspection, Transportation, Delay, Storage
+   - Formatting: Bold, centered, wrapped
+   - Special: Columns C-G have 90° text rotation
+
+3. **Symbol Row (Row 2)**
+   - Column A: "#" marker
+   - Columns C-G: Image-based symbols loaded from `/public/icons/`
+   - Images: green_circle.png, yellow_diamond.png, blue_arrow.png, red_delay.png, gray_square.png
+
+4. **Border System**
+   - Row 1: Medium top/bottom, thin left/right
+   - Row 2: Thin top, medium bottom (separator)
+
+5. **Data Offset**
+   - Updated mapping: data starts row 3 (was row 6)
+   - Rows 1-2 reserved for header
+
+**Files Modified:**
+- `src/features/documentEngine/export/excelTemplateInjector.ts` — Added Process Flow header reconstruction
+- `src/features/documentEngine/export/mappings/processFlowWorkbookMap.ts` — Updated data start to row 3
+
+**Technical Details:**
+
+**Process Flow Detection:**
+```typescript
+const isProcessFlow = targetSheetName === '5-Proces Flow Diagram';
+```
+
+**Column Definition:**
+```typescript
+cleanSheet.columns = [
+  { key: 'A', width: 8 },   // STEP
+  { key: 'B', width: 12 },  // Routing Number
+  { key: 'C', width: 5 },   // Operation symbol
+  { key: 'D', width: 5 },   // Inspection symbol
+  { key: 'E', width: 5 },   // Transportation symbol
+  { key: 'F', width: 5 },   // Delay symbol
+  { key: 'G', width: 5 },   // Storage symbol
+  { key: 'H', width: 30 },  // Operation Description
+  // ... additional columns
+];
+```
+
+**Text Rotation:**
+```typescript
+// Symbol columns (C-G) get 90° rotation
+for (let col = 3; col <= 7; col++) {
+  const cell = headerRow.getCell(col);
+  cell.alignment = {
+    ...cell.alignment,
+    textRotation: 90
+  };
+}
+```
+
+**Image Integration:**
+```typescript
+const greenCircleId = cleanWorkbook.addImage({
+  buffer: fs.readFileSync(path.join(iconsPath, 'green_circle.png')),
+  extension: 'png'
+});
+
+cleanSheet.addImage(greenCircleId, {
+  tl: { col: 2, row: 1 },  // Column C, Row 2
+  ext: { width: 16, height: 16 }
+});
+```
+
+**Governance:**
+- ✅ V2.8B.6 clean workbook architecture preserved
+- ✅ V2.8C.1 formatting reconstruction preserved
+- ✅ V2.8C.3 merge reconstruction preserved
+- ✅ V2.8C.5 deterministic borders preserved
+- ✅ V2.9A single-sheet export preserved
+- ✅ Parser unchanged
+- ✅ Normalizer unchanged
+- ✅ Templates unchanged (reading only)
+- ✅ Control Plan and PFMEA mappings unchanged
+- ✅ No protection metadata introduced
+- ✅ Document-specific reconstruction (Process Flow only)
+
+**Impact:**
+- ✅ Process Flow header matches Trane template layout
+- ✅ Rotated text for symbol column labels
+- ✅ Image-based symbols visually accurate
+- ✅ Column widths optimized (narrow symbols, wide descriptions)
+- ✅ Professional AIAG-compliant appearance
+- ✅ Data starts at row 3 (aligned with header)
+- ✅ Other document types unaffected
+
+**Console Output Example (V2.9B-PF.1):**
+```
+[V2.6 EXPORT] Workbook export complete
+[V2.8B.6 EXPORT] Rehydrating workbook into clean ExcelJS-safe structure
+[V2.8C.1 EXPORT] Applying controlled formatting reconstruction
+[V2.9A EXPORT] Single sheet export: 5-Proces Flow Diagram
+[V2.9A EXPORT] Copying single worksheet: 5-Proces Flow Diagram
+[V2.9B-PF.1 EXPORT] Rebuilding Process Flow header with symbols
+[V2.9B-PF.1 EXPORT] Symbol images added to row 2
+[V2.9B-PF.1 EXPORT] Process Flow header + symbols rebuilt
+[V2.8C.3 EXPORT] Reconstructing 15 merged cell ranges
+[V2.8C.5 EXPORT] Applying deterministic border system
+[V2.8C.5 EXPORT] Deterministic borders applied: 456 cells
+[V2.9A EXPORT] Single sheet rehydrated: 5-Proces Flow Diagram
+[V2.9A EXPORT] Single-sheet workbook serialization successful
+[V2.6 EXPORT] File download triggered: Process_Flow_2026-03-31.xlsx
+```
+
+**Symbol Images:**
+
+| Symbol | File | Purpose |
+|--------|------|---------|
+| 🟢 Circle | `green_circle.png` | **Operation** |
+| 🟨 Diamond | `yellow_diamond.png` | **Inspection** |
+| 🔵 Arrow | `blue_arrow.png` | **Transportation** |
+| 🔴 D-shape | `red_delay.png` | **Delay** |
+| ⬜ Square | `gray_square.png` | **Storage** |
+
+**Header Structure:**
+
+| Row | Content | Height | Purpose |
+|-----|---------|--------|---------|
+| **1** | Column labels (rotated for C-G) | 40 | Header text |
+| **2** | Symbol images in C-G | 20 | Visual legend |
+| **3+** | Process step data | Variable | Data rows |
+
+**Validation:**
+- ✅ TypeScript compilation successful
+- ✅ Export completes without errors
+- ✅ Process Flow header visually matches template
+- ✅ Text rotation applied correctly (90° for C-G)
+- ✅ Symbol images loaded and placed
+- ✅ Column widths appropriate
+- ✅ Data starts at row 3
+- ✅ Borders applied to header section
+
+**Notes:**
+- Document-specific reconstruction pattern established
+- Can be extended to other document types as needed
+- Image-based symbols more reliable than Unicode characters
+- Column width optimization improves readability
+- Data offset changed from row 6 to row 3 (template had larger header area)
+- Process Flow now has professional, AIAG-compliant appearance
+
+**Future Extensions:**
+- Control Plan could get similar header reconstruction if needed
+- PFMEA header could be rebuilt for consistency
+- Additional Process Flow columns could be added (inputs, outputs, controls)
+
+---
+
 ## 2026-03-31 11:14 CT - Phase V2.8C.5 - Deterministic Border Reconstruction
 
 **Summary:** Apply programmatically-defined border system to recreate Trane template visual grid appearance

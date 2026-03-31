@@ -244,37 +244,49 @@ export async function exportToExcelTemplate(
     }
     
     // STEP 5 & 6: Add image symbols
+    // V2.9B-PF.4: Load images as base64 for browser compatibility
     try {
-      const fs = require('fs');
-      const path = require('path');
+      // Helper function to load image as base64
+      const loadImageAsBase64 = async (url: string): Promise<string> => {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      };
       
-      const iconsPath = path.join(process.cwd(), 'public', 'icons');
+      // Load all icon images as base64
+      const greenCircleBase64 = await loadImageAsBase64('/icons/green_circle.png');
+      const yellowDiamondBase64 = await loadImageAsBase64('/icons/yellow_diamond.png');
+      const blueArrowBase64 = await loadImageAsBase64('/icons/blue_arrow.png');
+      const redDelayBase64 = await loadImageAsBase64('/icons/red_delay.png');
+      const graySquareBase64 = await loadImageAsBase64('/icons/gray_square.png');
       
-      // Load and add images
-      const greenCircle = fs.readFileSync(path.join(iconsPath, 'green_circle.png'));
-      const yellowDiamond = fs.readFileSync(path.join(iconsPath, 'yellow_diamond.png'));
-      const blueArrow = fs.readFileSync(path.join(iconsPath, 'blue_arrow.png'));
-      const redDelay = fs.readFileSync(path.join(iconsPath, 'red_delay.png'));
-      const graySquare = fs.readFileSync(path.join(iconsPath, 'gray_square.png'));
+      console.log('[V2.9B-PF.4 EXPORT] Symbol images loaded via base64');
       
+      // Register images using base64
       const greenCircleId = cleanWorkbook.addImage({
-        buffer: greenCircle,
+        base64: greenCircleBase64,
         extension: 'png'
       });
       const yellowDiamondId = cleanWorkbook.addImage({
-        buffer: yellowDiamond,
+        base64: yellowDiamondBase64,
         extension: 'png'
       });
       const blueArrowId = cleanWorkbook.addImage({
-        buffer: blueArrow,
+        base64: blueArrowBase64,
         extension: 'png'
       });
       const redDelayId = cleanWorkbook.addImage({
-        buffer: redDelay,
+        base64: redDelayBase64,
         extension: 'png'
       });
       const graySquareId = cleanWorkbook.addImage({
-        buffer: graySquare,
+        base64: graySquareBase64,
         extension: 'png'
       });
       
@@ -300,9 +312,9 @@ export async function exportToExcelTemplate(
         ext: { width: 16, height: 16 }
       });
       
-      console.log('[V2.9B-PF.1 EXPORT] Symbol images added to row 2');
+      console.log('[V2.9B-PF.4 EXPORT] Symbol images added to row 2');
     } catch (e) {
-      console.warn('[V2.9B-PF.1 EXPORT] Failed to add symbol images:', e);
+      console.warn('[V2.9B-PF.4 EXPORT] Failed to add symbol images:', e);
     }
     
     // STEP 8: Apply borders to symbol row
