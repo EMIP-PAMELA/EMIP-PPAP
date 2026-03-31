@@ -142,124 +142,149 @@ export async function exportToExcelTemplate(
   
   console.log('[V2.6 EXPORT] Workbook export complete');
   
-  // V2.8B.1: Pre-write workbook sanitization
-  // Root cause: ExcelJS crashes during writeBuffer() when encountering null protection/style metadata
-  // in workbook cells. This occurs with certain PPAP template workbooks that have incomplete
-  // style/protection objects. We sanitize these before serialization to prevent:
-  // "TypeError: Cannot read properties of null (reading 'locked')"
-  console.log('[V2.8B.1 EXPORT] Sanitizing workbook for ExcelJS serialization compatibility');
-  sanitizeWorkbookForExport(workbook);
+  // V2.8B.5: Pre-write aggressive protection stripping
+  // Root cause: ExcelJS crashes during writeBuffer() when encountering null/malformed protection
+  // metadata at any level (worksheet, column, row, cell). Previous normalization attempts failed.
+  // Now using aggressive deletion of ALL protection metadata to ensure serialization stability.
+  console.log('[V2.8B.5 EXPORT] Sanitizing workbook for ExcelJS serialization compatibility');
+  const stripResults = sanitizeWorkbookForExport(workbook);
   
   // Generate XLSX blob
   try {
     const buffer = await workbook.xlsx.writeBuffer();
-    console.log('[V2.8B.1 EXPORT] Workbook serialization successful');
+    console.log('[V2.8B.5 EXPORT] Workbook serialization successful');
     return new Blob([buffer], { 
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
     });
   } catch (error) {
-    console.error(`[V2.8B.1 EXPORT] writeBuffer failed for sheet "${cellMap.sheetName}"`, error);
-    throw new Error(`Excel export failed during workbook serialization: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    // V2.8B.5: Enhanced error reporting with diagnostic information
+    console.error(`[V2.8B.5 EXPORT] writeBuffer failed after aggressive protection stripping`);
+    console.error(`[V2.8B.5 EXPORT] Sheet: "${cellMap.sheetName}"`);
+    console.error(`[V2.8B.5 EXPORT] Strip results:`, stripResults);
+    console.error(`[V2.8B.5 EXPORT] Error:`, error);
+    throw new Error(`Excel export failed during workbook serialization for "${cellMap.sheetName}": ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
 /**
  * Sanitize workbook for ExcelJS export compatibility
- * Phase V2.8B.1 - Fix null protection/style metadata that causes writeBuffer() crashes
- * Phase V2.8B.3 - Remove worksheet-level protection to prevent null reference errors
- * Phase V2.8B.4 - Normalize row-level protection and style objects
+ * Phase V2.8B.5 - Aggressive Protection Metadata Stripping Fallback
  * 
- * ExcelJS Issue: Some PPAP workbook templates contain cells with null or incomplete
- * protection/style objects. During serialization (writeBuffer), ExcelJS attempts to
- * access properties like 'locked' on these null objects, causing:
+ * ExcelJS Issue: PPAP workbook templates contain protection metadata that ExcelJS
+ * cannot safely serialize. Previous normalization attempts (V2.8B.1, V2.8B.3, V2.8B.4)
+ * were insufficient. During serialization (writeBuffer), ExcelJS still encounters
+ * null/malformed protection objects, causing:
  * "TypeError: Cannot read properties of null (reading 'locked')"
  * 
- * Solution: 
- * 1. Remove worksheet-level protection completely (V2.8B.3)
- * 2. Normalize row-level protection and style objects (V2.8B.4)
- * 3. Normalize cell-level protection objects to safe defaults (V2.8B.1)
- * This preserves workbook formatting while ensuring ExcelJS can serialize without crashing.
+ * Solution: AGGRESSIVE DELETION - Remove ALL protection metadata at ALL levels:
+ * 1. Worksheet-level protection (delete completely)
+ * 2. Column-level protection (delete from column styles)
+ * 3. Row-level protection (delete completely)
+ * 4. Cell-level protection (delete from cell styles)
+ * 
+ * This prioritizes serialization stability over protection fidelity.
+ * Values, formulas, formatting (non-protection), and layout are preserved.
  * 
  * @param workbook - ExcelJS workbook to sanitize
  */
-function sanitizeWorkbookForExport(workbook: ExcelJS.Workbook): void {
-  let cellsSanitized = 0;
-  let worksheetsNeutralized = 0;
-  let rowsNormalized = 0;
+function sanitizeWorkbookForExport(workbook: ExcelJS.Workbook): { worksheets: number; columns: number; rows: number; cells: number } {
+  let worksheetsStripped = 0;
+  let columnsStripped = 0;
+  let rowsStripped = 0;
+  let cellsStripped = 0;
+  
+  console.log('[V2.8B.5 EXPORT] Aggressive protection stripping fallback applied');
   
   workbook.eachSheet((worksheet) => {
-    // V2.8B.3: CRITICAL FIX - Remove worksheet-level protection
-    // Worksheet protection can contain null objects that cause ExcelJS to crash
-    // during serialization. Use unprotect() to remove protection completely.
+    const worksheetAny = worksheet as any;
+    
+    // V2.8B.5: AGGRESSIVE - Remove worksheet-level protection entirely
     try {
-      // ExcelJS uses unprotect() method to remove worksheet protection
-      // This prevents null reference errors during serialization
-      (worksheet as any).unprotect();
-      worksheetsNeutralized++;
+      if (worksheetAny.protection !== undefined) {
+        delete worksheetAny.protection;
+        worksheetsStripped++;
+      }
+      // Also try unprotect() as fallback
+      if (typeof worksheetAny.unprotect === 'function') {
+        worksheetAny.unprotect();
+      }
     } catch (e) {
-      // Silently continue if unprotect fails (worksheet may not be protected)
-      // This is not a critical error
+      // Continue if protection removal fails
+    }
+    
+    // V2.8B.5: AGGRESSIVE - Strip column-level protection
+    if (worksheetAny.columns && Array.isArray(worksheetAny.columns)) {
+      worksheetAny.columns.forEach((column: any) => {
+        if (column) {
+          // Delete protection from column style
+          if (column.style && column.style.protection !== undefined) {
+            delete column.style.protection;
+            columnsStripped++;
+          }
+          // Normalize null/malformed style containers
+          if (column.style === null || column.style === undefined) {
+            column.style = {};
+          }
+        }
+      });
     }
     
     worksheet.eachRow({ includeEmpty: false }, (row) => {
-      // V2.8B.4: CRITICAL FIX - Normalize row-level protection and style
-      // Row objects can have null style or protection properties that cause
-      // ExcelJS to crash during serialization. These properties are internal
-      // to ExcelJS and not exposed in TypeScript types, so we use type assertions.
-      
       const rowAny = row as any;
       
-      // Ensure row.style exists
-      if (!rowAny.style) {
-        rowAny.style = {};
-        rowsNormalized++;
+      // V2.8B.5: AGGRESSIVE - Delete row-level protection entirely
+      if (rowAny.protection !== undefined) {
+        delete rowAny.protection;
+        rowsStripped++;
       }
       
-      // Ensure row.protection exists
-      if (!rowAny.protection) {
-        rowAny.protection = { locked: false };
-        rowsNormalized++;
+      // V2.8B.5: AGGRESSIVE - Delete protection from row style
+      if (rowAny.style) {
+        if (rowAny.style.protection !== undefined) {
+          delete rowAny.style.protection;
+          rowsStripped++;
+        }
+      } else {
+        // Normalize null/malformed style container
+        rowAny.style = {};
       }
       
       row.eachCell({ includeEmpty: false }, (cell) => {
-        // Ensure cell.style exists as an object
+        // V2.8B.5: AGGRESSIVE - Delete cell-level protection entirely
+        // Normalize style container if null/malformed
         if (!cell.style || typeof cell.style !== 'object') {
           cell.style = {};
-          cellsSanitized++;
         }
         
-        // Ensure cell.style.protection exists and is not null
-        // This is the primary fix for the "Cannot read properties of null (reading 'locked')" error
-        if (cell.style.protection === null || cell.style.protection === undefined) {
-          cell.style.protection = {
-            locked: false,
-            hidden: false
-          };
-          cellsSanitized++;
-        } else if (typeof cell.style.protection === 'object') {
-          // Ensure protection object has required properties
-          if (cell.style.protection.locked === null || cell.style.protection.locked === undefined) {
-            cell.style.protection.locked = false;
-            cellsSanitized++;
-          }
-          if (cell.style.protection.hidden === null || cell.style.protection.hidden === undefined) {
-            cell.style.protection.hidden = false;
-            cellsSanitized++;
-          }
+        // DELETE protection metadata instead of normalizing
+        if (cell.style.protection !== undefined) {
+          delete cell.style.protection;
+          cellsStripped++;
         }
       });
     });
   });
   
-  if (worksheetsNeutralized > 0) {
-    console.log(`[V2.8B.3 EXPORT] Worksheet protection neutralized on ${worksheetsNeutralized} sheet(s)`);
+  // Comprehensive logging
+  if (worksheetsStripped > 0) {
+    console.log(`[V2.8B.5 EXPORT] Worksheet protection stripped: ${worksheetsStripped}`);
   }
-  if (rowsNormalized > 0) {
-    console.log(`[V2.8B.4 EXPORT] Row protection normalized on ${rowsNormalized} row(s)`);
+  if (columnsStripped > 0) {
+    console.log(`[V2.8B.5 EXPORT] Column protection stripped: ${columnsStripped}`);
   }
-  if (cellsSanitized > 0) {
-    console.log(`[V2.8B.1 EXPORT] Sanitized ${cellsSanitized} cell protection/style objects`);
+  if (rowsStripped > 0) {
+    console.log(`[V2.8B.5 EXPORT] Row protection stripped: ${rowsStripped}`);
   }
+  if (cellsStripped > 0) {
+    console.log(`[V2.8B.5 EXPORT] Cell protection stripped: ${cellsStripped}`);
+  }
+  
+  return {
+    worksheets: worksheetsStripped,
+    columns: columnsStripped,
+    rows: rowsStripped,
+    cells: cellsStripped
+  };
 }
 
 /**

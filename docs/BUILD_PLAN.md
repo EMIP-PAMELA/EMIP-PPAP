@@ -104,6 +104,7 @@ The Document Engine addendum (added in Version 3P.1) has been fully implemented 
 **Phase V2.8B:** ✅ Export Readiness Indicator
 **Phase V2.8B.1:** ✅ ExcelJS Workbook Stability Patch
 **Phase V2.8B.3:** ✅ Worksheet Protection Neutralization
+**Phase V2.8B.4:** ✅ Row-Level Protection Normalization
 **Phase V2.8C:** ✅ Required Field Summary
 
 **What is COMPLETE:**
