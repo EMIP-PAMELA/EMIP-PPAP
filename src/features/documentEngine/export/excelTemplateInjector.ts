@@ -142,11 +142,80 @@ export async function exportToExcelTemplate(
   
   console.log('[V2.6 EXPORT] Workbook export complete');
   
+  // V2.8B.1: Pre-write workbook sanitization
+  // Root cause: ExcelJS crashes during writeBuffer() when encountering null protection/style metadata
+  // in workbook cells. This occurs with certain PPAP template workbooks that have incomplete
+  // style/protection objects. We sanitize these before serialization to prevent:
+  // "TypeError: Cannot read properties of null (reading 'locked')"
+  console.log('[V2.8B.1 EXPORT] Sanitizing workbook for ExcelJS serialization compatibility');
+  sanitizeWorkbookForExport(workbook);
+  
   // Generate XLSX blob
-  const buffer = await workbook.xlsx.writeBuffer();
-  return new Blob([buffer], { 
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+  try {
+    const buffer = await workbook.xlsx.writeBuffer();
+    console.log('[V2.8B.1 EXPORT] Workbook serialization successful');
+    return new Blob([buffer], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+  } catch (error) {
+    console.error(`[V2.8B.1 EXPORT] writeBuffer failed for sheet "${cellMap.sheetName}"`, error);
+    throw new Error(`Excel export failed during workbook serialization: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * Sanitize workbook for ExcelJS export compatibility
+ * Phase V2.8B.1 - Fix null protection/style metadata that causes writeBuffer() crashes
+ * 
+ * ExcelJS Issue: Some PPAP workbook templates contain cells with null or incomplete
+ * protection/style objects. During serialization (writeBuffer), ExcelJS attempts to
+ * access properties like 'locked' on these null objects, causing:
+ * "TypeError: Cannot read properties of null (reading 'locked')"
+ * 
+ * Solution: Iterate through all worksheets and cells, normalizing any null/undefined
+ * protection or style objects to minimal safe defaults. This preserves workbook
+ * formatting while ensuring ExcelJS can serialize without crashing.
+ * 
+ * @param workbook - ExcelJS workbook to sanitize
+ */
+function sanitizeWorkbookForExport(workbook: ExcelJS.Workbook): void {
+  let cellsSanitized = 0;
+  
+  workbook.eachSheet((worksheet) => {
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        // Ensure cell.style exists as an object
+        if (!cell.style || typeof cell.style !== 'object') {
+          cell.style = {};
+          cellsSanitized++;
+        }
+        
+        // Ensure cell.style.protection exists and is not null
+        // This is the primary fix for the "Cannot read properties of null (reading 'locked')" error
+        if (cell.style.protection === null || cell.style.protection === undefined) {
+          cell.style.protection = {
+            locked: false,
+            hidden: false
+          };
+          cellsSanitized++;
+        } else if (typeof cell.style.protection === 'object') {
+          // Ensure protection object has required properties
+          if (cell.style.protection.locked === null || cell.style.protection.locked === undefined) {
+            cell.style.protection.locked = false;
+            cellsSanitized++;
+          }
+          if (cell.style.protection.hidden === null || cell.style.protection.hidden === undefined) {
+            cell.style.protection.hidden = false;
+            cellsSanitized++;
+          }
+        }
+      });
+    });
   });
+  
+  if (cellsSanitized > 0) {
+    console.log(`[V2.8B.1 EXPORT] Sanitized ${cellsSanitized} cell protection/style objects`);
+  }
 }
 
 /**

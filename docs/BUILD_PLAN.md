@@ -100,6 +100,7 @@ The Document Engine addendum (added in Version 3P.1) has been fully implemented 
 **Phase V2.7C:** ✅ Soft Pre-Export Completeness Warning
 **Phase V2.7D:** ✅ PFMEA Excel Injection (Limited + Honest)
 **Phase V2.7E:** ✅ Field-Level Context / "Why" Layer
+**Phase V2.8A:** ✅ Export Mapping Validation & Alignment
 
 **What is COMPLETE:**
 - ✅ Document generation engine (Process Flow, PFMEA, Control Plan, PSW)
