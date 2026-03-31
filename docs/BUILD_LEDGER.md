@@ -4,6 +4,154 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-31 10:01 CT - Phase V2.9A - Single Sheet Export
+
+**Summary:** Export only the selected worksheet instead of entire workbook to align with user intent
+
+**Problem Statement:**
+- Clean workbook rebuild (V2.8B.6) copied ALL sheets from template
+- Data injection targeted only ONE sheet (e.g., Control Plan)
+- Users received workbook with multiple sheets, only one populated
+- Unnecessary sheets (Sheet2, Sheet3, etc.) included
+- Export didn't reflect user's document selection
+- File size unnecessarily large
+- User experience confusing (multiple tabs, only one relevant)
+
+**Root Cause:**
+V2.8B.6 workbook rehydration used `sourceWorkbook.eachSheet()` to iterate and copy all sheets from the template workbook. This was a direct translation of "copy workbook structure" without considering that users select a specific document type (Control Plan, Process Flow, PFMEA) which maps to a single sheet. The export should align with user intent: "export this document" not "export this workbook."
+
+**Solution: Single-Sheet Export**
+
+Modify clean workbook rebuild to copy ONLY the target sheet specified in the cell mapping:
+
+**Implementation:**
+
+1. **Identify Target Sheet**
+   - Extract `sheetName` from `cellMap`
+   - This reflects user's document selection
+
+2. **Get Single Source Sheet**
+   - Replace `sourceWorkbook.eachSheet(...)` loop
+   - Use `sourceWorkbook.getWorksheet(targetSheetName)`
+   - Throw error if sheet not found
+
+3. **Create Clean Workbook with One Sheet**
+   - Create clean workbook
+   - Add single worksheet with target name
+
+4. **Copy Sheet Content**
+   - Copy column widths (V2.8B.6)
+   - Copy row values (V2.8B.6)
+   - Copy safe formatting (V2.8C.1)
+   - Same logic as before, but for single sheet only
+
+5. **Serialize Single-Sheet Workbook**
+   - Result contains only relevant sheet
+   - File size reduced
+   - User intent aligned
+
+**Files Modified:**
+- `src/features/documentEngine/export/excelTemplateInjector.ts` — Modified workbook rebuild to single-sheet
+
+**Technical Details:**
+
+**Before (V2.8B.6 - Multi-Sheet):**
+```typescript
+sourceWorkbook.eachSheet((sourceSheet) => {
+  const cleanSheet = cleanWorkbook.addWorksheet(sourceSheet.name);
+  // Copy all sheets from template
+});
+```
+
+**After (V2.9A - Single-Sheet):**
+```typescript
+// Get ONLY the target sheet
+const targetSheetName = cellMap.sheetName;
+const sourceSheet = sourceWorkbook.getWorksheet(targetSheetName);
+
+if (!sourceSheet) {
+  throw new Error(`Target worksheet "${targetSheetName}" not found in workbook template`);
+}
+
+const cleanSheet = cleanWorkbook.addWorksheet(sourceSheet.name);
+// Copy only the selected sheet
+```
+
+**Governance:**
+- ✅ V2.8B.6 clean workbook architecture preserved
+- ✅ V2.8C.1 formatting reconstruction preserved
+- ✅ Parser unchanged
+- ✅ Normalizer unchanged
+- ✅ Templates unchanged
+- ✅ Mapping coordinates unchanged
+- ✅ Guided completion unchanged
+- ✅ Dropdown system unchanged
+- ✅ Option registry unchanged
+- ✅ Data injection unchanged
+
+**Impact:**
+- ✅ Exported workbook contains only selected sheet
+- ✅ User intent aligned (selected Control Plan → exports Control Plan sheet only)
+- ✅ Reduced file size (no unnecessary sheets)
+- ✅ Cleaner user experience (single tab in Excel)
+- ✅ No confusion from empty sheets
+- ✅ Professional single-document export
+- ✅ PPAP document clarity improved
+
+**Console Output Example (V2.9A):**
+```
+[V2.6 EXPORT] Workbook export complete
+[V2.8B.6 EXPORT] Rehydrating workbook into clean ExcelJS-safe structure
+[V2.8C.1 EXPORT] Applying controlled formatting reconstruction
+[V2.9A EXPORT] Single sheet export: 7_Process Control Plan - Form
+[V2.9A EXPORT] Copying single worksheet: 7_Process Control Plan - Form
+[V2.9A EXPORT] Single sheet rehydrated: 7_Process Control Plan - Form
+[V2.8B.6 EXPORT] Values copied: 1247
+[V2.8C.1 EXPORT] Safe styles copied for 847 cells
+[V2.8C.1 EXPORT] Column widths preserved for 25 columns
+[V2.9A EXPORT] Single-sheet workbook serialization successful
+[V2.6 EXPORT] File download triggered: Control_Plan_2026-03-31.xlsx
+```
+
+**Export Behavior by Document Type:**
+
+| User Selection | Sheet Exported | Other Sheets |
+|----------------|----------------|--------------|
+| **Control Plan** | `7_Process Control Plan - Form` | ❌ None |
+| **Process Flow** | `8_Process Flow - Form` | ❌ None |
+| **PFMEA** | `6_PFMEA Summary - Form` | ❌ None |
+
+**Architecture Evolution:**
+
+| Phase | Sheets Exported | User Intent |
+|-------|-----------------|-------------|
+| **V2.8B.6** | All sheets (template structure) | ❌ Misaligned |
+| **V2.9A** | Single sheet (user selection) | ✅ **Aligned** |
+
+**Validation:**
+- ✅ TypeScript compilation successful
+- ✅ Export completes without errors
+- ✅ Workbook contains only one sheet
+- ✅ Sheet name matches cellMap.sheetName
+- ✅ Data correctly populated in single sheet
+- ✅ No extra/empty sheets included
+- ✅ File opens correctly in Excel
+
+**Notes:**
+- This is a fundamental shift from "template structure export" to "document export"
+- Template still contains multiple sheets (Control Plan, Process Flow, PFMEA)
+- Data injection still writes to template (multi-sheet)
+- Clean workbook rebuild now extracts ONLY the relevant sheet
+- Full PPAP workbook export (all documents in one file) deferred to future phase
+- Single-sheet approach aligns with typical document workflow (one export = one document)
+
+**Future Considerations:**
+- V2.9B could add multi-document export (e.g., "Export Complete PPAP Package")
+- Full workbook export would copy all sheets with data
+- Single-sheet export remains default for individual document exports
+
+---
+
 ## 2026-03-31 09:25 CT - Phase V2.8C.1 - Controlled Formatting Reconstruction
 
 **Summary:** Selectively reintroduce safe formatting to clean workbook exports to improve readability while preserving serialization stability

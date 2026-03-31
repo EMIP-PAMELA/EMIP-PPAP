@@ -276,11 +276,36 @@ export async function exportToExcelTemplate(
       });
     });
   
+  // V2.8C.3: Controlled Merge Reconstruction
+  // Restore merged cells from template to fix layout (applied AFTER data copy)
+  let mergesApplied = 0;
+  let mergesFailed = 0;
+  
+  try {
+    const sourceSheetAny = sourceSheet as any;
+    const merges = sourceSheetAny.model?.merges || [];
+    
+    console.log(`[V2.8C.3 EXPORT] Reconstructing ${merges.length} merged cell ranges`);
+    
+    merges.forEach((mergeRange: string) => {
+      try {
+        cleanSheet.mergeCells(mergeRange);
+        mergesApplied++;
+      } catch (e) {
+        console.warn(`[V2.8C.3 EXPORT] Failed to apply merge: ${mergeRange}`);
+        mergesFailed++;
+      }
+    });
+  } catch (e) {
+    console.warn('[V2.8C.3 EXPORT] Could not access source sheet merges');
+  }
+  
   // V2.9A: Single-sheet export summary
   console.log(`[V2.9A EXPORT] Single sheet rehydrated: ${targetSheetName}`);
   console.log(`[V2.8B.6 EXPORT] Values copied: ${valuesCopied}`);
   console.log(`[V2.8C.1 EXPORT] Safe styles copied for ${stylesCopied} cells`);
   console.log(`[V2.8C.1 EXPORT] Column widths preserved for ${columnsPreserved} columns`);
+  console.log(`[V2.8C.3 EXPORT] Merged cells applied: ${mergesApplied}${mergesFailed > 0 ? ` (${mergesFailed} failed)` : ''}`);
   
   // Generate XLSX blob from CLEAN workbook (single sheet)
   try {
