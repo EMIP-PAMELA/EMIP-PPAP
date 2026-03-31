@@ -273,6 +273,37 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
         )}
       </div>
 
+      {/* V2.8B: Export Readiness Indicator */}
+      {requiredFieldsStatus.totalRequired > 0 && (
+        <div className={`rounded-lg p-4 border ${
+          requiredFieldsStatus.remainingRequired === 0
+            ? 'bg-green-100 border-green-300'
+            : 'bg-yellow-100 border-yellow-300'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className={`text-sm font-semibold mb-1 ${
+                requiredFieldsStatus.remainingRequired === 0
+                  ? 'text-green-800'
+                  : 'text-yellow-800'
+              }`}>
+                {requiredFieldsStatus.remainingRequired === 0
+                  ? '✅ Document Ready for Export'
+                  : `⚠️ ${requiredFieldsStatus.remainingRequired} Required Field${requiredFieldsStatus.remainingRequired === 1 ? '' : 's'} Remaining`
+                }
+              </div>
+              <div className={`text-xs ${
+                requiredFieldsStatus.remainingRequired === 0
+                  ? 'text-green-700'
+                  : 'text-yellow-700'
+              }`}>
+                Completed: {requiredFieldsStatus.completedRequired} / {requiredFieldsStatus.totalRequired} required fields
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* V2.6Y: Guided Completion Status */}
       {requiredFieldsStatus.totalRequired > 0 && (
         <div className="bg-blue-50 border border-blue-300 rounded-lg p-4">
