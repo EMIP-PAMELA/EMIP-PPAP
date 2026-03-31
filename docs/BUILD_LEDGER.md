@@ -4,6 +4,253 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-31 16:45 CT - Phase V3.0A - PPAP Document Copilot Strategic Pivot
+
+**Summary:** Strategic architecture decision to pivot from direct workbook autofill toward document-specific AI copilot workflow
+
+**Type:** Architecture Decision Record (Planning Phase - Documentation Only)
+
+### Strategic Reassessment
+
+**Context:**
+
+Over the course of Phases V2.6 through V2.9B-PF.9, the EMIP-PPAP system explored direct customer workbook template autofill as the primary document creation strategy. This included:
+
+- Document generation from BOM data (Phases 9-11)
+- Template-based field mapping (Phase 12)
+- Excel workbook export experiments (V2.6B, V2.7B, V2.7D)
+- Process Flow template reconstruction (V2.9B-PF.1 through PF.9)
+- Export stability improvements (V2.8B.1 through V2.8B.6)
+- Template fidelity experiments (V2.8C.1, V2.8C.3, V2.8C.5, V2.9A)
+
+**Key Findings:**
+
+1. **Direct workbook reconstruction is brittle across customer-specific templates**
+   - Trane vs Rheem vs other customer template variations significant
+   - Excel protection metadata, merged cells, layout differences require per-customer maintenance
+   - High implementation cost for pixel-perfect template fidelity (V2.8B through V2.9B phases)
+   - Multi-column landmark detection (V2.9B-PF.9) necessary to handle template structure variations
+
+2. **Existing PPAP system provides strong orchestration foundation**
+   - Workflow tracking operational (Phases 3F-3K, Phases 9-21)
+   - Document requirement tracking functional
+   - Source file collection in place
+   - Readiness/status logic mature
+   - System already knows what documents needed, when, and who is responsible
+
+3. **AI copilot approach better aligned with system strengths**
+   - Template + BOM + context → structured draft more reliable than universal autofill
+   - AI can reason about engineering content, ask clarifying questions, flag missing information
+   - Operator-guided drafting aligns with human-in-the-loop best practices
+   - Reduces cognitive load while preserving operator authority for engineering judgment
+
+**Decision:**
+
+**The EMIP-PPAP system is pivoting from direct customer workbook autofill as the primary strategy toward a PPAP Document Copilot architecture.**
+
+This is not a replacement of the existing workflow system. This is a strategic evolution of how the system assists operators in creating PPAP documentation.
+
+### What Is Preserved
+
+**All existing PPAP infrastructure remains operational and valuable:**
+
+- ✅ PPAP workflow engine (state machine, validation, lifecycle management)
+- ✅ Role-based authority and pre-ack/post-ack boundaries
+- ✅ Document tracking and requirement classification (REQUIRED/CONDITIONAL)
+- ✅ Document action system (upload, create placeholder)
+- ✅ File upload and source document handling
+- ✅ BOM parsing and field validation experiments
+- ✅ Template structure understanding from V2.6-V2.9B work
+
+**Prior export/template work remains valuable as:**
+- Reference implementations for document structure understanding
+- Optional future capability for specific high-volume scenarios  
+- Foundation for output formatting from copilot-generated drafts
+
+**This is a strategy pivot, not a system reset.**
+
+### What Is Changing
+
+**Primary document creation strategy:**
+
+**FROM:**  
+❌ Universal direct workbook autofill (brittle, high maintenance, customer-specific mapping)
+
+**TO:**  
+✅ Document-specific AI copilot workflow (guided drafting, operator judgment, structured Q&A)
+
+### Architecture Decision
+
+**PPAP Workflow Engine vs Document Copilot Responsibility Split:**
+
+**Workflow Engine (Existing - Orchestration Layer):**
+- PPAP lifecycle tracking (what, when, who)
+- Required element selection
+- Ownership and assignment
+- Source file collection and staging
+- Readiness/status tracking
+- Document vault and audit logging
+- Submission gating
+
+**Document Copilot (New - Assistance Layer):**
+- Gather staged inputs per document type
+- Assemble document-specific prompt context
+- Ask clarifying questions (missing information detection)
+- Produce structured draft output with confidence tagging
+- Distinguish: known from files / inferred / requires confirmation / insufficient info
+- Support iterative refinement
+- Maintain draft session state
+
+**Clear Boundary:**
+- Workflow engine **ORCHESTRATES** (process control)
+- Document copilot **ASSISTS** (content creation)
+
+### Document Profile Model
+
+**Core Innovation: Configuration-driven copilot behavior per document type**
+
+Each document type requires a profile defining:
+- `documentType`, `displayName`
+- `requiredInputs`, `optionalInputs`, `knownSystemData`
+- `humanJudgmentAreas` (where operator expertise critical)
+- `starterPromptTemplate` (AI prompt structure)
+- `expectedOutputFormat` (structured draft schema)
+- `warnings`, `completionCriteria`
+
+**Initial Pilot Targets:**
+1. **Process Flow** (first pilot - well-defined structure, BOM-driven)
+2. **Control Plan** (second pilot - tests cross-document dependencies)
+
+**Out of Scope for Early Implementation:**
+- Full automation of all PPAP deliverables
+- Autonomous engineering decisions
+- Universal autofill for all customer templates
+- Final submission automation
+- Copilots for all 9+ document types (start with 2)
+
+### Implementation Roadmap
+
+**Phase V3.0A** (Current - Documentation):
+- Strategic pivot documented in BUILD_PLAN
+- Document profile planning model defined
+- Starter profiles for Process Flow and Control Plan specified
+- Responsibility split clarified
+
+**Phase V3.0B** (Next - Configuration + Launcher):
+- Document profile configuration system
+- Copilot launcher UI in DocumentWorkspace
+- "Start Copilot" action alongside Upload/Create
+- Profile-driven session initialization
+
+**Phase V3.0C** (Source File Staging):
+- Input staging interface per document profile
+- Prompt assembly engine
+- Context gathering from PPAP + files
+- Input validation against profile requirements
+
+**Phase V3.0D** (Copilot Workspace):
+- Copilot chat/workspace UI
+- Structured Q&A capture
+- Draft output capture with confidence tagging
+- Iterative refinement support
+
+**Phase V3.0E** (Integration):
+- Draft-to-document handoff workflow
+- Document status integration
+- Session state persistence
+- Seamless PPAP workflow integration
+
+**Future (V3.0F+):**
+- Additional document profiles (DFMEA, MSA, etc.)
+- Cross-document context passing
+- Template output formatting
+- Learning/feedback loops
+
+### Governance for V3.0 Implementation
+
+**MUST Preserve:**
+- PPAP workflow engine as single source of truth
+- Pre-ack/post-ack boundary
+- Document requirement tracking
+- Operator authority for final approval (AI assists, human decides)
+
+**MUST Implement:**
+- Document profiles as configuration (not hardcoded)
+- Confidence tagging on AI-generated content
+- Clear distinction: known / inferred / uncertain
+- Session state persistence
+
+**MUST NOT:**
+- Replace PPAP workflow engine
+- Auto-approve or auto-submit AI-generated documents
+- Make autonomous engineering decisions
+- Remove upload or manual creation paths
+
+### Rationale for Pivot
+
+**Technical:**
+- Direct workbook reconstruction brittle across customer variations
+- AI reasoning about engineering content > pixel-perfect template injection
+- Operator-guided drafting provides higher near-term ROI
+- Existing workflow system ideal orchestration layer for copilot integration
+
+**Operational:**
+- Operator remains responsible for engineering judgment
+- Reduces cognitive load while preserving authority
+- Faster time-to-value than perfecting universal autofill
+- Scales better across document types and customer variations
+
+**Strategic:**
+- Aligns with system strengths (workflow orchestration, context gathering)
+- Builds on existing infrastructure (no reset required)
+- Preserves prior work as reference and optional future capability
+- Human-in-the-loop aligns with PPAP quality requirements
+
+### Impact Assessment
+
+**No Breaking Changes:**
+- All existing PPAP workflow functionality preserved
+- Upload path remains available (external documents, operator preference)
+- Document generation experiments remain as reference
+- No code changes in V3.0A (documentation phase only)
+
+**Expected Benefits (Post-V3.0E):**
+- 30%+ reduction in time-to-first-draft for pilot documents
+- 80%+ copilot drafts accepted with minor edits
+- Improved operator experience (guided workflow, reduced ambiguity)
+- Better scalability across document types and customer variations
+
+**Risk Mitigation:**
+- Copilot is additive (existing paths remain)
+- Operator retains final approval authority
+- Phased rollout (2 pilot documents first)
+- Session state persistence (no work loss on page reload)
+
+### Documentation Deliverables (V3.0A)
+
+**BUILD_PLAN.md:**
+- ✅ V3.0A section added (584 lines)
+- ✅ Strategic pivot explained with rationale
+- ✅ Workflow engine vs copilot responsibility split defined
+- ✅ Document profile planning model specified
+- ✅ Starter profiles for Process Flow and Control Plan documented
+- ✅ Phase sequencing roadmap (V3.0A through V3.0E+)
+- ✅ Integration points with existing system clarified
+- ✅ Success metrics and governance rules defined
+
+**BUILD_LEDGER.md:**
+- ✅ Strategic decision record added (this entry)
+
+### Conclusion
+
+This architectural pivot represents a strategic reassessment based on implementation learnings from V2.6-V2.9B. The decision shifts focus from direct workbook autofill (high brittleness, high maintenance) to document-specific AI copilot workflow (operator-guided, structured drafting, human-in-the-loop).
+
+The existing PPAP workflow system remains the orchestration backbone. All prior work is preserved and remains valuable. This is a strategy evolution, not a system replacement.
+
+**Next Step:** Phase V3.0B implementation (document profile configuration + copilot launcher)
+
+---
+
 ## 2026-03-31 14:10 CT - Phase V2.9B-PF.9 - Multi-Column Landmark Detection
 
 **Summary:** Replace single-column detection with multi-column structure validation to identify true STEP table header

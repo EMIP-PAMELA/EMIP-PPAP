@@ -116,6 +116,7 @@ The Document Engine addendum (added in Version 3P.1) has been fully implemented 
 **Phase V2.9B-PF.4:** ✅ Symbol Image Browser Compatibility Fix
 **Phase V2.9B-PF.5:** ✅ Process Flow Data Injection Column Alignment Fix
 **Phase V2.9B-PF.8:** ✅ STEP Table Landmark Detection with Contextual Validation
+**Phase V2.9B-PF.9:** ✅ Multi-Column Landmark Detection (STEP + ROUTING + OPERATION)
 
 **What is COMPLETE:**
 - ✅ Document generation engine (Process Flow, PFMEA, Control Plan, PSW)
@@ -4238,6 +4239,580 @@ Near-Term: Phases W1-W3 (Wizard), Phases 44-46 (Orchestration)
 Mid-Term: Phase W4, Phase 47, Phase 25 (Additional Templates)
 Long-Term: Phase 48, Phase W5, Phase 26+ (Analytics)
 ```
+
+---
+
+## V3.0A — PPAP Document Copilot Strategic Pivot
+
+**Last Updated:** 2026-03-31  
+**Status:** Architecture Planning (Documentation Phase)
+
+### Strategic Decision
+
+**The EMIP-PPAP system is pivoting from direct customer workbook autofill as the primary strategy toward a PPAP Document Copilot architecture.**
+
+This is not a replacement of the existing system. This is a strategic evolution of how the system helps operators create PPAP documentation.
+
+### What Is Preserved
+
+**The existing PPAP workflow system remains the orchestration backbone:**
+
+- ✅ PPAP lifecycle management (Intake → Pre-Ack → Ack → Post-Ack → Submission)
+- ✅ State machine architecture and workflow boundaries
+- ✅ Role-based authority and validation tracking
+- ✅ Document tracking and readiness systems
+- ✅ File upload and source document handling
+- ✅ Progress visibility and audit trails
+
+**All prior implementation work remains valuable:**
+
+- ✅ Workflow structure and guided validation flow
+- ✅ Document action system and requirement tracking
+- ✅ Export/template investigations (V2.6-V2.9B phases)
+- ✅ BOM parsing and document generation experiments
+- ✅ Field-level validation and dependency chains
+
+**This is a strategy pivot, not a reset.**
+
+### What Is Changing
+
+**Primary document creation strategy shifts from:**
+
+❌ **Universal direct workbook autofill** (brittle across customer-specific templates)
+
+TO:
+
+✅ **Document-specific AI copilot workflow** (guided drafting with operator judgment)
+
+### Rationale for Pivot
+
+**Technical Assessment:**
+
+1. **Direct workbook reconstruction is brittle**
+   - Customer templates vary significantly (Trane vs Rheem vs others)
+   - Excel template structure differences require per-customer mapping
+   - Layout variations, merged cells, protection metadata cause instability
+   - Phases V2.8B-V2.9B demonstrated high maintenance cost for template fidelity
+
+2. **AI performs better in guided document reasoning workflows**
+   - Template + BOM + context → structured draft is more reliable than pixel-perfect workbook injection
+   - AI can reason about engineering content, ask clarifying questions, flag missing information
+   - Operator-guided drafting aligns with human-in-the-loop best practices
+
+3. **Existing PPAP system provides ideal orchestration layer**
+   - Document tracking already exists
+   - Source file collection already exists
+   - Readiness/status logic already exists
+   - System already knows what documents are needed and when
+
+4. **Higher near-term ROI with copilot approach**
+   - Faster time-to-value than perfecting universal autofill
+   - Scales better across document types and customer variations
+   - Operator remains responsible for engineering judgment and final quality
+   - Reduces cognitive load while preserving authority
+
+**Prior export/template work remains valuable as:**
+- Reference implementations for document structure understanding
+- Optional future capability for specific high-volume scenarios
+- Foundation for output formatting from copilot-generated drafts
+
+---
+
+### Responsibility Split: Workflow Engine vs Document Copilot
+
+**PPAP Workflow Engine Responsibilities (Existing System):**
+
+- ✅ PPAP creation and lifecycle tracking
+- ✅ Required element selection (which documents needed)
+- ✅ Ownership and assignment (who is responsible)
+- ✅ Source file collection and staging (BOM, drawings, templates)
+- ✅ Readiness and status tracking (workflow progression)
+- ✅ Document vault and audit logging
+- ✅ Progress visibility and reporting
+- ✅ Pre-ack/post-ack boundary enforcement
+- ✅ Submission gating and package assembly
+
+**Document Copilot Responsibilities (New Layer):**
+
+- 🔲 Gather staged inputs for a specific document type
+- 🔲 Assemble document-specific prompt context from available sources
+- 🔲 Ask clarifying questions before drafting (missing information detection)
+- 🔲 Produce structured draft output with confidence tagging
+- 🔲 Distinguish information categories:
+  - **Known from files** (high confidence, directly extracted)
+  - **Inferred/suggested** (medium confidence, AI reasoning)
+  - **Requires operator confirmation** (flagged for review)
+  - **Insufficient information** (blocks drafting, requests input)
+- 🔲 Support iterative refinement (operator feedback → revised draft)
+- 🔲 Maintain draft session state and history
+
+**Clear Boundary:**
+- Workflow engine **ORCHESTRATES** (what, when, who)
+- Document copilot **ASSISTS** (how to create specific document content)
+
+---
+
+### Initial Rollout Scope
+
+**In Scope for Early Implementation (V3.0B-V3.0E):**
+
+- ✅ Document copilot launcher concept and UI integration
+- ✅ Document type profile configuration system
+- ✅ Source file staging interface per document
+- ✅ Prompt assembly engine for copilot sessions
+- ✅ Structured Q&A capture and response handling
+- ✅ Structured draft output capture with confidence tagging
+- ✅ Draft-to-document handoff workflow
+- ✅ Session state persistence and recovery
+
+**Initial Pilot Document Targets:**
+
+1. **Process Flow** (first pilot)
+   - Well-defined structure (STEP, Operation, Machine, etc.)
+   - BOM-driven process step generation
+   - Clear input requirements (BOM, template, routing context)
+
+2. **Control Plan** (second pilot)
+   - Depends on Process Flow output
+   - Structured characteristic and control method definition
+   - Tests cross-document dependency handling
+
+**Out of Scope for Early Implementation:**
+
+- ❌ Full automation of all PPAP deliverables
+- ❌ Autonomous engineering decisions without operator oversight
+- ❌ Universal direct autofill for all Trane workbook sheets
+- ❌ Final submission automation (human approval required)
+- ❌ Replacing the existing PPAP workflow engine
+- ❌ Copilots for all 9+ document types (start with 2 pilots)
+
+---
+
+### Document Profile Planning Model
+
+**Each document type requires a profile that defines copilot behavior.**
+
+**Document Profile Schema (Planning Specification):**
+
+```typescript
+interface DocumentProfile {
+  // Identity
+  documentType: string;           // e.g., 'process_flow', 'control_plan'
+  displayName: string;             // e.g., 'Process Flow Diagram'
+  
+  // Input Requirements
+  requiredInputs: string[];        // Must be present to start copilot
+  optionalInputs: string[];        // Helpful but not required
+  knownSystemData: string[];       // Data system already has (PPAP context)
+  
+  // Guidance
+  humanJudgmentAreas: string[];    // Where operator expertise critical
+  starterPromptTemplate: string;   // Initial prompt structure for AI
+  expectedOutputFormat: string;    // Structure of draft output
+  
+  // Safety
+  warnings: string[];              // Important caveats for operators
+  completionCriteria: string[];    // What defines a "complete" draft
+}
+```
+
+**Profile Purpose:**
+
+1. **Configure copilot behavior** per document type
+2. **Define input staging requirements** (what files/data needed)
+3. **Structure AI prompts** with document-specific context
+4. **Guide operator interaction** with document-appropriate questions
+5. **Validate completeness** before allowing draft handoff
+
+**Implementation Note:**
+
+Profiles should be:
+- Configuration-driven (JSON or TypeScript config files)
+- Extensible (easy to add new document types)
+- Version-controlled (profiles evolve with learning)
+
+---
+
+### Starter Document Profiles (Planning Level)
+
+#### Profile 1: Process Flow Diagram
+
+**Document Type:** `process_flow`  
+**Display Name:** Process Flow Diagram
+
+**Required Inputs:**
+- BOM file (CSV or parsed data)
+- Customer template (Excel file) or template selection
+- Part number and PPAP context
+
+**Optional Inputs:**
+- Engineering drawing (for operation reference)
+- Prior example Process Flow (for routing pattern)
+- Routing notes or manufacturing context
+- Process step suggestions from engineer
+
+**Known System Data:**
+- PPAP number
+- Part number and revision
+- Customer name
+- Plant/build site
+- Engineer and coordinator names
+- Parsed BOM components and operations (if available)
+
+**Human Judgment Areas:**
+- **Routing sequence** (order of manufacturing operations)
+- **Inspection point inclusion** (where to inspect, what to measure)
+- **Scrap/rework handling** (when operations are conditional)
+- **Process-specific steps** (operations unique to this part/assembly)
+- **Symbol assignment** (operation vs inspection vs transport vs storage)
+
+**Starter Prompt Template:**
+```
+You are assisting an engineer in creating a Process Flow Diagram for a PPAP submission.
+
+CONTEXT:
+- Part Number: {partNumber}
+- Customer: {customer}
+- BOM Components: {bomSummary}
+
+TASK:
+Generate a proposed process flow with the following columns:
+- STEP (sequential number)
+- Routing Number
+- Operation Description
+- Machine/Equipment
+- Notes/Parameters
+
+For each operation, suggest:
+1. Operation type (assembly, inspection, transport, etc.)
+2. Equipment/tooling needed
+3. Key process parameters
+
+FLAG any areas where you need clarification or where engineering judgment is critical.
+
+OUTPUT FORMAT: Structured JSON with step array and open questions array.
+```
+
+**Expected Output Format:**
+```json
+{
+  "proposedSteps": [
+    {
+      "stepNumber": 1,
+      "operation": "Receive components",
+      "machine": "Receiving dock",
+      "notes": "Visual inspection of packaging",
+      "confidence": "high",
+      "symbol": "inspection"
+    }
+  ],
+  "openQuestions": [
+    "Should step 3 include a dimensional inspection point?",
+    "What is the scrap/rework routing for failed welds?"
+  ],
+  "assumptions": [
+    "Assumed welding occurs before final assembly based on BOM structure"
+  ]
+}
+```
+
+**Warnings:**
+- Copilot suggestions are starting points, not final engineering decisions
+- Operator must verify routing sequence matches manufacturing reality
+- Symbol assignments (operation/inspection/etc.) require operator confirmation
+- Equipment and tooling must be validated against plant capabilities
+
+**Completion Criteria:**
+- All process steps have operations defined
+- Open questions answered by operator
+- Draft approved by operator for export/refinement
+
+---
+
+#### Profile 2: Control Plan
+
+**Document Type:** `control_plan`  
+**Display Name:** Control Plan
+
+**Required Inputs:**
+- BOM file (or reference to existing)
+- Customer template (Excel file) or template selection
+- Process Flow (completed or in-progress) for step context
+- Part number and PPAP context
+
+**Optional Inputs:**
+- Engineering drawing (for critical features/dimensions)
+- Prior example Control Plan (for control method patterns)
+- Critical feature notes from engineer
+- Measurement equipment list
+
+**Known System Data:**
+- PPAP number
+- Part number and revision
+- Customer name
+- Plant/build site
+- Engineer and coordinator names
+- Parsed BOM/process step data (if available from Process Flow)
+
+**Human Judgment Areas:**
+- **Characteristic identification** (what to control at each step)
+- **Control methods** (how to measure/verify each characteristic)
+- **Sample size and frequency** (how often to inspect)
+- **Reaction plans** (what to do when out of spec)
+- **Critical-to-quality interpretation** (which features are most important)
+- **Specification limits** (tolerance ranges from drawing)
+
+**Starter Prompt Template:**
+```
+You are assisting an engineer in creating a Control Plan for a PPAP submission.
+
+CONTEXT:
+- Part Number: {partNumber}
+- Customer: {customer}
+- Process Steps: {processFlowSummary}
+
+TASK:
+For each process step, propose:
+1. Characteristics to control (dimensions, visual, functional)
+2. Control method (measurement tool, inspection type)
+3. Sample size and frequency
+4. Specification limits (if available from drawing)
+5. Reaction plan (corrective action if out of spec)
+
+FLAG any characteristics that require:
+- Drawing reference to determine spec limits
+- Special measurement equipment
+- Operator judgment on criticality
+
+OUTPUT FORMAT: Structured JSON with control plan rows and flagged items.
+```
+
+**Expected Output Format:**
+```json
+{
+  "controlPlanRows": [
+    {
+      "processStep": 1,
+      "characteristic": "Component spacing",
+      "controlMethod": "Caliper measurement",
+      "sampleSize": "5 per batch",
+      "frequency": "First article + every 50 units",
+      "specLimits": "NEEDS DRAWING REFERENCE",
+      "reactionPlan": "Hold lot, notify supervisor, rework if possible",
+      "confidence": "medium"
+    }
+  ],
+  "flaggedItems": [
+    "Spec limits for component spacing require drawing reference",
+    "Reaction plan for welding defects needs operator input"
+  ],
+  "assumptions": [
+    "Assumed visual inspection sufficient for cosmetic features"
+  ]
+}
+```
+
+**Warnings:**
+- Copilot cannot determine spec limits without drawing analysis
+- Control methods must match available measurement equipment at plant
+- Sample size and frequency require engineering judgment based on risk
+- Reaction plans must align with manufacturing procedures
+
+**Completion Criteria:**
+- All process steps have control rows defined
+- Spec limits filled in (from drawing or operator input)
+- Flagged items resolved by operator
+- Draft approved by operator for export/refinement
+
+---
+
+### Phase Sequencing (V3.0 Roadmap)
+
+**Phase V3.0A: Strategic Pivot + Document Profile Planning** ✅ (Current Phase)
+- Document the copilot pivot in BUILD_PLAN
+- Define responsibility split (workflow engine vs copilot)
+- Define document profile planning model
+- Create starter profiles for Process Flow and Control Plan
+- **Deliverable:** Updated BUILD_PLAN and BUILD_LEDGER (documentation only)
+
+**Phase V3.0B: Document Profile Configuration + Copilot Launcher**
+- Implement document profile configuration system (JSON/TypeScript)
+- Add copilot launcher UI in DocumentWorkspace
+- Create "Start Copilot" action alongside Upload/Create
+- Profile-driven copilot session initialization
+- **Deliverable:** Copilot entry point integrated into existing document UI
+
+**Phase V3.0C: Source File Staging + Prompt Builder**
+- Source file staging interface per document profile
+- Prompt assembly engine using profile templates
+- Context gathering from PPAP record + staged files
+- Input validation against profile requirements
+- **Deliverable:** Copilot session can gather inputs and build prompts
+
+**Phase V3.0D: Copilot Workspace + Q&A + Draft Capture**
+- Copilot chat/workspace UI for operator interaction
+- Structured Q&A capture and response handling
+- Draft output capture with confidence tagging
+- Iterative refinement support (operator feedback → revised draft)
+- **Deliverable:** Full copilot session workflow operational
+
+**Phase V3.0E: Document Status Integration + Operator Handoff**
+- Draft-to-document handoff workflow
+- Update document status when draft captured
+- Integration with existing document action system
+- Session state persistence and recovery
+- **Deliverable:** Copilot drafts integrate seamlessly with PPAP workflow
+
+**Future Phases (V3.0F+):**
+- Additional document profiles (DFMEA, MSA, Dimensional Results)
+- Cross-document context passing (Process Flow → Control Plan)
+- Template output formatting (copilot draft → Excel template)
+- Advanced confidence scoring and validation
+- Learning/feedback loop for profile improvement
+
+---
+
+### Integration with Existing System
+
+**Copilot integrates with PPAP workflow at document action level:**
+
+```
+[Document Card: Process Flow]
+├─ Status: Missing
+├─ Actions:
+│  ├─ Upload (existing)
+│  ├─ Create (placeholder - existing)
+│  └─ Start Copilot (NEW - V3.0B)
+└─ Copilot Session:
+   ├─ Stage Inputs (BOM, template, context)
+   ├─ Answer Questions (guided Q&A)
+   ├─ Review Draft (structured output)
+   └─ Accept/Refine (handoff to document system)
+```
+
+**Key Integration Points:**
+
+1. **Document Action System** (Phase 3F.14)
+   - Add 'copilot' to actions array for supported documents
+   - Copilot becomes third creation path alongside upload/create
+
+2. **Document Status Tracking**
+   - Copilot draft completion updates document status to 'ready'
+   - Draft stored as document session data (JSON)
+
+3. **Source File Staging**
+   - Reuse existing file upload infrastructure
+   - Copilot sessions reference staged files by PPAP ID + document type
+
+4. **PPAP Context Passing**
+   - Copilot prompt builder reads PPAP record (part number, customer, etc.)
+   - No duplicate data entry required
+
+**No Breaking Changes:**
+- Upload path remains available (external documents, operator preference)
+- Existing document generation experiments preserved
+- Copilot is additive, not replacement
+
+---
+
+### Success Metrics (Post-Implementation)
+
+**Pilot Phase Success Criteria:**
+
+1. **Operator Adoption**
+   - 50%+ of Process Flow documents use copilot in first month
+   - Positive operator feedback on time savings
+
+2. **Draft Quality**
+   - 80%+ of copilot drafts accepted with minor edits
+   - Reduced iteration cycles vs manual creation
+
+3. **Time Savings**
+   - 30%+ reduction in time-to-first-draft for Process Flow
+   - Measured via session timestamps and operator surveys
+
+4. **Engineering Quality**
+   - No increase in PPAP rejections due to copilot-assisted documents
+   - Operator retains final approval authority
+
+**System Stability:**
+- Copilot sessions do not disrupt existing workflow
+- Fallback to upload/manual creation always available
+- No impact on PPAP lifecycle tracking or submission gating
+
+---
+
+### Governance Rules for V3.0 Implementation
+
+**MUST Preserve:**
+- ✅ PPAP workflow engine as single source of truth for status/lifecycle
+- ✅ Pre-ack/post-ack boundary (copilot only available post-ack)
+- ✅ Document requirement tracking and submission gating
+- ✅ Operator authority for final approval (AI assists, human decides)
+
+**MUST Implement:**
+- ✅ Document profiles as configuration (not hardcoded)
+- ✅ Confidence tagging on all AI-generated content
+- ✅ Clear distinction between known/inferred/uncertain information
+- ✅ Session state persistence (copilot sessions survive page reload)
+
+**MUST NOT:**
+- ❌ Replace PPAP workflow engine or bypass existing tracking
+- ❌ Auto-approve or auto-submit copilot-generated documents
+- ❌ Make autonomous engineering decisions without operator input
+- ❌ Remove upload or manual creation paths
+
+---
+
+### Technical Architecture Notes
+
+**Copilot Session Model:**
+
+```typescript
+interface CopilotSession {
+  id: string;
+  ppapId: string;
+  documentType: string;
+  profile: DocumentProfile;
+  
+  stagedInputs: {
+    files: FileReference[];
+    systemData: Record<string, any>;
+    operatorInputs: Record<string, any>;
+  };
+  
+  conversation: {
+    messages: Message[];
+    questions: Question[];
+    responses: Response[];
+  };
+  
+  draft: {
+    content: any; // Profile-specific structured output
+    confidence: Record<string, ConfidenceLevel>;
+    timestamp: string;
+  };
+  
+  status: 'staging' | 'gathering' | 'drafting' | 'complete';
+}
+```
+
+**Profile Storage:**
+
+Profiles should live in:
+```
+src/features/documentCopilot/profiles/
+├─ processFlow.profile.ts
+├─ controlPlan.profile.ts
+└─ index.ts (profile registry)
+```
+
+**UI Integration:**
+
+Copilot UI should be:
+- Modal or slide-over (non-disruptive)
+- Closeable with session state saved
+- Resumable from document card
 
 ---
 
