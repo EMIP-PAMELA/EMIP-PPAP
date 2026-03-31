@@ -301,6 +301,41 @@ export function DocumentEditor({ draft, templateId, onFieldChange, onReset, hasC
               </div>
             </div>
           </div>
+
+          {/* V2.8C: Required Field Summary List */}
+          {requiredFieldsStatus.remainingRequired > 0 && (() => {
+            const incompleteFields = requiredFieldsStatus.requiredFields.filter(f => !f.completed);
+            const maxDisplay = 5;
+            const displayFields = incompleteFields.slice(0, maxDisplay);
+            const remainingCount = incompleteFields.length - maxDisplay;
+
+            return (
+              <div className="mt-3 pt-3 border-t border-yellow-200">
+                <div className="text-xs font-medium text-yellow-800 mb-2">Remaining:</div>
+                <ul className="text-xs text-yellow-700 space-y-1">
+                  {displayFields.map((field) => (
+                    <li key={field.path}>
+                      <button
+                        onClick={() => {
+                          const fieldElement = fieldRefs.current.get(field.path);
+                          if (fieldElement) {
+                            fieldElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            fieldElement.focus();
+                          }
+                        }}
+                        className="text-left hover:text-yellow-900 hover:underline cursor-pointer"
+                      >
+                        • {field.label}
+                      </button>
+                    </li>
+                  ))}
+                  {remainingCount > 0 && (
+                    <li className="text-yellow-600 italic">+ {remainingCount} more...</li>
+                  )}
+                </ul>
+              </div>
+            );
+          })()}
         </div>
       )}
 

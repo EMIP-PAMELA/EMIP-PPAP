@@ -4,6 +4,200 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-31 07:00 CT - Phase V2.8C - Required Field Summary
+
+**Summary:** Added concise list of remaining required fields under readiness indicator for improved visibility
+
+**Problem Statement:**
+- Users could see "X Required Fields Remaining" but not which fields
+- Had to manually scan document to find incomplete required fields
+- No quick reference for what still needs completion
+- Operators had to rely on guided completion navigation to discover missing fields
+- No at-a-glance view of specific incomplete fields
+
+**Solution: Required Field Summary List**
+
+Added lightweight, real-time summary list of incomplete required fields under the readiness indicator:
+
+**Implementation:**
+
+1. **Field Identification**
+   - Uses existing `requiredFieldsStatus.requiredFields` array
+   - Filters for fields where `completed === false`
+   - No new validation logic introduced
+   - Leverages existing field metadata and labels
+
+2. **Display Name Extraction**
+   - Uses field labels already computed in `requiredFieldsStatus`
+   - For header fields: uses field definition label
+   - For table fields: uses format "Table Name Row X - Column Name"
+   - Fallback to field key if no label available
+
+3. **List Rendering**
+   - Appears under readiness banner when `remainingRequired > 0`
+   - Shows "Remaining:" header
+   - Bullet list format with field names
+   - Small text (`text-xs`) for minimal visual weight
+   - Muted yellow color to match warning state
+
+4. **List Truncation**
+   - Maximum 5 fields displayed
+   - If more than 5 incomplete: shows "+ X more..." message
+   - Prevents UI clutter for documents with many required fields
+   - Example: "• Field A, • Field B, • Field C, • Field D, • Field E, + 3 more..."
+
+5. **Click-to-Scroll Behavior**
+   - Each field name is clickable
+   - Clicking scrolls to and focuses that field
+   - Uses existing `fieldRefs` system (no new navigation)
+   - Leverages existing scroll behavior from guided completion
+   - Hover effect (underline) indicates clickability
+
+6. **Real-Time Updates**
+   - List updates instantly as fields are completed
+   - Uses existing `useMemo` dependencies
+   - Automatically removes fields from list when completed
+   - No additional state tracking required
+
+**Files Modified:**
+- `src/features/documentEngine/ui/DocumentEditor.tsx` — Added required field summary list
+
+**Technical Details:**
+
+**Summary List Component:**
+```tsx
+{/* V2.8C: Required Field Summary List */}
+{requiredFieldsStatus.remainingRequired > 0 && (() => {
+  const incompleteFields = requiredFieldsStatus.requiredFields.filter(f => !f.completed);
+  const maxDisplay = 5;
+  const displayFields = incompleteFields.slice(0, maxDisplay);
+  const remainingCount = incompleteFields.length - maxDisplay;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-yellow-200">
+      <div className="text-xs font-medium text-yellow-800 mb-2">Remaining:</div>
+      <ul className="text-xs text-yellow-700 space-y-1">
+        {displayFields.map((field) => (
+          <li key={field.path}>
+            <button
+              onClick={() => {
+                const fieldElement = fieldRefs.current.get(field.path);
+                if (fieldElement) {
+                  fieldElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  fieldElement.focus();
+                }
+              }}
+              className="text-left hover:text-yellow-900 hover:underline cursor-pointer"
+            >
+              • {field.label}
+            </button>
+          </li>
+        ))}
+        {remainingCount > 0 && (
+          <li className="text-yellow-600 italic">+ {remainingCount} more...</li>
+        )}
+      </ul>
+    </div>
+  );
+})()}
+```
+
+**Governance:**
+- ✅ Export logic unchanged
+- ✅ Parser unchanged
+- ✅ Normalizer unchanged
+- ✅ Templates unchanged
+- ✅ Required field logic unchanged (uses existing `requiredFieldsStatus`)
+- ✅ Readiness indicator unchanged (V2.8B still functions)
+- ✅ Guided completion unchanged (V2.6Y still functions)
+- ✅ Dropdown system unchanged
+- ✅ Option registry unchanged
+- ✅ Field context tooltips unchanged
+
+**Impact:**
+- ✅ Clear visibility into which fields remain incomplete
+- ✅ Quick reference without scanning entire document
+- ✅ Click-to-scroll for instant navigation to incomplete fields
+- ✅ Real-time updates as fields are completed
+- ✅ No UI clutter (lightweight list with truncation)
+- ✅ No performance impact (uses existing data)
+- ✅ Works with all templates (Process Flow, Control Plan, PFMEA)
+- ✅ Complements V2.8B readiness indicator
+- ✅ No layout disruption
+
+**Relationship to Existing Features:**
+
+| Feature | Purpose | Interaction with V2.8C |
+|---------|---------|------------------------|
+| **V2.8B Readiness Indicator** | Show ready/not ready state | V2.8C appears under indicator when not ready |
+| **V2.6Y Guided Completion** | Navigate through required fields sequentially | V2.8C allows direct navigation to specific field |
+| **V2.7C Pre-Export Warning** | Block export if incomplete | V2.8C provides visibility before export attempt |
+
+**Visual Example:**
+
+**When 3 Fields Remain:**
+```
+┌─────────────────────────────────────────────────┐
+│ ⚠️ 3 Required Fields Remaining                  │
+│ Completed: 2 / 5 required fields                │
+│ ─────────────────────────────────────────────── │
+│ Remaining:                                      │
+│ • Failure Mode                                  │
+│ • Effect                                        │
+│ • Severity                                      │
+└─────────────────────────────────────────────────┘
+(Yellow background, clickable field names)
+```
+
+**When 8 Fields Remain (Truncated):**
+```
+┌─────────────────────────────────────────────────┐
+│ ⚠️ 8 Required Fields Remaining                  │
+│ Completed: 2 / 10 required fields               │
+│ ─────────────────────────────────────────────── │
+│ Remaining:                                      │
+│ • Failure Mode                                  │
+│ • Effect                                        │
+│ • Severity                                      │
+│ • Occurrence                                    │
+│ • Detection                                     │
+│ + 3 more...                                     │
+└─────────────────────────────────────────────────┘
+(Yellow background, list truncated at 5 items)
+```
+
+**When All Complete:**
+```
+┌─────────────────────────────────────────────────┐
+│ ✅ Document Ready for Export                    │
+│ Completed: 5 / 5 required fields                │
+└─────────────────────────────────────────────────┘
+(Green background, no list shown)
+```
+
+**Validation:**
+- ✅ TypeScript compilation successful
+- ✅ List displays correct incomplete fields
+- ✅ List updates in real-time as fields are completed
+- ✅ Truncation works correctly (max 5 items)
+- ✅ Click-to-scroll navigation functions properly
+- ✅ No duplicate or incorrect entries
+- ✅ UI remains clean and lightweight
+- ✅ No performance impact
+- ✅ Works with all templates
+- ✅ No regression in editing or export functionality
+
+**Notes:**
+- This is a pure visualization feature using existing data
+- No new validation or tracking logic introduced
+- Reuses existing `fieldRefs` and scroll behavior from V2.6Y
+- Complements existing readiness indicator and guided completion
+- Provides immediate visibility into specific incomplete fields
+- Lightweight implementation with minimal code changes
+- Truncation prevents UI clutter for documents with many required fields
+
+---
+
 ## 2026-03-30 20:45 CT - Phase V2.8B - Export Readiness Indicator
 
 **Summary:** Added real-time export readiness indicator with visual feedback for required field completion status
