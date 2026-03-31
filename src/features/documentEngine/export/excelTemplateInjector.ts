@@ -300,6 +300,56 @@ export async function exportToExcelTemplate(
     console.warn('[V2.8C.3 EXPORT] Could not access source sheet merges');
   }
   
+  // V2.8C.5: Deterministic Border Reconstruction
+  // Apply consistent borders to match Trane template visual grid (applied AFTER merges)
+  let bordersApplied = 0;
+  
+  console.log('[V2.8C.5 EXPORT] Applying deterministic border system');
+  
+  // Define table region (approximate based on typical PPAP structure)
+  const headerRowStart = 8;
+  const headerRowEnd = 10;
+  const dataRowStart = 11;
+  const maxRow = cleanSheet.rowCount || 100;
+  const maxCol = 30; // Typical PPAP column span
+  
+  // Apply borders to all cells in table region
+  for (let rowNum = headerRowStart; rowNum <= maxRow; rowNum++) {
+    const row = cleanSheet.getRow(rowNum);
+    
+    for (let colNum = 1; colNum <= maxCol; colNum++) {
+      const cell = row.getCell(colNum);
+      
+      // Skip if cell has no value (don't add borders to empty regions)
+      if (!cell.value) continue;
+      
+      // Determine border style based on position
+      const isHeaderRow = rowNum >= headerRowStart && rowNum <= headerRowEnd;
+      
+      if (isHeaderRow) {
+        // Header rows: medium top/bottom, thin left/right
+        cell.border = {
+          top: { style: 'medium' },
+          bottom: { style: 'medium' },
+          left: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      } else {
+        // Data rows: thin all sides (standard grid)
+        cell.border = {
+          top: { style: 'thin' },
+          bottom: { style: 'thin' },
+          left: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      }
+      
+      bordersApplied++;
+    }
+  }
+  
+  console.log(`[V2.8C.5 EXPORT] Deterministic borders applied: ${bordersApplied} cells`);
+  
   // V2.9A: Single-sheet export summary
   console.log(`[V2.9A EXPORT] Single sheet rehydrated: ${targetSheetName}`);
   console.log(`[V2.8B.6 EXPORT] Values copied: ${valuesCopied}`);
