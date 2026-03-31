@@ -4,6 +4,214 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-31 17:00 CT - Phase V3.1A - Engineer Command Center Architecture Planning
+
+**Summary:** Strategic architecture decision to introduce a user-centric "Engineer Command Center" layer as the third complementary architecture layer
+
+**Type:** Architecture Decision Record (Planning Phase - Documentation Only)
+
+### Strategic Context
+
+**Background:**
+
+The EMIP-PPAP system has evolved through multiple phases to establish:
+
+1. **Robust PPAP Workflow System** (Phases 3F-3K, 9-21)
+   - State-machine driven lifecycle management
+   - Document tracking and requirement classification
+   - Pre-ack/post-ack boundary enforcement
+   - Role-based authority and validation
+
+2. **Document Copilot Architecture** (Phase V3.0A - documented)
+   - AI-assisted document creation layer
+   - Profile-driven guided drafting
+   - Human-in-the-loop operator judgment
+   - Complementary to workflow system
+
+**Current Gap Identified:**
+
+Despite strong PPAP and document systems, there is no user-centric "command surface" that aggregates a user's work across all PPAPs. Engineers must currently:
+
+- Navigate to each PPAP individually to check assignments
+- Remember which documents they were working on across multiple PPAPs
+- Track copilot sessions separately for each context
+- Check email/Slack for notifications rather than having system visibility
+- Spend cognitive overhead on "what do I need to work on?"
+
+This creates friction and reduces system adoption.
+
+### Strategic Decision
+
+**The EMIP-PPAP system is introducing a new Engineer Command Center as the third conceptual architecture layer alongside the PPAP workflow system and Document Copilot architecture.**
+
+This is a user-centric operating layer that aggregates all of a user's assignments, documents, messages, and work-in-progress across PPAPs into a single, coherent command view.
+
+### The Three-Layer Model
+
+**Layer 1: Global / Organizational PPAP Layer**
+- All PPAPs, management visibility, coordination
+- Routes: `/ppap`, `/ppap/dashboard`
+- System-wide perspective
+
+**Layer 2: PPAP Workspace Layer**
+- One PPAP at a time — contextual execution
+- Routes: `/ppap/[id]`, `/ppap/[id]/documents`
+- Document-action oriented, workflow-governed
+
+**Layer 3: User Command Center Layer (NEW)**
+- Everything assigned to one user — personal operating cockpit
+- Route: `/command-center` or `/my-workspace`
+- Cross-PPAP visibility, action-oriented, resumption-friendly
+
+### Purpose of the Command Center
+
+The Command Center answers critical questions for each user:
+
+**Immediate Attention:**
+- What do I need to work on right now?
+- What is blocked and waiting on me?
+- What is ready for my review or action?
+
+**Work Management:**
+- What documents are still in draft awaiting confirmation?
+- Which copilot sessions have unresolved AI questions?
+- What PPAPs am I responsible for across the system?
+
+**Efficiency:**
+- Can I resume my last draft without navigating through multiple PPAPs?
+- Can I see everything needing my attention without opening each PPAP individually?
+
+### Core Information Domains
+
+The Command Center must aggregate:
+
+1. **My Work** — Assigned PPAPs and documents with status
+2. **My Documents** — Cross-PPAP visibility of all document work (drafts, pending, completed)
+3. **My Copilot Sessions** — Active and resumable AI-assisted work
+4. **Messages / Notifications** — Direct mentions, QA feedback, requests, alerts
+5. **Recent Activity** — Personal work history and audit trail
+6. **Quick Actions** — Fastest path to common workflows
+
+### Integration with V3.0A Document Copilot
+
+**Critical Design Decision:** The Command Center surfaces copilot work from BOTH contexts:
+
+**PPAP-Bound Copilot Work:**
+- Tied to specific PPAPs
+- Governed by workflow rules
+- Audit-friendly, tracked in PPAP record
+
+**Standalone/Freeform Copilot Work:**
+- Not tied to active PPAP
+- Flexible, personal workspace
+- Can be attached to PPAP later
+- Supports both guided mode (profile-driven) and freeform mode (exploratory)
+
+This dual-mode support is essential for meeting users where they are — some work is structured PPAP deliverables, some is exploratory engineering assistance.
+
+### Draft / Final / Export Lifecycle
+
+**Key Architecture Principle:** AI-generated outputs should NOT default to downloading to local Downloads.
+
+**Three-Stage Lifecycle:**
+
+1. **Draft Output (Internal)** — AI-generated, reviewable, editable, stored in system
+2. **Finalized Output (System-Owned)** — User-approved, immutable, traceable source of truth
+3. **Export / Download (Optional)** — Manual action, secondary to system storage
+
+This supports auditability, version control, reuse, collaboration, and traceability.
+
+### Relationship to Existing Systems
+
+**Command Center is:**
+
+✅ **Layered on top** — Uses existing PPAP workflow, document engine, copilot engine
+✅ **Evolution, not rewrite** — Builds on all prior work (workflow, tracking, V3.0A planning)
+✅ **Complementary** — PPAP workspaces remain essential; Command Center is the launchpad
+
+**Prior work preserved:**
+- PPAP workflow system (state machine, validation)
+- Document tracking and action system
+- V3.0A Document Copilot architecture
+- All export/template investigations (reference value)
+
+### Implementation Roadmap (V3.1)
+
+**V3.1A** (Current - Documentation): Architecture planning, 3-layer model, domains defined ✅
+
+**V3.1B** (Next - Shell): Data aggregation model, `/command-center` route, basic layout
+
+**V3.1C** (Core - My Work): "My Work" and "My Documents" panels, cross-PPAP visibility
+
+**V3.1D** (Copilot Integration): "My Copilot Sessions", notifications surface, session resumption
+
+**V3.1E** (Standalone Mode): Standalone workspace, quick actions, attachment workflow
+
+**V3.1F+** (Future): History, analytics, personalization, collaboration features
+
+### Governance for Implementation
+
+**MUST Preserve:**
+- PPAP workflow engine as source of truth
+- Document action system (upload, create, copilot)
+- Pre-ack/post-ack boundary
+- V3.0A Document Copilot architecture
+
+**MUST Implement:**
+- Command Center as additive layer
+- Draft/final/export lifecycle (not auto-download)
+- State preservation across context switches
+- Both PPAP-bound and standalone copilot contexts
+
+**MUST NOT:**
+- Replace PPAP workspaces
+- Bypass workflow tracking
+- Auto-export drafts as primary behavior
+- Remove existing creation paths
+
+### No Code Changes (V3.1A)
+
+This phase is strictly documentation and architecture planning. No application code, UI components, routes, or database changes are made.
+
+**Files Updated:**
+- `docs/BUILD_PLAN.md` — V3.1A section added (770+ lines)
+- `docs/BUILD_LEDGER.md` — This decision record
+
+### Expected Impact
+
+**Strategic:**
+- Shift from object-centric (navigate to PPAP → find work) to user-centric (see all work → act)
+- Command Center becomes preferred entry point for daily work
+- Reduced friction increases system adoption and user satisfaction
+
+**Operational:**
+- 50%+ reduction in time to find assigned work
+- 30%+ reduction in time to resume in-progress work
+- Reduced email/Slack traffic for status updates
+
+**Technical:**
+- No breaking changes to existing systems
+- Additive architecture that preserves all prior work
+- Scalable foundation for future enhancements
+
+### Rationale
+
+**Why Now:**
+- PPAP workflow system mature and stable
+- V3.0A copilot pivot establishes AI-assisted layer
+- User friction identified (cognitive overhead of tracking work across PPAPs)
+- System ready for user-centric operating layer
+
+**Why This Approach:**
+- Complements rather than replaces existing architecture
+- Three-layer model provides clear separation of concerns
+- Draft/final/export lifecycle aligns with audit and quality requirements
+- Dual-mode copilot support (PPAP-bound + standalone) meets diverse user needs
+
+**Next Step:** Phase V3.1B implementation (Command Center route/shell + data aggregation)
+
+---
+
 ## 2026-03-31 16:45 CT - Phase V3.0A - PPAP Document Copilot Strategic Pivot
 
 **Summary:** Strategic architecture decision to pivot from direct workbook autofill toward document-specific AI copilot workflow
