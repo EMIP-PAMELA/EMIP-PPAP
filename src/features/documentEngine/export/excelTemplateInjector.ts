@@ -130,6 +130,11 @@ export async function exportToExcelTemplate(
       
       console.log('[V2.6 EXPORT] Data rows written:', rowsWritten);
       console.log(`[V2.8A EXPORT] Row injection complete: rows ${cellMap.rowMappings.startRow}-${cellMap.rowMappings.startRow + rowsWritten - 1}`);
+      
+      // V2.9B-PF.5: Process Flow data placement verification
+      if (cellMap.sheetName === '5-Proces Flow Diagram' && rowsWritten > 0) {
+        console.log(`[V2.9B-PF.5 EXPORT] Process Flow data injected: ${rowsWritten} rows starting at row ${cellMap.rowMappings.startRow}`);
+      }
     } else {
       console.warn('[V2.6 EXPORT] Row data field is not an array:', cellMap.rowMappings.dataFieldKey);
     }

@@ -4,6 +4,147 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-31 12:51 CT - Phase V2.9B-PF.4 - Fix Symbol Image Rendering (Browser-Compatible)
+
+**Summary:** Replace Node.js file-based image loading with browser-compatible base64 embedding for symbol images
+
+**Problem Statement:**
+- V2.9B-PF.1 implemented symbol images using `fs.readFileSync()`
+- Node.js `fs` module not available in browser environment
+- Images failed to load in Next.js frontend (browser)
+- Symbol row appeared empty in exported Excel
+- No runtime errors thrown (silent failure)
+- Critical feature broken in production environment
+
+**Root Cause:**
+V2.9B-PF.1 used Node.js-specific `fs` and `path` modules to read image files from disk. This works in server-side Node.js but fails in browser environments where the export function executes. Next.js frontend runs in the browser, so file system access is unavailable. ExcelJS requires image data as buffer or base64 string. Browser environment requires fetch API and FileReader for loading assets.
+
+**Solution: Browser-Compatible Base64 Image Loading**
+
+Replace file system access with browser-native fetch API and base64 conversion:
+
+**Implementation:**
+
+1. **Base64 Loader Helper**
+   - Use `fetch()` to load image from public URL
+   - Convert blob to base64 using `FileReader`
+   - Return Promise with base64 string
+
+2. **Image Loading**
+   - Load all 5 symbol icons via fetch
+   - Convert to base64 format
+   - Async/await pattern for sequential loading
+
+3. **ExcelJS Registration**
+   - Use `base64` property instead of `buffer`
+   - Same image placement logic (unchanged)
+
+**Files Modified:**
+- `src/features/documentEngine/export/excelTemplateInjector.ts` — Replaced fs-based loading with fetch-based base64
+
+**Technical Details:**
+
+**Base64 Loader Implementation:**
+```typescript
+const loadImageAsBase64 = async (url: string): Promise<string> => {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+```
+
+**Before (V2.9B-PF.1 - Node.js only):**
+```typescript
+const fs = require('fs');
+const path = require('path');
+const iconsPath = path.join(process.cwd(), 'public', 'icons');
+const greenCircle = fs.readFileSync(path.join(iconsPath, 'green_circle.png'));
+
+cleanWorkbook.addImage({
+  buffer: greenCircle,
+  extension: 'png'
+});
+```
+
+**After (V2.9B-PF.4 - Browser-compatible):**
+```typescript
+const greenCircleBase64 = await loadImageAsBase64('/icons/green_circle.png');
+
+cleanWorkbook.addImage({
+  base64: greenCircleBase64,
+  extension: 'png'
+});
+```
+
+**Governance:**
+- ✅ V2.9B-PF.1 layout unchanged
+- ✅ Column structure unchanged
+- ✅ Text rotation unchanged
+- ✅ Image placement logic unchanged (same row/col positions)
+- ✅ Border system unchanged
+- ✅ Data mapping unchanged
+- ✅ Only image loading mechanism changed
+
+**Impact:**
+- ✅ Symbol images now load in browser environment
+- ✅ Next.js frontend compatibility restored
+- ✅ Base64 embedding works in all environments
+- ✅ Image positioning unchanged
+- ✅ Export functionality fully operational
+- ✅ No server-side rendering required
+
+**Console Output Example (V2.9B-PF.4):**
+```
+[V2.9B-PF.1 EXPORT] Rebuilding Process Flow header with symbols
+[V2.9B-PF.4 EXPORT] Symbol images loaded via base64
+[V2.9B-PF.4 EXPORT] Symbol images added to row 2
+[V2.9B-PF.1 EXPORT] Process Flow header + symbols rebuilt
+```
+
+**Browser vs. Node.js:**
+
+| Approach | Environment | Status |
+|----------|-------------|--------|
+| **fs.readFileSync** | Node.js only | ❌ Fails in browser |
+| **fetch + base64** | Browser + Node.js | ✅ **Universal** |
+
+**Why Base64:**
+
+- ✅ Works in browser (no file system access needed)
+- ✅ Works in Node.js (fetch polyfill available)
+- ✅ Self-contained (images embedded in workbook)
+- ✅ No external dependencies
+- ✅ ExcelJS native support for base64
+
+**Validation:**
+- ✅ TypeScript compilation successful
+- ✅ Export completes without errors
+- ✅ Symbol images render in Excel
+- ✅ Image positioning correct
+- ✅ Layout unchanged
+- ✅ Browser-compatible implementation
+
+**Notes:**
+- Base64 approach is universal (browser + Node.js)
+- Images embedded in Excel file (self-contained)
+- Fetch API is standard in modern browsers
+- FileReader API is standard in modern browsers
+- No polyfills required for Next.js environment
+- Image URLs relative to public directory (`/icons/...`)
+
+**Future Considerations:**
+- Base64 increases file size slightly (acceptable for small icons)
+- Could implement caching if performance becomes concern
+- Current implementation sufficient for PPAP workflow
+
+---
+
 ## 2026-03-31 12:11 CT - Phase V2.9B-PF.1 - Process Flow Header + Symbol Reconstruction
 
 **Summary:** Rebuild Process Flow header section with deterministic layout and image-based symbols matching Trane template

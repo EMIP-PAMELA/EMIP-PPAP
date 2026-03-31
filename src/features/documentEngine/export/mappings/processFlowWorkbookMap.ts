@@ -60,31 +60,32 @@ export const PROCESS_FLOW_WORKBOOK_MAP: WorkbookCellMap = {
   
   // V2.8A VALIDATED: Row-based data injection for process steps
   // V2.9B-PF.1: Updated to row 3 after header reconstruction (rows 1-2)
+  // V2.9B-PF.5: Fixed column mappings to align with header structure (C-G are symbol columns)
   rowMappings: {
     dataFieldKey: 'processSteps', // Array field from wizard template
     startRow: 3, // V2.9B-PF.1: Row 3 is first data row (rows 1-2 are header + symbols)
     columnMappings: [
       {
         fieldKey: 'stepNumber',
-        column: 'A', // VALIDATED: Column A = Step Number / Operation Number
+        column: 'A', // Column A = STEP (row number)
         label: 'Step Number'
       },
       {
         fieldKey: 'operation',
-        column: 'B', // VALIDATED: Column B = Process / Operation Description
+        column: 'H', // V2.9B-PF.5: Column H = Operation Description (C-G are symbols)
         label: 'Operation/Process Description'
       },
       {
         fieldKey: 'machine',
-        column: 'C', // VALIDATED: Column C = Machine / Equipment / Work Center
+        column: 'I', // V2.9B-PF.5: Column I = Machine/Equipment (after symbols)
         label: 'Machine/Equipment/Tool'
       },
       {
         fieldKey: 'notes',
-        column: 'D', // VALIDATED: Column D = Process Parameters / Notes
+        column: 'J', // V2.9B-PF.5: Column J = Notes (after machine)
         label: 'Notes / Process Parameters'
       }
-      // Columns E-V available for future expansion (inputs, outputs, controls, etc.)
+      // Columns K+ available for future expansion (inputs, outputs, controls, etc.)
       // Currently unmapped as wizard does not generate these fields
     ]
   }
