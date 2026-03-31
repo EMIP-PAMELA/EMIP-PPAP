@@ -142,24 +142,32 @@ export async function exportToExcelTemplate(
   
   console.log('[V2.6 EXPORT] Workbook export complete');
   
-  // V2.8B.6 + V2.8C.1: Workbook Rehydration with Controlled Formatting Reconstruction
+  // V2.8B.6 + V2.8C.1 + V2.9A: Single-Sheet Workbook Rehydration
   // V2.8B.6: Clean workbook rebuild eliminates ExcelJS template corruption
   // V2.8C.1: Selectively reintroduce safe formatting for readability
-  // Architecture: Template as data source → Clean workbook → Safe formatting → Serialize
+  // V2.9A: Export only the selected sheet (user intent alignment)
+  // Architecture: Template as data source → Clean workbook (single sheet) → Safe formatting → Serialize
   console.log('[V2.8B.6 EXPORT] Rehydrating workbook into clean ExcelJS-safe structure');
   console.log('[V2.8C.1 EXPORT] Applying controlled formatting reconstruction');
+  console.log(`[V2.9A EXPORT] Single sheet export: ${cellMap.sheetName}`);
   
   const sourceWorkbook = workbook;
   const cleanWorkbook = new ExcelJS.Workbook();
   
-  let worksheetsCopied = 0;
   let valuesCopied = 0;
   let stylesCopied = 0;
   let columnsPreserved = 0;
   
-  sourceWorkbook.eachSheet((sourceSheet) => {
-    console.log(`[V2.8C.1 EXPORT] Copying worksheet: ${sourceSheet.name}`);
-    const cleanSheet = cleanWorkbook.addWorksheet(sourceSheet.name);
+  // V2.9A: Get ONLY the target sheet from source workbook
+  const targetSheetName = cellMap.sheetName;
+  const sourceSheet = sourceWorkbook.getWorksheet(targetSheetName);
+  
+  if (!sourceSheet) {
+    throw new Error(`Target worksheet "${targetSheetName}" not found in workbook template`);
+  }
+  
+  console.log(`[V2.9A EXPORT] Copying single worksheet: ${sourceSheet.name}`);
+  const cleanSheet = cleanWorkbook.addWorksheet(sourceSheet.name);
     
     // Copy column widths (safe metadata - V2.8B.6)
     if (sourceSheet.columns) {
@@ -267,29 +275,27 @@ export async function exportToExcelTemplate(
         }
       });
     });
-    
-    worksheetsCopied++;
-  });
   
-  console.log(`[V2.8B.6 EXPORT] Workbook rehydrated: ${worksheetsCopied} sheets, ${valuesCopied} values copied`);
+  // V2.9A: Single-sheet export summary
+  console.log(`[V2.9A EXPORT] Single sheet rehydrated: ${targetSheetName}`);
+  console.log(`[V2.8B.6 EXPORT] Values copied: ${valuesCopied}`);
   console.log(`[V2.8C.1 EXPORT] Safe styles copied for ${stylesCopied} cells`);
   console.log(`[V2.8C.1 EXPORT] Column widths preserved for ${columnsPreserved} columns`);
   
-  // Generate XLSX blob from CLEAN workbook
+  // Generate XLSX blob from CLEAN workbook (single sheet)
   try {
     const buffer = await cleanWorkbook.xlsx.writeBuffer();
-    console.log('[V2.8B.6 EXPORT] Workbook serialization successful');
+    console.log('[V2.9A EXPORT] Single-sheet workbook serialization successful');
     return new Blob([buffer], { 
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
     });
   } catch (error) {
-    // V2.8B.6: Error reporting for rehydration failures
-    console.error(`[V2.8B.6 EXPORT] writeBuffer failed after workbook rehydration`);
-    console.error(`[V2.8B.6 EXPORT] Sheet: "${cellMap.sheetName}"`);
-    console.error(`[V2.8B.6 EXPORT] Worksheets copied: ${worksheetsCopied}`);
-    console.error(`[V2.8B.6 EXPORT] Values copied: ${valuesCopied}`);
-    console.error(`[V2.8B.6 EXPORT] Error:`, error);
-    throw new Error(`Excel export failed during workbook serialization for "${cellMap.sheetName}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+    // V2.9A: Error reporting for single-sheet export failures
+    console.error(`[V2.9A EXPORT] writeBuffer failed for single-sheet export`);
+    console.error(`[V2.9A EXPORT] Target sheet: "${targetSheetName}"`);
+    console.error(`[V2.9A EXPORT] Values copied: ${valuesCopied}`);
+    console.error(`[V2.9A EXPORT] Error:`, error);
+    throw new Error(`Excel export failed during single-sheet serialization for "${targetSheetName}": ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
