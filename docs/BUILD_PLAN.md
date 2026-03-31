@@ -5577,6 +5577,740 @@ This phase is strictly documentation and architecture planning. No application c
 
 ---
 
+## V3.2A — System Domain Map
+
+**Last Updated:** 2026-03-31  
+**Status:** Architecture Planning (Documentation Phase)
+
+### Purpose
+
+**The EMIP-PPAP system requires explicit domain boundaries to prevent architectural drift, overlapping responsibilities, and unclear data ownership as the platform evolves.**
+
+As the system grows to include:
+- PPAP workflow system (established)
+- Document Copilot system (V3.0A)
+- Engineer Command Center (V3.1A)
+- EMIP (SKU/component intelligence)
+- User Workspace/Vault system
+
+There is increasing risk of:
+- **Overlapping responsibilities** — multiple domains trying to control the same data
+- **Duplicated data ownership** — confusion about which system is source of truth
+- **Unclear system authority** — ambiguous decision-making boundaries
+- **Future architectural drift** — gradual erosion of separation of concerns
+
+This domain map establishes clear boundaries, explicit ownership contracts, and anti-drift rules to maintain architectural integrity.
+
+---
+
+### Domain Overview
+
+The EMIP-PPAP platform consists of **six distinct system domains**, each with clearly defined responsibilities and ownership boundaries:
+
+| Domain | Purpose | Primary Concern |
+|--------|---------|-----------------|
+| **Core Platform** | Foundation layer | Identity, access, storage primitives |
+| **PPAP Workflow** | Workflow orchestration | PPAP lifecycle, assignments, status |
+| **Document Copilot** | AI-assisted creation | Draft generation, Q&A flows |
+| **Command Center** | User operating surface | Aggregated visibility, task management |
+| **Workspace/Vault** | File management | Storage, organization, retrieval |
+| **EMIP** | Product intelligence | SKUs, components, relationships |
+
+Each domain is a **separate, independent responsibility layer** with explicit contracts for what it owns, what it consumes, and what it produces.
+
+---
+
+## 1. Core Platform Domain
+
+### Purpose
+
+Foundational system layer providing identity, access control, storage primitives, and notification infrastructure used by all other domains.
+
+### Owns (Authoritative Control)
+
+| Entity | Ownership |
+|--------|-----------|
+| **Users** | User accounts, profiles, credentials |
+| **Authentication** | Login sessions, tokens, auth state |
+| **Permissions** | Role definitions, access rules, grants |
+| **Global Storage Primitives** | Blob storage abstraction, file references |
+| **Notification Infrastructure** | Delivery mechanisms, channels, preferences |
+
+**Single Source of Truth For:**
+- Who can access the system (users)
+- What they can do (permissions)
+- How they prove identity (authentication)
+- Where files are stored (storage primitives)
+- How notifications are delivered (infrastructure)
+
+### Does NOT Own
+
+| Area | Rationale |
+|------|-----------|
+| **PPAP logic** | Belongs to PPAP Workflow Domain |
+| **Documents** | Belongs to Document Copilot/Workspace Domains |
+| **SKU/component data** | Belongs to EMIP Domain |
+| **Copilot logic** | Belongs to Document Copilot Domain |
+| **Business workflow state** | Belongs to appropriate workflow domain |
+| **Document meaning** | Belongs to Document Copilot Domain |
+
+### Consumes
+
+- **None** — Core Platform is the root domain
+
+### Produces
+
+| Output | Consumers |
+|--------|-----------|
+| **Identity** | All domains (who is acting) |
+| **Access Control** | All domains (authorization decisions) |
+| **Storage Capability** | Workspace/Vault (file storage) |
+| **Notification Events** | All domains (event publication) |
+
+---
+
+## 2. PPAP Workflow Domain
+
+### Purpose
+
+Manage PPAP lifecycle, workflow execution, assignment of work, and tracking of required deliverables through the PPAP process.
+
+### Owns (Authoritative Control)
+
+| Entity | Ownership |
+|--------|-----------|
+| **PPAP Entities** | PPAP records, lifecycle state, metadata |
+| **PPAP Status** | Current state, transitions, history |
+| **Assignment of Work** | Who is responsible for what |
+| **Workflow Progression** | State machine, gates, transitions |
+| **Required Document Tracking** | What documents are needed, their status |
+| **Readiness State** | PPAP-level readiness, submission gating |
+| **Pre-ack/Post-ack Boundaries** | Workflow phase enforcement |
+
+**Single Source of Truth For:**
+- What PPAPs exist and their current state
+- Who is assigned to each PPAP
+- What documents are required for each PPAP
+- Workflow progression and gates
+- Assignment authority and responsibility
+
+### Does NOT Own
+
+| Area | Rationale |
+|------|-----------|
+| **Document content** | Belongs to Document Copilot (drafts) and Workspace/Vault (files) |
+| **Copilot logic** | Belongs to Document Copilot Domain |
+| **SKU/component master data** | Belongs to EMIP Domain |
+| **File storage implementation** | Belongs to Workspace/Vault Domain |
+| **User identity** | Belongs to Core Platform |
+| **Final document authority** | User approval required; system tracks status only |
+
+### Consumes
+
+| Input | Source Domain |
+|-------|---------------|
+| **Users** | Core Platform (who can be assigned) |
+| **Document Status** | Document Copilot (draft/final state) |
+| **Files** | Workspace/Vault (attached files) |
+| **Identity** | Core Platform (authorization) |
+
+### Produces
+
+| Output | Consumers |
+|--------|-----------|
+| **Assignments** | Command Center (what work is assigned) |
+| **Workflow States** | Command Center (PPAP status visibility) |
+| **Document Requirements** | Document Copilot (what needs to be created) |
+| **PPAP Context** | Document Copilot (context for drafts) |
+| **Status Events** | Command Center, notifications |
+
+---
+
+## 3. Document Copilot Domain
+
+### Purpose
+
+Assist in the creation of engineering documents through AI-guided drafting, question/answer flows, and structured document generation.
+
+### Owns (Authoritative Control)
+
+| Entity | Ownership |
+|--------|-----------|
+| **Copilot Sessions** | Session state, history, configuration |
+| **Question/Answer Flows** | Q&A state, pending questions, responses |
+| **Draft Document Outputs** | Draft content, versions, confidence levels |
+| **Document Generation Logic** | Prompts, templates, generation strategies |
+| **Document Profiles** | Profile configurations, document type definitions |
+| **Structured Output Schemas** | Output formats, validation rules |
+
+**Single Source of Truth For:**
+- Active copilot sessions and their state
+- Draft documents and their iterations
+- AI-generated content and confidence levels
+- Question/answer flows and unresolved questions
+- Document generation profiles and schemas
+
+### Does NOT Own
+
+| Area | Rationale |
+|------|-----------|
+| **PPAP workflow decisions** | Belongs to PPAP Workflow Domain |
+| **Final document authority** | User approval required; drafts are proposals only |
+| **Storage systems** | Belongs to Workspace/Vault (files) and Core Platform (primitives) |
+| **SKU master data** | Belongs to EMIP Domain (consumed as reference) |
+| **User identity** | Belongs to Core Platform |
+| **Assignment authority** | Belongs to PPAP Workflow Domain |
+| **Document vault** | Final storage belongs to Workspace/Vault |
+
+### Consumes
+
+| Input | Source Domain |
+|-------|---------------|
+| **Source Files** | Workspace/Vault (BOMs, drawings, templates) |
+| **PPAP Context** | PPAP Workflow (optional context) |
+| **EMIP Data** | EMIP Domain (optional component reference) |
+| **User Identity** | Core Platform (who is operating) |
+| **Document Requirements** | PPAP Workflow (what needs to be created) |
+
+### Produces
+
+| Output | Consumers |
+|--------|-----------|
+| **Draft Documents** | User review, Command Center visibility |
+| **Structured Outputs** | PPAP Workflow (document completion), Workspace/Vault (storage) |
+| **Unresolved Questions** | Command Center (user attention required) |
+| **Session State** | Command Center (resumption, history) |
+| **Confidence Metadata** | User decision-making support |
+
+---
+
+## 4. Engineer Command Center Domain
+
+### Purpose
+
+Provide a user-centric operational surface that aggregates work, documents, sessions, and messages across all other domains into a single, actionable view.
+
+### Owns (Authoritative Control)
+
+| Entity | Ownership |
+|--------|-----------|
+| **Aggregated User Work View** | The presentation/organization of cross-domain data |
+| **Personal Task Surface** | User's personalized operating interface |
+| **Cross-Domain Visibility Layer** | How data from other domains is surfaced to users |
+| **Quick Action Configuration** | User's preferred quick actions and shortcuts |
+| **View Preferences** | Dashboard layout, filters, default views |
+
+**Single Source of Truth For:**
+- How work is presented to each user
+- User-specific view configuration
+- Aggregation logic and presentation rules
+- Cross-domain visibility state
+
+**Critical Note:** Command Center is an **aggregation and presentation domain**, not a data domain. It does not create or store business data—it organizes and presents data owned by other domains.
+
+### Does NOT Own
+
+| Area | Rationale |
+|------|-----------|
+| **PPAP data** | Belongs to PPAP Workflow Domain (consumed read-only) |
+| **Documents** | Belongs to Document Copilot (drafts) and Workspace/Vault (files) |
+| **Copilot sessions** | Belongs to Document Copilot Domain (consumed read-only) |
+| **Storage** | Belongs to Workspace/Vault and Core Platform |
+| **SKU/component data** | Belongs to EMIP Domain (consumed read-only) |
+| **User identity** | Belongs to Core Platform (consumed) |
+| **Assignment authority** | Belongs to PPAP Workflow Domain |
+| **Document meaning** | Belongs to Document Copilot and user |
+| **Workflow state** | Belongs to PPAP Workflow Domain |
+
+**Explicit Principle:** Command Center is **read-only aggregation only**. It never modifies data owned by other domains. All actions initiated from Command Center are delegated to the owning domain.
+
+### Consumes
+
+| Input | Source Domain |
+|-------|---------------|
+| **PPAP Assignments** | PPAP Workflow (what work is assigned) |
+| **Document States** | Document Copilot (draft/final status) |
+| **Copilot Session States** | Document Copilot (active sessions) |
+| **Notifications** | Core Platform (notification infrastructure) |
+| **User Activity** | All domains (activity log aggregation) |
+| **Files** | Workspace/Vault (file metadata) |
+| **User Identity** | Core Platform (personalization) |
+
+### Produces
+
+| Output | Consumers |
+|--------|-----------|
+| **User-Facing Consolidated View** | The user (primary consumer) |
+| **Actionable Entry Points** | Navigation to owning domains |
+| **View Preferences** | Stored for user personalization |
+| **Aggregation Queries** | Cross-domain data retrieval patterns |
+
+---
+
+## 5. Workspace / Vault Domain
+
+### Purpose
+
+Manage file storage, organization, and retrieval for user workspaces, PPAP attachments, and document vault.
+
+### Owns (Authoritative Control)
+
+| Entity | Ownership |
+|--------|-----------|
+| **Uploaded Files** | File content, metadata, organization |
+| **Personal Workspace Files** | User's personal file storage |
+| **PPAP-Attached Files** | Files attached to specific PPAPs |
+| **File Organization** | Folders, structure, naming conventions |
+| **File References** | Pointers, URIs, access paths |
+| **Document Vault Storage** | Finalized document storage |
+| **Storage Quotas** | Per-user, per-PPAP storage limits |
+
+**Single Source of Truth For:**
+- Where files are stored
+- File metadata and organization
+- Access paths and references
+- Storage capacity and quotas
+- File lifecycle (upload, organize, archive, delete)
+
+### Does NOT Own
+
+| Area | Rationale |
+|------|-----------|
+| **Document meaning** | Belongs to Document Copilot (content) and user (interpretation) |
+| **PPAP workflow logic** | Belongs to PPAP Workflow Domain |
+| **Copilot logic** | Belongs to Document Copilot Domain |
+| **SKU/component structure** | Belongs to EMIP Domain |
+| **User identity** | Belongs to Core Platform (consumed) |
+| **Storage primitives** | Belongs to Core Platform (abstraction layer) |
+| **Authentication** | Belongs to Core Platform |
+
+**Explicit Principle:** Workspace/Vault stores **files only** — it never defines meaning, workflow, or business logic. A file is a blob of data with metadata; what that file means or how it's used belongs to other domains.
+
+### Consumes
+
+| Input | Source Domain |
+|-------|---------------|
+| **Storage Primitives** | Core Platform (underlying storage) |
+| **User Identity** | Core Platform (who owns files) |
+| **PPAP References** | PPAP Workflow (PPAP context for attachments) |
+| **Document References** | Document Copilot (which drafts to store) |
+
+### Produces
+
+| Output | Consumers |
+|--------|-----------|
+| **File Access** | All domains (retrieval) |
+| **File References** | All domains (pointers to stored files) |
+| **File Metadata** | Command Center (file listings), PPAP Workflow (attachments) |
+| **Storage Events** | Notifications, quota tracking |
+
+---
+
+## 6. EMIP Domain (SKU / Component Intelligence)
+
+### Purpose
+
+Manage structured product/component intelligence including SKUs, components, part relationships, and product structure.
+
+### Owns (Authoritative Control)
+
+| Entity | Ownership |
+|--------|-----------|
+| **SKUs** | Stock keeping units, part numbers, revisions |
+| **Components** | Component definitions, specifications |
+| **Part Relationships** | BOM structure, parent/child relationships |
+| **Product Structure** | Assembly hierarchies, product trees |
+| **Component Metadata** | Attributes, classifications, properties |
+| **EMIP Intelligence** | Parsed insights, derived relationships |
+
+**Single Source of Truth For:**
+- What components exist
+- How components relate to each other
+- SKU definitions and attributes
+- Product structure and hierarchy
+- Component intelligence and insights
+
+### Does NOT Own
+
+| Area | Rationale |
+|------|-----------|
+| **Files** | Belongs to Workspace/Vault (consumed as source) |
+| **PPAP workflow** | Belongs to PPAP Workflow Domain (may reference SKUs) |
+| **Document drafts** | Belongs to Document Copilot Domain |
+| **Copilot sessions** | Belongs to Document Copilot Domain |
+| **User identity** | Belongs to Core Platform |
+| **Storage implementation** | Belongs to Core Platform and Workspace/Vault |
+| **Assignment logic** | Belongs to PPAP Workflow Domain |
+
+### Consumes
+
+| Input | Source Domain |
+|-------|---------------|
+| **File-Derived Data** | Workspace/Vault (BOM files for parsing) |
+| **User Inputs** | Core Platform (who is defining components) |
+| **Document References** | Document Copilot (optional context) |
+
+### Produces
+
+| Output | Consumers |
+|--------|-----------|
+| **Structured Product Data** | Document Copilot (context for drafting) |
+| **Relationships** | PPAP Workflow (component references) |
+| **Lookup/Reference Data** | All domains (component queries) |
+| **EMIP Intelligence** | Command Center (component visibility) |
+
+---
+
+### Domain Interaction Rules
+
+The following rules govern how domains interact:
+
+#### Rule 1: No Direct Modification of Other Domain Data
+
+**No domain may directly modify another domain's owned data.**
+
+All modifications must go through the owning domain's interfaces. If Domain A needs to change data owned by Domain B, it must:
+- Call Domain B's API/interface
+- Request the change
+- Let Domain B perform the modification
+
+**Rationale:** Prevents data corruption, maintains single source of truth, ensures business logic enforcement.
+
+#### Rule 2: Cross-Domain Interactions via Consumption of Outputs
+
+**All cross-domain interactions must occur via consumption of outputs.**
+
+Domains communicate by:
+- Domain A produces an output
+- Domain B consumes that output as input
+- Domain B acts on its own owned data based on that input
+
+**Pattern:** Produce → Consume → Act on own data
+
+**Rationale:** Clear data flow, explicit dependencies, testable boundaries.
+
+#### Rule 3: Command Center is Read-Only Aggregation Only
+
+**The Engineer Command Center never modifies data owned by other domains.**
+
+Command Center may:
+- Read data from other domains
+- Aggregate and present data
+- Initiate navigation to other domains
+- Store view preferences (its own data)
+
+Command Center may NOT:
+- Modify PPAP state
+- Modify document content
+- Modify copilot sessions
+- Modify files
+- Modify user identity
+
+**Rationale:** Command Center is a presentation layer, not a business logic layer.
+
+#### Rule 4: Workspace/Vault Stores Files Only — Never Defines Meaning
+
+**The Workspace/Vault domain stores file content and metadata only.**
+
+It does not:
+- Interpret file content
+- Define document structure
+- Enforce document rules
+- Understand business meaning
+
+It only:
+- Stores the file
+- Tracks metadata (name, size, type, owner)
+- Organizes files
+- Provides access
+
+**Rationale:** Separation of storage from semantics.
+
+#### Rule 5: Document Copilot Produces Drafts Only — Never Final Authority
+
+**The Document Copilot domain produces draft outputs, never final documents.**
+
+Drafts:
+- Are AI-generated proposals
+- Require user review
+- Require user approval to become final
+- Are tracked with confidence levels
+
+Final authority always belongs to:
+- The user (human approval)
+- The PPAP Workflow (status tracking)
+- The Workspace/Vault (final storage)
+
+**Rationale:** Human-in-the-loop requirement, auditability, quality control.
+
+#### Rule 6: PPAP Workflow Owns Assignment and Status — Not Content
+
+**The PPAP Workflow domain owns who is assigned and what the status is — not the content of deliverables.**
+
+PPAP Workflow:
+- Tracks assignments
+- Manages workflow states
+- Enforces gates and boundaries
+- Tracks document requirements
+- Tracks completion status
+
+PPAP Workflow does NOT:
+- Create document content
+- Store document files
+- Define document structure
+- Generate AI drafts
+
+**Rationale:** Separation of workflow orchestration from content creation.
+
+#### Rule 7: Core Platform is Foundation — Never Business Logic
+
+**The Core Platform provides foundational services only — never business logic.**
+
+Core Platform:
+- Identity
+- Authentication
+- Authorization
+- Storage primitives
+- Notification infrastructure
+
+Core Platform does NOT:
+- Understand PPAPs
+- Understand documents
+- Understand components
+- Enforce workflow rules
+- Generate content
+
+**Rationale:** Foundation layer must remain agnostic to business domains.
+
+---
+
+### Data Ownership Principles
+
+The following principles govern data ownership across the system:
+
+#### Principle 1: Every Piece of Data Has Exactly One Owning Domain
+
+**No data may have multiple owning domains.**
+
+Examples:
+- User identity → Core Platform
+- PPAP status → PPAP Workflow
+- Draft document → Document Copilot
+- File content → Workspace/Vault
+- SKU definition → EMIP
+
+**Consequence:** If two domains seem to need to "own" the same data, either:
+- The data is actually two different concepts (split them)
+- One domain is the owner, the other is a consumer
+
+#### Principle 2: No Duplication of Ownership Allowed
+
+**Data ownership cannot be shared or duplicated.**
+
+There is no such thing as "co-ownership" of data across domains.
+
+**Rationale:** Prevents conflicting updates, unclear authority, data inconsistency.
+
+#### Principle 3: Derived Data Must Reference Its Source Domain
+
+**If Domain B derives data from Domain A's data, Domain B must reference Domain A as the source.**
+
+Examples:
+- Command Center aggregates PPAP status → references PPAP Workflow as source
+- Document Copilot drafts reference source files → references Workspace/Vault as source
+- PPAP tracks document completion → references Document Copilot draft status
+
+**Rationale:** Traceability, auditability, clear lineage.
+
+#### Principle 4: Aggregation Does Not Equal Ownership
+
+**Aggregating data from multiple domains does not confer ownership of that data.**
+
+Command Center aggregates data from:
+- PPAP Workflow (assignments)
+- Document Copilot (sessions)
+- Workspace/Vault (files)
+
+Command Center owns:
+- The aggregation logic
+- The presentation view
+- User preferences
+
+Command Center does NOT own:
+- The underlying PPAP data
+- The underlying document data
+- The underlying file data
+
+**Rationale:** Prevents Command Center from becoming a "shadow" system of record.
+
+#### Principle 5: Storage Does Not Equal Ownership
+
+**Storing data does not confer ownership of that data.**
+
+Examples:
+- Workspace/Vault stores files → owns storage, not document meaning
+- Core Platform provides storage primitives → owns primitives, not content
+- PPAP Workflow references files → owns the reference, not the file
+
+**Rationale:** Clear separation between storage mechanism and semantic ownership.
+
+---
+
+### Anti-Drift Rules
+
+The following rules prevent gradual erosion of domain boundaries:
+
+#### Rule 1: No Domain Expansion Without Explicit BUILD_PLAN Update
+
+**A domain may not expand its responsibilities without an explicit update to BUILD_PLAN.**
+
+If a team wants Domain A to take on new responsibilities:
+- Update BUILD_PLAN domain definition
+- Explicitly document new Owns/Does NOT Own
+- Get architectural review
+- Update domain contracts
+
+**Rationale:** Prevents gradual scope creep.
+
+#### Rule 2: No Cross-Domain Logic Embedding
+
+**Business logic from one domain may not be embedded in another domain.**
+
+Examples of violations:
+- PPAP Workflow logic in Command Center code
+- Document generation logic in PPAP Workflow
+- User authentication logic in Document Copilot
+
+**Rationale:** Prevents tight coupling, maintains testability.
+
+#### Rule 3: No "Temporary" Shared Ownership
+
+**There is no such thing as temporary shared ownership.**
+
+If data seems to need shared ownership:
+- Split the data into distinct concepts
+- Define clear ownership for each
+- Document the relationship
+
+"Temporary" solutions become permanent and create technical debt.
+
+**Rationale:** Forces explicit architectural decisions.
+
+#### Rule 4: No Silent Schema Overlap
+
+**Schemas from different domains may not silently overlap or conflict.**
+
+If Domain A and Domain B both have a "Document" concept:
+- They are different concepts with different meanings
+- Name them distinctly (DraftDocument vs FinalizedDocument)
+- Document the relationship
+
+**Rationale:** Prevents confusion, data corruption.
+
+#### Rule 5: All New Features Must Declare Domain Ownership
+
+**Before implementing any new feature, declare which domain owns the data and logic.**
+
+Feature specification must include:
+- Which domain owns the new data
+- Which domains consume it
+- Cross-domain interaction rules
+- Data flow diagram
+
+**Rationale:** Forces architectural thinking before coding.
+
+---
+
+### Domain Map Visualization
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     USER INTERFACE LAYER                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │     ENGINEER COMMAND CENTER (Aggregation/Presentation)  │   │
+│   │     - Reads all domains                                   │   │
+│   │     - Presents unified view                               │   │
+│   │     - Never modifies other domains' data                  │   │
+│   └─────────────────────────────────────────────────────────┘   │
+│                              │                                   │
+│           ┌──────────────────┼──────────────────┐                │
+│           │                  │                  │                │
+│   ┌───────▼──────┐  ┌───────▼──────┐  ┌───────▼──────┐         │
+│   │   PPAP       │  │   Document   │  │   Workspace  │         │
+│   │   Workflow   │  │   Copilot    │  │   /Vault     │         │
+│   │              │  │              │  │              │         │
+│   │ - PPAPs      │  │ - Sessions   │  │ - Files      │         │
+│   │ - Status     │  │ - Drafts     │  │ - Storage    │         │
+│   │ - Assignment │  │ - Q&A Flows  │  │ - References │         │
+│   └───────┬──────┘  └───────┬──────┘  └───────┬──────┘         │
+│           │                  │                  │                │
+│           │         ┌────────┴────────┐          │                │
+│           │         │                 │          │                │
+│           │    ┌────▼────┐     ┌────▼────┐     │                │
+│           │    │  EMIP   │     │  Core   │     │                │
+│           │    │ Domain  │     │Platform │     │                │
+│           │    │         │     │         │     │                │
+│           │    │ - SKUs  │     │ - Users │     │                │
+│           │    │ - Parts │     │ - Auth  │     │                │
+│           │    │ - Rel.  │     │ - Perms │     │                │
+│           │    └─────────┘     └─────────┘     │                │
+│           │                  │                  │                │
+└───────────┼──────────────────┼──────────────────┼────────────────┘
+            │                  │                  │
+            ▼                  ▼                  ▼
+       ┌────────────────────────────────────────────────┐
+       │           FOUNDATION LAYER                      │
+       │  Core Platform (Identity, Storage, Notifications) │
+       └────────────────────────────────────────────────┘
+```
+
+**Data Flow Principles:**
+- Arrows indicate consumption of outputs
+- No domain directly modifies another's data
+- Command Center reads from all; writes to none (except own preferences)
+- All domains consume Core Platform services
+
+---
+
+### Domain Contract Summary
+
+| Domain | Owns | Never Owns | Primary Role |
+|--------|------|------------|--------------|
+| **Core Platform** | Users, Auth, Permissions, Storage Primitives, Notifications | Business logic, workflows, documents | Foundation |
+| **PPAP Workflow** | PPAPs, Status, Assignments, Workflow State | Document content, files, copilot logic | Orchestration |
+| **Document Copilot** | Sessions, Drafts, Q&A Flows, Profiles | Final authority, workflow decisions, storage | AI Assistance |
+| **Command Center** | Aggregation view, Preferences | PPAP data, documents, sessions, files | Presentation |
+| **Workspace/Vault** | Files, Storage, References | Document meaning, workflow logic | Storage |
+| **EMIP** | SKUs, Components, Relationships, Structure | Files, workflows, drafts | Product Intelligence |
+
+---
+
+### Governance for Domain Map
+
+**This domain map is authoritative.** All future implementation must respect these boundaries.
+
+**Changes Require:**
+1. BUILD_PLAN update with explicit rationale
+2. BUILD_LEDGER entry documenting the change
+3. Architectural review
+4. Domain contract updates
+5. Team notification
+
+**Violations Are:**
+- Direct modification of another domain's data
+- Logic embedding across domains
+- Silent ownership assumption
+- "Temporary" workarounds that bypass domains
+
+**Enforcement:**
+- Code review checklist includes domain boundary checks
+- Architecture review for cross-domain features
+- Regular domain map audits
+
+---
+
 ## Conclusion
 
 This document is the **implementation-grade source of truth** for EMIP-PPAP.

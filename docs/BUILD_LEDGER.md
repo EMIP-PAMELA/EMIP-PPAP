@@ -4,6 +4,202 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-03-31 18:10 CT - Phase V3.2A - System Domain Map Definition
+
+**Summary:** Strategic architecture decision to define explicit domain boundaries and ownership contracts across the EMIP-PPAP platform
+
+**Type:** Architecture Decision Record (Planning Phase - Documentation Only)
+
+### Strategic Context
+
+**Background:**
+
+The EMIP-PPAP system has evolved through multiple architecture phases:
+
+1. **V3.0A** — Document Copilot Pivot (AI-assisted document creation layer)
+2. **V3.1A** — Engineer Command Center (user-centric operating surface)
+
+These phases introduced new conceptual layers:
+- PPAP workflow system (established)
+- Document Copilot system
+- Engineer Command Center
+- EMIP (SKU/component intelligence)
+- User Workspace/Vault system
+
+**Risk Identified:**
+
+As the system grows, there is increasing risk of:
+- **Overlapping responsibilities** — multiple domains controlling same data
+- **Duplicated data ownership** — confusion about source of truth
+- **Unclear system authority** — ambiguous decision-making boundaries
+- **Architectural drift** — gradual erosion of separation of concerns
+
+Without explicit boundaries, future implementation could:
+- Embed PPAP logic in Command Center
+- Store document meaning in Workspace/Vault
+- Create "temporary" shared ownership that becomes permanent
+- Allow domains to silently expand their scope
+
+### Strategic Decision
+
+**The EMIP-PPAP system is defining a complete System Domain Map with explicit boundaries, ownership contracts, and anti-drift rules to maintain architectural integrity as the platform scales.**
+
+### Six System Domains Defined
+
+**1. Core Platform Domain**
+- **Owns:** Users, authentication, permissions, storage primitives, notification infrastructure
+- **Never Owns:** Business logic, workflows, documents
+- **Role:** Foundation layer
+
+**2. PPAP Workflow Domain**
+- **Owns:** PPAPs, status, assignments, workflow state, document requirements
+- **Never Owns:** Document content, files, copilot logic
+- **Role:** Orchestration
+
+**3. Document Copilot Domain**
+- **Owns:** Sessions, drafts, Q&A flows, profiles, generation logic
+- **Never Owns:** Final authority, workflow decisions, storage
+- **Role:** AI assistance
+
+**4. Engineer Command Center Domain**
+- **Owns:** Aggregation view, presentation, user preferences
+- **Never Owns:** PPAP data, documents, sessions, files (read-only consumption)
+- **Role:** Presentation layer
+
+**5. Workspace/Vault Domain**
+- **Owns:** Files, storage, references, organization
+- **Never Owns:** Document meaning, workflow logic
+- **Role:** Storage
+
+**6. EMIP Domain**
+- **Owns:** SKUs, components, relationships, product structure
+- **Never Owns:** Files, workflows, drafts
+- **Role:** Product intelligence
+
+### Domain Interaction Rules
+
+**Rule 1: No Direct Modification of Other Domain Data**
+- All modifications go through owning domain's interfaces
+- Prevents data corruption
+
+**Rule 2: Cross-Domain Interactions via Output Consumption**
+- Produce → Consume → Act on own data
+- Clear data flow, explicit dependencies
+
+**Rule 3: Command Center is Read-Only Aggregation**
+- Never modifies PPAP, document, session, or file data
+- Only stores view preferences (own data)
+
+**Rule 4: Workspace/Vault Stores Files Only**
+- No interpretation of content
+- No business logic
+
+**Rule 5: Document Copilot Produces Drafts Only**
+- AI drafts are proposals
+- Final authority: user approval + PPAP status tracking
+
+**Rule 6: PPAP Workflow Owns Assignment/Status — Not Content**
+- Orchestration, not creation
+
+**Rule 7: Core Platform is Foundation — Never Business Logic**
+- Identity, auth, storage primitives only
+
+### Data Ownership Principles
+
+1. **Every piece of data has exactly one owning domain**
+2. **No duplication of ownership allowed**
+3. **Derived data must reference its source domain**
+4. **Aggregation does not equal ownership**
+5. **Storage does not equal ownership**
+
+### Anti-Drift Rules
+
+1. **No domain expansion without explicit BUILD_PLAN update**
+2. **No cross-domain logic embedding**
+3. **No "temporary" shared ownership**
+4. **No silent schema overlap**
+5. **All new features must declare domain ownership**
+
+### Domain Map Authority
+
+This domain map is **authoritative**. All future implementation must respect these boundaries.
+
+**Changes Require:**
+- BUILD_PLAN update with explicit rationale
+- BUILD_LEDGER entry documenting the change
+- Architectural review
+- Domain contract updates
+- Team notification
+
+**Violations Are:**
+- Direct modification of another domain's data
+- Logic embedding across domains
+- Silent ownership assumption
+- "Temporary" workarounds that bypass domains
+
+### Relationship to Prior Work
+
+**V3.0A Document Copilot:**
+- Defined as its own domain (Document Copilot Domain)
+- Clear boundaries: produces drafts, doesn't own final authority
+- Consumes from Workspace/Vault, PPAP Workflow
+
+**V3.1A Engineer Command Center:**
+- Defined as aggregation/presentation domain
+- Explicitly read-only (does not modify other domains' data)
+- Owns only view preferences and presentation logic
+
+**All Prior Work Preserved:**
+- PPAP workflow system → PPAP Workflow Domain
+- Document copilot planning → Document Copilot Domain
+- Command Center architecture → Engineer Command Center Domain
+- File handling → Workspace/Vault Domain
+- BOM/component parsing → EMIP Domain
+- Auth/users → Core Platform Domain
+
+### No Code Changes (V3.2A)
+
+This phase is strictly documentation and architecture planning. No application code, UI components, routes, or database changes are made.
+
+**Files Updated:**
+- `docs/BUILD_PLAN.md` — V3.2A section added (750+ lines)
+- `docs/BUILD_LEDGER.md` — This decision record
+
+### Expected Impact
+
+**Clarity:**
+- Every developer knows which domain owns what
+- Clear interfaces for cross-domain interactions
+- Explicit contracts prevent ambiguity
+
+**Maintainability:**
+- Domains can evolve independently
+- Testable boundaries
+- No hidden coupling
+
+**Scalability:**
+- New features fit into domain structure
+- No architectural drift
+- Long-term system integrity
+
+### Rationale
+
+**Why Now:**
+- System is at inflection point with 5+ conceptual systems
+- V3.0A and V3.1A introduced new layers without explicit boundaries
+- Risk of overlap increases with each new feature
+- Early boundary definition prevents technical debt
+
+**Why This Approach:**
+- Explicit ownership prevents confusion
+- Anti-drift rules maintain integrity over time
+- Clear contracts enable parallel development
+- Domain map becomes reference for all future decisions
+
+**Next Step:** Future implementation phases must reference this domain map and respect declared boundaries
+
+---
+
 ## 2026-03-31 17:00 CT - Phase V3.1A - Engineer Command Center Architecture Planning
 
 **Summary:** Strategic architecture decision to introduce a user-centric "Engineer Command Center" layer as the third complementary architecture layer
