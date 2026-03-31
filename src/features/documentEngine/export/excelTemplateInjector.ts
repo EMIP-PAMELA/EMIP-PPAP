@@ -142,26 +142,63 @@ export async function exportToExcelTemplate(
   
   console.log('[V2.6 EXPORT] Workbook export complete');
   
-  // V2.8B.5: Pre-write aggressive protection stripping
-  // Root cause: ExcelJS crashes during writeBuffer() when encountering null/malformed protection
-  // metadata at any level (worksheet, column, row, cell). Previous normalization attempts failed.
-  // Now using aggressive deletion of ALL protection metadata to ensure serialization stability.
-  console.log('[V2.8B.5 EXPORT] Sanitizing workbook for ExcelJS serialization compatibility');
-  const stripResults = sanitizeWorkbookForExport(workbook);
+  // V2.8B.6: Workbook Rehydration - Eliminate ExcelJS template corruption
+  // Root cause: PPAP template workbooks contain internal metadata structures that ExcelJS
+  // cannot safely serialize, regardless of protection stripping (V2.8B.1-V2.8B.5 all failed).
+  // Solution: Rebuild workbook from scratch by copying ONLY safe data into clean ExcelJS workbook.
+  // This eliminates all corrupted/incompatible internal structures from the template.
+  console.log('[V2.8B.6 EXPORT] Rehydrating workbook into clean ExcelJS-safe structure');
   
-  // Generate XLSX blob
+  const sourceWorkbook = workbook;
+  const cleanWorkbook = new ExcelJS.Workbook();
+  
+  let worksheetsCopied = 0;
+  let valuesCopied = 0;
+  
+  sourceWorkbook.eachSheet((sourceSheet) => {
+    console.log(`[V2.8B.6 EXPORT] Copying worksheet: ${sourceSheet.name}`);
+    const cleanSheet = cleanWorkbook.addWorksheet(sourceSheet.name);
+    
+    // Copy column widths (safe metadata)
+    if (sourceSheet.columns) {
+      sourceSheet.columns.forEach((col, i) => {
+        if (col && col.width) {
+          cleanSheet.getColumn(i + 1).width = col.width;
+        }
+      });
+    }
+    
+    // Copy row values ONLY - no styles, no protection, no formatting
+    // This is the critical fix: only transfer data, not corrupted metadata
+    sourceSheet.eachRow((row, rowNumber) => {
+      const cleanRow = cleanSheet.getRow(rowNumber);
+      
+      row.eachCell((cell, colNumber) => {
+        // Copy only the value - ExcelJS will use clean internal structures
+        cleanRow.getCell(colNumber).value = cell.value;
+        valuesCopied++;
+      });
+    });
+    
+    worksheetsCopied++;
+  });
+  
+  console.log(`[V2.8B.6 EXPORT] Workbook rehydrated: ${worksheetsCopied} sheets, ${valuesCopied} values copied`);
+  
+  // Generate XLSX blob from CLEAN workbook
   try {
-    const buffer = await workbook.xlsx.writeBuffer();
-    console.log('[V2.8B.5 EXPORT] Workbook serialization successful');
+    const buffer = await cleanWorkbook.xlsx.writeBuffer();
+    console.log('[V2.8B.6 EXPORT] Workbook serialization successful');
     return new Blob([buffer], { 
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
     });
   } catch (error) {
-    // V2.8B.5: Enhanced error reporting with diagnostic information
-    console.error(`[V2.8B.5 EXPORT] writeBuffer failed after aggressive protection stripping`);
-    console.error(`[V2.8B.5 EXPORT] Sheet: "${cellMap.sheetName}"`);
-    console.error(`[V2.8B.5 EXPORT] Strip results:`, stripResults);
-    console.error(`[V2.8B.5 EXPORT] Error:`, error);
+    // V2.8B.6: Error reporting for rehydration failures
+    console.error(`[V2.8B.6 EXPORT] writeBuffer failed after workbook rehydration`);
+    console.error(`[V2.8B.6 EXPORT] Sheet: "${cellMap.sheetName}"`);
+    console.error(`[V2.8B.6 EXPORT] Worksheets copied: ${worksheetsCopied}`);
+    console.error(`[V2.8B.6 EXPORT] Values copied: ${valuesCopied}`);
+    console.error(`[V2.8B.6 EXPORT] Error:`, error);
     throw new Error(`Excel export failed during workbook serialization for "${cellMap.sheetName}": ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
