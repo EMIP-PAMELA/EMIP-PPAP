@@ -97,9 +97,18 @@ export async function exportToExcelTemplate(
     if (Array.isArray(rowData)) {
       let rowsWritten = 0;
       
+      // V2.8A: Enhanced debug logging for mapping verification
+      console.log(`[V2.8A EXPORT] Starting row injection at Excel row ${cellMap.rowMappings.startRow}`);
+      console.log(`[V2.8A EXPORT] Column mappings: ${cellMap.rowMappings.columnMappings.map(c => `${c.fieldKey}→${c.column}`).join(', ')}`);
+      
       for (let i = 0; i < rowData.length; i++) {
         const dataRow = rowData[i];
         const excelRowIndex = cellMap.rowMappings.startRow + i;
+        
+        // V2.8A: Log first few rows for verification
+        if (i < 3) {
+          console.log(`[V2.8A EXPORT] Writing data row ${i} → Excel row ${excelRowIndex}`);
+        }
         
         for (const colMapping of cellMap.rowMappings.columnMappings) {
           const value = dataRow[colMapping.fieldKey];
@@ -108,6 +117,11 @@ export async function exportToExcelTemplate(
             const cellAddress = `${colMapping.column}${excelRowIndex}`;
             const cell = worksheet.getCell(cellAddress);
             cell.value = value;
+            
+            // V2.8A: Log first row's cell writes for verification
+            if (i === 0) {
+              console.log(`[V2.8A EXPORT]   ${colMapping.fieldKey} → ${cellAddress} = ${value}`);
+            }
           }
         }
         
@@ -115,6 +129,7 @@ export async function exportToExcelTemplate(
       }
       
       console.log('[V2.6 EXPORT] Data rows written:', rowsWritten);
+      console.log(`[V2.8A EXPORT] Row injection complete: rows ${cellMap.rowMappings.startRow}-${cellMap.rowMappings.startRow + rowsWritten - 1}`);
     } else {
       console.warn('[V2.6 EXPORT] Row data field is not an array:', cellMap.rowMappings.dataFieldKey);
     }
