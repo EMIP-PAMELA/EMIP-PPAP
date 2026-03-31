@@ -142,41 +142,129 @@ export async function exportToExcelTemplate(
   
   console.log('[V2.6 EXPORT] Workbook export complete');
   
-  // V2.8B.6: Workbook Rehydration - Eliminate ExcelJS template corruption
-  // Root cause: PPAP template workbooks contain internal metadata structures that ExcelJS
-  // cannot safely serialize, regardless of protection stripping (V2.8B.1-V2.8B.5 all failed).
-  // Solution: Rebuild workbook from scratch by copying ONLY safe data into clean ExcelJS workbook.
-  // This eliminates all corrupted/incompatible internal structures from the template.
+  // V2.8B.6 + V2.8C.1: Workbook Rehydration with Controlled Formatting Reconstruction
+  // V2.8B.6: Clean workbook rebuild eliminates ExcelJS template corruption
+  // V2.8C.1: Selectively reintroduce safe formatting for readability
+  // Architecture: Template as data source → Clean workbook → Safe formatting → Serialize
   console.log('[V2.8B.6 EXPORT] Rehydrating workbook into clean ExcelJS-safe structure');
+  console.log('[V2.8C.1 EXPORT] Applying controlled formatting reconstruction');
   
   const sourceWorkbook = workbook;
   const cleanWorkbook = new ExcelJS.Workbook();
   
   let worksheetsCopied = 0;
   let valuesCopied = 0;
+  let stylesCopied = 0;
+  let columnsPreserved = 0;
   
   sourceWorkbook.eachSheet((sourceSheet) => {
-    console.log(`[V2.8B.6 EXPORT] Copying worksheet: ${sourceSheet.name}`);
+    console.log(`[V2.8C.1 EXPORT] Copying worksheet: ${sourceSheet.name}`);
     const cleanSheet = cleanWorkbook.addWorksheet(sourceSheet.name);
     
-    // Copy column widths (safe metadata)
+    // Copy column widths (safe metadata - V2.8B.6)
     if (sourceSheet.columns) {
       sourceSheet.columns.forEach((col, i) => {
         if (col && col.width) {
           cleanSheet.getColumn(i + 1).width = col.width;
+          columnsPreserved++;
         }
       });
     }
     
-    // Copy row values ONLY - no styles, no protection, no formatting
-    // This is the critical fix: only transfer data, not corrupted metadata
+    // Copy row values AND safe formatting (V2.8B.6 + V2.8C.1)
     sourceSheet.eachRow((row, rowNumber) => {
       const cleanRow = cleanSheet.getRow(rowNumber);
       
       row.eachCell((cell, colNumber) => {
-        // Copy only the value - ExcelJS will use clean internal structures
-        cleanRow.getCell(colNumber).value = cell.value;
+        const cleanCell = cleanRow.getCell(colNumber);
+        
+        // Always copy value (V2.8B.6)
+        cleanCell.value = cell.value;
         valuesCopied++;
+        
+        // V2.8C.1: Selectively copy ONLY safe formatting properties
+        // Guard all nested accesses to prevent corruption propagation
+        if (cell.style && typeof cell.style === 'object') {
+          const safeStyle: any = {};
+          let hasStyle = false;
+          
+          // Copy alignment (safe)
+          if (cell.style.alignment && typeof cell.style.alignment === 'object') {
+            safeStyle.alignment = {};
+            if (cell.style.alignment.horizontal) {
+              safeStyle.alignment.horizontal = cell.style.alignment.horizontal;
+              hasStyle = true;
+            }
+            if (cell.style.alignment.vertical) {
+              safeStyle.alignment.vertical = cell.style.alignment.vertical;
+              hasStyle = true;
+            }
+            if (cell.style.alignment.wrapText !== undefined) {
+              safeStyle.alignment.wrapText = cell.style.alignment.wrapText;
+              hasStyle = true;
+            }
+          }
+          
+          // Copy font (safe)
+          if (cell.style.font && typeof cell.style.font === 'object') {
+            safeStyle.font = {};
+            if (cell.style.font.bold !== undefined) {
+              safeStyle.font.bold = cell.style.font.bold;
+              hasStyle = true;
+            }
+            if (cell.style.font.italic !== undefined) {
+              safeStyle.font.italic = cell.style.font.italic;
+              hasStyle = true;
+            }
+            if (cell.style.font.size) {
+              safeStyle.font.size = cell.style.font.size;
+              hasStyle = true;
+            }
+            if (cell.style.font.name) {
+              safeStyle.font.name = cell.style.font.name;
+              hasStyle = true;
+            }
+          }
+          
+          // Copy simple fill (safe - only simple patterns)
+          if (cell.style.fill && typeof cell.style.fill === 'object') {
+            if (cell.style.fill.type === 'pattern' && cell.style.fill.pattern) {
+              safeStyle.fill = {
+                type: 'pattern',
+                pattern: cell.style.fill.pattern
+              };
+              if (cell.style.fill.fgColor) {
+                safeStyle.fill.fgColor = cell.style.fill.fgColor;
+              }
+              if (cell.style.fill.bgColor) {
+                safeStyle.fill.bgColor = cell.style.fill.bgColor;
+              }
+              hasStyle = true;
+            }
+          }
+          
+          // Copy simple border (safe)
+          if (cell.style.border && typeof cell.style.border === 'object') {
+            safeStyle.border = {};
+            ['top', 'left', 'bottom', 'right'].forEach((side) => {
+              if ((cell.style.border as any)[side] && typeof (cell.style.border as any)[side] === 'object') {
+                (safeStyle.border as any)[side] = {
+                  style: (cell.style.border as any)[side].style
+                };
+                if ((cell.style.border as any)[side].color) {
+                  (safeStyle.border as any)[side].color = (cell.style.border as any)[side].color;
+                }
+                hasStyle = true;
+              }
+            });
+          }
+          
+          // Apply safe styles to clean cell
+          if (hasStyle) {
+            cleanCell.style = safeStyle;
+            stylesCopied++;
+          }
+        }
       });
     });
     
@@ -184,6 +272,8 @@ export async function exportToExcelTemplate(
   });
   
   console.log(`[V2.8B.6 EXPORT] Workbook rehydrated: ${worksheetsCopied} sheets, ${valuesCopied} values copied`);
+  console.log(`[V2.8C.1 EXPORT] Safe styles copied for ${stylesCopied} cells`);
+  console.log(`[V2.8C.1 EXPORT] Column widths preserved for ${columnsPreserved} columns`);
   
   // Generate XLSX blob from CLEAN workbook
   try {

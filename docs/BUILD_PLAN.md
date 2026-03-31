@@ -106,6 +106,7 @@ The Document Engine addendum (added in Version 3P.1) has been fully implemented 
 **Phase V2.8B.3:** ✅ Worksheet Protection Neutralization
 **Phase V2.8B.4:** ✅ Row-Level Protection Normalization
 **Phase V2.8B.5:** ✅ Aggressive Protection Metadata Stripping
+**Phase V2.8B.6:** ✅ Workbook Rehydration (Clean Rebuild)
 **Phase V2.8C:** ✅ Required Field Summary
 
 **What is COMPLETE:**
