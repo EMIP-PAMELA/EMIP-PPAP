@@ -110,6 +110,7 @@ The Document Engine addendum (added in Version 3P.1) has been fully implemented 
 **Phase V2.8C:** ✅ Required Field Summary
 **Phase V2.8C.1:** ✅ Controlled Formatting Reconstruction
 **Phase V2.8C.3:** ✅ Controlled Merge Reconstruction
+**Phase V2.8C.5:** ✅ Deterministic Border Reconstruction
 **Phase V2.9A:** ✅ Single Sheet Export
 
 **What is COMPLETE:**

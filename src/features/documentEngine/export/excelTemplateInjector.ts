@@ -168,9 +168,159 @@ export async function exportToExcelTemplate(
   
   console.log(`[V2.9A EXPORT] Copying single worksheet: ${sourceSheet.name}`);
   const cleanSheet = cleanWorkbook.addWorksheet(sourceSheet.name);
+  
+  // V2.9B-PF.1: Process Flow Header + Symbol Reconstruction
+  // Rebuild header section with deterministic layout and image-based symbols
+  const isProcessFlow = targetSheetName === '5-Proces Flow Diagram';
+  
+  if (isProcessFlow) {
+    console.log('[V2.9B-PF.1 EXPORT] Rebuilding Process Flow header with symbols');
     
-    // Copy column widths (safe metadata - V2.8B.6)
-    if (sourceSheet.columns) {
+    // STEP 1: Define column structure
+    cleanSheet.columns = [
+      { key: 'A', width: 8 },   // STEP
+      { key: 'B', width: 12 },  // Routing Number
+      { key: 'C', width: 5 },   // Operation symbol
+      { key: 'D', width: 5 },   // Inspection symbol
+      { key: 'E', width: 5 },   // Transportation symbol
+      { key: 'F', width: 5 },   // Delay symbol
+      { key: 'G', width: 5 },   // Storage symbol
+      { key: 'H', width: 30 },  // Operation Description
+      { key: 'I', width: 20 },  // Additional columns
+      { key: 'J', width: 20 },
+      { key: 'K', width: 20 }
+    ];
+    
+    // STEP 2: Header Row (Row 1)
+    const headerRow = cleanSheet.getRow(1);
+    headerRow.height = 40;
+    
+    headerRow.getCell(1).value = 'STEP';
+    headerRow.getCell(2).value = 'Routing Number';
+    headerRow.getCell(3).value = 'Operation';
+    headerRow.getCell(4).value = 'Inspection';
+    headerRow.getCell(5).value = 'Transportation';
+    headerRow.getCell(6).value = 'Delay';
+    headerRow.getCell(7).value = 'Storage';
+    
+    // Apply formatting to all header cells
+    for (let col = 1; col <= 7; col++) {
+      const cell = headerRow.getCell(col);
+      cell.font = { bold: true };
+      cell.alignment = {
+        horizontal: 'center',
+        vertical: 'middle',
+        wrapText: true
+      };
+      cell.border = {
+        top: { style: 'medium' },
+        bottom: { style: 'medium' },
+        left: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+    }
+    
+    // STEP 3: Add rotation to symbol columns (C-G)
+    for (let col = 3; col <= 7; col++) {
+      const cell = headerRow.getCell(col);
+      cell.alignment = {
+        ...cell.alignment,
+        textRotation: 90
+      };
+    }
+    
+    // STEP 4: Symbol Row (Row 2)
+    const symbolRow = cleanSheet.getRow(2);
+    symbolRow.height = 20;
+    
+    symbolRow.getCell(1).value = '#';
+    symbolRow.getCell(1).font = { bold: true };
+    symbolRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    
+    // Clear symbol cells (images will be added)
+    for (let col = 3; col <= 7; col++) {
+      symbolRow.getCell(col).value = '';
+      symbolRow.getCell(col).alignment = { horizontal: 'center', vertical: 'middle' };
+    }
+    
+    // STEP 5 & 6: Add image symbols
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      
+      const iconsPath = path.join(process.cwd(), 'public', 'icons');
+      
+      // Load and add images
+      const greenCircle = fs.readFileSync(path.join(iconsPath, 'green_circle.png'));
+      const yellowDiamond = fs.readFileSync(path.join(iconsPath, 'yellow_diamond.png'));
+      const blueArrow = fs.readFileSync(path.join(iconsPath, 'blue_arrow.png'));
+      const redDelay = fs.readFileSync(path.join(iconsPath, 'red_delay.png'));
+      const graySquare = fs.readFileSync(path.join(iconsPath, 'gray_square.png'));
+      
+      const greenCircleId = cleanWorkbook.addImage({
+        buffer: greenCircle,
+        extension: 'png'
+      });
+      const yellowDiamondId = cleanWorkbook.addImage({
+        buffer: yellowDiamond,
+        extension: 'png'
+      });
+      const blueArrowId = cleanWorkbook.addImage({
+        buffer: blueArrow,
+        extension: 'png'
+      });
+      const redDelayId = cleanWorkbook.addImage({
+        buffer: redDelay,
+        extension: 'png'
+      });
+      const graySquareId = cleanWorkbook.addImage({
+        buffer: graySquare,
+        extension: 'png'
+      });
+      
+      // Place images in cells (row 2 = index 1, columns C-G = index 2-6)
+      cleanSheet.addImage(greenCircleId, {
+        tl: { col: 2, row: 1 },
+        ext: { width: 16, height: 16 }
+      });
+      cleanSheet.addImage(yellowDiamondId, {
+        tl: { col: 3, row: 1 },
+        ext: { width: 16, height: 16 }
+      });
+      cleanSheet.addImage(blueArrowId, {
+        tl: { col: 4, row: 1 },
+        ext: { width: 16, height: 16 }
+      });
+      cleanSheet.addImage(redDelayId, {
+        tl: { col: 5, row: 1 },
+        ext: { width: 16, height: 16 }
+      });
+      cleanSheet.addImage(graySquareId, {
+        tl: { col: 6, row: 1 },
+        ext: { width: 16, height: 16 }
+      });
+      
+      console.log('[V2.9B-PF.1 EXPORT] Symbol images added to row 2');
+    } catch (e) {
+      console.warn('[V2.9B-PF.1 EXPORT] Failed to add symbol images:', e);
+    }
+    
+    // STEP 8: Apply borders to symbol row
+    for (let col = 1; col <= 7; col++) {
+      const cell = symbolRow.getCell(col);
+      cell.border = {
+        top: { style: 'thin' },
+        bottom: { style: 'medium' },
+        left: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+    }
+    
+    console.log('[V2.9B-PF.1 EXPORT] Process Flow header + symbols rebuilt');
+  }
+    
+    // Copy column widths (safe metadata - V2.8B.6) - skip if Process Flow (already set)
+    if (!isProcessFlow && sourceSheet.columns) {
       sourceSheet.columns.forEach((col, i) => {
         if (col && col.width) {
           cleanSheet.getColumn(i + 1).width = col.width;

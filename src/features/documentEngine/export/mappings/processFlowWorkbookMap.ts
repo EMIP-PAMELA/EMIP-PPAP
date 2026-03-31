@@ -59,9 +59,10 @@ export const PROCESS_FLOW_WORKBOOK_MAP: WorkbookCellMap = {
   ],
   
   // V2.8A VALIDATED: Row-based data injection for process steps
+  // V2.9B-PF.1: Updated to row 3 after header reconstruction (rows 1-2)
   rowMappings: {
     dataFieldKey: 'processSteps', // Array field from wizard template
-    startRow: 6, // VALIDATED: Row 6 is first data row (rows 1-5 are header area)
+    startRow: 3, // V2.9B-PF.1: Row 3 is first data row (rows 1-2 are header + symbols)
     columnMappings: [
       {
         fieldKey: 'stepNumber',
