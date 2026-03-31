@@ -97,8 +97,53 @@ export async function exportToExcelTemplate(
     if (Array.isArray(rowData)) {
       let rowsWritten = 0;
       
+      // V2.9B-PF.8: Dynamic STEP table detection for Process Flow
+      // Scan worksheet to find correct "#" cell that marks the STEP table header
+      let actualStartRow = cellMap.rowMappings.startRow; // Default fallback
+      
+      if (cellMap.sheetName === '5-Proces Flow Diagram') {
+        console.log('[V2.9B-PF.8 EXPORT] Detecting STEP table header with contextual validation');
+        
+        let headerRowIndex = -1;
+        
+        worksheet.eachRow((row, rowNumber) => {
+          const cellA = row.getCell(1);
+          
+          if (cellA.value === '#') {
+            // Contextual validation: check surrounding rows
+            const prevRow = rowNumber > 1 ? worksheet.getRow(rowNumber - 1) : null;
+            const nextRow = worksheet.getRow(rowNumber + 1);
+            
+            // Validate: Previous row should contain "STEP" text
+            const hasStepHeaderAbove = prevRow && 
+              String(prevRow.getCell(1).value || '').toUpperCase().includes('STEP');
+            
+            // Validate: Next row should have numeric data (row numbers start at 1)
+            const nextCellValue = nextRow.getCell(1).value;
+            const looksLikeTable = typeof nextCellValue === 'number' && nextCellValue >= 1;
+            
+            if (hasStepHeaderAbove && looksLikeTable) {
+              console.log(`[V2.9B-PF.8 EXPORT] Found valid STEP table header at row ${rowNumber}`);
+              console.log(`[V2.9B-PF.8 EXPORT]   - Previous row has STEP label: ✓`);
+              console.log(`[V2.9B-PF.8 EXPORT]   - Next row has numeric data: ✓`);
+              headerRowIndex = rowNumber;
+              return false; // Stop iteration (found correct header)
+            } else {
+              console.log(`[V2.9B-PF.8 EXPORT] Found "#" at row ${rowNumber} but context invalid (likely false positive)`);
+            }
+          }
+        });
+        
+        if (headerRowIndex === -1) {
+          console.warn('[V2.9B-PF.8 EXPORT] STEP table header not found, using fallback startRow:', actualStartRow);
+        } else {
+          actualStartRow = headerRowIndex + 1; // Data starts after the "#" header row
+          console.log(`[V2.9B-PF.8 EXPORT] STEP table data will start at row ${actualStartRow}`);
+        }
+      }
+      
       // V2.8A: Enhanced debug logging for mapping verification
-      console.log(`[V2.8A EXPORT] Starting row injection at Excel row ${cellMap.rowMappings.startRow}`);
+      console.log(`[V2.8A EXPORT] Starting row injection at Excel row ${actualStartRow}`);
       console.log(`[V2.8A EXPORT] Column mappings: ${cellMap.rowMappings.columnMappings.map(c => `${c.fieldKey}→${c.column}`).join(', ')}`);
       
       for (let i = 0; i < rowData.length; i++) {
@@ -129,11 +174,11 @@ export async function exportToExcelTemplate(
       }
       
       console.log('[V2.6 EXPORT] Data rows written:', rowsWritten);
-      console.log(`[V2.8A EXPORT] Row injection complete: rows ${cellMap.rowMappings.startRow}-${cellMap.rowMappings.startRow + rowsWritten - 1}`);
+      console.log(`[V2.8A EXPORT] Row injection complete: rows ${actualStartRow}-${actualStartRow + rowsWritten - 1}`);
       
       // V2.9B-PF.5: Process Flow data placement verification
       if (cellMap.sheetName === '5-Proces Flow Diagram' && rowsWritten > 0) {
-        console.log(`[V2.9B-PF.5 EXPORT] Process Flow data injected: ${rowsWritten} rows starting at row ${cellMap.rowMappings.startRow}`);
+        console.log(`[V2.9B-PF.5 EXPORT] Process Flow data injected: ${rowsWritten} rows starting at row ${actualStartRow}`);
       }
     } else {
       console.warn('[V2.6 EXPORT] Row data field is not an array:', cellMap.rowMappings.dataFieldKey);

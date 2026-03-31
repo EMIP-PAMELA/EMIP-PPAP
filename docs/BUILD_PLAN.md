@@ -114,6 +114,7 @@ The Document Engine addendum (added in Version 3P.1) has been fully implemented 
 **Phase V2.9A:** ✅ Single Sheet Export
 **Phase V2.9B-PF.1:** ✅ Process Flow Header + Symbol Reconstruction
 **Phase V2.9B-PF.4:** ✅ Symbol Image Browser Compatibility Fix
+**Phase V2.9B-PF.5:** ✅ Process Flow Data Injection Column Alignment Fix
 
 **What is COMPLETE:**
 - ✅ Document generation engine (Process Flow, PFMEA, Control Plan, PSW)
