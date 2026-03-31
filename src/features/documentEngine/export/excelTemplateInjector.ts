@@ -166,22 +166,38 @@ export async function exportToExcelTemplate(
 /**
  * Sanitize workbook for ExcelJS export compatibility
  * Phase V2.8B.1 - Fix null protection/style metadata that causes writeBuffer() crashes
+ * Phase V2.8B.3 - Remove worksheet-level protection to prevent null reference errors
  * 
  * ExcelJS Issue: Some PPAP workbook templates contain cells with null or incomplete
  * protection/style objects. During serialization (writeBuffer), ExcelJS attempts to
  * access properties like 'locked' on these null objects, causing:
  * "TypeError: Cannot read properties of null (reading 'locked')"
  * 
- * Solution: Iterate through all worksheets and cells, normalizing any null/undefined
- * protection or style objects to minimal safe defaults. This preserves workbook
- * formatting while ensuring ExcelJS can serialize without crashing.
+ * Solution: 
+ * 1. Remove worksheet-level protection completely (V2.8B.3)
+ * 2. Normalize cell-level protection objects to safe defaults (V2.8B.1)
+ * This preserves workbook formatting while ensuring ExcelJS can serialize without crashing.
  * 
  * @param workbook - ExcelJS workbook to sanitize
  */
 function sanitizeWorkbookForExport(workbook: ExcelJS.Workbook): void {
   let cellsSanitized = 0;
+  let worksheetsNeutralized = 0;
   
   workbook.eachSheet((worksheet) => {
+    // V2.8B.3: CRITICAL FIX - Remove worksheet-level protection
+    // Worksheet protection can contain null objects that cause ExcelJS to crash
+    // during serialization. Use unprotect() to remove protection completely.
+    try {
+      // ExcelJS uses unprotect() method to remove worksheet protection
+      // This prevents null reference errors during serialization
+      (worksheet as any).unprotect();
+      worksheetsNeutralized++;
+    } catch (e) {
+      // Silently continue if unprotect fails (worksheet may not be protected)
+      // This is not a critical error
+    }
+    
     worksheet.eachRow({ includeEmpty: false }, (row) => {
       row.eachCell({ includeEmpty: false }, (cell) => {
         // Ensure cell.style exists as an object
@@ -213,6 +229,9 @@ function sanitizeWorkbookForExport(workbook: ExcelJS.Workbook): void {
     });
   });
   
+  if (worksheetsNeutralized > 0) {
+    console.log(`[V2.8B.3 EXPORT] Worksheet protection neutralized on ${worksheetsNeutralized} sheet(s)`);
+  }
   if (cellsSanitized > 0) {
     console.log(`[V2.8B.1 EXPORT] Sanitized ${cellsSanitized} cell protection/style objects`);
   }
