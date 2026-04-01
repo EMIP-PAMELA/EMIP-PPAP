@@ -3,10 +3,15 @@
 import { useState, useEffect } from 'react';
 import { CopilotDraft } from '../types/copilotTypes';
 import { CopilotChatPanel } from './CopilotChatPanel';
+import { CopilotDraftPreview } from './CopilotDraftPreview';
 import { listAvailableDocumentTypes } from '../entryPoints/standaloneCopilot';
 import { launchStandaloneSession } from '../entryPoints/standaloneCopilot';
 import { launchPpapBoundSession } from '../entryPoints/ppapBoundCopilot';
 import { routeDraft } from '../services/copilotOutputRouter';
+import { extractTextFromPDF } from '../utils/pdfToText';
+import { parseBOMText } from '../core/bomParser';
+import { normalizeBOMData } from '../core/bomNormalizer';
+import { RawBOMData, NormalizedBOM } from '../types/bomTypes';
 
 interface CopilotWorkspaceProps {
   ppapId?: string;
@@ -31,6 +36,14 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
   const [bomFile, setBomFile] = useState<File | null>(null);
   const [templateFile, setTemplateFile] = useState<File | null>(null);
   const [drawingFile, setDrawingFile] = useState<File | null>(null);
+  
+  // BOM parsing state
+  const [isParsing, setIsParsing] = useState(false);
+  const [bomText, setBomText] = useState<string | null>(null);
+  const [parsedBomData, setParsedBomData] = useState<RawBOMData | null>(null);
+  const [normalizedBom, setNormalizedBom] = useState<NormalizedBOM | null>(null);
+  const [parsingError, setParsingError] = useState<string | null>(null);
+  const [componentCount, setComponentCount] = useState<number>(0);
   
   // PPAP-Bound context state
   const [ppapContext, setPpapContext] = useState<any>(null);
@@ -91,12 +104,74 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
     loadPpapContext();
   }, [mode, ppapId]);
 
+  // BOM parsing pipeline: PDF → text → parser → normalizer
+  const parseBOMFile = async (file: File) => {
+    setIsParsing(true);
+    setParsingError(null);
+    setParsedBomData(null);
+    setNormalizedBom(null);
+    setComponentCount(0);
+    
+    try {
+      console.log('[CopilotWorkspace] Starting BOM parsing pipeline...');
+      
+      // Step 1: Extract text from PDF
+      const text = await extractTextFromPDF(file);
+      setBomText(text);
+      console.log('[CopilotWorkspace] PDF text extracted:', text.length, 'characters');
+      
+      // Step 2: Parse BOM text into raw data
+      const rawBomData = parseBOMText(text);
+      setParsedBomData(rawBomData);
+      console.log('[CopilotWorkspace] BOM parsed:', rawBomData.operations.length, 'operations');
+      
+      // Step 3: Normalize BOM data into business entities
+      const normalized = normalizeBOMData(rawBomData);
+      setNormalizedBom(normalized);
+      
+      // Count total components
+      const totalComponents = normalized.operations.reduce(
+        (sum, op) => sum + op.components.length,
+        0
+      );
+      setComponentCount(totalComponents);
+      
+      console.log('[CopilotWorkspace] BOM normalized:', totalComponents, 'components found');
+    } catch (err) {
+      console.error('[CopilotWorkspace] BOM parsing failed:', err);
+      setParsingError(err instanceof Error ? err.message : 'Failed to parse BOM');
+    } finally {
+      setIsParsing(false);
+    }
+  };
+  
+  // Handle BOM file upload and trigger parsing
+  const handleBomFileChange = async (file: File | null) => {
+    setBomFile(file);
+    if (file) {
+      await parseBOMFile(file);
+    } else {
+      // Clear parsing state if file removed
+      setBomText(null);
+      setParsedBomData(null);
+      setNormalizedBom(null);
+      setParsingError(null);
+      setComponentCount(0);
+    }
+  };
+
   const canStartSession = (): boolean => {
     if (!selectedDocType) return false;
     
     if (mode === 'standalone') {
-      // Standalone requires at minimum: BOM file and template file
-      return bomFile !== null && templateFile !== null;
+      // Standalone requires: BOM file uploaded AND parsed successfully, plus template file
+      return (
+        bomFile !== null && 
+        normalizedBom !== null && 
+        parsingError === null &&
+        !isParsing &&
+        templateFile !== null
+      );
     } else {
       // PPAP-Bound requires context loaded successfully
       return ppapContext !== null && !isLoadingContext;
@@ -172,11 +247,12 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
     }
   };
 
-  const handleRequestChanges = (feedback: string) => {
+  const handleRequestChanges = async (feedback: string) => {
     console.log('[CopilotWorkspace] User requested changes:', feedback);
     // Return to active phase so user can send feedback to Claude
     setPhase('active');
     setCurrentDraft(null);
+    // Feedback will be sent as next message in chat
   };
 
   const handleNewSession = () => {
@@ -313,11 +389,36 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
                   <input
                     type="file"
                     accept=".pdf"
-                    onChange={(e) => setBomFile(e.target.files?.[0] || null)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => handleBomFileChange(e.target.files?.[0] || null)}
+                    disabled={isParsing}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                   />
-                  {bomFile && (
-                    <p className="text-sm text-green-600 mt-1">✓ {bomFile.name}</p>
+                  
+                  {/* Parsing Status */}
+                  {isParsing && (
+                    <div className="mt-2 flex items-center gap-2 text-blue-600">
+                      <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                      <span className="text-sm font-medium">Parsing BOM...</span>
+                    </div>
+                  )}
+                  
+                  {/* Success State */}
+                  {bomFile && normalizedBom && !isParsing && !parsingError && (
+                    <div className="mt-2 bg-green-50 border border-green-200 rounded-lg p-3">
+                      <p className="text-sm text-green-800 font-semibold">✓ {bomFile.name}</p>
+                      <p className="text-xs text-green-700 mt-1">
+                        BOM parsed: {componentCount} components found across {normalizedBom.operations.length} operations
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Error State */}
+                  {parsingError && (
+                    <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3">
+                      <p className="text-sm text-red-800 font-semibold">Failed to parse BOM</p>
+                      <p className="text-xs text-red-700 mt-1">{parsingError}</p>
+                      <p className="text-xs text-red-600 mt-1">Please verify the PDF is a valid BOM file and try again.</p>
+                    </div>
                   )}
                 </div>
 
@@ -355,6 +456,20 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
               </div>
             )}
 
+            {/* Validation Messages */}
+            {mode === 'standalone' && !canStartSession() && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-yellow-800 font-medium text-sm mb-2">⚠️ Requirements not met:</p>
+                <ul className="text-xs text-yellow-700 space-y-1 ml-4 list-disc">
+                  {!bomFile && <li>BOM PDF file required</li>}
+                  {bomFile && isParsing && <li>Waiting for BOM parsing to complete...</li>}
+                  {bomFile && parsingError && <li>BOM parsing failed - please upload a valid BOM PDF</li>}
+                  {bomFile && !normalizedBom && !isParsing && !parsingError && <li>BOM not yet parsed</li>}
+                  {!templateFile && <li>Excel template file required</li>}
+                </ul>
+              </div>
+            )}
+
             {/* Start Session Button */}
             <button
               onClick={handleStartSession}
@@ -365,7 +480,7 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
                   : 'bg-gray-300 cursor-not-allowed'
               }`}
             >
-              {isLoadingContext ? 'Loading context...' : 'Start Copilot Session'}
+              {isLoadingContext ? 'Loading context...' : isParsing ? 'Parsing BOM...' : 'Start Copilot Session'}
             </button>
           </div>
         )}
@@ -383,6 +498,9 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
                 templateFile: templateFile || undefined,
                 drawingFile: drawingFile || undefined
               } : undefined}
+              bomText={bomText || undefined}
+              parsedBomData={parsedBomData || undefined}
+              normalizedBom={normalizedBom || undefined}
               onDraftReady={handleDraftReady}
               onQuestionAsked={(q) => console.log('Question asked:', q)}
             />
@@ -394,31 +512,22 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
           <div className="bg-white rounded-lg shadow-md p-8 space-y-6">
             <h2 className="text-2xl font-bold text-gray-900">Review Draft</h2>
             
-            {/* Import and render CopilotDraftPreview would go here */}
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-              <p className="text-gray-700">Draft preview component would render here</p>
-              <p className="text-sm text-gray-500 mt-2">
-                Document type: {selectedDocType} | Confidence: {currentDraft.metadata.confidence}
-              </p>
-            </div>
+            {/* Render CopilotDraftPreview */}
+            <CopilotDraftPreview
+              draft={currentDraft}
+              onAccept={handleAcceptDraft}
+              onRequestChanges={handleRequestChanges}
+            />
 
-            {/* Action Buttons */}
-            <div className="flex gap-4">
-              <button
-                onClick={handleAcceptDraft}
-                disabled={isSavingDraft}
-                className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold disabled:bg-gray-300"
-              >
-                {isSavingDraft ? 'Saving...' : '✅ Accept Draft'}
-              </button>
-              <button
-                onClick={() => handleRequestChanges('User requested changes')}
-                disabled={isSavingDraft}
-                className="flex-1 px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors font-semibold disabled:bg-gray-300"
-              >
-                ✏️ Request Changes
-              </button>
-            </div>
+            {/* Save Status Messages */}
+            {isSavingDraft && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <div className="animate-spin w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                  <span className="text-blue-800 font-medium">Saving draft to Vault...</span>
+                </div>
+              </div>
+            )}
 
             {saveError && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">

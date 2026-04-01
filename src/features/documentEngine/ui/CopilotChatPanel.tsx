@@ -8,7 +8,7 @@ import {
   addClaudeResponse 
 } from '../services/copilotSessionManager';
 import { orchestrate } from '../core/claudeOrchestrator';
-import { CopilotDraftPreview } from './CopilotDraftPreview';
+import { RawBOMData, NormalizedBOM } from '../types/bomTypes';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -28,6 +28,9 @@ interface CopilotChatPanelProps {
     templateFile?: File;
     drawingFile?: File;
   };
+  bomText?: string;
+  parsedBomData?: RawBOMData;
+  normalizedBom?: NormalizedBOM;
   onDraftReady: (draft: CopilotDraft) => void;
   onQuestionAsked: (question: string) => void;
   disabled?: boolean;
@@ -39,6 +42,9 @@ export function CopilotChatPanel({
   mode,
   ppapId,
   uploadedFiles,
+  bomText,
+  parsedBomData,
+  normalizedBom,
   onDraftReady,
   onQuestionAsked,
   disabled = false
@@ -74,6 +80,21 @@ export function CopilotChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Helper: Convert File to base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove data URL prefix (e.g., "data:application/pdf;base64,")
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = error => reject(error);
+    });
+  };
+
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading || disabled) return;
 
@@ -95,11 +116,14 @@ export function CopilotChatPanel({
       await addUserMessage(sessionId, userMessage);
 
       // Call Claude orchestrator with real input package
-      console.log('[CopilotChatPanel] Calling Claude orchestrator...');
+      console.log('[CopilotChatPanel] Calling Claude orchestrator with real BOM data...');
       
-      // Build input package for orchestration
-      // Note: In full implementation, this would include parsed BOM data
-      // For V3.2F-3b, we pass placeholder structure that orchestrator expects
+      // Convert files to base64 for Claude API
+      const bomFileBase64 = uploadedFiles?.bomFile ? await fileToBase64(uploadedFiles.bomFile) : undefined;
+      const templateFileBase64 = uploadedFiles?.templateFile ? await fileToBase64(uploadedFiles.templateFile) : undefined;
+      const drawingFileBase64 = uploadedFiles?.drawingFile ? await fileToBase64(uploadedFiles.drawingFile) : undefined;
+      
+      // Build input package with real parsed BOM data
       const inputPackage: any = {
         template: {
           documentType,
@@ -109,11 +133,28 @@ export function CopilotChatPanel({
         },
         systemPrompt: `You are an AI assistant helping generate ${documentType} documents.`,
         documentInstructions: 'Generate based on user requirements.',
-        bomData: uploadedFiles?.bomFile ? {
-          raw: 'BOM text would be extracted here',
-          parsed: {},
-          normalized: {}
+        bomData: parsedBomData && normalizedBom ? {
+          raw: bomText || '',
+          parsed: parsedBomData,
+          normalized: normalizedBom
         } : undefined,
+        files: {
+          bomPdf: bomFileBase64 ? {
+            base64: bomFileBase64,
+            mediaType: 'application/pdf',
+            filename: uploadedFiles?.bomFile?.name
+          } : undefined,
+          template: templateFileBase64 ? {
+            base64: templateFileBase64,
+            mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            filename: uploadedFiles?.templateFile?.name
+          } : undefined,
+          drawing: drawingFileBase64 ? {
+            base64: drawingFileBase64,
+            mediaType: uploadedFiles?.drawingFile?.type || 'application/pdf',
+            filename: uploadedFiles?.drawingFile?.name
+          } : undefined
+        },
         ppapContext: mode === 'ppap-bound' && ppapId ? {
           ppapId,
           partNumber: 'PART-XXX',
@@ -122,6 +163,13 @@ export function CopilotChatPanel({
           supplierName: 'Supplier'
         } : undefined
       };
+      
+      console.log('[CopilotChatPanel] Input package prepared:', {
+        hasBomData: !!inputPackage.bomData,
+        componentCount: normalizedBom?.operations.reduce((sum, op) => sum + op.components.length, 0) || 0,
+        hasTemplateFile: !!templateFileBase64,
+        hasBomFile: !!bomFileBase64
+      });
       
       // Call real orchestrator
       const copilotDraft = await orchestrate(inputPackage);
@@ -259,14 +307,12 @@ export function CopilotChatPanel({
                 </div>
               )}
 
-              {message.messageType === 'draft' && message.draft ? (
-                <CopilotDraftPreview
-                  draft={message.draft}
-                  onAccept={handleAcceptDraft}
-                  onRequestChanges={handleRequestChanges}
-                />
-              ) : (
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              
+              {message.messageType === 'draft' && (
+                <div className="mt-3 text-sm text-green-700">
+                  Draft ready for review. Transitioning to review phase...
+                </div>
               )}
 
               {message.messageType === 'error' && (
