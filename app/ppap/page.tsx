@@ -35,6 +35,12 @@ export default async function PPAPOperationsPage() {
           </div>
           <div className="flex gap-3">
             <Link
+              href="/copilot"
+              className="bg-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-purple-700 transition-colors shadow-sm"
+            >
+              🤖 Document Copilot
+            </Link>
+            <Link
               href="/ppap/intake"
               className="bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-semibold hover:bg-gray-200 transition-colors shadow-sm"
             >
