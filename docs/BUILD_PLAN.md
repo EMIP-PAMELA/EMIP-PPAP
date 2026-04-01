@@ -6467,6 +6467,829 @@ Feature specification must include:
 
 ---
 
+## V3.2B — Domain Interface Contracts
+
+**Last Updated:** 2026-04-01  
+**Status:** Execution-Grade Architecture (Interface Definition Complete)
+
+### Purpose
+
+**V3.2A defined domain ownership boundaries. V3.2B defines the ONLY allowed communication patterns between those domains.**
+
+Domain ownership and domain interfaces are **separate concerns**:
+
+- **Ownership** (V3.2A): What each domain controls and is authoritative for
+- **Interfaces** (V3.2B): How domains may communicate without crossing ownership boundaries
+
+**Critical Principle:**
+
+Domains **MUST** communicate to coordinate work, but communication **MUST NOT** violate ownership boundaries. V3.2B defines the strict contract model that makes coordination safe.
+
+**Without Interface Contracts:**
+
+Implementation teams would invent ad hoc integration patterns that could:
+- Create hidden coupling between domains
+- Allow shadow ownership to emerge
+- Enable contract drift over time
+- Introduce implicit dependencies
+- Violate architectural boundaries through "convenience" methods
+
+**With Interface Contracts:**
+
+All cross-domain communication follows explicit, versioned, boundary-preserving patterns that maintain architectural integrity.
+
+---
+
+### Core Interface Model
+
+The EMIP-PPAP system supports **five architectural contract types** for cross-domain interaction:
+
+#### 1. Read Contract
+
+**Definition:** One domain reads non-authoritative output from another domain.
+
+**Rules:**
+- Reading does **NOT** imply ownership transfer
+- Reading does **NOT** grant mutation rights
+- Reader **MUST** treat data as read-only reference
+- Reader **MUST NOT** cache data as authoritative truth
+- Reader **MUST** refresh from source when needed
+
+**Example:** Command Center reads PPAP assignment data from PPAP Workflow
+
+#### 2. Request Contract
+
+**Definition:** One domain requests that another domain perform an action on its own owned data.
+
+**Rules:**
+- Requesting domain **MUST NOT** perform the mutation itself
+- Owning domain **MUST** decide whether and how to execute
+- Owning domain **MUST** maintain authority over the action
+- Request **MUST NOT** include instructions on how to implement
+- Request may be accepted, rejected, or queued by owning domain
+
+**Example:** Document Copilot requests Workspace/Vault to store a draft file
+
+#### 3. Output Contract
+
+**Definition:** A domain exposes a stable output for other domains to consume.
+
+**Rules:**
+- Output **MUST** be versioned and controlled by owning domain
+- Output structure is a contract, not an implementation detail
+- Breaking changes **MUST** be versioned or use adapters
+- Consumers **MUST** rely only on published contract shape
+- Owning domain **MUST** maintain backward compatibility or version
+
+**Example:** PPAP Workflow exposes PPAP status and assignment data
+
+#### 4. Event Contract
+
+**Definition:** A domain emits an event describing something that happened in its own scope.
+
+**Rules:**
+- Event describes a **past occurrence**, not a command
+- Event **MUST NOT** transfer ownership
+- Consumers **MAY** react within their own boundaries
+- Consumers **MUST NOT** reinterpret event as authoritative state
+- Events are informational, not prescriptive
+
+**Example:** Workspace/Vault emits "file uploaded" event; PPAP Workflow may react by updating attachment tracking
+
+#### 5. Reference Contract
+
+**Definition:** One domain holds a foreign reference to an entity owned by another domain.
+
+**Rules:**
+- Reference is **NOT** a copy of truth
+- Reference **MUST NOT** become authoritative
+- Reference **MUST** be treated as a pointer, not ownership
+- Reference **MAY** become stale; consuming domain **MUST** handle staleness
+- Owning domain controls lifecycle; reference holder does not
+
+**Example:** PPAP Workflow holds a reference to a file ID from Workspace/Vault
+
+---
+
+### Global Interface Rules
+
+The following rules govern **ALL** cross-domain interfaces:
+
+#### Rule 1: No Direct Mutation of Other Domain Data
+
+**No domain MUST directly mutate another domain's owned data.**
+
+All mutations **MUST** use Request Contracts where the owning domain performs the action.
+
+#### Rule 2: Reads Do Not Imply Authority
+
+**Reading data from another domain MUST NOT imply authority over that data.**
+
+Readers consume outputs; they do not control them.
+
+#### Rule 3: References Do Not Imply Ownership
+
+**Holding a reference to another domain's entity MUST NOT imply ownership transfer.**
+
+References are pointers, not truth stores.
+
+#### Rule 4: Outputs MUST Be Treated as Versioned Contracts
+
+**All domain outputs MUST be treated as stable, versioned contracts.**
+
+Breaking changes require versioning or adapters. Silent changes are **PROHIBITED**.
+
+#### Rule 5: Events Trigger Reactions, Not Authority Transfer
+
+**Events MAY trigger workflow or UI reactions but MUST NOT transfer authority.**
+
+An event describing "document draft created" does not make the listener the owner of that draft.
+
+#### Rule 6: Requesting ≠ Performing
+
+**Requesting a change is NOT the same as performing a change.**
+
+The owning domain retains full authority to accept, reject, modify, or delay the request.
+
+#### Rule 7: Cross-Domain Communication MUST Be Explicit
+
+**All cross-domain communication MUST be explicit, never implicit.**
+
+No hidden coupling through shared caches, shared stores, or silent field reuse.
+
+#### Rule 8: No Hidden Coupling
+
+**No domain MUST create hidden coupling through:**
+- Shared mutable caches
+- Shared data stores written by multiple domains
+- Silent field reuse across domain boundaries
+- Direct database access to another domain's tables
+
+#### Rule 9: No Interpretation of Private Internal State
+
+**No domain MUST interpret another domain's private internal state beyond its published contract.**
+
+Domains expose outputs; consumers rely only on those outputs.
+
+#### Rule 10: Interface Contracts MUST Be Implementation-Independent
+
+**Interface contracts MUST be stable enough that implementation can depend on them without guessing.**
+
+Contracts define **what** is communicated, not **how** it is implemented.
+
+---
+
+## Per-Domain Interface Contracts
+
+Each domain has explicit inbound contracts (what it accepts), outbound contracts (what it provides), and prohibited behavior (what it must never do).
+
+---
+
+## 1. Core Platform Domain — Interface Contracts
+
+### Allowed Inbound Contracts
+
+Core Platform **MAY** accept:
+
+- **Event subscriptions** — Other domains may subscribe to notifications
+- **Identity queries** — Other domains may request user identity verification
+- **Access control queries** — Other domains may request authorization decisions
+- **Storage requests** — Other domains may request blob storage primitives
+
+Core Platform **MUST NOT** accept:
+- Business logic or workflow rules from other domains
+- Domain-specific meaning or interpretation
+
+### Allowed Outbound Contracts
+
+Core Platform **MUST** provide:
+
+- **Identity Outputs** — User identity, authentication state
+- **Access Control Outputs** — Authorization decisions, role queries
+- **Storage Primitive Outputs** — Blob storage capability, file references
+- **Notification Events** — Delivery confirmations, channel status
+
+Core Platform **MUST NOT** provide:
+- Business domain knowledge
+- PPAP-specific logic
+- Document-specific logic
+- Component-specific logic
+
+### Prohibited Interface Behavior
+
+Core Platform **MUST NOT**:
+- Interpret business meaning from other domains
+- Store business rules on behalf of other domains
+- Become a "smart" orchestration layer
+- Expose domain-specific APIs (PPAP, documents, etc.)
+
+**Rationale:** Core Platform is infrastructure, not business logic. It provides primitives; other domains build meaning.
+
+---
+
+## 2. PPAP Workflow Domain — Interface Contracts
+
+### Allowed Inbound Contracts
+
+PPAP Workflow **MAY** accept:
+
+- **Read Contracts** — Read draft/final state indicators from Document Copilot
+- **Read Contracts** — Read file references from Workspace/Vault
+- **Read Contracts** — Read component structure from EMIP
+- **Event Contracts** — Consume events from Document Copilot (draft complete), Workspace/Vault (file uploaded), Core Platform (user actions)
+- **Reference Contracts** — Hold references to files, drafts, components
+
+PPAP Workflow **MUST NOT** accept:
+- Direct mutations from other domains
+- Commands to change status (it decides status itself)
+
+### Allowed Outbound Contracts
+
+PPAP Workflow **MUST** provide:
+
+- **Output Contracts** — PPAP status, assignments, workflow state, document requirements
+- **Event Contracts** — Status changes, assignment changes, workflow transitions
+- **Request Contracts** — May request document generation from Document Copilot
+- **Request Contracts** — May request file storage from Workspace/Vault
+
+PPAP Workflow **MUST NOT** provide:
+- Document content
+- File storage
+- Component intelligence
+
+### Prohibited Interface Behavior
+
+PPAP Workflow **MUST NOT**:
+- Directly manipulate draft content in Document Copilot
+- Directly mutate files in Workspace/Vault
+- Directly mutate component relationships in EMIP
+- Compute or cache document meaning
+- Interpret file semantics
+
+**Exclusive Authority Maintained:**
+
+Even when consuming cross-domain data, PPAP Workflow retains **exclusive authority** to:
+- Determine PPAP status
+- Determine document completeness for workflow purposes
+- Determine PPAP readiness
+- Determine approval eligibility
+
+**Rationale:** PPAP Workflow orchestrates, but does not own content. It reads from other domains and makes workflow decisions based on those inputs.
+
+---
+
+## 3. Document Copilot Domain — Interface Contracts
+
+### Allowed Inbound Contracts
+
+Document Copilot **MAY** accept:
+
+- **Read Contracts** — Read staged files from Workspace/Vault
+- **Read Contracts** — Read PPAP context from PPAP Workflow
+- **Read Contracts** — Read EMIP reference data (components, SKUs)
+- **Request Contracts** — Accept document generation requests from PPAP Workflow or users
+- **Event Contracts** — Consume file upload events, PPAP status change events
+
+Document Copilot **MUST NOT** accept:
+- Commands to finalize documents (only user approval triggers finalization)
+- Workflow state mutations from other domains
+
+### Allowed Outbound Contracts
+
+Document Copilot **MUST** provide:
+
+- **Output Contracts** — Draft documents, session state, unresolved questions, confidence metadata
+- **Event Contracts** — Draft created, draft updated, session complete, question raised
+- **Request Contracts** — May request file storage from Workspace/Vault
+- **Request Contracts** — May request PPAP context from PPAP Workflow
+- **Reference Contracts** — May hold references to source files, PPAP IDs, component IDs
+
+Document Copilot **MUST NOT** provide:
+- Final authoritative documents (only drafts)
+- Workflow status determinations
+- File storage authority
+
+### Prohibited Interface Behavior
+
+Document Copilot **MUST NOT**:
+- Write PPAP workflow state
+- Finalize outputs without explicit user approval
+- Store files directly (must request Workspace/Vault)
+- Infer authoritative product relationships (must consume from EMIP)
+- Determine workflow completeness or readiness
+- Approve its own drafts
+
+**Rationale:** Document Copilot assists and proposes; it does not decide or finalize. All outputs are drafts requiring user/workflow approval.
+
+---
+
+## 4. Engineer Command Center Domain — Interface Contracts
+
+### Allowed Inbound Contracts
+
+Command Center **MAY** accept:
+
+- **Read Contracts** — Read aggregated outputs from all domains
+- **Event Contracts** — Consume events from all domains for display purposes
+- **Reference Contracts** — Hold references to PPAP IDs, document IDs, file IDs, session IDs
+
+Command Center **MUST NOT** accept:
+- Mutation requests from users that it would execute directly on other domains
+- Business logic or workflow rules
+
+### Allowed Outbound Contracts
+
+Command Center **MUST** provide:
+
+- **Output Contracts** — Aggregated user view, task surface, presentation state
+- **Reference Contracts** — Action entry points (navigation to owning domains)
+- **Request Contracts** — May request actions from owning domains on behalf of user
+
+Command Center **MUST NOT** provide:
+- Computed workflow state (must read from PPAP Workflow)
+- Cached authoritative business data
+- Shadow orchestration logic
+
+### Prohibited Interface Behavior
+
+Command Center **MUST NOT**:
+- Compute authoritative workflow state (must read from PPAP Workflow)
+- Mutate PPAP data, documents, sessions, or files directly
+- Cache business data as authoritative source
+- Become a shadow orchestration layer
+- Infer or derive workflow decisions
+- Store business logic
+
+**Strict Read-Only Enforcement:**
+
+All Command Center interactions with other domains **MUST** be:
+- Read Contracts (consuming outputs)
+- Reference Contracts (holding pointers)
+- Request Contracts (delegating actions to owning domains)
+
+**NEVER:**
+- Direct mutations
+- Computed authority
+- Cached truth
+
+**Rationale:** Command Center aggregates and presents; it does not compute, decide, or own business state.
+
+---
+
+## 5. Workspace / Vault Domain — Interface Contracts
+
+### Allowed Inbound Contracts
+
+Workspace/Vault **MAY** accept:
+
+- **Request Contracts** — Storage requests from Document Copilot, PPAP Workflow, users
+- **Request Contracts** — File retrieval requests from all domains
+- **Read Contracts** — User identity from Core Platform (for access control)
+
+Workspace/Vault **MUST NOT** accept:
+- Requests to interpret file meaning
+- Requests to infer document structure
+- Requests to classify or tag files semantically
+
+### Allowed Outbound Contracts
+
+Workspace/Vault **MUST** provide:
+
+- **Output Contracts** — File references, access metadata, storage quotas
+- **Event Contracts** — File uploaded, file deleted, quota exceeded
+- **Reference Contracts** — File IDs, access URIs
+
+Workspace/Vault **MUST NOT** provide:
+- Document meaning or classification
+- Inferred relationships between files
+- Business logic or workflow implications
+
+### Prohibited Interface Behavior
+
+Workspace/Vault **MUST NOT**:
+- Interpret file semantics or document meaning
+- Infer relationships between files
+- Determine document structure or format
+- Apply business logic to file content
+- Make decisions based on file content
+- Expose file content analysis (only raw storage/retrieval)
+
+**Strict Storage-Only Enforcement:**
+
+Workspace/Vault is a **dumb storage layer**. It:
+- Stores bytes
+- Provides access
+- Tracks metadata (size, type, owner, timestamps)
+
+It **NEVER**:
+- Interprets content
+- Infers meaning
+- Makes business decisions
+
+**Rationale:** Separation of storage from semantics. Workspace/Vault is infrastructure; meaning belongs to consuming domains.
+
+---
+
+## 6. EMIP Domain — Interface Contracts
+
+### Allowed Inbound Contracts
+
+EMIP **MAY** accept:
+
+- **Read Contracts** — File-derived data from Workspace/Vault (for BOM parsing)
+- **Request Contracts** — Component lookup requests from Document Copilot, PPAP Workflow, Command Center
+- **Event Contracts** — File upload events (to trigger BOM parsing)
+
+EMIP **MUST NOT** accept:
+- Product relationship definitions from other domains
+- Component structure inferred by other domains
+- SKU definitions from external sources without validation
+
+### Allowed Outbound Contracts
+
+EMIP **MUST** provide:
+
+- **Output Contracts** — Structured product data (SKUs, components, relationships)
+- **Event Contracts** — Component updated, BOM parsed, relationship changed
+- **Reference Contracts** — Component IDs, SKU references
+
+EMIP **MUST NOT** provide:
+- File storage
+- Workflow control
+- Document drafts
+
+### Prohibited Interface Behavior
+
+EMIP **MUST NOT**:
+- Absorb file storage responsibility (delegates to Workspace/Vault)
+- Control workflow state (delegates to PPAP Workflow)
+- Generate draft documents (delegates to Document Copilot)
+- Allow other domains to define product intelligence outside EMIP
+
+**Exclusive Product Intelligence Authority:**
+
+Only EMIP **MAY**:
+- Define SKUs and component identifiers
+- Parse BOMs for component data
+- Define parent/child relationships in product structure
+
+Other domains **MUST**:
+- Reference EMIP data as read-only
+- Request lookups from EMIP
+- Never infer product relationships independently
+
+**Rationale:** Product intelligence is centralized in EMIP. Other domains consume but never define.
+
+---
+
+## Cross-Domain Interaction Matrix
+
+The following matrix defines **allowed interaction types** between domains. Implementation **MUST** follow these contracts.
+
+**Legend:**
+- **I** = Identity/Auth/Storage/Notifications (Core Platform foundation)
+- **R** = Read Contract (consume outputs)
+- **Q** = Request Contract (request action from owning domain)
+- **E** = Event Contract (consume events)
+- **Ref** = Reference Contract (hold foreign reference)
+- **—** = No interaction allowed
+
+| **From ↓ / To →** | **Core Platform** | **PPAP Workflow** | **Document Copilot** | **Command Center** | **Workspace/Vault** | **EMIP** |
+|-------------------|-------------------|-------------------|----------------------|--------------------|---------------------|----------|
+| **Core Platform** | — | I | I | I | I | I |
+| **PPAP Workflow** | I, Q | — | R, Q, E, Ref | — | R, Q, E, Ref | R, E, Ref |
+| **Document Copilot** | I, Q | R, E, Ref | — | — | R, Q, E, Ref | R, Ref |
+| **Command Center** | I | R, E, Ref, Q | R, E, Ref, Q | — | R, E, Ref, Q | R, Ref, Q |
+| **Workspace/Vault** | I | E | E | — | — | — |
+| **EMIP** | I | E | E | — | R, E | — |
+
+**Matrix Rules:**
+
+1. **Core Platform** provides foundation (I) to all domains
+2. **Command Center** reads from all domains but never mutates
+3. **Workspace/Vault** and **EMIP** emit events but rarely consume from business domains
+4. **PPAP Workflow** and **Document Copilot** coordinate via R, Q, E, Ref patterns
+5. No domain has direct mutation access (—) to another domain's data
+
+**Interpretation Examples:**
+
+- **PPAP Workflow → Document Copilot:** R, Q, E, Ref
+  - Read draft state (R)
+  - Request document generation (Q)
+  - Consume draft completion events (E)
+  - Hold references to session IDs (Ref)
+
+- **Command Center → PPAP Workflow:** R, E, Ref, Q
+  - Read PPAP status (R)
+  - Consume status change events (E)
+  - Hold PPAP ID references (Ref)
+  - Request actions on behalf of user (Q), but PPAP Workflow executes
+
+- **Document Copilot → Workspace/Vault:** R, Q, E, Ref
+  - Read source files (R)
+  - Request file storage (Q)
+  - Consume file upload events (E)
+  - Hold file ID references (Ref)
+
+---
+
+## Approved Interface Patterns
+
+The following patterns are **approved** for cross-domain interaction:
+
+### Pattern 1: Publish Output → Consume Read-Only
+
+**Description:** Owning domain publishes stable output; consuming domain reads it without mutation.
+
+**Example:** PPAP Workflow publishes PPAP status; Command Center reads it for display.
+
+**Rules:**
+- Consumer **MUST NOT** modify the output
+- Consumer **MUST NOT** cache as authoritative truth
+- Consumer **MUST** refresh from source as needed
+
+### Pattern 2: Request Action → Owning Domain Decides
+
+**Description:** Requesting domain asks owning domain to perform an action; owning domain decides.
+
+**Example:** Document Copilot requests Workspace/Vault to store a file; Workspace/Vault executes storage.
+
+**Rules:**
+- Requester **MUST NOT** perform the action itself
+- Owning domain **MUST** retain authority
+- Request may be accepted, rejected, or queued
+
+### Pattern 3: Emit Event → Other Domain Reacts Within Own Boundary
+
+**Description:** Domain emits event describing past occurrence; consumers react within their own scope.
+
+**Example:** Workspace/Vault emits "file uploaded"; PPAP Workflow updates attachment tracking (its own data).
+
+**Rules:**
+- Event is informational, not prescriptive
+- Event **MUST NOT** transfer ownership
+- Consumer reacts by modifying its own data only
+
+### Pattern 4: Hold Reference → Never Promote to Authoritative Copy
+
+**Description:** Domain holds reference to entity owned by another domain; reference remains pointer.
+
+**Example:** PPAP Workflow holds file ID reference; Workspace/Vault owns the file.
+
+**Rules:**
+- Reference is not a copy of truth
+- Reference may become stale
+- Owning domain controls lifecycle
+
+### Pattern 5: Aggregate for Display → Source Remains Authoritative
+
+**Description:** Aggregation layer combines data from multiple domains for display; sources remain truth.
+
+**Example:** Command Center aggregates PPAP, documents, and files; owning domains remain authoritative.
+
+**Rules:**
+- Aggregation is read-only
+- Aggregation **MUST NOT** become source of truth
+- Aggregation **MUST** refresh from sources
+
+---
+
+## Prohibited Interface Patterns
+
+The following patterns are **strictly forbidden**:
+
+### Anti-Pattern 1: Direct Cross-Domain Mutation
+
+**Description:** Domain A directly modifies Domain B's owned data.
+
+**Why Prohibited:** Violates ownership boundaries, creates hidden coupling, bypasses business logic.
+
+**Example:** Command Center directly updating PPAP status in database.
+
+**Enforcement:** Code reviews **MUST** reject any direct cross-domain mutation.
+
+### Anti-Pattern 2: Shared Mutable Object/State
+
+**Description:** Multiple domains write to the same data store or cache.
+
+**Why Prohibited:** Creates race conditions, unclear ownership, coupling.
+
+**Example:** PPAP Workflow and Document Copilot both writing to shared "document_state" table.
+
+**Enforcement:** Architecture reviews **MUST** reject shared mutable state.
+
+### Anti-Pattern 3: Duplicated Truth Stores
+
+**Description:** Multiple domains storing their own copies of the same authoritative data.
+
+**Why Prohibited:** Data inconsistency, unclear source of truth.
+
+**Example:** Command Center caching PPAP status locally as authoritative.
+
+**Enforcement:** Data ownership reviews **MUST** identify and eliminate duplication.
+
+### Anti-Pattern 4: Hidden Dependency on Internal Fields
+
+**Description:** Domain A relying on Domain B's internal implementation details beyond published contract.
+
+**Why Prohibited:** Creates fragile coupling, prevents independent evolution.
+
+**Example:** Document Copilot reading PPAP Workflow's internal state machine fields.
+
+**Enforcement:** Interface reviews **MUST** ensure reliance only on published contracts.
+
+### Anti-Pattern 5: UI-Layer Inference Becoming Workflow Truth
+
+**Description:** Command Center computing derived state and treating it as authoritative.
+
+**Why Prohibited:** Aggregation layer must not become source of truth.
+
+**Example:** Command Center calculating "PPAP is complete" based on document counts.
+
+**Enforcement:** Command Center **MUST** read status from PPAP Workflow, not compute it.
+
+### Anti-Pattern 6: File Metadata Becoming Semantic Authority
+
+**Description:** Workspace/Vault inferring document meaning from file metadata.
+
+**Why Prohibited:** Storage layer must not interpret semantics.
+
+**Example:** Workspace/Vault tagging files as "design spec" based on naming convention.
+
+**Enforcement:** Workspace/Vault **MUST** store only; meaning comes from consuming domains.
+
+### Anti-Pattern 7: Copilot Output Treated as Final Without Approval
+
+**Description:** Document Copilot draft automatically becoming final without user/workflow approval.
+
+**Why Prohibited:** Drafts are proposals, not authoritative documents.
+
+**Example:** Copilot-generated draft automatically marked as "approved" in PPAP Workflow.
+
+**Enforcement:** Copilot outputs **MUST** require explicit approval before becoming final.
+
+### Anti-Pattern 8: Temporary Shared Ownership
+
+**Description:** Two domains temporarily sharing ownership "for convenience."
+
+**Why Prohibited:** Temporary becomes permanent; creates technical debt.
+
+**Example:** PPAP Workflow and Document Copilot both allowed to update "draft_status" field.
+
+**Enforcement:** "Temporary" shared ownership is **NEVER** allowed.
+
+---
+
+## Interface Stability Rules
+
+The following rules govern interface contract stability and change control:
+
+### Rule 1: Published Domain Outputs Are Contracts, Not Suggestions
+
+**Published outputs are binding contracts.**
+
+Consuming domains rely on output structure. Changes affect consumers.
+
+### Rule 2: Breaking Changes Require Explicit Versioning or Adapters
+
+**Breaking changes MUST be versioned or use adapters.**
+
+Consumers **MUST** handle version negotiation. Silent breaking changes are **PROHIBITED**.
+
+**Example:** If PPAP Workflow changes status output structure, it must:
+- Version the output (v1, v2)
+- Provide adapter for v1 consumers
+- Notify consumers of deprecation timeline
+
+### Rule 3: Silent Contract Changes Are Prohibited
+
+**Changing output structure without versioning or notification is forbidden.**
+
+Consumers expect stable contracts. Surprises break systems.
+
+### Rule 4: Consuming Domains MUST Rely Only on Published Contract Shape
+
+**Consumers MUST NOT rely on private implementation details.**
+
+If it's not in the published contract, it's not stable.
+
+### Rule 5: Interface Changes Require BUILD_PLAN Update If Architectural
+
+**If an interface change alters architectural assumptions, BUILD_PLAN MUST be updated.**
+
+**Examples requiring BUILD_PLAN update:**
+- New interaction type between domains
+- Change in ownership boundary
+- New prohibited pattern discovered
+
+**Examples NOT requiring BUILD_PLAN update:**
+- Adding optional field to existing output (backward compatible)
+- Internal implementation optimization
+
+### Rule 6: Interface Contracts Are Immutable Until Explicitly Versioned
+
+**Once published, a contract version is immutable.**
+
+To change, create new version. Deprecate old version over time.
+
+### Rule 7: Deprecation MUST Include Migration Path
+
+**When deprecating an interface, MUST provide migration path and timeline.**
+
+Consumers need time to adapt.
+
+---
+
+## Implementation Guardrails for Future Phases
+
+Before implementing **ANY** feature touching multiple domains, the implementing phase **MUST** declare:
+
+### Required Declaration Checklist
+
+1. **Which domain owns the affected data?**
+   - Must reference V3.2A domain ownership
+
+2. **Which domain is consuming outputs?**
+   - Must identify consuming domains
+
+3. **What contract type is being used?**
+   - Must be one of: Read, Request, Output, Event, Reference
+   - Must reference V3.2B contract model
+
+4. **How is ownership preserved?**
+   - Must demonstrate no ownership boundary violations
+   - Must show owning domain retains authority
+
+5. **Why does this design not violate V3.2A or V3.2B?**
+   - Must explicitly confirm compliance
+   - Must identify which approved patterns are being used
+
+6. **What prohibited patterns are being avoided?**
+   - Must confirm no anti-patterns are present
+
+### Implementation Review Gates
+
+**No cross-domain feature may be implemented without:**
+
+1. Explicit contract type declaration (Read/Request/Output/Event/Reference)
+2. Confirmation of owning vs consuming domains
+3. Ownership boundary preservation proof
+4. Prohibited pattern avoidance confirmation
+
+**Code reviews MUST check:**
+- Contract type is explicit
+- Ownership boundaries are respected
+- No prohibited patterns are present
+- Interface follows V3.2B rules
+
+**Architecture reviews MUST verify:**
+- Feature does not introduce new anti-patterns
+- Feature does not weaken domain boundaries
+- Feature follows approved interface patterns
+
+### Implementation Rejection Criteria
+
+**Implementation MUST be rejected if:**
+
+1. Contract type is not declared
+2. Ownership boundary is violated
+3. Prohibited pattern is present
+4. Direct cross-domain mutation detected
+5. Shared mutable state introduced
+6. Duplicated truth store created
+7. Interface relies on private implementation details
+8. "Temporary" shared ownership proposed
+
+**Functional correctness does NOT override these rules.**
+
+---
+
+## Governance for Domain Interface Contracts
+
+**This interface contract definition is authoritative.** All future implementation **MUST** follow these contracts.
+
+**Changes Require:**
+1. BUILD_PLAN update with explicit rationale
+2. BUILD_LEDGER entry documenting the change
+3. Architecture review
+4. Interface contract updates
+5. Consumer impact analysis
+
+**Violations Are:**
+- Direct cross-domain mutation
+- Use of prohibited patterns
+- Unapproved interaction types
+- Silent contract changes
+- Hidden coupling
+
+**Enforcement:**
+- Code reviews check contract type declaration
+- Architecture reviews verify pattern compliance
+- Regular interface audits
+- Consumer notification for contract changes
+
+---
+
 ## Conclusion
 
 This document is the **implementation-grade source of truth** for EMIP-PPAP.

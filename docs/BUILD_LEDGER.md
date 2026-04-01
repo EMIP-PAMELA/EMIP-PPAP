@@ -4,6 +4,235 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-01 08:32 CT - Phase V3.2B - Domain Interface Contract Definition
+
+**Summary:** Definition of execution-grade interface contracts specifying how domains may communicate without violating ownership boundaries
+
+**Type:** Architecture Planning (Documentation Only)
+
+### Context
+
+**Why Ownership Boundaries Alone Were Not Sufficient:**
+
+V3.2A defined **what** each domain owns and controls. However, ownership boundaries alone do not specify **how** domains should communicate to coordinate work.
+
+**Risk Without Interface Contracts:**
+
+Without explicit interface contracts, implementation teams would:
+- Invent ad hoc integration patterns
+- Create hidden coupling between domains
+- Allow shadow ownership to emerge through "convenience" methods
+- Enable contract drift over time
+- Introduce implicit dependencies
+- Violate architectural boundaries unintentionally
+
+**Example Risks:**
+
+Without V3.2B, an implementer might:
+- Have Command Center directly read PPAP Workflow database tables (hidden coupling)
+- Allow Document Copilot to directly mutate Workspace/Vault file metadata (ownership violation)
+- Create shared "document_state" table written by multiple domains (duplicated truth)
+- Cache PPAP status in Command Center as authoritative (shadow ownership)
+
+### Strategic Decision
+
+**EMIP-PPAP requires explicit, versioned, boundary-preserving interface contracts that define the ONLY allowed communication patterns between domains.**
+
+**Ownership (V3.2A) + Interfaces (V3.2B) = Complete Architectural Control**
+
+### What Was Added
+
+**1. Core Interface Model (5 Contract Types)**
+
+Defined five architectural contract types for all cross-domain interaction:
+
+**Read Contract:**
+- One domain reads non-authoritative output from another
+- Reading does NOT imply ownership transfer or mutation rights
+- Reader MUST refresh from source, not cache as authoritative
+
+**Request Contract:**
+- One domain requests another domain to perform action on its own data
+- Requesting domain MUST NOT perform the mutation itself
+- Owning domain decides whether/how to execute
+
+**Output Contract:**
+- Domain exposes stable, versioned output for others to consume
+- Output structure is a contract, not implementation detail
+- Breaking changes MUST be versioned or use adapters
+
+**Event Contract:**
+- Domain emits event describing past occurrence in its own scope
+- Event MUST NOT transfer ownership
+- Consumers react within their own boundaries only
+
+**Reference Contract:**
+- Domain holds foreign reference to entity owned by another domain
+- Reference is NOT a copy of truth, MUST NOT become authoritative
+- Owning domain controls lifecycle
+
+**2. Global Interface Rules (10 Rules)**
+
+Defined 10 strict rules governing ALL cross-domain interfaces:
+
+1. No direct mutation of other domain data
+2. Reads do not imply authority
+3. References do not imply ownership
+4. Outputs MUST be treated as versioned contracts
+5. Events trigger reactions, not authority transfer
+6. Requesting ≠ Performing
+7. Cross-domain communication MUST be explicit
+8. No hidden coupling (shared caches, stores, fields, database access)
+9. No interpretation of private internal state
+10. Interface contracts MUST be implementation-independent
+
+**3. Per-Domain Interface Contracts**
+
+For each of the six domains, defined:
+
+**Allowed Inbound Contracts:** What this domain MAY accept from others
+**Allowed Outbound Contracts:** What this domain MUST provide to others
+**Prohibited Interface Behavior:** What this domain MUST NEVER do
+
+Examples:
+- **Core Platform:** Provides identity/auth/storage primitives; MUST NOT interpret business meaning
+- **PPAP Workflow:** May read from other domains; retains exclusive authority for status/readiness decisions
+- **Document Copilot:** Produces drafts only; MUST NOT finalize without approval
+- **Command Center:** Read-only aggregation; MUST NOT compute authoritative workflow state
+- **Workspace/Vault:** Storage only; MUST NOT interpret file semantics or infer relationships
+- **EMIP:** Product intelligence authority; other domains MUST NOT infer product relationships
+
+**4. Cross-Domain Interaction Matrix**
+
+Created comprehensive matrix defining allowed interaction types between all domain pairs:
+
+- Legend: I (Infrastructure), R (Read), Q (Request), E (Event), Ref (Reference), — (No interaction)
+- Shows exactly which contracts are allowed between each domain pair
+- Includes interpretation examples for common interactions
+
+**5. Approved Interface Patterns (5 Patterns)**
+
+Defined approved patterns for safe cross-domain interaction:
+
+1. Publish Output → Consume Read-Only
+2. Request Action → Owning Domain Decides
+3. Emit Event → Other Domain Reacts Within Own Boundary
+4. Hold Reference → Never Promote to Authoritative Copy
+5. Aggregate for Display → Source Remains Authoritative
+
+**6. Prohibited Interface Patterns (8 Anti-Patterns)**
+
+Defined strictly forbidden patterns with enforcement requirements:
+
+1. Direct Cross-Domain Mutation
+2. Shared Mutable Object/State
+3. Duplicated Truth Stores
+4. Hidden Dependency on Internal Fields
+5. UI-Layer Inference Becoming Workflow Truth
+6. File Metadata Becoming Semantic Authority
+7. Copilot Output Treated as Final Without Approval
+8. Temporary Shared Ownership
+
+Each anti-pattern includes why it's prohibited, example violation, and enforcement mechanism.
+
+**7. Interface Stability Rules (7 Rules)**
+
+Defined rules for contract stability and change control:
+
+1. Published domain outputs are contracts, not suggestions
+2. Breaking changes require explicit versioning or adapters
+3. Silent contract changes are prohibited
+4. Consuming domains MUST rely only on published contract shape
+5. Interface changes require BUILD_PLAN update if architectural
+6. Interface contracts are immutable until explicitly versioned
+7. Deprecation MUST include migration path
+
+**8. Implementation Guardrails**
+
+Added mandatory declaration checklist for all future cross-domain features:
+
+**Required Before Implementation:**
+- Which domain owns the affected data?
+- Which domain is consuming outputs?
+- What contract type is being used? (Read/Request/Output/Event/Reference)
+- How is ownership preserved?
+- Why does this design not violate V3.2A or V3.2B?
+- What prohibited patterns are being avoided?
+
+**Implementation Review Gates:**
+- Code reviews MUST check contract type declaration and pattern compliance
+- Architecture reviews MUST verify no new anti-patterns introduced
+- No cross-domain feature may be implemented without explicit contract declaration
+
+**Implementation Rejection Criteria:**
+- Contract type not declared
+- Ownership boundary violated
+- Prohibited pattern present
+- Functional correctness does NOT override these rules
+
+### No Code Changes (V3.2B)
+
+This phase is strictly documentation and architecture planning. No application code, UI, routes, or database changes were made.
+
+**Files Updated:**
+- `docs/BUILD_PLAN.md` — V3.2B section added (820+ lines)
+- `docs/BUILD_LEDGER.md` — This decision record
+
+### Expected Impact
+
+**Prevents Hidden Coupling:**
+- All integration patterns must be explicit
+- No shadow ownership through caching or inference
+- No shared mutable state across domains
+
+**Enables Safe Coordination:**
+- Domains can communicate without violating boundaries
+- Clear contract types prevent ambiguity
+- Versioning prevents breaking changes
+
+**Forces Architectural Discipline:**
+- Every cross-domain feature requires contract declaration
+- Anti-patterns are explicitly forbidden with enforcement
+- Implementation reviews have clear checklist
+
+**Maintains Long-Term Integrity:**
+- Interface contracts are immutable until versioned
+- Change control prevents contract drift
+- Deprecation paths protect consumers
+
+### Relationship to Prior Work
+
+**V3.2A (Domain Ownership):**
+- Defined what each domain owns
+- V3.2B defines how domains interact without crossing those boundaries
+
+**V3.2A-C (Enforcement Pass):**
+- Strengthened ownership boundaries with MUST/MUST NOT language
+- V3.2B adds interface contract layer on top of those boundaries
+
+**Complete Architectural Control:**
+- V3.2A: Ownership boundaries (what you control)
+- V3.2B: Interface contracts (how you communicate)
+- Together: Complete separation of concerns with safe coordination
+
+### Rationale
+
+**Why Now:**
+- Ownership boundaries alone leave communication patterns undefined
+- Ad hoc integration creates technical debt
+- Need to prevent implementation from inventing prohibited patterns
+- Early contract definition prevents coupling and drift
+
+**Why This Approach:**
+- Five contract types cover all cross-domain interaction scenarios
+- Explicit anti-patterns prevent common violations
+- Matrix provides clear reference for allowed interactions
+- Guardrails force architectural thinking before implementation
+
+**Next Step:** All future implementation must declare contract types and follow V3.2B approved patterns
+
+---
+
 ## 2026-04-01 08:22 CT - Phase V3.2A-C - Architecture Enforcement Pass
 
 **Summary:** Comprehensive audit and correction pass to eliminate architectural ambiguity and enforce strict domain contracts
