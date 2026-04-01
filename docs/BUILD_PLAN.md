@@ -10148,6 +10148,848 @@ This document is the **implementation-grade source of truth** for EMIP-PPAP.
 - Preserve core architecture
 - Update this plan as system evolves
 
+---
+
+## V3.2E-1 — Workspace/Vault Domain Definition and Extraction Plan
+
+**Last Updated:** 2026-04-01  
+**Status:** Extraction-Ready Architecture (Pre-Implementation Definition)  
+**Type:** Documentation Only (No Code Changes)
+
+### Purpose
+
+**V3.2E-1 defines the complete Workspace/Vault domain extraction from PPAP Workflow to establish independent file storage ownership.**
+
+**Context from V3.2D:**
+- REPO-SCAN-01 confirmed Workspace/Vault is **STUB ONLY** with file storage embedded in PPAP Workflow
+- V3.2A defines Workspace/Vault as independent domain but implementation violates ownership rules
+- File storage logic currently lives in `src/features/documents/` and `src/features/ppap/utils/uploadFile.ts`
+- `ppap_documents` table mixes PPAP workflow concerns with file storage concerns
+
+**Objective:**
+Define every architectural decision required for V3.2E-2 to extract Workspace/Vault as an independent domain without making any implementation decisions during extraction.
+
+---
+
+### 1. DOMAIN DEFINITION
+
+**Workspace/Vault Domain** (Complete V3.2A Specification)
+
+#### Purpose
+
+Manage file storage, organization, retrieval, and lifecycle for all files in the EMIP-PPAP system, independent of business context or workflow state.
+
+#### Owns (Authoritative Control)
+
+| Entity | Ownership |
+|--------|-----------|
+| **File Storage** | Physical file storage, blob references, storage paths |
+| **File Metadata** | File name, size, MIME type, upload timestamp, uploader |
+| **File Organization** | Folder structure, file hierarchy, organization rules |
+| **File Versions** | Version history, version metadata, version retrieval |
+| **File References** | Stable file identifiers, access URLs, signed URLs |
+| **File Lifecycle** | Upload, retrieval, deletion, archival, retention |
+| **Storage Quotas** | Space usage tracking, quota enforcement |
+| **File Access Paths** | URL generation, access token management |
+
+**Single Source of Truth For:**
+- What files exist in the system
+- Where files are physically stored
+- File metadata (name, size, type, timestamps)
+- File version history
+- File access paths and references
+- Storage usage and quotas
+
+**Exclusive File Storage Authority:**
+
+Workspace/Vault is the **ONLY** domain authorized to:
+- Store files to physical storage (Supabase Storage, S3, etc.)
+- Generate file access URLs or signed URLs
+- Track file metadata (size, MIME type, upload time)
+- Manage file versions and version history
+- Delete or archive files from storage
+- Enforce storage quotas and limits
+
+**Even when files are associated with business entities (PPAPs, documents, etc.)**, Workspace/Vault retains exclusive authority over file storage operations. Other domains provide context; Workspace/Vault manages storage.
+
+#### Does NOT Own
+
+| Area | Rationale |
+|------|-----------|
+| **File Meaning** | Belongs to consuming domains (PPAP, Document Copilot) |
+| **File Classification** | Belongs to consuming domains (document type, category) |
+| **Business Context** | Belongs to PPAP Workflow (which PPAP, which phase) |
+| **Document Semantics** | Belongs to Document Copilot (draft vs final, confidence) |
+| **Workflow State** | Belongs to PPAP Workflow (approval, completeness) |
+| **File Relationships** | Belongs to consuming domains (which files are required) |
+| **File Validation** | Belongs to consuming domains (content validation) |
+
+**Strict Constraints:**
+
+Workspace/Vault **MUST NOT:**
+- Assign document types or categories to files (e.g., "DRAWING", "FMEA")
+- Determine which files are required for a PPAP
+- Validate file content for business rules
+- Make workflow decisions based on file presence
+- Infer relationships between files
+- Apply business logic to file metadata
+- Determine file completeness or approval status
+
+Workspace/Vault **MUST ONLY:**
+- Store files and return stable references
+- Provide file metadata (size, type, timestamps)
+- Manage file lifecycle (upload, retrieve, delete)
+- Track storage usage and enforce quotas
+- Generate access paths and signed URLs
+
+#### Consumes
+
+| Input | Source Domain | Contract Type |
+|-------|---------------|---------------|
+| **Storage Primitives** | Core Platform | Infrastructure (Supabase Storage) |
+| **User Identity** | Core Platform | Read Contract (who is uploading) |
+| **Storage Requests** | All Domains | Request Contract (store this file) |
+
+#### Produces
+
+| Output | Consumers | Contract Type |
+|--------|-----------|---------------|
+| **File References** | All Domains | Output Contract (stable file ID + URL) |
+| **File Metadata** | All Domains | Read Contract (file properties) |
+| **Storage Events** | All Domains | Event Contract (file uploaded, deleted) |
+| **File Access URLs** | All Domains | Output Contract (signed URLs for retrieval) |
+
+---
+
+### 2. CURRENT VIOLATION ANALYSIS
+
+**Files That Violate V3.2A Ownership Rules:**
+
+#### Violation 1: File Storage Logic in PPAP Workflow Domain
+
+**File:** `src/features/ppap/utils/uploadFile.ts`
+
+**Violation:**
+- PPAP Workflow domain owns file upload logic
+- Direct Supabase Storage calls from PPAP domain
+- File path generation logic (`${ppapId}/${Date.now()}-${file.name}`)
+- Storage bucket hardcoded (`ppap-documents`)
+
+**Should Be:** Workspace/Vault domain owns all storage operations
+
+**Evidence:**
+```typescript
+// src/features/ppap/utils/uploadFile.ts (lines 1-22)
+export async function uploadPPAPDocument(file: File, ppapId: string): Promise<string> {
+  const filePath = `${ppapId}/${Date.now()}-${file.name}`;
+  const { data, error } = await supabase.storage
+    .from('ppap-documents')
+    .upload(filePath, file);
+  // ...
+}
+```
+
+#### Violation 2: File Storage Logic in Documents Feature
+
+**File:** `src/features/documents/components/UploadDocumentForm.tsx`
+
+**Violation:**
+- UI component directly calls Supabase Storage
+- File path generation logic in UI layer (`ppap/${ppapId}/${file.name}`)
+- Storage bucket hardcoded in component
+- No domain separation between UI and storage
+
+**Should Be:** UI calls Workspace/Vault domain via Request Contract
+
+**Evidence:**
+```typescript
+// src/features/documents/components/UploadDocumentForm.tsx (lines 33-54)
+const filePath = `ppap/${ppapId}/${file.name}`;
+const { data: uploadData, error: uploadError } = await supabase
+  .storage
+  .from('ppap-documents')
+  .upload(filePath, file, { ... });
+```
+
+#### Violation 3: Mixed Ownership in ppap_documents Table
+
+**Table:** `ppap_documents` (supabase/schema.sql lines 86-123)
+
+**Violation:**
+- Table mixes PPAP Workflow concerns with Workspace/Vault concerns
+- PPAP-specific fields: `ppap_id`, `document_type` (PPAP workflow context)
+- Vault-specific fields: `storage_path`, `storage_bucket`, `file_size_bytes`, `mime_type`
+- No clear ownership boundary
+
+**Should Be:** Split into two tables:
+- `ppap_document_requirements` (PPAP Workflow domain) — which files are required for which PPAP
+- `vault_files` (Workspace/Vault domain) — file storage metadata
+
+**Evidence:**
+```sql
+CREATE TABLE ppap_documents (
+  id UUID PRIMARY KEY,
+  ppap_id UUID NOT NULL REFERENCES ppap_records(id),  -- PPAP Workflow concern
+  document_type VARCHAR(100),                          -- PPAP Workflow concern
+  storage_path VARCHAR(500),                           -- Vault concern
+  storage_bucket VARCHAR(100),                         -- Vault concern
+  file_size_bytes BIGINT,                              -- Vault concern
+  mime_type VARCHAR(100),                              -- Vault concern
+  -- ...
+);
+```
+
+#### Violation 4: Document Mutations in Documents Feature
+
+**File:** `src/features/documents/mutations.ts`
+
+**Violation:**
+- `createDocument()` writes to `ppap_documents` table
+- Mixes PPAP context (`ppap_id`, `category`) with file metadata
+- No separation between "attach file to PPAP" (PPAP Workflow) and "store file" (Vault)
+
+**Should Be:** Two separate operations:
+- Vault: `storeFile()` → returns file reference
+- PPAP Workflow: `attachFileToPPAP(ppapId, fileRef, documentType)` → creates requirement record
+
+**Evidence:**
+```typescript
+// src/features/documents/mutations.ts (lines 5-34)
+export async function createDocument(input: CreateDocumentInput): Promise<PPAPDocument> {
+  const { data, error } = await supabase
+    .from('ppap_documents')  // Mixed ownership table
+    .insert({
+      ppap_id: input.ppap_id,      // PPAP context
+      file_name: input.file_name,  // Vault metadata
+      category: input.category,    // PPAP context
+      file_url: input.file_url,    // Vault metadata
+      // ...
+    });
+}
+```
+
+#### Violation 5: Cross-Domain Imports
+
+**Files Importing Storage Logic:**
+- `src/features/ppap/components/CreatePPAPForm.tsx` imports `uploadFile`
+- `src/features/ppap/components/DocumentationForm.tsx` imports `uploadFile`
+- `src/features/ppap/components/MarkupTool.tsx` imports `uploadFile`
+- `src/features/ppap/components/PPAPControlPanel.tsx` imports `uploadFile`
+
+**Violation:** PPAP UI components directly import file storage utilities, bypassing domain boundaries
+
+**Should Be:** PPAP components call Workspace/Vault domain via Request Contract
+
+---
+
+### 3. TARGET FOLDER STRUCTURE
+
+**Workspace/Vault Domain Location:**
+
+```
+src/features/vault/
+├── mutations.ts              # Vault write operations (store, delete, version)
+├── queries.ts                # Vault read operations (get file, list files)
+├── types.ts                  # Vault-specific types (FileReference, FileMetadata)
+├── services/
+│   ├── storageService.ts     # Core storage operations (upload, download, delete)
+│   ├── versionService.ts     # File versioning logic
+│   └── quotaService.ts       # Storage quota tracking and enforcement
+├── utils/
+│   ├── filePathGenerator.ts  # Generate storage paths (isolated logic)
+│   └── mimeTypeDetector.ts   # MIME type detection and validation
+└── components/
+    ├── FileUploadForm.tsx    # Generic file upload UI (domain-agnostic)
+    ├── FileList.tsx          # Generic file list UI
+    └── FilePreview.tsx       # Generic file preview UI
+```
+
+**No app/ Route:**
+Workspace/Vault has no dedicated UI route. It is a **service domain** consumed by other domains via contracts.
+
+**Rationale:**
+- Users don't interact with "the vault" directly
+- Users upload files in context (PPAP documents, Copilot inputs, etc.)
+- Vault provides storage services, not user-facing workflows
+
+---
+
+### 4. EXTRACTION PLAN
+
+**V3.2E-2 MUST execute these steps in order:**
+
+#### Step 1: Create Vault Domain Structure
+
+**Action:** Create new domain folder and files
+
+**Files to Create:**
+1. `src/features/vault/types.ts` — Define `FileReference`, `FileMetadata`, `StorageRequest`, `StorageResponse`
+2. `src/features/vault/services/storageService.ts` — Core storage operations
+3. `src/features/vault/mutations.ts` — Public Vault API (storeFile, deleteFile)
+4. `src/features/vault/queries.ts` — Public Vault API (getFile, listFiles)
+
+**No Code Migration Yet:** Just create empty structure with type definitions
+
+#### Step 2: Implement Core Vault Storage Service
+
+**Action:** Move storage logic from PPAP domain to Vault domain
+
+**Extract From:**
+- `src/features/ppap/utils/uploadFile.ts` → `src/features/vault/services/storageService.ts`
+- `src/features/documents/components/UploadDocumentForm.tsx` (lines 33-54) → `src/features/vault/services/storageService.ts`
+
+**New Vault API:**
+```typescript
+// src/features/vault/mutations.ts
+export async function storeFile(
+  file: File,
+  context?: { ownerId?: string; ownerType?: string }
+): Promise<FileReference> {
+  // Generate storage path (no business logic, just unique path)
+  // Upload to Supabase Storage
+  // Return FileReference { id, url, metadata }
+}
+
+export async function deleteFile(fileId: string): Promise<void> {
+  // Delete from storage
+  // Emit deletion event
+}
+```
+
+**Key Changes:**
+- Remove `ppapId` parameter (business context, not Vault concern)
+- Return `FileReference` type (stable ID + URL + metadata)
+- No document type classification (Vault doesn't know what files mean)
+
+#### Step 3: Update PPAP Workflow to Use Vault Contracts
+
+**Action:** Replace direct storage calls with Vault domain calls
+
+**Files to Update:**
+- `src/features/ppap/components/CreatePPAPForm.tsx`
+- `src/features/ppap/components/DocumentationForm.tsx`
+- `src/features/ppap/components/MarkupTool.tsx`
+- `src/features/ppap/components/PPAPControlPanel.tsx`
+
+**Change Pattern:**
+```typescript
+// BEFORE (Violation):
+import { uploadPPAPDocument } from '@/src/features/ppap/utils/uploadFile';
+const filePath = await uploadPPAPDocument(file, ppapId);
+
+// AFTER (Compliant):
+import { storeFile } from '@/src/features/vault/mutations';
+const fileRef = await storeFile(file);
+await attachFileToP PAP(ppapId, fileRef.id, documentType);
+```
+
+#### Step 4: Update Documents Feature to Use Vault Contracts
+
+**Action:** Separate file storage from PPAP attachment
+
+**File to Update:**
+- `src/features/documents/components/UploadDocumentForm.tsx`
+
+**Change Pattern:**
+```typescript
+// BEFORE (Violation):
+const filePath = `ppap/${ppapId}/${file.name}`;
+const { data } = await supabase.storage.from('ppap-documents').upload(filePath, file);
+await createDocument({ ppap_id, file_name, file_url, ... });
+
+// AFTER (Compliant):
+const fileRef = await storeFile(file);  // Vault domain
+await attachFileToP PAP(ppapId, fileRef.id, documentType);  // PPAP domain
+```
+
+#### Step 5: Split ppap_documents Table (Documentation Only)
+
+**Action:** Document table split plan (no schema changes in V3.2E-2)
+
+**Current Table:** `ppap_documents` (mixed ownership)
+
+**Target Tables:**
+
+**Table 1: `vault_files` (Workspace/Vault Domain)**
+```sql
+CREATE TABLE vault_files (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- File metadata (Vault owns)
+  file_name VARCHAR(255) NOT NULL,
+  file_size_bytes BIGINT,
+  mime_type VARCHAR(100),
+  
+  -- Storage (Vault owns)
+  storage_path VARCHAR(500) NOT NULL,
+  storage_bucket VARCHAR(100) NOT NULL,
+  
+  -- Lifecycle (Vault owns)
+  uploaded_by VARCHAR(255) NOT NULL,
+  uploaded_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ,
+  
+  -- Version tracking (Vault owns)
+  version INTEGER DEFAULT 1,
+  parent_version_id UUID REFERENCES vault_files(id)
+);
+```
+
+**Table 2: `ppap_document_requirements` (PPAP Workflow Domain)**
+```sql
+CREATE TABLE ppap_document_requirements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ppap_id UUID NOT NULL REFERENCES ppap_records(id) ON DELETE CASCADE,
+  
+  -- File reference (Reference Contract to Vault)
+  file_id UUID NOT NULL REFERENCES vault_files(id),
+  
+  -- PPAP context (PPAP Workflow owns)
+  document_type VARCHAR(100) NOT NULL,  -- DRAWING, FMEA, etc.
+  is_required BOOLEAN DEFAULT true,
+  is_complete BOOLEAN DEFAULT false,
+  
+  -- Workflow metadata (PPAP Workflow owns)
+  attached_at TIMESTAMPTZ DEFAULT NOW(),
+  attached_by VARCHAR(255),
+  notes TEXT,
+  
+  CONSTRAINT valid_document_type CHECK (document_type IN (...))
+);
+```
+
+**Migration Strategy (Future Phase):**
+1. Create `vault_files` table
+2. Create `ppap_document_requirements` table
+3. Migrate data from `ppap_documents` to both tables
+4. Update code to use new tables
+5. Drop `ppap_documents` table
+
+**V3.2E-2 Does NOT Execute Migration:** Only update code to use Vault domain. Schema migration is separate phase.
+
+#### Step 6: Delete Obsolete Files
+
+**Files to Delete:**
+- `src/features/ppap/utils/uploadFile.ts` (logic moved to Vault)
+- `src/features/documents/mutations.ts` (split into Vault + PPAP operations)
+
+**Files to Keep (Updated):**
+- `src/features/documents/components/UploadDocumentForm.tsx` (updated to use Vault)
+- `src/features/documents/components/DocumentList.tsx` (updated to read from Vault)
+
+#### Step 7: Create Vault-PPAP Contract Definitions
+
+**Action:** Document explicit contracts (no code, just documentation)
+
+**File to Create:** `src/features/vault/CONTRACTS.md`
+
+**Content:** Define Request/Output/Event contracts between Vault and PPAP Workflow (see Section 5)
+
+---
+
+### 5. CONTRACT DEFINITIONS
+
+**Workspace/Vault ↔ Other Domains Contracts** (V3.2B Compliance)
+
+#### Contract 1: Store File (Request Contract)
+
+**Direction:** Any Domain → Workspace/Vault
+
+**Pattern:** Request Contract (domain requests storage service)
+
+**Request:**
+```typescript
+interface StoreFileRequest {
+  file: File;                    // File blob to store
+  context?: {                    // Optional business context (Vault ignores)
+    ownerId?: string;            // For logging/audit only
+    ownerType?: string;          // For logging/audit only
+  };
+}
+```
+
+**Response (Output Contract):**
+```typescript
+interface FileReference {
+  id: string;                    // Stable file identifier (UUID)
+  url: string;                   // Access URL (public or signed)
+  metadata: {
+    fileName: string;
+    fileSize: number;
+    mimeType: string;
+    uploadedAt: string;          // ISO timestamp
+    uploadedBy: string;
+  };
+}
+```
+
+**Ownership:**
+- Vault owns file storage and returns stable reference
+- Calling domain owns business context (what file means, why it's stored)
+
+**Example Usage:**
+```typescript
+// PPAP Workflow calls Vault
+const fileRef = await storeFile(file, { ownerId: ppapId, ownerType: 'PPAP' });
+
+// PPAP Workflow then creates its own record
+await createPPAPDocumentRequirement({
+  ppap_id: ppapId,
+  file_id: fileRef.id,           // Reference to Vault file
+  document_type: 'DRAWING',      // PPAP's classification
+});
+```
+
+#### Contract 2: Retrieve File (Read Contract)
+
+**Direction:** Any Domain → Workspace/Vault
+
+**Pattern:** Read Contract (domain reads file metadata)
+
+**Request:**
+```typescript
+interface GetFileRequest {
+  fileId: string;                // Stable file ID from FileReference
+}
+```
+
+**Response:**
+```typescript
+interface FileMetadata {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  uploadedAt: string;
+  uploadedBy: string;
+  url: string;                   // Access URL
+  version: number;               // File version
+}
+```
+
+**Ownership:**
+- Vault provides file metadata and access URL
+- Calling domain interprets metadata for business purposes
+
+#### Contract 3: Delete File (Request Contract)
+
+**Direction:** Any Domain → Workspace/Vault
+
+**Pattern:** Request Contract (domain requests file deletion)
+
+**Request:**
+```typescript
+interface DeleteFileRequest {
+  fileId: string;
+  deletedBy: string;
+}
+```
+
+**Response:**
+```typescript
+interface DeleteFileResponse {
+  success: boolean;
+  deletedAt: string;
+}
+```
+
+**Event (Event Contract):**
+```typescript
+interface FileDeletedEvent {
+  eventType: 'FILE_DELETED';
+  fileId: string;
+  deletedAt: string;
+  deletedBy: string;
+}
+```
+
+**Ownership:**
+- Vault executes deletion and emits event
+- Consuming domains listen for event and clean up references
+
+**V3.2D Gap 2 Resolution (Reference Integrity):**
+
+**Problem:** Consuming domain holds reference to Vault file. Vault deletes file without notification, causing broken reference.
+
+**Solution (Reference Integrity Pattern):**
+
+**Option A: Validate Before Commit (Atomic Check)**
+```typescript
+// PPAP Workflow validates reference before committing operation
+const fileExists = await vault.checkFileExists(fileId);
+if (!fileExists) {
+  throw new Error('Referenced file no longer exists');
+}
+await commitPPAPOperation();
+```
+
+**Option B: Register Interest (Notification Before Deletion)**
+```typescript
+// PPAP Workflow registers interest in file
+await vault.registerReferenceInterest(fileId, 'PPAP', ppapId);
+
+// Vault checks for interests before deletion
+const interests = await vault.getFileInterests(fileId);
+if (interests.length > 0) {
+  throw new Error('File is referenced by other entities');
+}
+// OR: Notify interested parties before deletion
+await vault.notifyInterestedParties(fileId, 'FILE_WILL_BE_DELETED');
+```
+
+**Option C: Immutable Files (No Deletion After Reference)**
+```typescript
+// Once file is referenced, it cannot be deleted
+// Only soft delete (mark as deleted but keep storage)
+await vault.softDeleteFile(fileId);  // Sets deleted_at, keeps storage
+```
+
+**V3.2E-2 Decision:** Implement **Option A (Validate Before Commit)** as minimum viable solution. Options B and C are future enhancements.
+
+#### Contract 4: File Storage Event (Event Contract)
+
+**Direction:** Workspace/Vault → All Domains
+
+**Pattern:** Event Contract (Vault publishes storage events)
+
+**Events:**
+```typescript
+interface FileUploadedEvent {
+  eventType: 'FILE_UPLOADED';
+  fileId: string;
+  fileName: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  context?: { ownerId?: string; ownerType?: string };
+}
+
+interface FileDeletedEvent {
+  eventType: 'FILE_DELETED';
+  fileId: string;
+  deletedBy: string;
+  deletedAt: string;
+}
+
+interface FileReplacedEvent {
+  eventType: 'FILE_REPLACED';
+  fileId: string;
+  oldVersion: number;
+  newVersion: number;
+  replacedBy: string;
+  replacedAt: string;
+}
+```
+
+**Ownership:**
+- Vault emits events for all storage operations
+- Consuming domains listen and react (update UI, invalidate cache, etc.)
+
+---
+
+### 6. MIGRATION RISKS
+
+**Risk 1: Breaking Existing File Upload Flows**
+
+**Symptom:** Users cannot upload files to PPAPs after extraction
+
+**Cause:** PPAP UI components still call old `uploadPPAPDocument()` function
+
+**Mitigation:**
+- Update all PPAP components to use Vault API before deleting old functions
+- Test file upload in PPAP workflow before committing
+- Keep old functions temporarily with deprecation warnings
+
+**Validation:**
+- Upload file to PPAP via UI
+- Verify file appears in PPAP documents list
+- Verify file is retrievable via URL
+
+---
+
+**Risk 2: Broken File References in Existing PPAPs**
+
+**Symptom:** Existing PPAP documents show broken file links
+
+**Cause:** `ppap_documents` table still exists but code expects new `vault_files` table
+
+**Mitigation:**
+- V3.2E-2 does NOT migrate database schema
+- Code continues to use `ppap_documents` table
+- Vault domain abstracts table access (code calls Vault API, Vault reads `ppap_documents`)
+
+**Validation:**
+- Load existing PPAP with documents
+- Verify all files are visible and downloadable
+- Verify no broken links or 404 errors
+
+---
+
+**Risk 3: File Path Generation Conflicts**
+
+**Symptom:** Duplicate file paths or overwritten files
+
+**Cause:** Multiple domains generating file paths independently
+
+**Mitigation:**
+- Vault domain owns ALL file path generation
+- Use UUID-based paths instead of business-context paths
+- Old path: `ppap/${ppapId}/${fileName}` (business context)
+- New path: `vault/${year}/${month}/${uuid}` (storage-only context)
+
+**Validation:**
+- Upload multiple files with same name to different PPAPs
+- Verify each file has unique storage path
+- Verify no file overwrites
+
+---
+
+**Risk 4: Missing File Metadata**
+
+**Symptom:** File size, MIME type, or upload timestamp missing
+
+**Cause:** Vault API doesn't capture all metadata during upload
+
+**Mitigation:**
+- Vault `storeFile()` MUST capture: file name, size, MIME type, uploader, timestamp
+- Return complete `FileReference` with all metadata
+- Test metadata completeness before deployment
+
+**Validation:**
+- Upload file via Vault API
+- Verify `FileReference` contains all metadata fields
+- Verify metadata is persisted to database
+
+---
+
+**Risk 5: Performance Degradation**
+
+**Symptom:** File uploads slower after extraction
+
+**Cause:** Additional abstraction layer (Vault API) adds overhead
+
+**Mitigation:**
+- Vault API should be thin wrapper around Supabase Storage
+- No unnecessary database writes during upload
+- Batch metadata writes if possible
+
+**Validation:**
+- Measure upload time before extraction
+- Measure upload time after extraction
+- Verify <10% performance degradation
+
+---
+
+**Risk 6: Untested Vault Domain**
+
+**Symptom:** Vault API has bugs or edge cases not covered
+
+**Cause:** New domain created without existing test coverage
+
+**Mitigation:**
+- V3.2E-2 MUST include manual testing checklist
+- Test file upload, download, delete operations
+- Test error handling (file too large, invalid MIME type, etc.)
+
+**Validation Checklist:**
+- ✅ Upload file < 10MB
+- ✅ Upload file > 10MB (should fail gracefully)
+- ✅ Upload file with special characters in name
+- ✅ Upload file with no extension
+- ✅ Download file via URL
+- ✅ Delete file
+- ✅ Attempt to download deleted file (should 404)
+
+---
+
+### 7. V3.2E-2 READINESS CRITERIA
+
+**V3.2E-2 MUST confirm these preconditions before starting:**
+
+#### Precondition 1: V3.2A-D Locked
+
+**Check:**
+- V3.2A domain ownership rules are finalized
+- V3.2B interface contracts are finalized
+- V3.2D gap analysis is complete
+- No pending changes to domain definitions
+
+**Validation:** Read BUILD_PLAN.md V3.2A-D sections, confirm no "DRAFT" or "TODO" markers
+
+---
+
+#### Precondition 2: app/ is Canonical Directory
+
+**Check:**
+- `app/` directory exists and contains all routes
+- `src/app/` directory does NOT exist
+- DIAG-01-CLEANUP commit exists
+
+**Validation:** Verify `src/app/` does not exist, verify `app/` contains admin, dashboard, ppap routes
+
+---
+
+#### Precondition 3: Current File Storage Implementation Identified
+
+**Check:**
+- All files that handle file storage are identified
+- All database fields related to file storage are identified
+- All cross-domain imports are identified
+
+**Validation:** Confirm Section 2 (Current Violation Analysis) is accurate
+
+---
+
+#### Precondition 4: Vault Domain Structure Defined
+
+**Check:**
+- Target folder structure is defined (Section 3)
+- All files to create are listed
+- All files to move are listed
+- All files to delete are listed
+
+**Validation:** Confirm Section 3 and Section 4 are complete and unambiguous
+
+---
+
+#### Precondition 5: Contracts Defined
+
+**Check:**
+- All Vault contracts are defined (Section 5)
+- Request/Output/Event patterns are specified
+- V3.2D Gap 2 resolution is specified
+
+**Validation:** Confirm Section 5 defines all contracts with TypeScript interfaces
+
+---
+
+#### Precondition 6: Migration Risks Documented
+
+**Check:**
+- All known risks are documented (Section 6)
+- Mitigation strategies are defined
+- Validation steps are defined
+
+**Validation:** Confirm Section 6 lists at least 5 risks with mitigations
+
+---
+
+#### Precondition 7: No Code Changes in V3.2E-1
+
+**Check:**
+- V3.2E-1 commit contains ONLY documentation changes
+- No files in `src/` are modified
+- No database schema changes
+
+**Validation:** `git diff` shows only `docs/BUILD_PLAN.md` and `docs/BUILD_LEDGER.md` changes
+
+---
+
+**If ALL preconditions are met, V3.2E-2 may proceed with extraction.**
+
+**If ANY precondition fails, V3.2E-2 MUST STOP and report which precondition failed.**
+
+---
+
 **This plan is a living document.**
 As the system evolves, this plan MUST be updated to reflect current state and future direction.
 

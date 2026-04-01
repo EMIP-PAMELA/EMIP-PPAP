@@ -4,6 +4,216 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-01 12:45 CT - Phase V3.2E-1 - Workspace/Vault Domain Definition
+
+**Summary:** Complete architectural definition of Workspace/Vault domain extraction from PPAP Workflow to establish independent file storage ownership
+
+**Type:** Architecture Definition (Documentation Only, No Code Changes)
+
+### Purpose
+
+**V3.2E-1 defines every architectural decision required for V3.2E-2 to extract Workspace/Vault as an independent domain.**
+
+**Context:**
+- REPO-SCAN-01 confirmed Workspace/Vault is **STUB ONLY** with file storage embedded in PPAP Workflow
+- V3.2A defines Workspace/Vault as independent domain but implementation violates ownership rules
+- File storage logic currently lives in `src/features/documents/` and `src/features/ppap/utils/uploadFile.ts`
+- `ppap_documents` table mixes PPAP workflow concerns with file storage concerns
+
+**Objective:** Define complete extraction plan so V3.2E-2 can execute without making architectural decisions.
+
+### Decisions Made
+
+#### Decision 1: Workspace/Vault Domain Ownership
+
+**Vault Owns:**
+- File storage (physical storage, blob references, storage paths)
+- File metadata (name, size, MIME type, timestamps)
+- File lifecycle (upload, retrieve, delete, version)
+- File references (stable IDs, access URLs)
+- Storage quotas and usage tracking
+
+**Vault Does NOT Own:**
+- File meaning or classification (belongs to consuming domains)
+- Business context (which PPAP, which phase)
+- Document semantics (draft vs final, confidence)
+- Workflow state (approval, completeness)
+- File relationships (which files are required)
+
+**Rationale:** Vault is a pure storage service domain with no business logic.
+
+---
+
+#### Decision 2: Target Folder Structure
+
+**Location:** `src/features/vault/`
+
+**Structure:**
+- `mutations.ts` — Public Vault API (storeFile, deleteFile)
+- `queries.ts` — Public Vault API (getFile, listFiles)
+- `types.ts` — Vault-specific types (FileReference, FileMetadata)
+- `services/storageService.ts` — Core storage operations
+- `services/versionService.ts` — File versioning logic
+- `services/quotaService.ts` — Storage quota tracking
+- `utils/filePathGenerator.ts` — Storage path generation
+- `utils/mimeTypeDetector.ts` — MIME type detection
+- `components/` — Generic file UI components (domain-agnostic)
+
+**No app/ Route:** Vault is a service domain consumed by other domains via contracts.
+
+**Rationale:** Users don't interact with "the vault" directly. They upload files in business context (PPAP documents, Copilot inputs, etc.).
+
+---
+
+#### Decision 3: Contract Definitions
+
+**Contract 1: Store File (Request Contract)**
+- Request: `{ file: File, context?: { ownerId, ownerType } }`
+- Response: `FileReference { id, url, metadata }`
+- Ownership: Vault owns storage, caller owns business context
+
+**Contract 2: Retrieve File (Read Contract)**
+- Request: `{ fileId: string }`
+- Response: `FileMetadata { id, fileName, fileSize, mimeType, url, version }`
+- Ownership: Vault provides metadata, caller interprets for business purposes
+
+**Contract 3: Delete File (Request Contract)**
+- Request: `{ fileId, deletedBy }`
+- Response: `{ success, deletedAt }`
+- Event: `FILE_DELETED { fileId, deletedAt, deletedBy }`
+- Ownership: Vault executes deletion, emits event, consumers clean up references
+
+**Contract 4: File Storage Events (Event Contract)**
+- Events: `FILE_UPLOADED`, `FILE_DELETED`, `FILE_REPLACED`
+- Ownership: Vault emits events, consumers listen and react
+
+**V3.2D Gap 2 Resolution (Reference Integrity):**
+- **Decision:** Implement **Option A (Validate Before Commit)** as minimum viable solution
+- Pattern: Consuming domain validates file exists before committing operation
+- Future: Options B (Register Interest) and C (Immutable Files) are enhancements
+
+**Rationale:** Option A is simplest, lowest risk, and sufficient for V3.2E-2.
+
+---
+
+#### Decision 4: Extraction Plan (7 Steps)
+
+**Step 1:** Create Vault domain structure (empty files with type definitions)
+
+**Step 2:** Implement core Vault storage service (move logic from PPAP/documents to Vault)
+
+**Step 3:** Update PPAP Workflow to use Vault contracts (replace direct storage calls)
+
+**Step 4:** Update Documents feature to use Vault contracts (separate storage from attachment)
+
+**Step 5:** Document table split plan (no schema changes in V3.2E-2)
+- Target: `vault_files` (Vault domain) + `ppap_document_requirements` (PPAP domain)
+- Current: `ppap_documents` (mixed ownership)
+- V3.2E-2 does NOT execute migration, only updates code
+
+**Step 6:** Delete obsolete files (`uploadFile.ts`, `documents/mutations.ts`)
+
+**Step 7:** Create Vault-PPAP contract documentation (`src/features/vault/CONTRACTS.md`)
+
+**Rationale:** Phased extraction minimizes risk, allows incremental testing, preserves existing data.
+
+---
+
+#### Decision 5: Database Schema Strategy
+
+**V3.2E-2 Does NOT Migrate Schema:**
+- Code continues to use `ppap_documents` table
+- Vault domain abstracts table access (code calls Vault API, Vault reads `ppap_documents`)
+- Schema migration is separate future phase
+
+**Rationale:**
+- Reduces V3.2E-2 risk (no data migration)
+- Preserves existing PPAP documents
+- Allows code extraction to be validated before schema changes
+
+---
+
+### Violations Identified
+
+**5 Current Violations of V3.2A Ownership Rules:**
+
+1. **File Storage Logic in PPAP Workflow Domain** (`src/features/ppap/utils/uploadFile.ts`)
+2. **File Storage Logic in Documents Feature** (`src/features/documents/components/UploadDocumentForm.tsx`)
+3. **Mixed Ownership in ppap_documents Table** (PPAP + Vault concerns in one table)
+4. **Document Mutations in Documents Feature** (`src/features/documents/mutations.ts` mixes storage + attachment)
+5. **Cross-Domain Imports** (PPAP components directly import storage utilities)
+
+**All violations will be resolved by V3.2E-2 extraction.**
+
+---
+
+### Risks Identified
+
+**6 Migration Risks with Mitigations:**
+
+1. **Breaking Existing File Upload Flows** — Mitigation: Update all components before deleting old functions
+2. **Broken File References in Existing PPAPs** — Mitigation: Vault abstracts `ppap_documents` table, no schema change
+3. **File Path Generation Conflicts** — Mitigation: Vault owns ALL path generation, use UUID-based paths
+4. **Missing File Metadata** — Mitigation: Vault `storeFile()` captures all metadata, test completeness
+5. **Performance Degradation** — Mitigation: Vault API is thin wrapper, verify <10% degradation
+6. **Untested Vault Domain** — Mitigation: Manual testing checklist (7 validation steps)
+
+---
+
+### Readiness Criteria for V3.2E-2
+
+**7 Preconditions V3.2E-2 MUST confirm before starting:**
+
+1. **V3.2A-D Locked** — Domain ownership rules and contracts finalized
+2. **app/ is Canonical Directory** — `src/app/` does not exist, DIAG-01-CLEANUP committed
+3. **Current File Storage Implementation Identified** — All violations documented
+4. **Vault Domain Structure Defined** — Target folder structure complete
+5. **Contracts Defined** — All Vault contracts specified with TypeScript interfaces
+6. **Migration Risks Documented** — At least 5 risks with mitigations
+7. **No Code Changes in V3.2E-1** — Only documentation modified
+
+**If ALL preconditions met, V3.2E-2 may proceed. If ANY fail, V3.2E-2 MUST STOP.**
+
+---
+
+### Impact
+
+**Architectural:**
+- Establishes Workspace/Vault as independent domain with strict ownership boundaries
+- Resolves 5 V3.2A ownership violations
+- Implements V3.2D Gap 2 (Reference Integrity) resolution for Vault specifically
+- Defines complete V3.2B-compliant contracts between Vault and other domains
+
+**Implementation:**
+- V3.2E-2 can execute extraction without making architectural decisions
+- All file storage logic will be centralized in Vault domain
+- PPAP Workflow will consume Vault via Request/Output/Event contracts
+- Existing PPAP documents preserved (no data migration in V3.2E-2)
+
+**Risk Mitigation:**
+- 6 risks identified with specific mitigations
+- Manual testing checklist defined (7 validation steps)
+- Phased extraction plan minimizes breaking changes
+- Schema migration deferred to reduce V3.2E-2 risk
+
+---
+
+### Relationship to Prior Work
+
+**Builds On:**
+- V3.2A (Domain Ownership Rules) — Vault domain defined, now extraction plan complete
+- V3.2B (Interface Contracts) — Vault contracts use Request/Output/Event patterns
+- V3.2D (Gap Analysis) — Gap 2 (Reference Integrity) resolution defined for Vault
+- REPO-SCAN-01 (Structural Reality Report) — Violations identified, extraction targets confirmed
+- DIAG-01-CLEANUP (App Directory Consolidation) — Precondition for V3.2E-2
+
+**Enables:**
+- V3.2E-2 (Workspace/Vault Extraction Implementation) — Execute extraction plan
+- Future schema migration — Split `ppap_documents` into `vault_files` + `ppap_document_requirements`
+- Future Vault enhancements — Versioning, quotas, advanced reference integrity patterns
+
+---
+
 ## 2026-04-01 11:25 CT - Phase V3.2D - Failure & Edge Case Scenario Validation
 
 **Summary:** Comprehensive validation of contract-based architecture under failure conditions and edge cases to identify architectural gaps before implementation
