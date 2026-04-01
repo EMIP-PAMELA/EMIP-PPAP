@@ -20,6 +20,14 @@ interface Message {
 
 interface CopilotChatPanelProps {
   sessionId: string;
+  documentType: string;
+  mode: 'ppap-bound' | 'standalone';
+  ppapId?: string;
+  uploadedFiles?: {
+    bomFile?: File;
+    templateFile?: File;
+    drawingFile?: File;
+  };
   onDraftReady: (draft: CopilotDraft) => void;
   onQuestionAsked: (question: string) => void;
   disabled?: boolean;
@@ -27,6 +35,10 @@ interface CopilotChatPanelProps {
 
 export function CopilotChatPanel({
   sessionId,
+  documentType,
+  mode,
+  ppapId,
+  uploadedFiles,
   onDraftReady,
   onQuestionAsked,
   disabled = false
@@ -82,54 +94,75 @@ export function CopilotChatPanel({
       // Save user message to session
       await addUserMessage(sessionId, userMessage);
 
-      // Call Claude orchestrator
+      // Call Claude orchestrator with real input package
       console.log('[CopilotChatPanel] Calling Claude orchestrator...');
-      // Note: In actual implementation, we'd pass the full input package
-      // For now, this is a placeholder showing the flow
       
-      // Simulated orchestration (in real implementation, call orchestrate with full package)
-      // const copilotDraft = await orchestrate(inputPackage);
+      // Build input package for orchestration
+      // Note: In full implementation, this would include parsed BOM data
+      // For V3.2F-3b, we pass placeholder structure that orchestrator expects
+      const inputPackage: any = {
+        template: {
+          documentType,
+          requiredFields: [],
+          outputFormat: {},
+          validationRules: []
+        },
+        systemPrompt: `You are an AI assistant helping generate ${documentType} documents.`,
+        documentInstructions: 'Generate based on user requirements.',
+        bomData: uploadedFiles?.bomFile ? {
+          raw: 'BOM text would be extracted here',
+          parsed: {},
+          normalized: {}
+        } : undefined,
+        ppapContext: mode === 'ppap-bound' && ppapId ? {
+          ppapId,
+          partNumber: 'PART-XXX',
+          customerName: 'Customer',
+          revision: 'A',
+          supplierName: 'Supplier'
+        } : undefined
+      };
       
-      // For now, simulate different response types
-      const simulatedResponse = simulateClaudeResponse(userMessage);
+      // Call real orchestrator
+      const copilotDraft = await orchestrate(inputPackage);
       
       // Handle Claude response based on type
-      if (simulatedResponse.type === 'question') {
+      if (copilotDraft.type === 'question') {
         // Claude asked a question
         const questionMessage: Message = {
           role: 'assistant',
-          content: simulatedResponse.question?.text || '',
+          content: copilotDraft.question?.text || '',
           timestamp: new Date().toISOString(),
           messageType: 'question'
         };
         setMessages(prev => [...prev, questionMessage]);
-        await addClaudeResponse(sessionId, simulatedResponse);
-        onQuestionAsked(simulatedResponse.question?.text || '');
+        await addClaudeResponse(sessionId, copilotDraft);
+        onQuestionAsked(copilotDraft.question?.text || '');
         
-      } else if (simulatedResponse.type === 'draft') {
+      } else if (copilotDraft.type === 'draft') {
         // Claude returned a draft
         const draftMessage: Message = {
           role: 'assistant',
           content: 'I\'ve completed the document draft. Please review:',
           timestamp: new Date().toISOString(),
           messageType: 'draft',
-          draft: simulatedResponse
+          draft: copilotDraft
         };
         setMessages(prev => [...prev, draftMessage]);
-        setCurrentDraft(simulatedResponse);
-        await addClaudeResponse(sessionId, simulatedResponse);
-        onDraftReady(simulatedResponse);
+        setCurrentDraft(copilotDraft);
+        await addClaudeResponse(sessionId, copilotDraft);
+        onDraftReady(copilotDraft);
         
-      } else if (simulatedResponse.type === 'error') {
+      } else if (copilotDraft.type === 'error') {
         // Claude encountered an error
         const errorMessage: Message = {
           role: 'assistant',
-          content: simulatedResponse.error?.message || 'An error occurred',
+          content: copilotDraft.error?.message || 'An error occurred',
           timestamp: new Date().toISOString(),
           messageType: 'error'
         };
         setMessages(prev => [...prev, errorMessage]);
-        await addClaudeResponse(sessionId, simulatedResponse);
+        await addClaudeResponse(sessionId, copilotDraft);
         
       } else {
         // Regular text response
@@ -140,7 +173,7 @@ export function CopilotChatPanel({
           messageType: 'text'
         };
         setMessages(prev => [...prev, textMessage]);
-        await addClaudeResponse(sessionId, simulatedResponse);
+        await addClaudeResponse(sessionId, copilotDraft);
       }
 
     } catch (err) {
@@ -298,36 +331,4 @@ export function CopilotChatPanel({
       </div>
     </div>
   );
-}
-
-/**
- * Simulate Claude response (placeholder for actual orchestrate() call)
- * In real implementation, this will be replaced by orchestrate() call
- */
-function simulateClaudeResponse(userMessage: string): CopilotDraft {
-  // This is a placeholder simulation
-  // In real implementation, this entire function will be replaced by:
-  // const copilotDraft = await orchestrate(inputPackage);
-  
-  return {
-    type: 'question',
-    question: {
-      text: 'What is the target annual production volume for this part?',
-      context: 'This will help me determine appropriate sample sizes and inspection frequencies.',
-      suggestedAnswers: ['< 10,000 units', '10,000 - 100,000 units', '> 100,000 units']
-    },
-    metadata: {
-      model: 'claude-sonnet-4-20250514',
-      promptTemplateId: 'pfmea',
-      tokenCount: {
-        input: 150,
-        output: 50,
-        total: 200
-      },
-      generatedAt: new Date().toISOString(),
-      confidence: 'high',
-      uncertainFields: [],
-      assumptions: []
-    }
-  };
 }

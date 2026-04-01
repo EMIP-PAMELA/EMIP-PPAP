@@ -4,6 +4,301 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-01 16:59 CT - Phase V3.2F-3a - CopilotChatPanel Component and /copilot Route
+
+**Summary:** Build core chat UI components for conversational interaction with Claude and establish /copilot route
+
+**Type:** Implementation (New UI Components - Additive Only)
+
+### Purpose
+
+**V3.2F-3a builds the foundational chat UI for Document Copilot as defined in V3.2F-1.**
+
+**Objective:** Create CopilotChatPanel and CopilotDraftPreview components for multi-turn conversation with Claude AI, and establish the /copilot route for future workspace integration.
+
+---
+
+### Implementation Steps
+
+#### Step 1: Create CopilotChatPanel Component
+
+**Created:** `src/features/documentEngine/ui/CopilotChatPanel.tsx` (319 lines)
+
+**Purpose:** Core chat UI for conversational document generation with Claude
+
+**Props:**
+- `sessionId: string` - Copilot session identifier
+- `onDraftReady: (draft: CopilotDraft) => void` - Callback when draft is completed
+- `onQuestionAsked: (question: string) => void` - Callback when Claude asks question
+- `disabled?: boolean` - Disable input controls
+
+**Functionality:**
+- **Message Display:** Conversation history with user and Claude messages
+- **Message Types:** 
+  - `text` - Regular conversation messages
+  - `question` - Claude asking clarifying questions (highlighted in yellow)
+  - `draft` - Draft ready for review (renders CopilotDraftPreview)
+  - `error` - Error messages with retry option
+- **Multi-Turn Conversation:** Tracks full conversation history via copilotSessionManager
+- **Loading States:** Shows "Claude is thinking..." indicator during API calls
+- **Auto-Scroll:** Automatically scrolls to latest message
+- **Session Integration:** Loads conversation history on mount, saves messages to session
+- **Claude Integration:** Calls `orchestrate()` from claudeOrchestrator.ts
+- **Keyboard Support:** Enter key sends message
+
+**Message Flow:**
+1. User types message → Send button
+2. Add to conversation history
+3. Call `claudeOrchestrator.orchestrate()` with input package
+4. Handle response based on type:
+   - `question` → Display highlighted, wait for answer
+   - `draft` → Show CopilotDraftPreview component
+   - `error` → Show error with retry option
+   - `text` → Display normal Claude response
+
+**Styling:**
+- User messages: Blue, right-aligned
+- Claude messages: Gray, left-aligned
+- Questions: Yellow background with ❓ indicator
+- Drafts: Green background, full-width with preview
+- Errors: Red background with retry button
+
+**Placeholder Note:** Currently includes `simulateClaudeResponse()` function as placeholder. In V3.2F-3b, this will be replaced with actual `orchestrate()` call with full input package.
+
+---
+
+#### Step 2: Create CopilotDraftPreview Component
+
+**Created:** `src/features/documentEngine/ui/CopilotDraftPreview.tsx` (298 lines)
+
+**Purpose:** Display Claude-generated draft with AI provenance metadata and accept/reject controls
+
+**Props:**
+- `draft: CopilotDraft` - The draft to preview
+- `onAccept: (draft: CopilotDraft) => void` - Callback when user accepts draft
+- `onRequestChanges: (feedback: string) => void` - Callback when user requests changes
+
+**Features:**
+
+**AI Confidence Display:**
+- High confidence: Green badge with ✅
+- Medium confidence: Yellow badge with ⚠️
+- Low confidence: Red badge with ❌
+- Confidence score displayed prominently in header
+
+**Expandable Sections:**
+1. **AI Confidence & Metadata:**
+   - Model used (claude-sonnet-4-20250514)
+   - Prompt template ID
+   - Generation timestamp
+   - Token usage (input/output/total)
+   - Initially expanded by default
+
+2. **Uncertain Fields:**
+   - List of fields Claude was uncertain about
+   - Highlighted with yellow warning
+   - Recommendation to review these fields
+   - Only shown if `uncertainFields.length > 0`
+
+3. **Assumptions Made:**
+   - List of assumptions Claude made during generation
+   - Highlighted with blue info
+   - Recommendation to verify alignment with requirements
+   - Only shown if `assumptions.length > 0`
+
+4. **Document Preview:**
+   - JSON preview of document fields
+   - Syntax-highlighted code block
+   - Scrollable (max 96px height)
+   - Note: "Full document editor available after accepting draft"
+
+**Actions:**
+- **Accept Draft Button:** Green, calls `onAccept(draft)`
+- **Request Changes Button:** Yellow, opens feedback input
+- **Feedback Input:** Textarea for user to describe desired changes, sends back to Claude
+
+**Low Confidence Warning:**
+- If confidence === 'low', shows prominent red warning banner
+- Recommends requesting changes or providing additional context
+
+**UX Design:**
+- Clean accordion interface for metadata sections
+- Color-coded confidence levels throughout
+- Clear visual hierarchy
+- Mobile-responsive grid layout
+
+---
+
+#### Step 3: Create /copilot Route
+
+**Created:** `app/copilot/page.tsx` (133 lines)
+
+**Purpose:** Entry point for Document Copilot feature with placeholder for V3.2F-3b
+
+**Content:**
+- **Header:** Document Copilot branding with 🤖 icon
+- **Status Banner:** "Coming Soon: V3.2F-3b" with implementation progress
+- **Progress Indicators:**
+  - ✅ Core chat panel implemented
+  - ✅ Draft preview with AI confidence metrics
+  - ⏳ Full workspace integration (V3.2F-3b)
+  - ⏳ File upload and session management (V3.2F-3b)
+
+**Features Preview:** Grid showcasing planned capabilities:
+- 💬 Conversational Interface - Multi-turn Q&A
+- 📊 AI Confidence Metrics - Transparent provenance
+- 🔄 Iterative Refinement - Request changes in conversation
+- 📁 Vault Integration - Automatic storage and versioning
+
+**Two-Mode Architecture Display:**
+- PPAP-Bound mode (purple badge) - Automatic context from EMIP
+- Standalone mode (green badge) - User provides inputs
+
+**Temporary Link:** "Go to Document Workspace →" link to existing workflow
+
+**Route:** `/copilot` now accessible via browser
+
+---
+
+#### Step 4: Add Navigation Link
+
+**Modified:** `app/ppap/page.tsx` (line 37-42)
+
+**Change:** Added Document Copilot navigation button to PPAP Operations Dashboard
+
+**Button Placement:** First in navigation row (before Intake Queue and Create PPAP)
+
+**Styling:**
+- Purple background (`bg-purple-600`)
+- White text with 🤖 emoji
+- Consistent with existing button styles
+- Hover effect (`hover:bg-purple-700`)
+
+**Location:** Top-right of PPAP Operations Dashboard header
+
+**Non-Breaking:** Existing navigation buttons unchanged, new button additive only
+
+---
+
+### Files Created
+
+1. **`src/features/documentEngine/ui/CopilotChatPanel.tsx`** (319 lines)
+   - Chat interface with message history
+   - Multi-turn conversation support
+   - Integration with copilotSessionManager and claudeOrchestrator
+   - Message type differentiation (text, question, draft, error)
+   - Placeholder simulation for V3.2F-3b integration
+
+2. **`src/features/documentEngine/ui/CopilotDraftPreview.tsx`** (298 lines)
+   - Draft preview with expandable sections
+   - AI confidence and provenance display
+   - Uncertain fields highlighting
+   - Assumptions visualization
+   - Accept/reject controls with feedback input
+
+3. **`app/copilot/page.tsx`** (133 lines)
+   - Landing page for /copilot route
+   - Feature preview and status
+   - Two-mode architecture explanation
+   - Temporary link to existing workflow
+
+### Files Modified
+
+1. **`app/ppap/page.tsx`** (1 change, line 37-42)
+   - Added "🤖 Document Copilot" navigation button
+   - Purple styling, links to `/copilot`
+   - Non-breaking addition before existing buttons
+
+---
+
+### Architectural Decisions
+
+**Component Separation:**
+- CopilotChatPanel handles conversation flow and message display
+- CopilotDraftPreview handles draft review and AI metadata
+- Clean separation of concerns for maintainability
+
+**Placeholder Approach:**
+- `simulateClaudeResponse()` in CopilotChatPanel is temporary
+- Actual orchestration will be wired in V3.2F-3b with full input package
+- Allows UI testing without full backend integration
+
+**Route Strategy:**
+- `/copilot` route established as dedicated entry point
+- Separate from `/document-workspace` to avoid conflicts
+- Future CopilotWorkspace component will replace placeholder page
+
+**Navigation Integration:**
+- Link placed on main PPAP dashboard for discoverability
+- Purple color differentiates from existing navigation
+- No changes to existing routes or workflows
+
+---
+
+### Non-Breaking Guarantee
+
+**Zero Impact on Existing Functionality:**
+- ✅ DocumentWorkspace.tsx unchanged
+- ✅ /document-workspace route unchanged
+- ✅ Existing PPAP workflow unchanged
+- ✅ All new components additive only
+- ✅ No modifications to existing UI components
+- ✅ Navigation addition does not alter existing buttons
+
+**Coexistence Strategy:**
+- Old deterministic workflow: `/document-workspace`
+- New AI Copilot workflow: `/copilot`
+- Both routes accessible independently
+- No shared state between workflows
+
+---
+
+### Validation Criteria
+
+**All criteria met:**
+- ✅ `src/features/documentEngine/ui/CopilotChatPanel.tsx` exists
+- ✅ `src/features/documentEngine/ui/CopilotDraftPreview.tsx` exists
+- ✅ `app/copilot/page.tsx` exists and route is reachable
+- ✅ Navigation link to `/copilot` added to PPAP dashboard
+- ✅ Existing DocumentWorkspace.tsx unmodified
+- ✅ Existing `/document-workspace` route unmodified
+- ✅ TypeScript compiles without errors
+- ✅ No direct Supabase Storage calls in new components
+
+---
+
+### Next Steps: V3.2F-3b
+
+**CopilotWorkspace Component (Future Phase):**
+- Replace `/copilot` placeholder page with full workspace
+- File upload UI (BOM PDF, drawings, templates)
+- Session initialization for both modes
+- Integration of CopilotChatPanel
+- Draft acceptance workflow
+- Vault storage integration
+- Version control integration
+- Approval workflow integration
+
+**Integration Points:**
+- Wire `orchestrate()` calls with actual input packages
+- Connect BOM upload to PDF parsing
+- Connect draft acceptance to Vault storage
+- Connect session management to UI state
+- Emit DocumentDraftCreatedEvent for PPAP-Bound mode
+
+---
+
+### Commit
+
+```
+commit [hash]
+V3.2F-3a: Build CopilotChatPanel, DraftPreview components and /copilot route
+```
+
+**Summary:** Core chat UI components created, /copilot route established, navigation link added. All changes additive with zero impact on existing PPAP workflow.
+
+---
+
 ## 2026-04-01 16:30 CT - Phase V3.2F-2 Batch 2 - Session Wiring, Vault Integration, UI Entry Points
 
 **Summary:** Wire session management, Vault integration, and Copilot entry points for both PPAP-Bound and Standalone modes

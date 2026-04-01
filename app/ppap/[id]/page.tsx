@@ -17,6 +17,7 @@ import PPAPSummaryHeader from '@/src/features/ppap/components/PPAPSummaryHeader'
 import PPAPAcknowledgementBanner from '@/src/features/ppap/components/PPAPAcknowledgementBanner';
 import { TRANE_VALIDATIONS } from '@/src/features/ppap/utils/traneValidationTemplate';
 import { currentUser } from '@/src/lib/mockUser';
+import Link from 'next/link';
 
 interface PPAPDashboardPageProps {
   params: Promise<{
@@ -119,6 +120,45 @@ export default async function PPAPDashboardPage({ params }: PPAPDashboardPagePro
 
         {/* Shared: Always show activity feed */}
         <PPAPActivityFeed />
+
+        {/* Document Copilot Entry Point - V3.2F-3b */}
+        <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-3xl">🤖</span>
+                <h3 className="text-xl font-bold text-gray-900">AI Document Generation</h3>
+                <span className="px-3 py-1 bg-purple-600 text-white text-xs font-semibold rounded-full">
+                  NEW
+                </span>
+              </div>
+              <p className="text-gray-700 mb-3">
+                Generate PPAP documents using AI-guided conversation with Claude. 
+                Context automatically loaded from this PPAP record.
+              </p>
+              <div className="flex flex-wrap gap-2 text-sm text-gray-600">
+                <span className="flex items-center gap-1">
+                  <span className="text-green-600">✓</span> Multi-turn Q&A
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="text-green-600">✓</span> AI Confidence Metrics
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="text-green-600">✓</span> Iterative Refinement
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="text-green-600">✓</span> Auto-saved to Vault
+                </span>
+              </div>
+            </div>
+            <Link
+              href={`/copilot?ppapId=${id}`}
+              className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
+            >
+              Generate with Copilot →
+            </Link>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
