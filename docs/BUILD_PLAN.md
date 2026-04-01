@@ -7290,6 +7290,1394 @@ Before implementing **ANY** feature touching multiple domains, the implementing 
 
 ---
 
+## V3.2C — Domain Interaction Scenarios
+
+**Last Updated:** 2026-04-01  
+**Status:** Architecture Validation Complete (Scenario Stress-Test)
+
+### Purpose
+
+**This phase validates that real-world workflows can be executed using ONLY the defined domain ownership rules (V3.2A) and approved interface contract types (V3.2B).**
+
+**Critical Validation Goals:**
+
+1. Confirm all workflows are expressible as contract sequences
+2. Verify no ownership violations occur in real scenarios
+3. Ensure no prohibited patterns are required
+4. Identify architectural gaps before implementation
+5. Prove architecture is complete and enforceable
+
+**This is NOT new architecture.** This phase stress-tests existing V3.2A and V3.2B definitions using realistic workflows.
+
+**Validation Method:**
+
+For each scenario:
+- Trace step-by-step domain interactions
+- Validate contract type usage
+- Confirm ownership preservation
+- Identify potential violation points
+- Document enforcement mechanisms
+
+---
+
+## Scenario 1: Create New PPAP
+
+### A. Scenario Description
+
+**Real-World Use Case:** Engineer creates a new PPAP submission for a component requiring supplier approval.
+
+**User Action:** Navigate to PPAP system, click "Create New PPAP," provide component details, set initial assignments.
+
+### B. Domains Involved
+
+- Core Platform (identity, auth)
+- PPAP Workflow (owns PPAP state)
+- EMIP (component reference data)
+- Command Center (user entry point)
+
+### C. Step-by-Step Interaction Flow
+
+**Step 1: User Initiates from Command Center**
+- **Source:** Command Center
+- **Contract:** Request
+- **Target:** PPAP Workflow
+- **Action:** User clicks "Create PPAP" in Command Center; Command Center delegates request to PPAP Workflow
+
+**Step 2: PPAP Workflow Validates User Identity**
+- **Source:** PPAP Workflow
+- **Contract:** Read
+- **Target:** Core Platform
+- **Action:** PPAP Workflow reads user identity and authorization from Core Platform
+
+**Step 3: User Provides Component Selection**
+- **Source:** Command Center (user input)
+- **Contract:** Request
+- **Target:** PPAP Workflow
+- **Action:** User selects component; Command Center sends component ID to PPAP Workflow
+
+**Step 4: PPAP Workflow Reads Component Data**
+- **Source:** PPAP Workflow
+- **Contract:** Read
+- **Target:** EMIP
+- **Action:** PPAP Workflow reads component metadata from EMIP for validation
+
+**Step 5: PPAP Workflow Creates PPAP Record**
+- **Source:** PPAP Workflow
+- **Contract:** Output
+- **Target:** (internal state)
+- **Action:** PPAP Workflow creates new PPAP record in its own data store with status "pending"
+
+**Step 6: PPAP Workflow Emits Creation Event**
+- **Source:** PPAP Workflow
+- **Contract:** Event
+- **Target:** Command Center, other subscribers
+- **Action:** PPAP Workflow emits "PPAP Created" event
+
+**Step 7: Command Center Refreshes View**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** PPAP Workflow
+- **Action:** Command Center reads updated PPAP list to display new PPAP
+
+### D. Ownership Validation
+
+✅ **PPAP Workflow** retained exclusive ownership of:
+- PPAP record creation
+- PPAP status determination ("pending")
+- Assignment decisions
+
+✅ **No Cross-Domain Mutation:**
+- Command Center did NOT create PPAP directly
+- PPAP Workflow did NOT modify EMIP data
+- EMIP did NOT modify PPAP state
+
+✅ **Authority Preserved:**
+- PPAP Workflow decided whether to create PPAP
+- EMIP remained authoritative for component data
+- Core Platform remained authoritative for identity
+
+### E. Interface Compliance Check
+
+✅ **All Interactions Used Approved Contract Types:**
+- Request (Command Center → PPAP Workflow)
+- Read (PPAP Workflow → Core Platform, EMIP)
+- Output (PPAP Workflow internal state)
+- Event (PPAP Workflow → subscribers)
+
+✅ **No Prohibited Patterns:**
+- No shared mutable state
+- No duplicated truth stores
+- No hidden coupling
+- No direct cross-domain mutation
+
+✅ **No Implicit Communication:**
+- All interactions explicit via defined contracts
+- No hidden database access
+- No shared caches
+
+### F. Potential Violation Points
+
+**Violation Risk 1:** Command Center directly creating PPAP record in database
+- **Why Tempting:** Faster, fewer hops
+- **Why Prohibited:** Command Center is read-only aggregation; PPAP Workflow owns PPAP state
+
+**Violation Risk 2:** PPAP Workflow caching EMIP component data as authoritative
+- **Why Tempting:** Avoid repeated reads
+- **Why Prohibited:** EMIP is authoritative; PPAP Workflow may only hold references
+
+**Violation Risk 3:** Command Center computing PPAP status instead of reading from PPAP Workflow
+- **Why Tempting:** Reduce latency
+- **Why Prohibited:** Command Center MUST NOT compute authoritative workflow state
+
+### G. Enforcement Notes
+
+**Rule 1 (V3.2A):** PPAP Workflow is ONLY domain authorized to create PPAP records
+- **Prevents:** Command Center creating PPAPs
+
+**Rule 2 (V3.2B):** Read Contract does NOT imply ownership transfer
+- **Prevents:** PPAP Workflow caching EMIP data as authoritative
+
+**Rule 3 (V3.2B):** Command Center MUST NOT compute authoritative workflow state
+- **Prevents:** Command Center deriving status
+
+**Rule 4 (V3.2B):** All mutations MUST use Request Contracts where owning domain executes
+- **Prevents:** Direct cross-domain mutation
+
+---
+
+## Scenario 2: Generate Document via Copilot (PPAP-Bound)
+
+### A. Scenario Description
+
+**Real-World Use Case:** Engineer uses Document Copilot to generate a PPAP document (e.g., FMEA) for an active PPAP submission.
+
+**User Action:** Navigate to PPAP, select document type, launch Copilot session, provide inputs, approve draft.
+
+### B. Domains Involved
+
+- PPAP Workflow (owns PPAP state, document requirements)
+- Document Copilot (owns draft generation)
+- Workspace/Vault (owns file storage)
+- EMIP (component reference data)
+- Command Center (user entry point)
+
+### C. Step-by-Step Interaction Flow
+
+**Step 1: User Initiates Document Generation**
+- **Source:** Command Center
+- **Contract:** Request
+- **Target:** PPAP Workflow
+- **Action:** User selects "Generate FMEA" for PPAP; Command Center delegates to PPAP Workflow
+
+**Step 2: PPAP Workflow Requests Copilot Session**
+- **Source:** PPAP Workflow
+- **Contract:** Request
+- **Target:** Document Copilot
+- **Action:** PPAP Workflow requests Document Copilot to start FMEA generation session
+
+**Step 3: Document Copilot Reads PPAP Context**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** PPAP Workflow
+- **Action:** Document Copilot reads PPAP ID, component ID, submission context
+
+**Step 4: Document Copilot Reads Component Data**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** EMIP
+- **Action:** Document Copilot reads component specifications, relationships from EMIP
+
+**Step 5: Document Copilot Reads Source Files (if any)**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** Workspace/Vault
+- **Action:** Document Copilot reads any staged files referenced by PPAP
+
+**Step 6: Document Copilot Generates Draft**
+- **Source:** Document Copilot
+- **Contract:** Output
+- **Target:** (internal session state)
+- **Action:** Document Copilot generates draft FMEA content in its own session store
+
+**Step 7: Document Copilot Emits Draft Ready Event**
+- **Source:** Document Copilot
+- **Contract:** Event
+- **Target:** PPAP Workflow, Command Center
+- **Action:** Document Copilot emits "Draft Ready" event with session ID
+
+**Step 8: User Reviews and Approves Draft**
+- **Source:** Command Center (user input)
+- **Contract:** Request
+- **Target:** Document Copilot
+- **Action:** User approves draft; Command Center sends approval to Document Copilot
+
+**Step 9: Document Copilot Requests File Storage**
+- **Source:** Document Copilot
+- **Contract:** Request
+- **Target:** Workspace/Vault
+- **Action:** Document Copilot requests Workspace/Vault to store finalized document
+
+**Step 10: Workspace/Vault Stores File**
+- **Source:** Workspace/Vault
+- **Contract:** Output
+- **Target:** (internal storage)
+- **Action:** Workspace/Vault stores file, returns file ID reference
+
+**Step 11: Workspace/Vault Emits File Stored Event**
+- **Source:** Workspace/Vault
+- **Contract:** Event
+- **Target:** Document Copilot, PPAP Workflow
+- **Action:** Workspace/Vault emits "File Uploaded" event
+
+**Step 12: Document Copilot Notifies PPAP Workflow**
+- **Source:** Document Copilot
+- **Contract:** Event
+- **Target:** PPAP Workflow
+- **Action:** Document Copilot emits "Session Complete" event with file ID reference
+
+**Step 13: PPAP Workflow Updates Document Tracking**
+- **Source:** PPAP Workflow
+- **Contract:** Reference
+- **Target:** Workspace/Vault (file ID)
+- **Action:** PPAP Workflow stores file ID reference in its own PPAP document tracking
+
+**Step 14: PPAP Workflow Re-Evaluates Completeness**
+- **Source:** PPAP Workflow
+- **Contract:** (internal)
+- **Target:** (own state)
+- **Action:** PPAP Workflow re-evaluates PPAP completeness based on new document
+
+### D. Ownership Validation
+
+✅ **Document Copilot** retained exclusive ownership of:
+- Draft generation logic
+- Session state
+- Draft content before approval
+
+✅ **PPAP Workflow** retained exclusive ownership of:
+- PPAP status
+- Document requirement tracking
+- Completeness determination
+
+✅ **Workspace/Vault** retained exclusive ownership of:
+- File storage
+- File lifecycle
+
+✅ **EMIP** retained exclusive ownership of:
+- Component data
+
+✅ **No Cross-Domain Mutation:**
+- Document Copilot did NOT finalize document without user approval
+- Document Copilot did NOT write to Workspace/Vault directly (used Request)
+- PPAP Workflow did NOT generate draft content
+- Workspace/Vault did NOT interpret document meaning
+
+✅ **Authority Preserved:**
+- Document Copilot decided how to generate draft
+- PPAP Workflow decided whether document satisfies requirements
+- Workspace/Vault decided how to store file
+- User approved draft before finalization
+
+### E. Interface Compliance Check
+
+✅ **All Interactions Used Approved Contract Types:**
+- Request (PPAP Workflow → Document Copilot, Document Copilot → Workspace/Vault)
+- Read (Document Copilot → PPAP Workflow, EMIP, Workspace/Vault)
+- Output (Document Copilot session state, Workspace/Vault file storage)
+- Event (Document Copilot → PPAP Workflow, Workspace/Vault → subscribers)
+- Reference (PPAP Workflow holds file ID)
+
+✅ **No Prohibited Patterns:**
+- No shared mutable state between domains
+- No duplicated truth (file stored once in Workspace/Vault)
+- No hidden coupling
+- No direct cross-domain mutation
+
+✅ **No Implicit Communication:**
+- All interactions explicit via defined contracts
+- Document Copilot did NOT assume PPAP Workflow would auto-accept draft
+- PPAP Workflow did NOT assume file content without reading metadata
+
+### F. Potential Violation Points
+
+**Violation Risk 1:** Document Copilot directly writing file to Workspace/Vault database
+- **Why Tempting:** Fewer steps, direct access
+- **Why Prohibited:** Workspace/Vault owns storage; Document Copilot must use Request Contract
+
+**Violation Risk 2:** PPAP Workflow auto-marking document as "complete" based on Copilot event
+- **Why Tempting:** Automation, reduce user steps
+- **Why Prohibited:** PPAP Workflow must evaluate completeness itself; event is informational only
+
+**Violation Risk 3:** Document Copilot caching EMIP component data as authoritative
+- **Why Tempting:** Performance optimization
+- **Why Prohibited:** EMIP is authoritative; Document Copilot may only hold references
+
+**Violation Risk 4:** Shared "document_state" table written by both Document Copilot and PPAP Workflow
+- **Why Tempting:** Convenience, single source
+- **Why Prohibited:** Shared mutable state is strictly forbidden
+
+### G. Enforcement Notes
+
+**Rule 1 (V3.2B):** Request Contract — owning domain decides execution
+- **Prevents:** Document Copilot directly writing to Workspace/Vault
+
+**Rule 2 (V3.2B):** Event Contract — events trigger reactions, not authority transfer
+- **Prevents:** PPAP Workflow auto-accepting draft based on event
+
+**Rule 3 (V3.2B):** Reference Contract — reference is not copy of truth
+- **Prevents:** Document Copilot caching EMIP data as authoritative
+
+**Rule 4 (V3.2A):** Shared mutable state is strictly prohibited
+- **Prevents:** Shared "document_state" table
+
+**Rule 5 (V3.2A):** Document Copilot MUST NOT finalize without user approval
+- **Prevents:** Auto-finalization
+
+---
+
+## Scenario 3: Generate Document via Copilot (Standalone Workspace)
+
+### A. Scenario Description
+
+**Real-World Use Case:** Engineer uses Document Copilot to generate a document NOT bound to a PPAP (e.g., internal design note, analysis).
+
+**User Action:** Navigate to Workspace, launch Copilot, provide inputs, approve draft, save to personal vault.
+
+### B. Domains Involved
+
+- Document Copilot (owns draft generation)
+- Workspace/Vault (owns file storage)
+- EMIP (component reference data, optional)
+- Command Center (user entry point)
+- Core Platform (identity, auth)
+
+**NOT Involved:** PPAP Workflow (no PPAP context)
+
+### C. Step-by-Step Interaction Flow
+
+**Step 1: User Initiates Standalone Session**
+- **Source:** Command Center
+- **Contract:** Request
+- **Target:** Document Copilot
+- **Action:** User selects "Create Document" in Workspace; Command Center delegates to Document Copilot
+
+**Step 2: Document Copilot Validates User Identity**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** Core Platform
+- **Action:** Document Copilot reads user identity for session ownership
+
+**Step 3: Document Copilot Reads Source Files (if provided)**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** Workspace/Vault
+- **Action:** Document Copilot reads any user-provided source files
+
+**Step 4: Document Copilot Reads Component Data (if referenced)**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** EMIP
+- **Action:** Document Copilot reads component data if user references components
+
+**Step 5: Document Copilot Generates Draft**
+- **Source:** Document Copilot
+- **Contract:** Output
+- **Target:** (internal session state)
+- **Action:** Document Copilot generates draft in its own session store
+
+**Step 6: User Approves Draft**
+- **Source:** Command Center (user input)
+- **Contract:** Request
+- **Target:** Document Copilot
+- **Action:** User approves draft
+
+**Step 7: Document Copilot Requests File Storage**
+- **Source:** Document Copilot
+- **Contract:** Request
+- **Target:** Workspace/Vault
+- **Action:** Document Copilot requests Workspace/Vault to store document in user's workspace
+
+**Step 8: Workspace/Vault Stores File**
+- **Source:** Workspace/Vault
+- **Contract:** Output
+- **Target:** (internal storage)
+- **Action:** Workspace/Vault stores file, returns file ID
+
+**Step 9: Document Copilot Emits Session Complete Event**
+- **Source:** Document Copilot
+- **Contract:** Event
+- **Target:** Command Center
+- **Action:** Document Copilot emits "Session Complete" event
+
+**Step 10: Command Center Refreshes Workspace View**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** Workspace/Vault
+- **Action:** Command Center reads updated file list to display new document
+
+### D. Ownership Validation
+
+✅ **Document Copilot** retained exclusive ownership of:
+- Draft generation
+- Session state
+
+✅ **Workspace/Vault** retained exclusive ownership of:
+- File storage
+- File access control
+
+✅ **EMIP** retained exclusive ownership of:
+- Component data (if referenced)
+
+✅ **No Cross-Domain Mutation:**
+- Document Copilot did NOT write directly to Workspace/Vault
+- Workspace/Vault did NOT interpret document content
+- Command Center did NOT store files
+
+✅ **Authority Preserved:**
+- Document Copilot decided how to generate draft
+- Workspace/Vault decided how to store file
+- User approved draft before finalization
+
+### E. Interface Compliance Check
+
+✅ **All Interactions Used Approved Contract Types:**
+- Request (Command Center → Document Copilot, Document Copilot → Workspace/Vault)
+- Read (Document Copilot → Core Platform, Workspace/Vault, EMIP)
+- Output (Document Copilot session state, Workspace/Vault file storage)
+- Event (Document Copilot → Command Center)
+
+✅ **No Prohibited Patterns:**
+- No shared mutable state
+- No duplicated truth
+- No hidden coupling
+
+✅ **No Implicit Communication:**
+- All interactions explicit via defined contracts
+
+### F. Potential Violation Points
+
+**Violation Risk 1:** Document Copilot storing draft directly in Workspace/Vault database
+- **Why Tempting:** Simpler flow, fewer steps
+- **Why Prohibited:** Workspace/Vault owns storage; Document Copilot must use Request Contract
+
+**Violation Risk 2:** Workspace/Vault tagging file as "design note" based on content analysis
+- **Why Tempting:** Better organization, search
+- **Why Prohibited:** Workspace/Vault MUST NOT interpret file semantics
+
+### G. Enforcement Notes
+
+**Rule 1 (V3.2B):** Request Contract — owning domain executes action
+- **Prevents:** Document Copilot directly writing to Workspace/Vault
+
+**Rule 2 (V3.2A):** Workspace/Vault MUST NOT interpret file semantics
+- **Prevents:** Workspace/Vault tagging files based on content
+
+**Rule 3 (V3.2B):** Document Copilot MUST NOT finalize without user approval
+- **Prevents:** Auto-saving without user consent
+
+---
+
+## Scenario 4: Attach Files from Vault to PPAP
+
+### A. Scenario Description
+
+**Real-World Use Case:** Engineer attaches existing files from their workspace vault to a PPAP submission (e.g., test reports, drawings).
+
+**User Action:** Navigate to PPAP, select "Attach Files," browse vault, select files, confirm attachment.
+
+### B. Domains Involved
+
+- PPAP Workflow (owns PPAP state, document tracking)
+- Workspace/Vault (owns file storage)
+- Command Center (user entry point)
+- Core Platform (identity, auth)
+
+### C. Step-by-Step Interaction Flow
+
+**Step 1: User Initiates File Attachment**
+- **Source:** Command Center
+- **Contract:** Request
+- **Target:** PPAP Workflow
+- **Action:** User selects "Attach Files" for PPAP; Command Center delegates to PPAP Workflow
+
+**Step 2: PPAP Workflow Requests File List**
+- **Source:** PPAP Workflow
+- **Contract:** Read
+- **Target:** Workspace/Vault
+- **Action:** PPAP Workflow reads user's available files from Workspace/Vault
+
+**Step 3: User Selects Files**
+- **Source:** Command Center (user input)
+- **Contract:** Request
+- **Target:** PPAP Workflow
+- **Action:** User selects file IDs; Command Center sends selection to PPAP Workflow
+
+**Step 4: PPAP Workflow Validates File Access**
+- **Source:** PPAP Workflow
+- **Contract:** Read
+- **Target:** Workspace/Vault
+- **Action:** PPAP Workflow reads file metadata to confirm access rights
+
+**Step 5: PPAP Workflow Stores File References**
+- **Source:** PPAP Workflow
+- **Contract:** Reference
+- **Target:** Workspace/Vault (file IDs)
+- **Action:** PPAP Workflow stores file ID references in its own PPAP attachment tracking
+
+**Step 6: PPAP Workflow Re-Evaluates Completeness**
+- **Source:** PPAP Workflow
+- **Contract:** (internal)
+- **Target:** (own state)
+- **Action:** PPAP Workflow re-evaluates PPAP completeness based on new attachments
+
+**Step 7: PPAP Workflow Emits Attachment Event**
+- **Source:** PPAP Workflow
+- **Contract:** Event
+- **Target:** Command Center
+- **Action:** PPAP Workflow emits "Attachments Updated" event
+
+**Step 8: Command Center Refreshes PPAP View**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** PPAP Workflow
+- **Action:** Command Center reads updated PPAP attachment list
+
+### D. Ownership Validation
+
+✅ **PPAP Workflow** retained exclusive ownership of:
+- PPAP attachment tracking
+- PPAP completeness determination
+
+✅ **Workspace/Vault** retained exclusive ownership of:
+- File storage
+- File access control
+
+✅ **No Cross-Domain Mutation:**
+- PPAP Workflow did NOT copy files (only stored references)
+- PPAP Workflow did NOT modify file metadata
+- Workspace/Vault did NOT infer PPAP relationships
+
+✅ **Authority Preserved:**
+- PPAP Workflow decided whether attachments satisfy requirements
+- Workspace/Vault controlled file access
+- User authorized attachment
+
+### E. Interface Compliance Check
+
+✅ **All Interactions Used Approved Contract Types:**
+- Request (Command Center → PPAP Workflow)
+- Read (PPAP Workflow → Workspace/Vault)
+- Reference (PPAP Workflow holds file IDs)
+- Event (PPAP Workflow → Command Center)
+
+✅ **No Prohibited Patterns:**
+- No file duplication (PPAP Workflow holds references only)
+- No shared mutable state
+- No hidden coupling
+
+✅ **No Implicit Communication:**
+- All interactions explicit via defined contracts
+
+### F. Potential Violation Points
+
+**Violation Risk 1:** PPAP Workflow copying files into its own storage
+- **Why Tempting:** Ensure file availability, avoid broken references
+- **Why Prohibited:** Workspace/Vault is authoritative for files; PPAP Workflow may only hold references
+
+**Violation Risk 2:** Workspace/Vault auto-tagging files as "PPAP attachments"
+- **Why Tempting:** Better organization
+- **Why Prohibited:** Workspace/Vault MUST NOT infer business relationships
+
+**Violation Risk 3:** PPAP Workflow reading file content to determine document type
+- **Why Tempting:** Auto-classify attachments
+- **Why Prohibited:** PPAP Workflow should rely on user-provided metadata, not interpret file content
+
+### G. Enforcement Notes
+
+**Rule 1 (V3.2B):** Reference Contract — reference is not copy of truth
+- **Prevents:** PPAP Workflow duplicating files
+
+**Rule 2 (V3.2A):** Workspace/Vault MUST NOT infer relationships between files
+- **Prevents:** Workspace/Vault tagging files based on PPAP association
+
+**Rule 3 (V3.2A):** Workspace/Vault MUST NOT interpret file content
+- **Prevents:** Workspace/Vault or PPAP Workflow analyzing file semantics
+
+---
+
+## Scenario 5: Evaluate PPAP Readiness
+
+### A. Scenario Description
+
+**Real-World Use Case:** Engineer checks whether a PPAP submission is ready for approval (all documents complete, all requirements satisfied).
+
+**User Action:** Navigate to PPAP, view status dashboard, check readiness indicator.
+
+### B. Domains Involved
+
+- PPAP Workflow (owns PPAP status, readiness determination)
+- Document Copilot (provides document state indicators)
+- Workspace/Vault (provides file references)
+- Command Center (user entry point)
+
+### C. Step-by-Step Interaction Flow
+
+**Step 1: User Requests PPAP Status**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** PPAP Workflow
+- **Action:** User views PPAP; Command Center reads PPAP status from PPAP Workflow
+
+**Step 2: PPAP Workflow Reads Document States**
+- **Source:** PPAP Workflow
+- **Contract:** Read
+- **Target:** Document Copilot
+- **Action:** PPAP Workflow reads draft/final state indicators for required documents
+
+**Step 3: PPAP Workflow Reads File References**
+- **Source:** PPAP Workflow
+- **Contract:** Read
+- **Target:** Workspace/Vault
+- **Action:** PPAP Workflow reads file metadata to confirm attachments exist
+
+**Step 4: PPAP Workflow Evaluates Readiness**
+- **Source:** PPAP Workflow
+- **Contract:** (internal)
+- **Target:** (own state)
+- **Action:** PPAP Workflow evaluates readiness based on requirements vs. available documents/files
+
+**Step 5: PPAP Workflow Updates Status**
+- **Source:** PPAP Workflow
+- **Contract:** Output
+- **Target:** (own state)
+- **Action:** PPAP Workflow updates PPAP status (e.g., "ready for review" or "incomplete")
+
+**Step 6: Command Center Displays Readiness**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** PPAP Workflow
+- **Action:** Command Center reads and displays PPAP readiness status
+
+### D. Ownership Validation
+
+✅ **PPAP Workflow** retained exclusive ownership of:
+- PPAP readiness determination
+- PPAP status
+- Completeness evaluation logic
+
+✅ **Document Copilot** retained exclusive ownership of:
+- Draft/final state indicators
+
+✅ **Workspace/Vault** retained exclusive ownership of:
+- File existence and metadata
+
+✅ **No Cross-Domain Mutation:**
+- Command Center did NOT compute readiness (read from PPAP Workflow)
+- Document Copilot did NOT determine PPAP completeness
+- Workspace/Vault did NOT infer PPAP requirements
+
+✅ **Authority Preserved:**
+- PPAP Workflow decided readiness
+- Document Copilot provided state indicators only
+- Workspace/Vault provided file metadata only
+
+### E. Interface Compliance Check
+
+✅ **All Interactions Used Approved Contract Types:**
+- Read (Command Center → PPAP Workflow, PPAP Workflow → Document Copilot, Workspace/Vault)
+- Output (PPAP Workflow status update)
+
+✅ **No Prohibited Patterns:**
+- No Command Center computing authoritative workflow state
+- No duplicated readiness logic
+- No hidden coupling
+
+✅ **No Implicit Communication:**
+- All interactions explicit via defined contracts
+
+### F. Potential Violation Points
+
+**Violation Risk 1:** Command Center computing readiness based on document counts
+- **Why Tempting:** Faster display, reduce backend calls
+- **Why Prohibited:** Command Center MUST NOT compute authoritative workflow state; PPAP Workflow is exclusive authority
+
+**Violation Risk 2:** Document Copilot marking PPAP as "complete" based on draft finalization
+- **Why Tempting:** Automation
+- **Why Prohibited:** Document Copilot MUST NOT determine workflow completeness; PPAP Workflow decides
+
+**Violation Risk 3:** Shared "readiness_cache" table written by both PPAP Workflow and Command Center
+- **Why Tempting:** Performance optimization
+- **Why Prohibited:** Shared mutable state is strictly forbidden
+
+### G. Enforcement Notes
+
+**Rule 1 (V3.2A):** PPAP Workflow is ONLY domain authorized to determine readiness
+- **Prevents:** Command Center or Document Copilot computing readiness
+
+**Rule 2 (V3.2B):** Command Center MUST NOT compute authoritative workflow state
+- **Prevents:** Command Center deriving readiness from document counts
+
+**Rule 3 (V3.2A):** Shared mutable state is strictly prohibited
+- **Prevents:** Shared readiness cache
+
+**Rule 4 (V3.2B):** Read Contract does NOT imply authority
+- **Prevents:** Document Copilot or Workspace/Vault inferring PPAP completeness
+
+---
+
+## Scenario 6: User Works from Command Center
+
+### A. Scenario Description
+
+**Real-World Use Case:** Engineer uses Command Center as primary interface to view all PPAPs, documents, and tasks; initiates actions from unified dashboard.
+
+**User Action:** Open Command Center, view aggregated task list, click action to navigate to PPAP or start document generation.
+
+### B. Domains Involved
+
+- Command Center (aggregation, presentation)
+- PPAP Workflow (PPAP data)
+- Document Copilot (document session data)
+- Workspace/Vault (file data)
+- EMIP (component data)
+- Core Platform (identity, auth)
+
+### C. Step-by-Step Interaction Flow
+
+**Step 1: User Opens Command Center**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** Core Platform
+- **Action:** Command Center reads user identity and authorization
+
+**Step 2: Command Center Reads PPAP Data**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** PPAP Workflow
+- **Action:** Command Center reads user's assigned PPAPs, statuses, assignments
+
+**Step 3: Command Center Reads Document Session Data**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** Document Copilot
+- **Action:** Command Center reads active document sessions, draft states
+
+**Step 4: Command Center Reads Workspace Files**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** Workspace/Vault
+- **Action:** Command Center reads recent files, storage usage
+
+**Step 5: Command Center Reads Component Data (optional)**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** EMIP
+- **Action:** Command Center reads component names for display
+
+**Step 6: Command Center Aggregates View**
+- **Source:** Command Center
+- **Contract:** Output
+- **Target:** (presentation layer)
+- **Action:** Command Center aggregates data into unified task surface
+
+**Step 7: User Initiates Action**
+- **Source:** Command Center (user input)
+- **Contract:** Request
+- **Target:** PPAP Workflow or Document Copilot
+- **Action:** User clicks action (e.g., "Start Document"); Command Center delegates to owning domain
+
+**Step 8: Owning Domain Executes Action**
+- **Source:** PPAP Workflow or Document Copilot
+- **Contract:** (varies)
+- **Target:** (varies)
+- **Action:** Owning domain executes requested action
+
+**Step 9: Owning Domain Emits Event**
+- **Source:** PPAP Workflow or Document Copilot
+- **Contract:** Event
+- **Target:** Command Center
+- **Action:** Owning domain emits state change event
+
+**Step 10: Command Center Refreshes View**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** PPAP Workflow or Document Copilot
+- **Action:** Command Center reads updated state to refresh display
+
+### D. Ownership Validation
+
+✅ **Command Center** retained NO authoritative ownership:
+- Command Center is read-only aggregation
+- All displayed data sourced from owning domains
+
+✅ **PPAP Workflow** retained exclusive ownership of:
+- PPAP state, status, assignments
+
+✅ **Document Copilot** retained exclusive ownership of:
+- Document session state
+
+✅ **Workspace/Vault** retained exclusive ownership of:
+- File storage
+
+✅ **EMIP** retained exclusive ownership of:
+- Component data
+
+✅ **No Cross-Domain Mutation:**
+- Command Center did NOT modify any domain's data
+- Command Center delegated all actions to owning domains
+
+✅ **Authority Preserved:**
+- Command Center presented data only
+- Owning domains executed all actions
+- Command Center did NOT compute authoritative state
+
+### E. Interface Compliance Check
+
+✅ **All Interactions Used Approved Contract Types:**
+- Read (Command Center → all domains)
+- Request (Command Center → PPAP Workflow, Document Copilot)
+- Event (owning domains → Command Center)
+- Reference (Command Center holds IDs for navigation)
+
+✅ **No Prohibited Patterns:**
+- No Command Center computing authoritative workflow state
+- No cached authoritative business data in Command Center
+- No shadow orchestration logic
+
+✅ **No Implicit Communication:**
+- All interactions explicit via defined contracts
+- Command Center did NOT assume domain behavior
+
+### F. Potential Violation Points
+
+**Violation Risk 1:** Command Center caching PPAP status as authoritative
+- **Why Tempting:** Performance, reduce backend calls
+- **Why Prohibited:** Command Center MUST NOT cache as authoritative; must refresh from PPAP Workflow
+
+**Violation Risk 2:** Command Center computing "overall progress" metric
+- **Why Tempting:** Better UX, unified view
+- **Why Prohibited:** Command Center MUST NOT compute authoritative workflow state; must read from PPAP Workflow
+
+**Violation Risk 3:** Command Center directly updating PPAP assignment
+- **Why Tempting:** Faster, fewer hops
+- **Why Prohibited:** Command Center is read-only; must delegate to PPAP Workflow
+
+**Violation Risk 4:** Command Center becoming orchestration layer
+- **Why Tempting:** Centralized control
+- **Why Prohibited:** Command Center MUST NOT store business logic or orchestrate workflows
+
+### G. Enforcement Notes
+
+**Rule 1 (V3.2A):** Command Center is read-only aggregation ONLY
+- **Prevents:** Command Center caching authoritative data or computing state
+
+**Rule 2 (V3.2B):** Command Center MUST delegate all actions to owning domains
+- **Prevents:** Command Center directly mutating domain data
+
+**Rule 3 (V3.2B):** Read Contract does NOT imply authority
+- **Prevents:** Command Center treating aggregated data as authoritative
+
+**Rule 4 (V3.2A):** Command Center MUST NOT become shadow orchestration layer
+- **Prevents:** Command Center storing business logic
+
+---
+
+## Scenario 7: EMIP Data Referenced in Document Creation
+
+### A. Scenario Description
+
+**Real-World Use Case:** Engineer generates a document that requires component specifications from EMIP (e.g., Control Plan referencing component tolerances).
+
+**User Action:** Start document generation, Copilot automatically pulls component data from EMIP, user reviews and approves.
+
+### B. Domains Involved
+
+- Document Copilot (owns draft generation)
+- EMIP (owns component data)
+- PPAP Workflow (owns PPAP context, optional)
+- Workspace/Vault (owns file storage)
+- Command Center (user entry point)
+
+### C. Step-by-Step Interaction Flow
+
+**Step 1: User Initiates Document Generation**
+- **Source:** Command Center
+- **Contract:** Request
+- **Target:** Document Copilot
+- **Action:** User starts Control Plan generation
+
+**Step 2: Document Copilot Reads PPAP Context (if PPAP-bound)**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** PPAP Workflow
+- **Action:** Document Copilot reads PPAP component ID
+
+**Step 3: Document Copilot Reads Component Data**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** EMIP
+- **Action:** Document Copilot reads component specifications, tolerances, relationships from EMIP
+
+**Step 4: Document Copilot Generates Draft with Component Data**
+- **Source:** Document Copilot
+- **Contract:** Output
+- **Target:** (internal session state)
+- **Action:** Document Copilot generates draft incorporating EMIP component data
+
+**Step 5: User Approves Draft**
+- **Source:** Command Center (user input)
+- **Contract:** Request
+- **Target:** Document Copilot
+- **Action:** User approves draft
+
+**Step 6: Document Copilot Requests File Storage**
+- **Source:** Document Copilot
+- **Contract:** Request
+- **Target:** Workspace/Vault
+- **Action:** Document Copilot requests file storage
+
+**Step 7: Workspace/Vault Stores File**
+- **Source:** Workspace/Vault
+- **Contract:** Output
+- **Target:** (internal storage)
+- **Action:** Workspace/Vault stores file with embedded component data
+
+### D. Ownership Validation
+
+✅ **EMIP** retained exclusive ownership of:
+- Component specifications
+- Component relationships
+- Product structure
+
+✅ **Document Copilot** retained exclusive ownership of:
+- Draft generation logic
+- How component data is incorporated into document
+
+✅ **Workspace/Vault** retained exclusive ownership of:
+- File storage
+
+✅ **No Cross-Domain Mutation:**
+- Document Copilot did NOT modify EMIP data
+- Document Copilot did NOT infer component relationships (read from EMIP)
+- Workspace/Vault did NOT interpret component data in file
+
+✅ **Authority Preserved:**
+- EMIP remained authoritative for component data
+- Document Copilot decided how to present data in document
+- Workspace/Vault stored file without interpretation
+
+### E. Interface Compliance Check
+
+✅ **All Interactions Used Approved Contract Types:**
+- Request (Command Center → Document Copilot, Document Copilot → Workspace/Vault)
+- Read (Document Copilot → EMIP, PPAP Workflow)
+- Output (Document Copilot session state, Workspace/Vault file storage)
+
+✅ **No Prohibited Patterns:**
+- No Document Copilot caching EMIP data as authoritative
+- No Document Copilot inferring component relationships
+- No duplicated component data
+
+✅ **No Implicit Communication:**
+- All interactions explicit via defined contracts
+
+### F. Potential Violation Points
+
+**Violation Risk 1:** Document Copilot caching EMIP component data as authoritative
+- **Why Tempting:** Performance, avoid repeated reads
+- **Why Prohibited:** EMIP is authoritative; Document Copilot may only hold references
+
+**Violation Risk 2:** Document Copilot inferring component relationships not provided by EMIP
+- **Why Tempting:** Fill gaps, improve document quality
+- **Why Prohibited:** Only EMIP MAY define component relationships
+
+**Violation Risk 3:** Workspace/Vault extracting component data from stored file for indexing
+- **Why Tempting:** Better search, organization
+- **Why Prohibited:** Workspace/Vault MUST NOT interpret file content
+
+### G. Enforcement Notes
+
+**Rule 1 (V3.2B):** Reference Contract — reference is not copy of truth
+- **Prevents:** Document Copilot caching EMIP data as authoritative
+
+**Rule 2 (V3.2A):** Only EMIP MAY define component relationships
+- **Prevents:** Document Copilot inferring relationships
+
+**Rule 3 (V3.2A):** Workspace/Vault MUST NOT interpret file content
+- **Prevents:** Workspace/Vault extracting component data
+
+**Rule 4 (V3.2B):** Read Contract does NOT imply authority
+- **Prevents:** Document Copilot treating read data as owned
+
+---
+
+## Scenario 8: Resume Interrupted Copilot Session
+
+### A. Scenario Description
+
+**Real-World Use Case:** Engineer starts document generation, session is interrupted (browser crash, network issue), engineer returns later to resume.
+
+**User Action:** Navigate to document sessions, select interrupted session, resume from last state.
+
+### B. Domains Involved
+
+- Document Copilot (owns session state)
+- PPAP Workflow (owns PPAP context, optional)
+- Workspace/Vault (owns source files)
+- EMIP (owns component data)
+- Command Center (user entry point)
+- Core Platform (identity, auth)
+
+### C. Step-by-Step Interaction Flow
+
+**Step 1: User Requests Session List**
+- **Source:** Command Center
+- **Contract:** Read
+- **Target:** Document Copilot
+- **Action:** User views active sessions; Command Center reads session list from Document Copilot
+
+**Step 2: User Selects Interrupted Session**
+- **Source:** Command Center (user input)
+- **Contract:** Request
+- **Target:** Document Copilot
+- **Action:** User selects session ID; Command Center sends resume request to Document Copilot
+
+**Step 3: Document Copilot Validates User Identity**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** Core Platform
+- **Action:** Document Copilot confirms user owns session
+
+**Step 4: Document Copilot Reads Session State**
+- **Source:** Document Copilot
+- **Contract:** (internal)
+- **Target:** (own session store)
+- **Action:** Document Copilot loads session state (draft content, unresolved questions, context)
+
+**Step 5: Document Copilot Re-Reads PPAP Context (if stale)**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** PPAP Workflow
+- **Action:** Document Copilot refreshes PPAP context if needed
+
+**Step 6: Document Copilot Re-Reads Source Files (if stale)**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** Workspace/Vault
+- **Action:** Document Copilot refreshes file references if needed
+
+**Step 7: Document Copilot Re-Reads Component Data (if stale)**
+- **Source:** Document Copilot
+- **Contract:** Read
+- **Target:** EMIP
+- **Action:** Document Copilot refreshes component data if needed
+
+**Step 8: Document Copilot Resumes Session**
+- **Source:** Document Copilot
+- **Contract:** Output
+- **Target:** (session state)
+- **Action:** Document Copilot presents resumed session to user
+
+**Step 9: User Continues and Approves**
+- **Source:** Command Center (user input)
+- **Contract:** Request
+- **Target:** Document Copilot
+- **Action:** User completes session and approves draft
+
+**Step 10: Document Copilot Requests File Storage**
+- **Source:** Document Copilot
+- **Contract:** Request
+- **Target:** Workspace/Vault
+- **Action:** Document Copilot requests file storage
+
+### D. Ownership Validation
+
+✅ **Document Copilot** retained exclusive ownership of:
+- Session state
+- Draft content
+- Session lifecycle
+
+✅ **PPAP Workflow** retained exclusive ownership of:
+- PPAP context
+
+✅ **Workspace/Vault** retained exclusive ownership of:
+- Source files
+
+✅ **EMIP** retained exclusive ownership of:
+- Component data
+
+✅ **No Cross-Domain Mutation:**
+- Document Copilot did NOT cache stale PPAP/EMIP/Vault data as authoritative
+- Document Copilot refreshed from source domains
+
+✅ **Authority Preserved:**
+- Document Copilot owned session state
+- Source domains remained authoritative for context data
+- Document Copilot handled staleness by re-reading
+
+### E. Interface Compliance Check
+
+✅ **All Interactions Used Approved Contract Types:**
+- Read (Command Center → Document Copilot, Document Copilot → PPAP Workflow, Workspace/Vault, EMIP, Core Platform)
+- Request (Command Center → Document Copilot, Document Copilot → Workspace/Vault)
+- Output (Document Copilot session state)
+
+✅ **No Prohibited Patterns:**
+- No Document Copilot caching stale data as authoritative
+- No duplicated truth stores
+- No hidden coupling
+
+✅ **No Implicit Communication:**
+- All interactions explicit via defined contracts
+- Document Copilot explicitly refreshed stale references
+
+### F. Potential Violation Points
+
+**Violation Risk 1:** Document Copilot caching PPAP/EMIP/Vault data in session state as authoritative
+- **Why Tempting:** Avoid re-reading, faster resume
+- **Why Prohibited:** Source domains are authoritative; Document Copilot must refresh stale references
+
+**Violation Risk 2:** Document Copilot assuming cached data is still valid
+- **Why Tempting:** Simpler logic, performance
+- **Why Prohibited:** References may become stale; Document Copilot must handle staleness
+
+**Violation Risk 3:** Shared session state table written by both Document Copilot and PPAP Workflow
+- **Why Tempting:** Keep session in sync with PPAP changes
+- **Why Prohibited:** Shared mutable state is strictly forbidden
+
+### G. Enforcement Notes
+
+**Rule 1 (V3.2B):** Reference Contract — reference may become stale; consuming domain must handle staleness
+- **Prevents:** Document Copilot assuming cached data is valid
+
+**Rule 2 (V3.2B):** Read Contract — reader must refresh from source when needed
+- **Prevents:** Document Copilot caching stale data as authoritative
+
+**Rule 3 (V3.2A):** Shared mutable state is strictly prohibited
+- **Prevents:** Shared session state table
+
+**Rule 4 (V3.2B):** Owning domain controls lifecycle
+- **Prevents:** Other domains modifying Document Copilot session state
+
+---
+
+## Cross-Scenario Integrity Check
+
+**Validation Across All 8 Scenarios:**
+
+### 1. Contract Type Coverage
+
+✅ **All scenarios executed using ONLY the five defined contract types:**
+- **Read Contract:** Used in all scenarios for consuming outputs
+- **Request Contract:** Used for delegating actions to owning domains
+- **Output Contract:** Used for exposing stable domain outputs
+- **Event Contract:** Used for informational notifications
+- **Reference Contract:** Used for holding foreign entity pointers
+
+✅ **No new contract types required**
+
+### 2. Ownership Boundary Preservation
+
+✅ **No ownership violations occurred:**
+- PPAP Workflow retained exclusive authority for PPAP state, status, readiness
+- Document Copilot retained exclusive authority for draft generation, session state
+- Workspace/Vault retained exclusive authority for file storage
+- EMIP retained exclusive authority for component data
+- Command Center remained read-only aggregation
+- Core Platform remained infrastructure foundation
+
+✅ **No cross-domain mutation detected**
+
+### 3. Prohibited Pattern Avoidance
+
+✅ **No prohibited patterns were required:**
+- No direct cross-domain mutation
+- No shared mutable state
+- No duplicated truth stores
+- No hidden dependency on internal fields
+- No UI-layer inference becoming workflow truth
+- No file metadata becoming semantic authority
+- No Copilot output treated as final without approval
+- No temporary shared ownership
+
+✅ **All scenarios followed approved patterns**
+
+### 4. Interface Compliance
+
+✅ **All interactions used approved contract types:**
+- Every domain interaction explicitly declared contract type
+- No implicit or hidden communication
+- No undocumented behavior required
+
+✅ **No silent coupling introduced**
+
+### 5. Workflow Decomposability
+
+✅ **All multi-step flows remained decomposable into discrete contract interactions:**
+- Each step clearly identified source, target, contract type, action
+- No hidden workflow state outside domain ownership
+- All workflows traceable and auditable
+
+✅ **No implicit orchestration required**
+
+### 6. Authority Preservation
+
+✅ **Exclusive authority remained with correct domains:**
+- PPAP Workflow decided status, readiness, completeness
+- Document Copilot decided draft generation logic
+- Workspace/Vault decided file storage
+- EMIP decided component relationships
+- Users approved drafts before finalization
+
+✅ **No authority leakage detected**
+
+### 7. Reference Handling
+
+✅ **All references handled correctly:**
+- References treated as pointers, not truth copies
+- Owning domains controlled lifecycle
+- Consuming domains handled staleness
+- No references promoted to authoritative copies
+
+✅ **No reference ownership confusion**
+
+### 8. Event Handling
+
+✅ **All events handled correctly:**
+- Events described past occurrences, not commands
+- Events did NOT transfer ownership
+- Consumers reacted within their own boundaries
+- Events were informational, not prescriptive
+
+✅ **No event authority transfer**
+
+---
+
+## Architectural Gaps Discovered
+
+**Gap Analysis Result:** ✅ **NO ARCHITECTURAL GAPS FOUND**
+
+All eight scenarios executed successfully using only:
+- V3.2A domain ownership rules
+- V3.2B interface contract types
+- Existing anti-drift rules
+
+**No scenarios required:**
+- New contract types
+- Ownership changes
+- Shared state
+- Interpretation outside contracts
+- Undocumented behavior
+
+**Conclusion:** V3.2A and V3.2B are **architecturally complete** for real-world workflows.
+
+---
+
+## Scenario Enforcement Rules
+
+The following rules govern scenario validation and future workflow design:
+
+### Rule 1: All Workflows MUST Be Expressible as Contract Sequences
+
+**Every workflow MUST be decomposable into a sequence of explicit contract interactions.**
+
+If a workflow cannot be expressed using Read, Request, Output, Event, or Reference contracts, the workflow design is invalid.
+
+### Rule 2: No Workflow May Require Implicit State Sharing
+
+**No workflow MUST require shared mutable state across domains.**
+
+All coordination MUST occur via explicit contracts. Implicit state sharing is prohibited.
+
+### Rule 3: All Multi-Step Flows MUST Remain Decomposable
+
+**Every multi-step workflow MUST be traceable as discrete contract interactions.**
+
+Each step MUST clearly identify:
+- Source domain
+- Target domain
+- Contract type
+- Action description
+
+Hidden or implicit steps are prohibited.
+
+### Rule 4: No Domain May Retain Hidden Workflow State Outside Its Ownership
+
+**All workflow state MUST reside in the owning domain.**
+
+No domain may cache or store workflow state that belongs to another domain. References are allowed; authoritative copies are not.
+
+### Rule 5: Workflows MUST Preserve Exclusive Authority
+
+**Every workflow MUST preserve exclusive authority with the correct domain.**
+
+Even when consuming cross-domain data, the owning domain retains exclusive authority to make decisions within its scope.
+
+### Rule 6: Workflows MUST Handle Reference Staleness
+
+**All workflows using Reference Contracts MUST handle potential staleness.**
+
+References may become stale. Consuming domains MUST refresh from source when needed.
+
+### Rule 7: Workflows MUST NOT Assume Event Implies Authority Transfer
+
+**No workflow MUST treat events as authority transfer.**
+
+Events are informational. Consumers react within their own boundaries; they do not assume ownership.
+
+### Rule 8: Workflows MUST Delegate Actions to Owning Domains
+
+**All state-changing actions MUST be delegated to the owning domain.**
+
+No domain may perform actions on another domain's data. Request Contracts MUST be used.
+
+### Rule 9: Workflows MUST Be Auditable
+
+**Every workflow MUST be auditable via contract trace.**
+
+Implementation MUST log contract interactions for debugging and compliance verification.
+
+### Rule 10: Workflow Design MUST Declare Contract Types Before Implementation
+
+**Before implementing any workflow, designers MUST declare:**
+- Domains involved
+- Contract types used
+- Ownership preservation proof
+- Prohibited pattern avoidance confirmation
+
+Workflows without explicit contract declarations are prohibited.
+
+---
+
+## Governance for Scenario Validation
+
+**This scenario validation is authoritative.** All future workflows **MUST** follow these patterns.
+
+**New Workflows Require:**
+1. Scenario definition (as per V3.2C format)
+2. Step-by-step contract trace
+3. Ownership validation
+4. Interface compliance check
+5. Potential violation point identification
+6. Enforcement note documentation
+
+**Workflow Rejection Criteria:**
+- Cannot be expressed as contract sequence
+- Requires shared mutable state
+- Violates ownership boundaries
+- Uses prohibited patterns
+- Requires undocumented behavior
+- Cannot be decomposed into discrete steps
+
+**Workflow Approval Criteria:**
+- All steps use approved contract types
+- Ownership preserved throughout
+- No prohibited patterns required
+- Fully decomposable and auditable
+- Enforcement mechanisms clear
+
+---
+
 ## Conclusion
 
 This document is the **implementation-grade source of truth** for EMIP-PPAP.
