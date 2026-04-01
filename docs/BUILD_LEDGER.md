@@ -4,6 +4,367 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-01 14:49 CT - Phase V3.2F-1 - Document Copilot Domain Definition
+
+**Summary:** Define complete Document Copilot domain architecture, Claude API integration, two-mode design, and documentEngine migration plan
+
+**Type:** Documentation Only (No Code Changes)
+
+### Purpose
+
+**V3.2F-1 defines the complete Document Copilot domain to enable V3.2F-2 and V3.2F-3 implementation without making architectural decisions during execution.**
+
+**Context:**
+- DIAG-02 Deep Scan identified 16 files in documentEngine with verdicts: 9 KEEP AS-IS, 3 REPURPOSE, 2 REMOVE
+- Excellent separation of concerns enables surgical pivot from deterministic generation to AI orchestration
+- Parsing, normalization, persistence, export, and validation layers are orthogonal to generation method
+
+**Objective:** Define every architectural decision required for Document Copilot domain extraction and Claude API integration.
+
+---
+
+### Decisions Made
+
+#### Decision 1: Document Copilot Domain Definition (V3.2A Format)
+
+**Domain Ownership:**
+- Copilot Sessions (lifecycle, state, configuration, history)
+- Claude API Integration (prompt construction, API calls, response handling)
+- Draft Document State (generated drafts, iterations, confidence metadata)
+- Conversation History (user questions, Claude responses, context accumulation)
+- Prompt Templates (document-type-specific prompts, instructions, schemas)
+- AI Provenance Metadata (which prompt generated which field, token costs, model version)
+- Input Package Assembly (BOM + template + context packaging for Claude)
+
+**Does NOT Own:**
+- PPAP Status or Readiness (PPAP Workflow owns)
+- File Storage (Vault owns)
+- Component/BOM Master Data (EMIP owns, consumed via stub)
+- Workflow Authority (PPAP Workflow owns)
+- Document Finalization (user approval required)
+- Document Approval (PPAP Workflow owns)
+
+**Strict Constraints:**
+- MUST NOT finalize PPAP decisions or determine PPAP status
+- MUST NOT determine workflow status or progression
+- MUST NOT directly mutate PPAP state or assignment
+- MUST NOT approve documents or mark them as final
+- MUST NOT store files directly (must use Vault contracts)
+- MUST NOT make workflow decisions based on draft quality
+
+**Rationale:** Clear boundaries prevent Document Copilot from overstepping into workflow authority. Copilot generates drafts; PPAP Workflow makes decisions.
+
+---
+
+#### Decision 2: Two-Mode Architecture
+
+**Mode 1: PPAP-Bound**
+- Entry: `/ppap/[id]/copilot` (launched from PPAP workspace)
+- Template Loading: Automatic (from PPAP requirements)
+- BOM Loading: Automatic via `getEmipContext(ppapId)` (STUBBED, returns mock data) + user upload fallback
+- Context: PPAP record + EMIP stub data + template + optional drawings
+- Output Routing: Vault + Event to PPAP Workflow (`DocumentDraftCreatedEvent`)
+- Completion Tracking: PPAP Workflow owns status
+
+**Mode 2: Standalone**
+- Entry: `/document-workspace` (independent of PPAP)
+- Template Loading: Manual (user selects document type)
+- BOM Loading: Manual (user uploads BOM PDF)
+- Context: Only what user provides (no PPAP context, no EMIP data)
+- Output Routing: Vault only (no event emission)
+- Completion Tracking: None (user-driven)
+
+**Mode Comparison:**
+| Aspect | PPAP-Bound | Standalone |
+|--------|------------|------------|
+| Entry Point | `/ppap/[id]/copilot` | `/document-workspace` |
+| Template Loading | Automatic | Manual |
+| BOM Loading | Automatic + fallback | Manual |
+| PPAP Context | Yes | No |
+| EMIP Context | Yes (stubbed) | No |
+| Output Routing | Vault + Event | Vault only |
+| Event Emission | Yes | No |
+| Attachment to PPAP | Automatic | Manual |
+
+**Rationale:** Two modes support both PPAP-integrated workflows and standalone document generation. PPAP-Bound mode leverages context; Standalone mode provides flexibility.
+
+---
+
+#### Decision 3: Claude API Integration Architecture
+
+**Model Configuration:**
+- Model: `claude-sonnet-4-20250514` (Sonnet 4, May 2025 release)
+- Max Tokens (Initial): 8000 tokens
+- Max Tokens (Follow-Up): 2000 tokens per exchange
+- Temperature: 0.3 (deterministic, consistent output)
+- Top-P: 0.9 (balanced creativity)
+
+**Input Package Structure:**
+- BOM Data: Raw text + parsed structure + normalized entities (all three representations)
+- Template: Document type + required fields + output format + validation rules
+- System Prompt: Claude's role and output format instructions
+- Document Instructions: Document-type-specific instructions
+- Optional: Excel template, engineering drawing, PPAP context, EMIP context
+
+**Conversation Flow:**
+1. Initial generation: Send full input package (8000 tokens max)
+2. If Claude needs info: Return question to user via chat UI
+3. Follow-up exchanges: User responds, Claude continues (2000 tokens max per exchange)
+4. Final output: Structured JSON matching output schema
+
+**Output Handling:**
+1. Receive Claude response (draft, question, or error)
+2. Validate document data against template schema
+3. Store draft in Vault via `storeFile()` contract
+4. Record AI provenance metadata (prompt, model, tokens, confidence)
+5. Emit `DocumentDraftCreatedEvent` (PPAP-Bound mode only)
+6. Update session state for iteration
+
+**Rationale:** Claude API is the document generation engine. System orchestrates inputs, calls Claude, validates outputs, and routes results. Token limits balance quality and cost.
+
+---
+
+#### Decision 4: Prompt Template System
+
+**Prompt Template Structure:**
+- System Prompt: Common across all templates (Claude's role, output format, quality standards)
+- Document Instructions: Document-type-specific (PFMEA methodology, Control Plan structure, etc.)
+- Required Inputs: What must be present (BOM, template, drawing, PPAP context)
+- Optional Inputs: What enriches output (EMIP context, additional files)
+- Output Format: Expected structure (JSON schema, file format, Excel mapping)
+- Validation Rules: What makes output acceptable (required fields, ranges, dependencies)
+
+**Prompt Template Registry:**
+- Location: `src/features/copilot/templates/registry.ts` (repurposed from documentEngine)
+- Static templates: Built-in (PFMEA, Control Plan, Process Flow, PSW)
+- Dynamic templates: User-defined (JSON upload, validated against schema)
+- Registry API: `getPromptTemplate()`, `listPromptTemplates()`, `registerPromptTemplate()`, `hasPromptTemplate()`
+
+**Example (PFMEA):**
+- System Prompt: "You are an expert automotive quality engineer..."
+- Document Instructions: "Generate Process FMEA based on BOM... Use AIAG FMEA-4 methodology..."
+- Validation Rules: Severity 1-10, Occurrence 1-10, Detection 1-10, RPN calculated
+
+**Rationale:** Prompt templates define how Claude generates each document type. Separating system prompt from document instructions enables reuse and customization.
+
+---
+
+#### Decision 5: EMIP Stub Contract
+
+**Function Signature:** `async function getEmipContext(ppapId: string): Promise<EmipContext>`
+
+**Current Behavior (STUBBED):**
+- Returns mock `EmipContext` with placeholder component data
+- Does NOT query real EMIP domain (EMIP storage not yet built)
+- Logs stub usage to console
+
+**Future Behavior:**
+- Queries EMIP domain for real component/BOM data
+- Returns same `EmipContext` structure
+- Sets `metadata.source = 'emip'` (currently 'stub')
+
+**Interface Contract (FIXED):**
+- `EmipContext` type fully defined with components, operations, bomStructure
+- Interface will NOT change when EMIP storage is built
+- Only implementation changes (stub → real query)
+
+**Implementation Requirements:**
+- V3.2F-2/F-3 MUST use `getEmipContext()` function
+- MUST handle `EmipContext` type
+- MUST check `metadata.source` to distinguish stub vs real data
+- MUST display warning to user if `metadata.source === 'stub'`
+
+**Rationale:** Stub enables Document Copilot development before EMIP storage exists. Fixed interface prevents breaking changes when EMIP is implemented.
+
+---
+
+#### Decision 6: DocumentEngine Migration Plan
+
+**Files to KEEP AS-IS (9 files):**
+- `core/bomParser.ts` — Pure BOM parsing, feeds Claude
+- `core/bomNormalizer.ts` — Data normalization, feeds Claude
+- `services/workflowGuidanceService.ts` — Workflow phase detection
+- `services/riskAnalysisService.ts` — Risk assessment
+- `services/systemValidationService.ts` — Completeness checks
+- `services/systemHealthService.ts` — Health scoring
+- `persistence/sessionService.ts` — Session CRUD
+- `persistence/versionDiffService.ts` — Version comparison
+- `export/excelTemplateInjector.ts` + mappings — Presentation layer
+
+**Rationale:** These layers are orthogonal to generation method. Parsing, validation, persistence, and export work identically regardless of whether documents are generated by code or AI.
+
+**Files to REPURPOSE (4 files):**
+
+1. `core/documentGenerator.ts` → `copilot/services/claudeOrchestrator.ts`
+   - Replace `template.generate()` calls with Claude API calls
+   - Maintain same interface: `generateDocument(templateId, input) → draft`
+   - Add conversation state management and prompt construction
+
+2. `persistence/versionService.ts` → Add AI Provenance Metadata
+   - Add `aiProvenance` field to `DocumentVersion` type
+   - Store prompt template, model version, token count, confidence, uncertain fields
+   - No changes to version control logic
+
+3. `templates/registry.ts` → `copilot/templates/promptRegistry.ts`
+   - Replace `TemplateDefinition` with `PromptTemplate`
+   - Replace `generate()` functions with prompt instructions
+   - Maintain same registry interface (get, list, register, has)
+
+4. `wizard/wizardValidationEngine.ts` → `copilot/services/aiAssistedValidation.ts`
+   - Replace hardcoded rules with Claude API calls for validation reasoning
+   - Maintain same validation interface: `validateFieldChange(context) → ValidationResult`
+   - Add AI reasoning to validation warnings
+
+**Files to REMOVE (2 files):**
+
+1. `templates/templateIngestionService.ts`
+   - Reason: Deterministic field mapping logic obsolete
+   - Replacement: Prompt template schema validator
+
+2. `wizard/wizardAutofillRules.ts`
+   - Reason: Hardcoded autofill rules replaced by Claude
+   - Replacement: Claude prompt instructions with FMEA/Control Plan best practices
+
+**Rationale:** Surgical migration preserves valuable infrastructure (parsing, validation, export) while replacing only generation logic. 9 files unchanged, 4 repurposed, 2 removed.
+
+---
+
+#### Decision 7: Contract Definitions (V3.2B)
+
+**Contract 1: Document Copilot → Claude API**
+- Type: External API Integration
+- Request: `SendToClaudeRequest { inputPackage, sessionId?, conversationHistory? }`
+- Response: `SendToClaudeResponse { type, documentData?, question?, error?, metadata }`
+- Implementation: `copilot/services/claudeClient.ts`
+
+**Contract 2: PPAP Workflow → Document Copilot**
+- Type: Request Contract
+- Request: `LaunchCopilotSessionRequest { ppapId, documentType, launchedBy, context }`
+- Response: `LaunchCopilotSessionResponse { sessionId, status, error? }`
+- Implementation: `copilot/mutations.ts` → `launchCopilotSession()`
+
+**Contract 3: Document Copilot → Workspace/Vault**
+- Type: Output Contract (uses existing Vault contracts)
+- Uses: `storeFile(file, uploadedBy, context)` from Vault
+- Returns: `FileReference { id, url, metadata }`
+
+**Contract 4: Document Copilot → PPAP Workflow**
+- Type: Event Contract
+- Event: `DocumentDraftCreatedEvent { eventType, eventId, timestamp, payload, actor }`
+- Payload: `{ ppapId, documentType, vaultFileId, sessionId, confidence, uncertainFields }`
+- Implementation: `copilot/events.ts` → `emitDocumentDraftCreatedEvent()`
+
+**Contract 5: Document Copilot → EMIP (STUBBED)**
+- Type: Read Contract
+- Request: `GetEmipContextRequest { ppapId }`
+- Response: `GetEmipContextResponse { context, metadata }`
+- Implementation: `copilot/services/emipStub.ts` → `getEmipContext()`
+- Current: Returns mock data
+- Future: Queries EMIP domain
+
+**Rationale:** All contracts defined with TypeScript interfaces. V3.2F-2/F-3 can implement without making contract design decisions.
+
+---
+
+#### Decision 8: V3.2F-2 and V3.2F-3 Readiness Criteria
+
+**8 Preconditions Defined:**
+1. All Contracts Defined (5 contracts with TypeScript interfaces)
+2. Both Modes Documented (PPAP-Bound vs Standalone with comparison table)
+3. Stub Interface Defined (`getEmipContext()` with fixed interface)
+4. Migration Plan Confirmed (9 KEEP, 4 REPURPOSE, 2 REMOVE with rationale)
+5. Claude API Model and Token Limits Specified (Sonnet 4, 8000/2000 tokens)
+6. Prompt Template Structure Defined (complete `PromptTemplate` type)
+7. V3.2A-E-2 Locked (Vault domain exists, domain definitions finalized)
+8. DIAG-02 Verdicts Understood (16 files analyzed with verdicts)
+
+**Validation:** V3.2F-2 MUST confirm all preconditions before starting. If ANY precondition fails, MUST STOP and report.
+
+**Rationale:** Readiness criteria ensure V3.2F-2/F-3 can execute without making architectural decisions. All design choices made in V3.2F-1.
+
+---
+
+### Implementation Phases
+
+**V3.2F-2: Document Copilot Core Implementation**
+- Create `src/features/copilot/` domain structure
+- Implement Claude API client
+- Implement prompt template registry
+- Implement `claudeOrchestrator.ts` (repurposed from `documentGenerator.ts`)
+- Implement EMIP stub (`getEmipContext()`)
+- Implement session management and conversation state tracking
+- Deliverable: Core copilot infrastructure operational
+
+**V3.2F-3: Two-Mode Integration**
+- Implement PPAP-Bound mode (entry from PPAP workspace)
+- Implement Standalone mode (entry from document workspace)
+- Implement contract integrations (Vault, PPAP Workflow, EMIP stub)
+- Implement event emission (`DocumentDraftCreatedEvent`)
+- Implement AI provenance tracking (extend `versionService.ts`)
+- Migrate existing documentEngine files per migration plan
+- Deliverable: Both modes operational, full integration complete
+
+**V3.2F-4: UI and Polish** (Future)
+- Copilot chat UI
+- Conversation history display
+- Draft review and iteration UI
+- Confidence metadata visualization
+- Uncertain fields highlighting
+
+---
+
+### Architectural Insights
+
+**Key Finding from DIAG-02:**
+The documentEngine codebase has excellent separation of concerns. Parsing, normalization, persistence, export, and validation layers are completely orthogonal to generation method. This enables a surgical pivot from deterministic generation to AI orchestration without rewriting infrastructure.
+
+**9 files unchanged, 4 repurposed, 2 removed = surgical migration, not rewrite.**
+
+**Domain Boundary Clarity:**
+Document Copilot owns AI orchestration but does NOT own workflow decisions, file storage, or PPAP status. Clear constraints prevent architectural drift.
+
+**Stub Strategy:**
+EMIP stub enables Document Copilot development before EMIP storage exists. Fixed interface prevents breaking changes when EMIP is implemented.
+
+**Two-Mode Design:**
+PPAP-Bound mode leverages context and integrates with workflow. Standalone mode provides flexibility for ad-hoc document generation. Both modes share core infrastructure.
+
+---
+
+### Files Modified
+
+**Documentation Only:**
+- `docs/BUILD_PLAN.md` — Added V3.2F-1 section (1358 lines)
+- `docs/BUILD_LEDGER.md` — Added V3.2F-1 entry
+
+**No Code Changes:**
+- Zero files in `src/` modified
+- Zero database schema changes
+- Zero shell commands executed
+
+---
+
+### Validation
+
+**✅ V3.2F-1 Complete:**
+- Domain definition complete (V3.2A format)
+- Two-mode architecture documented with comparison table
+- Claude API integration architecture defined
+- Prompt template system defined
+- EMIP stub contract defined with fixed interface
+- DocumentEngine migration plan defined (9 KEEP, 4 REPURPOSE, 2 REMOVE)
+- All 5 contracts defined with TypeScript interfaces
+- 8 readiness criteria defined for V3.2F-2/F-3
+- Implementation phases defined
+
+**✅ Ready for V3.2F-2:**
+- All architectural decisions made
+- All contracts defined
+- All preconditions documented
+- V3.2F-2 can execute without making design choices
+
+---
+
 ## 2026-04-01 14:20 CT - Phase V3.2E-2 - Workspace/Vault Domain Extraction
 
 **Summary:** Extract file storage from PPAP Workflow and Documents feature into independent Workspace/Vault domain, PPAP consumes Vault via V3.2B contracts
