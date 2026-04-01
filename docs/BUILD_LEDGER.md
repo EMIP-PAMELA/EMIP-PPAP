@@ -4,6 +4,305 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-01 15:05 CT - Phase V3.2F-2 Batch 1 - Claude API Core Integration
+
+**Summary:** Implement Claude API orchestrator, prompt template registry, EMIP stub, and contract types
+
+**Type:** Implementation (Code Changes - New Files)
+
+### Purpose
+
+**V3.2F-2 Batch 1 implements the core Claude API integration infrastructure as defined in V3.2F-1.**
+
+**Objective:** Create the foundational components for AI-based document generation: contract types, EMIP stub, prompt template registry, and Claude API orchestrator.
+
+**Scope:** This batch does NOT wire UI or sessions - that is Batch 2.
+
+---
+
+### Implementation Steps
+
+#### Step 1: Define Document Copilot Contract Types
+
+**Created:** `src/features/documentEngine/types/copilotTypes.ts`
+
+**Contract Types Defined:**
+- `EmipContext` - EMIP domain data (components, operations, BOM structure)
+- `Component`, `Operation`, `BOMNode` - EMIP data structures
+- `PromptTemplate` - AI prompt template definition (replaces TemplateDefinition)
+- `RequiredInputs`, `OptionalInputs`, `OutputFormat`, `ValidationRule` - Prompt template configuration
+- `CopilotInputPackage` - Complete input package sent to Claude API
+- `CopilotDraft` - Claude's response with AI provenance metadata
+- `CopilotSession`, `CopilotMode`, `CopilotSessionStatus` - Session management types
+- `DocumentDraftCreatedEvent` - Event contract (Document Copilot → PPAP Workflow)
+- `LaunchCopilotSessionRequest/Response` - Request contract (PPAP Workflow → Document Copilot)
+- `GetEmipContextRequest/Response` - Read contract (Document Copilot → EMIP)
+
+**All contract types match V3.2F-1 specifications exactly.**
+
+---
+
+#### Step 2: Implement EMIP Stub
+
+**Created:** `src/features/documentEngine/stubs/emipContextStub.ts`
+
+**Functions:**
+- `getEmipContext(ppapId: string): Promise<EmipContext>` - Returns mock EMIP data
+- `hasEmipContext(ppapId: string): Promise<boolean>` - Checks availability (stub always returns true)
+
+**Current Behavior:**
+- Returns mock `EmipContext` with realistic wire harness assembly data
+- 7 mock components (wires, terminals, connectors, hardware)
+- 8 mock operations (cut, strip, crimp, assembly, seal, test, inspect, pack)
+- Hierarchical BOM structure
+- `metadata.source = 'stub'` to distinguish from real data
+- Clear console logging to indicate stub usage
+
+**Future Behavior:**
+- Same interface will be preserved
+- Implementation will query EMIP domain for real component/BOM data
+- Only this file changes when EMIP storage is built
+
+**Interface Contract:** FIXED - will NOT change when EMIP is implemented
+
+---
+
+#### Step 3: Repurpose templates/registry.ts as Prompt Template Registry
+
+**Created:** `src/features/documentEngine/templates/promptRegistry.ts`
+
+**Purpose:** Central registry for AI prompt templates (replaces deterministic template registry)
+
+**Static Prompt Templates Defined:**
+1. **PFMEA** - Process Failure Mode and Effects Analysis
+   - System prompt: Expert automotive quality engineer
+   - Document instructions: AIAG FMEA-4 methodology, severity/occurrence/detection ratings
+   - Output format: JSON array of failure modes with RPN calculations
+   
+2. **Control Plan** - Manufacturing Control Plan
+   - System prompt: Expert automotive quality engineer
+   - Document instructions: Process control methods, sample sizes, reaction plans
+   - Output format: JSON array of control items with inspection methods
+   
+3. **Process Flow** - Manufacturing Process Flow Diagram
+   - System prompt: Expert automotive quality engineer
+   - Document instructions: Operation sequence, equipment, inputs/outputs
+   - Output format: JSON array of process steps with flow details
+   
+4. **PSW** - Part Submission Warrant
+   - System prompt: Expert automotive quality engineer
+   - Document instructions: PPAP Form 1, supplier/customer/part information
+   - Output format: JSON object with PSW fields
+
+**Common System Prompt (All Templates):**
+- Expert automotive quality engineer specializing in PPAP
+- Follow AIAG standards, use industry-standard terminology
+- Return structured JSON matching provided schema
+- Include confidence metadata for each field
+- Flag uncertain fields requiring user review
+- **Critical instruction:** Use BOTH raw BOM PDF and parsed BOM data
+- **Critical instruction:** Flag discrepancies between raw and parsed data
+- **Critical instruction:** Ask user for missing information rather than guessing
+
+**Registry API:**
+- `getPromptTemplate(id: string): PromptTemplate`
+- `listPromptTemplates(): PromptTemplate[]`
+- `hasPromptTemplate(id: string): boolean`
+- `registerPromptTemplate(template: PromptTemplate): void`
+- `listDynamicPromptTemplateIds(): string[]`
+- `clearDynamicPromptTemplates(): void`
+
+**Dynamic Template Support:** User-defined prompt templates can be added without code changes
+
+---
+
+#### Step 4: Repurpose documentGenerator.ts as claudeOrchestrator.ts
+
+**Created:** `src/features/documentEngine/core/claudeOrchestrator.ts`
+
+**Purpose:** Orchestrate document generation through Claude API (replaces deterministic generation)
+
+**Main Function:** `orchestrate(inputPackage: CopilotInputPackage): Promise<CopilotDraft>`
+
+**Orchestration Flow:**
+1. Validate API key (ANTHROPIC_API_KEY environment variable)
+2. Retrieve prompt template from registry
+3. Validate required inputs are present
+4. Build Claude API request
+5. Call Anthropic API
+6. Parse response into CopilotDraft
+7. Return draft with AI provenance metadata
+
+**Claude API Configuration:**
+- **Endpoint:** `https://api.anthropic.com/v1/messages`
+- **Model:** `claude-sonnet-4-20250514`
+- **Max Tokens (Initial):** 8000
+- **Temperature:** 0.3 (deterministic)
+- **Top-P:** 0.9 (balanced creativity)
+- **API Key:** From `process.env.ANTHROPIC_API_KEY` (NEVER hardcoded)
+
+**Input Package Assembly:**
+- System prompt from template
+- Document-specific instructions from template
+- BOM raw text
+- BOM parsed data (structured)
+- BOM normalized data (business entities)
+- PPAP context (if present)
+- EMIP context (if present, with stub indicator)
+- Output format specification
+
+**Response Handling:**
+- Parse JSON from Claude response (handles markdown-wrapped JSON)
+- Detect if Claude is asking a question → return as `type: 'question'`
+- Detect if parsing fails → return as `type: 'error'`
+- Otherwise → return as `type: 'draft'` with DocumentDraft
+- Include AI provenance metadata (model, tokens, confidence, uncertain fields, assumptions)
+
+**Error Handling:**
+- API key validation
+- HTTP error handling with status codes
+- JSON parsing fallback
+- Detailed console logging for debugging
+
+---
+
+### Files Created
+
+**New Files:**
+1. `src/features/documentEngine/types/copilotTypes.ts` (373 lines)
+   - All Document Copilot contract types
+   
+2. `src/features/documentEngine/stubs/emipContextStub.ts` (221 lines)
+   - EMIP context stub implementation
+   
+3. `src/features/documentEngine/templates/promptRegistry.ts` (442 lines)
+   - Prompt template registry with 4 static templates
+   
+4. `src/features/documentEngine/core/claudeOrchestrator.ts` (391 lines)
+   - Claude API orchestration engine
+
+**Total:** 4 new files, 1,427 lines of code
+
+---
+
+### Files NOT Modified
+
+**As per V3.2F-1 migration plan:**
+- `core/documentGenerator.ts` - NOT deleted yet (Batch 2 will handle migration)
+- `templates/registry.ts` - NOT deleted yet (Batch 2 will handle migration)
+- All KEEP AS-IS files remain unchanged
+- No UI files modified
+- No database changes
+- No route changes
+- Vault domain untouched
+
+---
+
+### Validation
+
+**✅ Contract Types Match V3.2F-1:**
+- All TypeScript interfaces match Section 7 specifications
+- EmipContext fully typed with fixed interface
+- PromptTemplate structure matches Section 4
+- CopilotInputPackage matches Section 3
+- CopilotDraft includes AI provenance metadata
+
+**✅ EMIP Stub Implemented:**
+- `getEmipContext()` returns mock data with `metadata.source = 'stub'`
+- Interface is FIXED - only implementation changes when EMIP is real
+- Clear console warnings about stub usage
+
+**✅ Prompt Template Registry:**
+- 4 static templates (PFMEA, Control Plan, Process Flow, PSW)
+- System prompt instructs Claude to use raw + parsed BOM data
+- System prompt instructs Claude to flag discrepancies
+- System prompt instructs Claude to ask questions rather than guess
+- Dynamic template support for user-defined templates
+
+**✅ Claude API Orchestrator:**
+- Calls `https://api.anthropic.com/v1/messages`
+- Model: `claude-sonnet-4-20250514`
+- Max tokens: 8000 (initial)
+- API key from environment variable (NEVER hardcoded)
+- Handles draft/question/error response types
+- Includes token usage in AI provenance metadata
+
+**✅ No Breaking Changes:**
+- Existing PPAP functionality unchanged
+- No UI changes
+- No database changes
+- No route changes
+- Vault domain untouched
+- Old documentGenerator.ts still exists (migration in Batch 2)
+
+---
+
+### TypeScript Compilation
+
+**Status:** All new files compile without errors
+
+**Type Safety:**
+- All imports resolved correctly
+- Contract types fully typed
+- No `any` types without justification
+- DocumentDraft structure matches existing template system
+
+---
+
+### Next Steps (V3.2F-2 Batch 2)
+
+**Batch 2 will implement:**
+- Session management and conversation state tracking
+- Wire UI entry points for PPAP-Bound and Standalone modes
+- Integrate with Vault for draft storage
+- Implement DocumentDraftCreatedEvent emission
+- Migrate callers from old documentGenerator.ts to claudeOrchestrator.ts
+- Remove old template.generate() calls
+- Add AI provenance tracking to versionService.ts
+
+---
+
+### Architectural Notes
+
+**Stub Strategy Validated:**
+- EMIP stub enables development before EMIP storage exists
+- Fixed interface prevents breaking changes
+- Clear indicators distinguish stub from real data
+- Console warnings ensure developers know stub is active
+
+**Prompt Engineering:**
+- System prompt is common across all templates (reusable)
+- Document instructions are template-specific (customizable)
+- Critical instruction to use BOTH raw and parsed BOM prevents data loss
+- Critical instruction to flag discrepancies ensures data quality
+- Critical instruction to ask questions prevents hallucination
+
+**Token Budget Management:**
+- 8000 tokens for initial generation balances quality and cost
+- Temperature 0.3 ensures deterministic, consistent output
+- Top-P 0.9 balances creativity with reliability
+- Token usage tracked in AI provenance for cost analysis
+
+**Error Handling:**
+- API key validation prevents deployment without configuration
+- HTTP error handling with detailed logging
+- JSON parsing fallback prevents crashes on malformed responses
+- Three response types (draft/question/error) handle all scenarios
+
+---
+
+### Files Modified
+
+**Documentation Only:**
+- `docs/BUILD_LEDGER.md` - Added V3.2F-2 Batch 1 entry
+
+**Code Changes:**
+- Created 4 new files (1,427 lines)
+- Zero existing files modified
+- Zero files deleted
+
+---
+
 ## 2026-04-01 14:49 CT - Phase V3.2F-1 - Document Copilot Domain Definition
 
 **Summary:** Define complete Document Copilot domain architecture, Claude API integration, two-mode design, and documentEngine migration plan
