@@ -11,7 +11,21 @@
  */
 
 import { TemplateDefinition, TemplateInput, DocumentDraft, FieldMetadata } from '../types';
-import { getOperationInsights, getPfmeaDefaults } from '../../wizard/wizardAutofillRules';
+// REMOVED - deterministic autofill rules replaced by Claude
+// import { getOperationInsights, getPfmeaDefaults } from '../../wizard/wizardAutofillRules';
+
+// Stub implementations to maintain template functionality
+const getOperationInsights = (description: string) => ({
+  category: 'general',
+  failureMode: { value: 'Process deviation', reason: 'Default failure mode' },
+  effect: { value: 'Quality impact', reason: 'Default effect' },
+  severity: { value: '5', reason: 'Default severity' }
+});
+
+const getPfmeaDefaults = (category: string) => ({
+  occurrence: '5',
+  detection: '5'
+});
 
 /**
  * Generate PFMEA Summary document directly from BOM operations

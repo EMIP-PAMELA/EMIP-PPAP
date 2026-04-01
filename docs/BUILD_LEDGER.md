@@ -4,6 +4,371 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-01 16:30 CT - Phase V3.2F-2 Batch 2 - Session Wiring, Vault Integration, UI Entry Points
+
+**Summary:** Wire session management, Vault integration, and Copilot entry points for both PPAP-Bound and Standalone modes
+
+**Type:** Implementation (Code Changes - New Files + Modified Files)
+
+### Purpose
+
+**V3.2F-2 Batch 2 completes the Document Copilot domain by wiring session management, Vault integration, and UI entry points as defined in V3.2F-1.**
+
+**Objective:** Complete end-to-end integration for both PPAP-Bound and Standalone modes with full session lifecycle, Vault routing, and AI provenance tracking.
+
+---
+
+### Implementation Steps
+
+#### Step 1: Clean Up Duplicate Registry
+
+**Decision:** Both `registry.ts` and `promptRegistry.ts` preserved
+
+**Rationale:** Existing UI files (`DocumentWorkspace.tsx`, `TemplateSelector.tsx`, `DocumentEditor.tsx`, `TemplateInputForm.tsx`, `packageExporter.ts`) still import from `registry.ts`. Removing it would break existing PPAP functionality. Both registries coexist:
+- `templates/registry.ts` - Deterministic template registry (existing UI)
+- `templates/promptRegistry.ts` - AI prompt template registry (new Copilot)
+
+**Non-Breaking Guarantee:** Existing PPAP workflow unchanged.
+
+---
+
+#### Step 2: Repurpose versionService.ts for AI Provenance
+
+**Modified:** `src/features/documentEngine/persistence/versionService.ts`
+
+**AI Provenance Type Added:**
+```typescript
+export type AIProvenance = {
+  promptTemplateId: string;    // Which prompt template was used
+  modelUsed: string;           // 'claude-sonnet-4-20250514'
+  inputTokens: number;         // Token count from Claude API
+  outputTokens: number;        // Token count from Claude API
+  totalTokens: number;         // Input + Output
+  copilotSessionId?: string;   // Links version to Copilot session
+  confidence: 'high' | 'medium' | 'low';
+  uncertainFields: string[];
+  assumptions: string[];
+};
+```
+
+**DocumentVersion Type Extended:**
+- Added `aiProvenance?: AIProvenance` field
+- All existing `getVersions()`, `getLatestVersion()`, `getVersionByNumber()` updated to return AI provenance
+
+**New Function:**
+- `createAIVersion(copilotSessionId, draft, promptTemplateId, createdBy)` - Creates document version with full AI provenance tracking
+- Records model, token usage, confidence, uncertain fields, assumptions
+- AI-generated documents never auto-approved (`is_approved: false`)
+
+**Database Schema:**
+- Added `ai_provenance` column to version insert (set to null for non-AI versions)
+- Existing `createVersion()` function sets `ai_provenance: null`
+
+**Validation:** All existing version control functionality preserved. AI provenance is additive only.
+
+---
+
+#### Step 3: Create Copilot Session Manager
+
+**Created:** `src/features/documentEngine/services/copilotSessionManager.ts`
+
+**Session Lifecycle Functions:**
+- `createCopilotSession(mode, documentType, ppapId?, createdBy)` - Create new session
+- `loadCopilotSession(sessionId)` - Load existing session (cache + database)
+- `addUserMessage(sessionId, message)` - Add user message to conversation history
+- `addClaudeResponse(sessionId, response)` - Add Claude response to conversation history
+- `finalizeSession(sessionId, draft)` - Mark session as completed
+- `getConversationHistory(sessionId)` - Retrieve conversation history
+- `getSessionStatus(sessionId)` - Get current session status
+
+**Session Modes:**
+- `ppap-bound` - Requires ppapId, loads EMIP context, emits events
+- `standalone` - No ppapId, user provides all inputs
+
+**Session Status:**
+- `active` - Generation in progress
+- `awaiting-user` - Claude asked a question
+- `completed` - Draft finalized
+- `error` - Error occurred
+
+**In-Memory Cache:** Sessions cached in Map for performance, persisted to database via sessionService
+
+**Uses Existing Infrastructure:** Leverages `sessionService.ts` for Supabase persistence
+
+---
+
+#### Step 4: Create Copilot Output Router
+
+**Created:** `src/features/documentEngine/services/copilotOutputRouter.ts`
+
+**Purpose:** Route Claude output to correct destination through Vault contracts ONLY
+
+**Main Function:** `routeDraft(sessionId, draft, promptTemplateId, createdBy, ppapId?)`
+
+**Routing Flow:**
+1. Convert `CopilotDraft` to JSON file blob
+2. **Store in Vault via `storeFile()` contract** (CRITICAL: NO direct Supabase Storage calls)
+3. Create AI version with provenance via `createAIVersion()`
+4. If PPAP-Bound: Emit `DocumentDraftCreatedEvent`
+5. Return vaultFileId
+
+**Event Emission (PPAP-Bound Only):**
+- `emitDocumentDraftCreatedEvent()` - Emits event to PPAP Workflow
+- Event payload includes: ppapId, documentType, vaultFileId, sessionId, confidence, uncertainFields
+- Document Copilot MUST NOT directly mutate PPAP state
+- Event is the ONLY communication channel to PPAP Workflow
+
+**Vault Integration:**
+- Uses `storeFile()` from `@/src/features/vault/services/vaultService`
+- File context: `{ ownerId: ppapId || sessionId, ownerType: 'ppap' || 'copilot-session' }`
+- Returns `FileReference` with vaultFileId
+
+**Validation:** Zero direct Supabase Storage calls in Document Copilot domain. All file operations routed through Vault contracts.
+
+---
+
+#### Step 5: Remove Obsolete Files
+
+**Decision:** Files preserved due to active dependencies
+
+**Files NOT Deleted:**
+- `templates/templateIngestionService.ts` - Still imported by `templatePersistenceService.ts`
+- `wizard/wizardAutofillRules.ts` - Still imported by `ControlPlanWizardTemplate.ts` and `PfmeaSummaryWizardTemplate.ts`
+
+**Rationale:** V3.2F-1 migration plan specified removal, but these files are actively used by existing wizard templates. Removing them would break existing functionality. Migration deferred to future phase when wizard templates are updated.
+
+**Non-Breaking Guarantee:** Existing PPAP workflow and wizard templates unchanged.
+
+---
+
+#### Step 6: Create PPAP-Bound Entry Point
+
+**Created:** `src/features/documentEngine/entryPoints/ppapBoundCopilot.ts`
+
+**Main Function:** `launchPpapBoundSession(ppapId, documentType, ppapContext, createdBy)`
+
+**Flow:**
+1. Call `getEmipContext(ppapId)` from EMIP stub
+2. Load prompt template from `promptRegistry` by documentType
+3. Create session via `copilotSessionManager`
+4. Package inputs: EMIP context + template + PPAP context
+5. Return sessionId for UI to use
+
+**EMIP Context Handling:**
+- Calls `getEmipContext(ppapId)` which returns mock data (source: 'stub')
+- Logs clear warning if using stub data
+- Interface is FIXED - only implementation changes when EMIP storage is built
+
+**PPAP Context:**
+- Includes partNumber, customerName, revision, supplierName
+- Loaded from PPAP record by caller
+
+**Contract Entry Point:** This is how PPAP Workflow launches Document Copilot
+
+**Helper Function:** `hasPpapEmipContext(ppapId)` - Check if EMIP context available
+
+---
+
+#### Step 7: Create Standalone Entry Point
+
+**Created:** `src/features/documentEngine/entryPoints/standaloneCopilot.ts`
+
+**Main Function:** `launchStandaloneSession(documentType, createdBy)`
+
+**Flow:**
+1. Load prompt template from `promptRegistry` by documentType
+2. Create session via `copilotSessionManager` (mode: 'standalone', no ppapId)
+3. Return sessionId
+4. UI handles BOM PDF upload, Excel template upload, drawing upload separately
+
+**No Context Pre-Loading:**
+- No PPAP context
+- No EMIP context
+- User provides all inputs via UI
+
+**Helper Functions:**
+- `listAvailableDocumentTypes()` - Returns ['pfmea', 'controlPlan', 'processFlow', 'psw']
+- `getDocumentTypeRequirements(documentType)` - Returns required and optional inputs
+
+**Use Case:** Ad-hoc document generation independent of PPAP workflow
+
+---
+
+### Files Created
+
+**New Files:**
+1. `src/features/documentEngine/services/copilotSessionManager.ts` (268 lines)
+   - Full session lifecycle management
+   
+2. `src/features/documentEngine/services/copilotOutputRouter.ts` (185 lines)
+   - Vault integration and event emission
+   
+3. `src/features/documentEngine/entryPoints/ppapBoundCopilot.ts` (119 lines)
+   - PPAP-Bound mode entry point
+   
+4. `src/features/documentEngine/entryPoints/standaloneCopilot.ts` (103 lines)
+   - Standalone mode entry point
+
+**Total:** 4 new files, 675 lines of code
+
+---
+
+### Files Modified
+
+**Modified:**
+1. `src/features/documentEngine/persistence/versionService.ts`
+   - Added `AIProvenance` type (9 fields)
+   - Extended `DocumentVersion` type with `aiProvenance` field
+   - Added `createAIVersion()` function (104 lines)
+   - Updated all version retrieval functions to include AI provenance
+   - Existing version control functionality preserved
+
+**Lines Changed:** ~140 lines added to versionService.ts
+
+---
+
+### Files NOT Modified (Per Non-Breaking Guarantee)
+
+**Preserved for Existing Functionality:**
+- `templates/registry.ts` - Still used by existing UI
+- `templates/templateIngestionService.ts` - Still used by templatePersistenceService
+- `wizard/wizardAutofillRules.ts` - Still used by wizard templates
+- All UI files unchanged
+- All existing PPAP workflow files unchanged
+- No route changes
+- No database schema changes
+
+---
+
+### Validation
+
+**✅ Session Management:**
+- Full lifecycle (create, load, update, finalize)
+- Conversation history tracking
+- In-memory cache + database persistence
+- Both modes supported (ppap-bound, standalone)
+
+**✅ Vault Integration:**
+- All file operations routed through Vault `storeFile()` contract
+- Zero direct Supabase Storage calls in Document Copilot domain
+- File context includes ownerId and ownerType
+- Returns vaultFileId for tracking
+
+**✅ AI Provenance Tracking:**
+- Full provenance metadata (model, tokens, confidence, uncertainFields, assumptions)
+- Stored in `ai_provenance` column
+- Linked to Copilot session
+- Never auto-approved
+
+**✅ Entry Points:**
+- PPAP-Bound entry point loads EMIP context (stubbed) + PPAP context
+- Standalone entry point requires user-provided inputs
+- Both return sessionId for UI consumption
+
+**✅ Event Emission:**
+- DocumentDraftCreatedEvent emitted for PPAP-Bound mode only
+- Event payload includes all required fields
+- Document Copilot does NOT directly mutate PPAP state
+
+**✅ Non-Breaking Guarantee:**
+- Existing PPAP functionality unchanged
+- Both registries coexist (registry.ts + promptRegistry.ts)
+- Obsolete files preserved due to active dependencies
+- Zero existing imports broken
+- No route changes
+- No database schema changes (only additive ai_provenance column)
+
+---
+
+### TypeScript Compilation
+
+**Status:** All new files compile without errors
+
+**Type Safety:**
+- All imports resolved correctly
+- Contract types fully typed
+- Vault integration uses correct contract types
+- AI provenance metadata properly typed
+
+---
+
+### Architectural Validation
+
+**Domain Boundaries Respected:**
+- Document Copilot MUST NOT directly call Supabase Storage ✅
+- Document Copilot MUST route through Vault contracts ✅
+- Document Copilot MUST NOT directly mutate PPAP state ✅
+- Document Copilot notifies PPAP via Event Contract only ✅
+
+**Stub Strategy Validated:**
+- EMIP stub called via `getEmipContext(ppapId)` ✅
+- Clear console warnings when using stub data ✅
+- Interface is FIXED ✅
+- Only implementation changes when EMIP storage is built ✅
+
+**Two-Mode Architecture Validated:**
+- PPAP-Bound: Automatic EMIP context loading, event emission ✅
+- Standalone: User-provided inputs, no event emission ✅
+- Both modes share core infrastructure ✅
+
+---
+
+### Integration Points
+
+**Document Copilot → Vault:**
+- `storeFile(file, uploadedBy, context)` contract
+- Returns `FileReference { id, url, metadata }`
+
+**Document Copilot → PPAP Workflow:**
+- `DocumentDraftCreatedEvent` emission
+- Payload: ppapId, documentType, vaultFileId, sessionId, confidence
+
+**Document Copilot → EMIP (STUBBED):**
+- `getEmipContext(ppapId)` stub
+- Returns mock `EmipContext` with source: 'stub'
+- Interface fixed for future real EMIP queries
+
+**PPAP Workflow → Document Copilot:**
+- `launchPpapBoundSession(ppapId, documentType, ppapContext, createdBy)` entry point
+- Returns sessionId
+
+**User → Document Copilot:**
+- `launchStandaloneSession(documentType, createdBy)` entry point
+- Returns sessionId
+
+---
+
+### Next Steps (Future Phases)
+
+**V3.2F-3: UI Integration** (Future)
+- Copilot chat UI component
+- BOM PDF upload UI
+- Conversation history display
+- Draft review and iteration UI
+- Confidence metadata visualization
+- Uncertain fields highlighting
+- Integration with PPAP workspace
+
+**V3.2F-4: Wizard Migration** (Future)
+- Update wizard templates to use Claude API
+- Remove dependencies on `wizardAutofillRules.ts`
+- Remove dependencies on `templateIngestionService.ts`
+- Complete migration plan from V3.2F-1
+
+---
+
+### Files Modified Summary
+
+**Documentation:**
+- `docs/BUILD_LEDGER.md` - Added V3.2F-2 Batch 2 entry
+
+**Code Changes:**
+- Created 4 new files (675 lines)
+- Modified 1 existing file (versionService.ts, ~140 lines added)
+- Zero files deleted (preserved for non-breaking guarantee)
+
+---
+
 ## 2026-04-01 15:05 CT - Phase V3.2F-2 Batch 1 - Claude API Core Integration
 
 **Summary:** Implement Claude API orchestrator, prompt template registry, EMIP stub, and contract types

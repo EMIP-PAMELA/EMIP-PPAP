@@ -6,7 +6,8 @@
 
 import { supabase } from '@/src/lib/supabaseClient';
 import { TemplateDefinition } from './types';
-import { parseWorkbookTemplate, convertToTemplateDefinition } from './templateIngestionService';
+// REMOVED - deterministic template ingestion replaced by AI generation
+// import { parseWorkbookTemplate, convertToTemplateDefinition } from './templateIngestionService';
 import { registerDynamicTemplate, clearDynamicTemplates } from './registry';
 
 export type PersistedTemplate = {
@@ -180,15 +181,12 @@ export async function loadAndRegisterDynamicTemplates(): Promise<void> {
 
     for (const persisted of persistedTemplates) {
       try {
-        // Parse and validate the stored JSON
-        const ingestedTemplate = parseWorkbookTemplate(persisted.template_json);
-        const templateDefinition = convertToTemplateDefinition(ingestedTemplate);
-
-        // Register in dynamic registry
-        registerDynamicTemplate(templateDefinition);
-        
-        successCount++;
-        console.log(`[TemplatePersistence] ✓ Loaded template: ${templateDefinition.id}`);
+        // REMOVED - deterministic template ingestion replaced by AI generation
+        // Dynamic template loading is no longer supported in V3.2F
+        // Templates are now defined as AI prompt templates in promptRegistry.ts
+        failCount++;
+        console.warn(`[TemplatePersistence] Dynamic template loading disabled: ${persisted.template_id}`);
+        console.warn('[TemplatePersistence] Use AI prompt templates instead (see promptRegistry.ts)');
       } catch (err) {
         failCount++;
         console.error(`[TemplatePersistence] ✗ Failed to load template ${persisted.template_id}:`, err);

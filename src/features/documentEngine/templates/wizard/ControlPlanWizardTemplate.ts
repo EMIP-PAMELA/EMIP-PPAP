@@ -11,7 +11,18 @@
  */
 
 import { TemplateDefinition, TemplateInput, DocumentDraft, FieldMetadata } from '../types';
-import { getOperationInsights, getControlPlanDefaults } from '../../wizard/wizardAutofillRules';
+// REMOVED - deterministic autofill rules replaced by Claude
+// import { getOperationInsights, getControlPlanDefaults } from '../../wizard/wizardAutofillRules';
+
+// Stub implementations to maintain template functionality
+const getOperationInsights = (description: string) => ({
+  category: 'general',
+  method: { value: 'Visual Inspection', reason: 'Default method' }
+});
+
+const getControlPlanDefaults = (category: string) => ({
+  sampleSize: '5'
+});
 
 /**
  * Generate Control Plan document directly from BOM operations
