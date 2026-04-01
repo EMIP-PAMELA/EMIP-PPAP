@@ -8678,7 +8678,1467 @@ Workflows without explicit contract declarations are prohibited.
 
 ---
 
-## Conclusion
+## V3.2D — Failure & Edge Case Scenario Validation
+
+**Status:** 🔲 Not Started  
+**Phase:** Pre-Implementation Validation  
+**Objective:** Stress test the contract-based architecture under failure conditions and edge cases to identify architectural gaps before implementation.
+
+**Validation Approach:**
+This section tests the system's behavior when normal conditions are violated—interrupted sessions, stale data, concurrent modifications, and partial failures. Each scenario traces how the contract system handles degraded states and whether ownership boundaries remain enforceable.
+
+**Success Criteria:**
+- All failure modes map to explicit contract violations or recovery paths
+- Ownership boundaries remain clear even during failures
+- No architectural gaps that would force prohibited patterns
+- Recovery paths align with governance model
+
+---
+
+### Scenario 1: Copilot Session Interrupted Mid-Generation
+
+**Trigger Condition:**
+User is actively engaged with Copilot to generate PPAP documentation using the Document Engine. Mid-generation, the browser crashes, network disconnects, or the Copilot service times out.
+
+**Failure Mode:**
+- Partial document content may exist in memory but not committed to vault
+- User's session state (context, conversation history) is lost
+- PPAP state may have been read but not locked
+- Copilot may have queued operations that never completed
+
+**Contract Trace Under Failure:**
+
+1. **Session Initiation (Pre-Failure):**
+   - User requests document generation via `/ppap/[id]/documents`
+   - Frontend queries `DocumentEngine` for PPAP context
+   - `DocumentEngine` reads PPAP state via `PPAPRepository`
+   - Copilot begins streaming response with document content
+
+2. **Interruption Point:**
+   - Connection severed during streaming response
+   - No explicit transaction boundary exists for Copilot session
+   - PPAP state was read but not modified
+   - No vault write has occurred
+
+3. **System State After Failure:**
+   - PPAP state: **unchanged** (read-only operation)
+   - Vault: **unchanged** (no commit occurred)
+   - User context: **lost** (ephemeral session data)
+   - Copilot conversation: **lost** (not persisted)
+
+**Ownership Boundary Behavior:**
+
+- **PPAP Ownership:** Remains with supplier (no change attempted)
+- **Document Ownership:** No document created, no ownership established
+- **Copilot Session Ownership:** User session is ephemeral; no ownership violation on loss
+
+**Recovery Path:**
+
+1. User reopens `/ppap/[id]/documents` route
+2. System re-reads current PPAP state (no stale data risk since nothing was modified)
+3. User restarts Copilot session from scratch
+4. Previous partial work is lost, but system state is consistent
+5. User regenerates document with fresh context
+
+**Architectural Gap Verdict:**
+
+**✅ NO GAP IDENTIFIED**
+
+- Session interruption is handled gracefully by architecture
+- Read-only PPAP queries have no side effects
+- Vault atomicity ensures no partial document states
+- Recovery requires user to restart session, which is acceptable UX trade-off
+- No ownership boundaries are violated during failure or recovery
+
+**Failure Handling Rule:**
+Copilot sessions are **ephemeral and stateless** from the contract system's perspective. Interruptions result in clean rollback with no side effects. The system does not attempt to preserve or resume Copilot context.
+
+---
+
+### Scenario 2: User Resumes Session After PPAP State Changed
+
+**Trigger Condition:**
+User initiates Copilot session to generate documentation for PPAP X. While Copilot is idle (conversation paused, browser tab backgrounded), another user or automated workflow modifies PPAP X's state (e.g., status change, part number update, approval submission). User then resumes Copilot conversation and requests to finalize the document.
+
+**Failure Mode:**
+- Copilot's understanding of PPAP state may be stale
+- Document content generated earlier may reference obsolete data
+- User may attempt to commit document based on outdated assumptions
+- No explicit version check exists in Copilot session
+
+**Contract Trace Under Failure:**
+
+1. **Session Start (T0):**
+   - User queries `/ppap/[id]/documents` at time T0
+   - `DocumentEngine` reads PPAP state: `{ status: "In Progress", partNumber: "P-1001" }`
+   - Copilot generates draft content based on this snapshot
+
+2. **Background Change (T1):**
+   - Another user updates PPAP X via `/ppap/[id]/edit`
+   - PPAP state becomes: `{ status: "Submitted", partNumber: "P-1001-Rev2" }`
+   - This update follows `PPAPOwnershipContract` (ownership verified)
+
+3. **Session Resume (T2):**
+   - User resumes Copilot conversation
+   - User says: "Finalize this document and save it"
+   - Copilot has stale context from T0
+   - Copilot may generate content referencing obsolete `status: "In Progress"`
+
+4. **Commit Attempt (T3):**
+   - User triggers save operation
+   - `DocumentEngine` writes document to vault via `VaultService`
+   - Vault write succeeds (no version check on PPAP state)
+   - Document now references PPAP data that was accurate at T0 but stale at T3
+
+**Ownership Boundary Behavior:**
+
+- **PPAP Ownership:** Correctly transferred to second user at T1 (no issue)
+- **Document Ownership:** User retains ownership of document they're creating
+- **Data Consistency:** Document contains stale reference to PPAP state, but no ownership violation
+
+**Recovery Path:**
+
+1. **Detection:** System does not automatically detect staleness (no version tracking in Copilot session)
+2. **Manual Detection:** User or reviewer notices document references incorrect PPAP state
+3. **Correction:** User must manually regenerate document with current PPAP state
+4. **Prevention:** User should re-query PPAP state before final commit
+
+**Architectural Gap Verdict:**
+
+**🚨 CONFIRMED GAP**
+
+**Gap Analysis Against V3.2A/V3.2B:**
+
+**Contract Trace:**
+1. **Document Copilot reads PPAP state:** Uses **Read Contract** (V3.2B allowed per line 6748)
+2. **PPAP Workflow owns PPAP state:** Single source of truth (V3.2A line 5682-5696)
+3. **PPAP Workflow emits state change events:** Uses **Event Contract** (V3.2B line 6711)
+4. **Document Copilot may consume events:** Allowed (V3.2B line 6751)
+
+**The Gap:**
+
+V3.2B Read Contract rules state (line 6516): *"Reader MUST refresh from source when needed"*
+
+**But no contract type defines HOW Document Copilot knows refresh is needed.**
+
+Three approaches exist, none are defined in V3.2B:
+
+**Approach 1: Event-based staleness detection**
+- Document Copilot subscribes to PPAP status change events during active session
+- Updates internal session state when PPAP changes
+- **Gap:** No requirement that Document Copilot MUST subscribe to events
+- **Gap:** Event Contract is informational (line 6555), not prescriptive
+- **Gap:** No contract type for "session invalidation" or "staleness notification"
+
+**Approach 2: Pre-commit validation**
+- Document Copilot re-reads PPAP state from PPAP Workflow before vault commit
+- Compares to cached state, warns on mismatch
+- **Gap:** No contract type for "version token" or "change detection"
+- **Gap:** No defined pattern for atomic read-compare-commit
+
+**Approach 3: Version token in Read Contract**
+- Read Contract includes version/timestamp metadata
+- Commit operation validates version token
+- **Gap:** Read Contract (V3.2B) does not include versioning semantics
+- **Gap:** No contract type for conditional commits based on version
+
+**Who Detects Staleness?**
+
+Per V3.2A/V3.2B ownership:
+- **Document Copilot owns:** Session state (V3.2A line 5750)
+- **PPAP Workflow owns:** PPAP state (V3.2A line 5682)
+
+Document Copilot is responsible for detecting staleness in its own session state, BUT:
+- No contract type supports staleness detection
+- No pattern exists for Document Copilot to validate PPAP state freshness before commit
+
+**Which Contract Communicates Staleness?**
+
+**NONE.** The existing contract types cannot express this:
+- **Read Contract:** One-time read, no version tracking
+- **Event Contract:** Informational, no guarantee of delivery or subscription
+- **Reference Contract:** Acknowledges staleness possibility but provides no detection mechanism
+- **Request Contract:** Not applicable (no action being requested)
+- **Output Contract:** Not applicable (data structure, not validation)
+
+**Gap Confirmed Because:**
+
+The V3.2A/V3.2B model provides no contract type for:
+1. **Versioned reads** with staleness detection
+2. **Conditional commits** based on source data version
+3. **Staleness notification** from owning domain to consuming domain
+4. **Session invalidation** when referenced data changes
+
+**Required New Pattern:**
+
+A **Versioned Read Contract** or **Conditional Commit Contract** that includes:
+- Version token or timestamp with every read
+- Validation mechanism before dependent operations
+- Explicit contract for staleness detection and handling
+
+**Failure Handling Rule:**
+Document Copilot MUST implement pre-commit PPAP state validation, but this requires a contract pattern not defined in V3.2B. This is an architectural gap that must be closed before implementation.
+
+---
+
+### Scenario 3: File Referenced by Copilot is Deleted or Replaced
+
+**Trigger Condition:**
+User is using Copilot to generate a document that references specific vault files (e.g., "include data from Drawing-Rev3.pdf"). During the Copilot session, another user deletes Drawing-Rev3.pdf or replaces it with Drawing-Rev4.pdf. User then asks Copilot to finalize the document.
+
+**Failure Mode:**
+- Copilot may have cached metadata or content from the deleted file
+- Document may contain links or references to files that no longer exist
+- File replacement may go unnoticed, causing version mismatch
+- No referential integrity check exists between documents and vault files
+
+**Contract Trace Under Failure:**
+
+1. **Session Start with File Reference (T0):**
+   - User: "Generate PPAP summary including Drawing-Rev3.pdf"
+   - Copilot queries `VaultService.getFile("Drawing-Rev3.pdf")`
+   - `VaultService` returns file metadata and presigned URL
+   - Copilot reads file content or metadata for inclusion in document
+
+2. **File Deleted (T1):**
+   - Another user deletes Drawing-Rev3.pdf via `/vault/delete`
+   - `VaultService` removes file from storage
+   - Deletion follows vault ownership rules (user had delete permission)
+
+3. **Session Continues (T2):**
+   - User: "Add a section referencing the drawing details"
+   - Copilot may still have Drawing-Rev3.pdf content in conversation memory
+   - Copilot generates text: "Refer to Drawing-Rev3.pdf for dimensional specs"
+
+4. **Commit Attempt (T3):**
+   - User saves generated document to vault
+   - Document contains reference to "Drawing-Rev3.pdf"
+   - No validation that referenced file still exists
+   - Document is saved with broken reference
+
+**Ownership Boundary Behavior:**
+
+- **Vault File Ownership:** Correctly enforced during deletion at T1
+- **Document Ownership:** User creating document retains ownership
+- **Referential Integrity:** Not enforced (no ownership contract for references)
+
+**Recovery Path:**
+
+1. **Detection:** User or system discovers broken reference when attempting to access Drawing-Rev3.pdf
+2. **Manual Fix:** User updates document to reference correct file (Drawing-Rev4.pdf) or removes reference
+3. **Prevention:** No automatic mechanism to prevent this scenario
+
+**Architectural Gap Verdict:**
+
+**🚨 CONFIRMED GAP**
+
+**Gap Analysis Against V3.2A/V3.2B:**
+
+**Contract Trace:**
+1. **Document Copilot reads files:** Uses **Read Contract** (V3.2B line 6747)
+2. **Document Copilot holds file references:** Uses **Reference Contract** (V3.2B line 6765)
+3. **Workspace/Vault owns files:** Single source of truth for file lifecycle (V3.2A line 5956)
+4. **Workspace/Vault emits file deletion events:** Uses **Event Contract** (V3.2B line 6859)
+
+**The Gap:**
+
+V3.2B Reference Contract rules state (line 6567): *"Reference MAY become stale; consuming domain MUST handle staleness"*
+
+**But no contract type defines HOW to handle staleness or validate reference integrity.**
+
+**Who Owns Reference Validation?**
+
+Per V3.2A ownership:
+- **Workspace/Vault owns:** File lifecycle, deletion authority (V3.2A line 5956)
+- **Document Copilot owns:** Session state, draft content, file references (V3.2A line 5750-5753)
+
+Per V3.2B Reference Contract (line 6567): *"consuming domain MUST handle staleness"*
+
+**Document Copilot is responsible for handling stale references.**
+
+**The Problem: No Contract Type Supports This**
+
+**Scenario: Workspace/Vault Deletes File**
+
+1. **Event Contract Notification:**
+   - Workspace/Vault emits "file deleted" event (V3.2B line 6859)
+   - Event Contract is informational (line 6555): "describes past occurrence, not a command"
+   - **Gap:** No guarantee Document Copilot is subscribed to these events during active session
+   - **Gap:** No contract pattern for "interested party notification" before deletion
+
+2. **Reference Validation:**
+   - Document Copilot must validate references before committing document
+   - Validation requires Read Contract to Workspace/Vault: "Does file X exist?"
+   - **Gap:** No explicit contract type for "reference existence check"
+   - **Gap:** Validation is point-in-time; file could be deleted immediately after check
+
+3. **Referential Integrity Tracking:**
+   - Option: Workspace/Vault tracks "who references what" before allowing deletion
+   - **Gap:** This requires Workspace/Vault to hold semantic knowledge of document structure
+   - **Violation:** V3.2B prohibits Workspace/Vault from interpreting file meaning (line 6850-6852)
+   - **Gap:** No contract type for "register reference" or "reference tracking"
+
+**What Happens If Vault Deletes File With No Active Notification Contract?**
+
+Per V3.2B:
+- Workspace/Vault emits "file deleted" event (line 6859)
+- Event Contract does not require subscribers (informational only)
+- Document Copilot may or may not be subscribed
+
+Result:
+- **If Document Copilot is subscribed:** Receives event, but has no contract pattern to invalidate session or warn user
+- **If Document Copilot is NOT subscribed:** No notification occurs
+- **Either way:** Document Copilot must poll Vault before commit to validate references
+
+**Polling Requirement = Confirmed Gap**
+
+If Document Copilot must poll Workspace/Vault to validate reference existence:
+- **Gap:** No contract type for "reference validation query"
+- **Gap:** No atomic "check-and-commit" operation
+- **Gap:** No guarantee of referential consistency (file could be deleted between check and commit)
+
+**Alternative: Vault Holds Reference Knowledge = Confirmed Gap**
+
+If Workspace/Vault must track "which documents reference which files":
+- **Gap:** Requires Workspace/Vault to understand document semantics
+- **Violation:** V3.2B prohibits Workspace/Vault from semantic knowledge (line 6850-6852)
+- **Gap:** No contract type for "register reference interest" or "reference counting"
+
+**Gap Confirmed Because:**
+
+The V3.2A/V3.2B model provides no contract type for:
+1. **Reference integrity validation** before commit
+2. **Reference tracking** across domain boundaries
+3. **Interested party notification** before deletion
+4. **Atomic reference checks** with commit guarantees
+5. **Reference registration** without violating semantic ownership
+
+**Required New Patterns:**
+
+Either:
+- **A) Reference Validation Contract:** Document Copilot can query Workspace/Vault for reference existence with atomic guarantees
+- **B) Reference Interest Contract:** Document Copilot registers reference interest; Workspace/Vault notifies before deletion
+- **C) Immutable Reference Contract:** Vault files are versioned; references never break (all versions retained)
+
+None of these patterns exist in V3.2B.
+
+**Failure Handling Rule:**
+Document Copilot MUST validate vault file references before commit, but no contract type supports atomic validation or referential integrity enforcement. This is an architectural gap that must be closed before implementation.
+
+---
+
+### Scenario 4: EMIP Data Becomes Stale During Workflow
+
+**Trigger Condition:**
+PPAP workflow references EMIP data (component relationships, SKU specifications, BOM structure) at workflow initiation. During PPAP execution, EMIP data is updated externally (e.g., engineering change order modifies component spec, BOM is revised). PPAP workflow continues using cached or stale EMIP data.
+
+**Failure Mode:**
+- PPAP workflow decisions based on obsolete component relationships
+- Document generation references outdated SKU specifications
+- Workflow gates evaluate against stale BOM structure
+- No synchronization mechanism between EMIP updates and active PPAP workflows
+
+**Contract Trace Under Failure:**
+
+1. **Workflow Start (T0):**
+   - PPAP Workflow queries EMIP for component structure via Read Contract
+   - EMIP returns: `{ componentID: "C-5001", spec: "Rev A", bomVersion: "v1.2" }`
+   - PPAP Workflow caches this data for workflow decision-making
+
+2. **EMIP Update (T1):**
+   - External system updates EMIP: `{ componentID: "C-5001", spec: "Rev B", bomVersion: "v1.3" }`
+   - EMIP owns this data (V3.2A line 5982-5993)
+   - EMIP may emit "component updated" event (Event Contract)
+
+3. **Workflow Continues (T2):**
+   - PPAP Workflow uses cached Rev A data for workflow gate evaluation
+   - Determines document requirements based on obsolete BOM v1.2
+   - Document Copilot generates content referencing stale component spec
+
+4. **State Inconsistency (T3):**
+   - PPAP completes using Rev A assumptions
+   - EMIP now reflects Rev B reality
+   - Submitted PPAP references components that no longer match current engineering state
+
+**Ownership Boundary Behavior:**
+
+- **EMIP Ownership:** EMIP owns component data, correctly updated (V3.2A line 5982-5993)
+- **PPAP Workflow Ownership:** PPAP owns workflow state and decisions (V3.2A line 5682-5696)
+- **Data Consistency:** No ownership violation, but cross-domain data consistency not enforced
+
+**Recovery Path:**
+
+1. **Detection:** Post-submission review discovers PPAP references obsolete component specs
+2. **Manual Correction:** PPAP must be revised or resubmitted with current EMIP data
+3. **Prevention:** No automatic mechanism to detect EMIP staleness in active workflows
+
+**Architectural Gap Verdict:**
+
+**🚨 CONFIRMED GAP**
+
+**Gap Analysis Against V3.2A/V3.2B:**
+
+**Contract Trace:**
+1. **PPAP Workflow reads EMIP data:** Uses **Read Contract** (V3.2B line 6698)
+2. **EMIP owns component data:** Single source of truth (V3.2A line 5982-5993)
+3. **EMIP may emit update events:** Uses **Event Contract** (V3.2B)
+4. **PPAP Workflow may consume events:** Allowed (V3.2B line 6699)
+
+**The Gap:**
+
+V3.2B Read Contract rules state (line 6516): *"Reader MUST refresh from source when needed"*
+
+**But PPAP Workflow has no mechanism to know WHEN refresh is needed.**
+
+**Who Detects EMIP Staleness?**
+
+Per V3.2A/V3.2B ownership:
+- **EMIP owns:** Component data, SKU specifications (V3.2A line 5982-5993)
+- **PPAP Workflow owns:** Workflow state, decision-making (V3.2A line 5682-5696)
+
+PPAP Workflow is responsible for refreshing EMIP data, BUT:
+- No contract type defines when refresh is required
+- No pattern for EMIP to signal "dependent workflows must re-validate"
+- No contract for PPAP to declare "I depend on EMIP version X"
+
+**Which Contract Communicates Staleness?**
+
+**NONE.** Same gap as Scenario 2:
+
+**Event Contract Approach:**
+- EMIP emits "component updated" events
+- Event Contract is informational (line 6555), not prescriptive
+- **Gap:** No guarantee PPAP Workflow is subscribed
+- **Gap:** No contract pattern for "invalidate dependent workflows"
+- **Gap:** PPAP Workflow may not know which EMIP entities it depends on
+
+**Versioned Read Approach:**
+- PPAP Workflow could re-read EMIP data before critical decisions
+- **Gap:** No contract type for versioned reads
+- **Gap:** No pattern for conditional workflow progression based on EMIP version
+
+**Dependency Declaration Approach:**
+- PPAP Workflow declares dependency on specific EMIP entities/versions
+- EMIP notifies when those dependencies change
+- **Gap:** No contract type for "dependency registration"
+- **Gap:** No pattern for cross-domain dependency tracking
+
+**Gap Confirmed Because:**
+
+The V3.2A/V3.2B model provides no contract type for:
+1. **Dependency declaration** between domains
+2. **Version-aware reads** with staleness detection
+3. **Invalidation notifications** for dependent workflows
+4. **Cross-domain consistency validation**
+
+**This is the SAME architectural gap as Scenario 2** (versioned reads/conditional operations).
+
+**Failure Handling Rule:**
+PPAP Workflow MUST re-validate EMIP dependencies before critical workflow gates, but no contract type supports dependency tracking or staleness detection. This is an architectural gap that must be closed before implementation.
+
+---
+
+### Scenario 5: Two Users Modify Same PPAP Simultaneously
+
+**Trigger Condition:**
+User A and User B both load PPAP X's edit interface simultaneously. User A modifies the PPAP status field and saves. User B, still viewing the pre-update state, modifies a different field (e.g., part number) and saves. User B's save overwrites User A's changes.
+
+**Failure Mode:**
+- Classic lost update problem (optimistic concurrency failure)
+- Last write wins, earlier changes are silently lost
+- No conflict detection or resolution mechanism
+- Users not notified of concurrent modifications
+
+**Contract Trace Under Failure:**
+
+1. **Concurrent Read (T0):**
+   - User A requests PPAP X via `/ppap/[id]`
+   - User B requests PPAP X via `/ppap/[id]`
+   - Both receive: `{ status: "In Progress", partNumber: "P-1001", version: 5 }`
+
+2. **User A Modifies (T1):**
+   - User A changes status to "Submitted"
+   - Saves via PPAP Workflow domain
+   - PPAP state becomes: `{ status: "Submitted", partNumber: "P-1001", version: 6 }`
+   - PPAP Workflow emits "status changed" event (Event Contract)
+
+3. **User B Modifies (T2):**
+   - User B still has stale view (version 5)
+   - User B changes partNumber to "P-1001-Rev2"
+   - User B saves, overwrites entire PPAP entity
+   - PPAP state becomes: `{ status: "In Progress", partNumber: "P-1001-Rev2", version: 7 }`
+   - User A's status change is lost
+
+4. **Result:**
+   - User A's "Submitted" status silently reverted to "In Progress"
+   - No conflict warning issued
+   - Event stream shows: status changed → status reverted (appears as intentional reversal)
+
+**Ownership Boundary Behavior:**
+
+- **PPAP Ownership:** PPAP Workflow owns PPAP state (V3.2A line 5682)
+- **User Authority:** Both users had legitimate edit permissions
+- **Concurrency Control:** Not defined in V3.2A/V3.2B
+
+**Recovery Path:**
+
+1. **Detection:** User A notices status reverted to "In Progress" unexpectedly
+2. **Manual Correction:** User A re-applies status change
+3. **Prevention:** No optimistic concurrency control mechanism defined
+
+**Architectural Gap Verdict:**
+
+**🚨 CONFIRMED GAP — Same Root Cause as Scenarios 2, 4, 6**
+
+**Gap Analysis Against V3.2A/V3.2B:**
+
+**Contract Trace:**
+1. **Users read PPAP state:** Uses **Read Contract** via frontend (V3.2A line 5724)
+2. **Users request PPAP modification:** Uses **Request Contract** to PPAP Workflow
+3. **PPAP Workflow owns mutation authority:** Exclusive (V3.2A line 5697-5707)
+
+**Initial Analysis:**
+
+This appears to be an internal PPAP Workflow concern: PPAP Workflow has exclusive authority to reject stale writes per Request Contract (V3.2B line 6527).
+
+**Critical Question: HOW Does PPAP Workflow Detect Staleness?**
+
+For PPAP Workflow to detect that User B's write is stale, it must:
+1. Include version tokens in its **Output Contract** (when users read PPAP state)
+2. Require version tokens in **Request Contract** (when users request mutations)
+3. Compare version tokens to detect conflicts
+
+**The Gap:**
+
+V3.2B Output Contract (line 6538): *"Output MUST be versioned and controlled by owning domain"*
+
+This refers to **API versioning** (v1, v2 of contract shape), NOT **entity versioning** (version tokens for optimistic concurrency).
+
+**V3.2B provides no pattern for:**
+- Including version/timestamp metadata in Output Contracts
+- Requiring version tokens in Request Contracts
+- Compare-and-swap semantics for mutation requests
+- Conditional mutation based on entity version
+
+**Why This IS the Same Gap as Scenarios 2, 4, 6:**
+
+All four scenarios require the same pattern:
+- **Scenario 2:** Document Copilot reads PPAP state, needs to detect if it changed before commit
+- **Scenario 4:** PPAP Workflow reads EMIP data, needs to detect if it changed before workflow progression
+- **Scenario 5:** Users read PPAP state, need to include version token for conflict detection
+- **Scenario 6:** Document Copilot reads PPAP state, needs to detect if it changed before attachment
+
+**The root cause is identical:** V3.2B lacks a contract pattern for version-aware reads and conditional operations.
+
+**Scenario 5 is NOT special just because it's intra-domain:**
+- Users consume PPAP state via Output Contract (read)
+- Users request mutations via Request Contract (write)
+- This is the same read-then-write pattern as cross-domain cases
+
+**Gap Confirmed Because:**
+
+To implement optimistic concurrency control, PPAP Workflow needs:
+1. **Versioned Output Contract:** Include version metadata in outputs
+2. **Versioned Request Contract:** Accept version tokens in mutation requests
+3. **Compare-and-swap semantics:** Validate version before applying mutation
+
+**None of these patterns are defined in V3.2B.**
+
+While PPAP Workflow has authority to define these contracts however it wants, V3.2B provides:
+- No guidance on version token patterns
+- No contract semantics for conditional operations
+- No standard approach to optimistic concurrency across the system
+
+**This creates inconsistency risk:**
+- Different domains may implement version tokens differently
+- No standard version token format (ETag? Timestamp? Sequence number?)
+- No guidance on version token validation semantics
+
+**Verdict Clarification:**
+
+**Initial verdict was wrong.** This is NOT an implementation detail. This is the **same architectural gap** as Scenarios 2, 4, and 6.
+
+PPAP Workflow's authority to reject requests doesn't help if it has no contract pattern to detect which requests are stale.
+
+**Failure Handling Rule:**
+PPAP Workflow MUST implement optimistic concurrency control using the versioned read/conditional commit contract pattern identified as missing in Scenarios 2, 4, and 6. This is the same architectural gap.
+
+---
+
+### Scenario 6: PPAP Status Changes During Document Generation
+
+**Trigger Condition:**
+User initiates long-running document generation workflow (e.g., multi-document PPAP package generation). During generation, PPAP status changes (e.g., from "In Progress" to "Submitted" by another user or automated workflow). Document generation completes and attempts to attach documents to PPAP in new state.
+
+**Failure Mode:**
+- Documents generated for "In Progress" PPAP
+- PPAP now in "Submitted" state (may be locked/immutable)
+- Document attachment may fail due to workflow state restrictions
+- Generated documents may be orphaned or rejected
+
+**Contract Trace Under Failure:**
+
+1. **Generation Start (T0):**
+   - User initiates document generation for PPAP X
+   - Document Copilot reads PPAP state: `{ status: "In Progress", locked: false }`
+   - Copilot begins multi-step generation process
+
+2. **Status Change (T1):**
+   - Another user submits PPAP X via PPAP Workflow
+   - PPAP state becomes: `{ status: "Submitted", locked: true }`
+   - PPAP Workflow emits "status changed" event
+
+3. **Generation Complete (T2):**
+   - Document Copilot completes generation
+   - Attempts to attach documents to PPAP via Request Contract
+   - Requests Workspace/Vault to store files
+
+4. **Attachment Attempt (T3):**
+   - Document Copilot requests PPAP Workflow to record document completion
+   - PPAP Workflow evaluates: PPAP is now "Submitted" and locked
+   - May reject attachment due to workflow state restrictions
+   - Documents are generated but cannot be associated with PPAP
+
+**Ownership Boundary Behavior:**
+
+- **PPAP Workflow Ownership:** Correctly enforces workflow state rules (V3.2A line 5697-5707)
+- **Document Copilot Ownership:** Generated documents as requested (V3.2A line 5750-5763)
+- **Request Contract Behavior:** PPAP Workflow has authority to reject (V3.2B line 6527)
+
+**Recovery Path:**
+
+1. **Detection:** Document attachment request is rejected
+2. **User Decision:** User must decide whether to unlock PPAP or discard generated documents
+3. **Manual Intervention:** Administrator unlocks PPAP, user re-attaches documents
+4. **Prevention:** No mechanism to prevent or warn about status changes during generation
+
+**Architectural Gap Verdict:**
+
+**❓ NOT A CONTRACT GAP — WORKING AS DESIGNED**
+
+**Gap Analysis Against V3.2A/V3.2B:**
+
+**Contract Trace:**
+1. **Document Copilot reads PPAP state:** Uses **Read Contract** (V3.2B line 6748)
+2. **Document Copilot generates documents:** Internal process (V3.2A line 5750-5763)
+3. **Document Copilot requests attachment:** Uses **Request Contract** (V3.2B line 6764)
+4. **PPAP Workflow evaluates request:** Exercises exclusive authority (V3.2A line 5697-5707)
+
+**The Analysis:**
+
+This scenario demonstrates **Request Contract working as intended**.
+
+**Why This Is NOT a Gap:**
+
+Per V3.2B Request Contract (line 6527): *"Owning domain MUST decide whether and how to execute"*
+
+PPAP Workflow has full authority to:
+- Reject document attachment if workflow state prohibits it
+- Enforce workflow gates and state restrictions
+- Protect PPAP integrity even if work was already performed
+
+**This is the correct behavior:**
+- Document Copilot performed work based on stale PPAP state
+- PPAP Workflow correctly rejected incompatible operation
+- User receives clear error: "Cannot attach documents to submitted PPAP"
+
+**The Real Issue: Same as Scenario 2**
+
+This is another manifestation of the **versioned read gap** from Scenario 2:
+- Document Copilot read PPAP state at T0
+- PPAP state changed at T1
+- No mechanism to detect staleness before committing work
+
+**Verdict:**
+
+**✅ NO NEW GAP — Same versioned read gap as Scenario 2**
+
+- Request Contract is working correctly (rejection is valid)
+- PPAP Workflow correctly enforces workflow state rules
+- The staleness detection gap is already identified in Scenario 2
+
+**Failure Handling Rule:**
+Document Copilot MUST validate PPAP state before committing work, using the versioned read contract pattern identified as missing in Scenario 2. PPAP Workflow MUST reject incompatible requests with clear error messages.
+
+---
+
+### Scenario 7: Event Arrives Out-of-Order or Delayed
+
+**Trigger Condition:**
+PPAP Workflow emits sequence of events: (1) "PPAP created", (2) "status changed to In Progress", (3) "document attached". Due to network delays, message broker issues, or distributed system timing, Command Center receives events out of order: (2), (3), (1). Command Center processes events in received order, resulting in incorrect aggregated view.
+
+**Failure Mode:**
+- Command Center displays status change before PPAP exists
+- Document attachment shown for non-existent PPAP
+- Aggregated view is inconsistent with actual PPAP state
+- Event replay or late-arriving events cause view corruption
+
+**Contract Trace Under Failure:**
+
+1. **Event Emission (T0-T2):**
+   - T0: PPAP Workflow emits `PPAPCreated` (sequenceID: 1)
+   - T1: PPAP Workflow emits `StatusChanged` (sequenceID: 2)
+   - T2: PPAP Workflow emits `DocumentAttached` (sequenceID: 3)
+
+2. **Event Delivery (T3-T5):**
+   - T3: Command Center receives `StatusChanged` (sequenceID: 2)
+   - T4: Command Center receives `DocumentAttached` (sequenceID: 3)
+   - T5: Command Center receives `PPAPCreated` (sequenceID: 1) — delayed
+
+3. **Command Center Processing:**
+   - Processes sequenceID 2: Update status for PPAP X (PPAP not in local view yet → error or orphaned state)
+   - Processes sequenceID 3: Attach document to PPAP X (PPAP still not in local view → error)
+   - Processes sequenceID 1: Create PPAP X (now view shows PPAP without status updates or documents)
+
+4. **Result:**
+   - Command Center view is inconsistent
+   - User sees PPAP in wrong state
+   - Must manually refresh to reconcile
+
+**Ownership Boundary Behavior:**
+
+- **PPAP Workflow Ownership:** PPAP state is correct (V3.2A line 5682)
+- **Command Center Ownership:** Aggregated view is corrupted (V3.2A line 5823-5837)
+- **Event Contract:** Events were emitted correctly (V3.2B line 6547-6557)
+
+**Recovery Path:**
+
+1. **Detection:** Command Center detects orphaned events (references non-existent PPAP)
+2. **Reconciliation:** Command Center re-queries PPAP Workflow for authoritative state
+3. **Refresh:** User manually refreshes view to sync with source
+4. **Prevention:** No event ordering guarantees defined
+
+**Architectural Gap Verdict:**
+
+**🚨 CONFIRMED GAP**
+
+**Gap Analysis Against V3.2A/V3.2B:**
+
+**Contract Trace:**
+1. **PPAP Workflow emits events:** Uses **Event Contract** (V3.2B line 6711)
+2. **Command Center consumes events:** Uses **Event Contract** (V3.2B line 6793)
+3. **Command Center aggregates data:** Read-only aggregation (V3.2A line 5854)
+
+**The Gap:**
+
+V3.2B Event Contract (line 6551-6556):
+- "Event describes a past occurrence, not a command"
+- "Consumers MAY react within their own boundaries"
+- "Consumers MUST NOT reinterpret event as authoritative state"
+
+**But Event Contract provides no guarantees about:**
+- Event ordering
+- Event delivery timing
+- Event deduplication
+- Event sequence integrity
+
+**Who Handles Event Ordering?**
+
+Per V3.2A/V3.2B:
+- **PPAP Workflow owns:** Event emission (V3.2B line 6711)
+- **Command Center owns:** Event consumption and aggregation (V3.2A line 5823-5837)
+
+**Command Center is responsible for handling out-of-order events, BUT:**
+- No contract type defines event ordering semantics
+- No pattern for sequence validation
+- No mechanism for Command Center to request missing events
+
+**Which Contract Provides Ordering Guarantees?**
+
+**NONE.** Event Contract (V3.2B line 6547-6557) is silent on:
+- Ordering guarantees (FIFO, causal, total order?)
+- Sequence numbers or vector clocks
+- Gap detection and recovery
+- Idempotency requirements
+
+**Failure Modes the Contract Model Cannot Handle:**
+
+1. **Out-of-Order Events:**
+   - Event Contract does not specify ordering guarantees
+   - Command Center cannot know if events are out of order
+   - No sequence number requirement in Event Contract
+
+2. **Duplicate Events:**
+   - Event Contract does not specify idempotency requirements
+   - Command Center may process same event twice
+   - No event ID or deduplication mechanism required
+
+3. **Missing Events:**
+   - Event Contract does not guarantee delivery
+   - Command Center cannot detect gaps in event sequence
+   - No pattern for requesting event replay
+
+**Gap Confirmed Because:**
+
+The V3.2A/V3.2B model provides no contract type for:
+1. **Event ordering semantics** (FIFO, causal, or total order)
+2. **Event sequence validation** (gap detection)
+3. **Event replay mechanisms** (recovery from missing events)
+4. **Idempotency contracts** (duplicate event handling)
+5. **Causality tracking** (event dependencies)
+
+**Required New Patterns:**
+
+Event Contract MUST be extended with:
+- **Sequence semantics:** Events include sequence numbers or vector clocks
+- **Ordering guarantees:** Define required ordering (per-entity FIFO minimum)
+- **Idempotency requirements:** Events include unique IDs for deduplication
+- **Gap detection:** Consumers can detect missing sequence numbers
+- **Replay mechanism:** Event sources provide event history query capability
+
+**Mitigation Strategies:**
+
+**Strategy A: Event Sourcing Pattern**
+- All events include sequence numbers and entity IDs
+- Command Center detects gaps and requests replay
+- Requires new contract: **Event Replay Request Contract**
+
+**Strategy B: Reconciliation Read Contract**
+- Command Center periodically re-reads authoritative state from PPAP Workflow
+- Events are hints, not truth; Read Contract is validation
+- Already supported, but requires explicit reconciliation pattern
+
+**Strategy C: Causal Ordering Contract**
+- Events include causal dependencies (vector clocks, Lamport timestamps)
+- Command Center buffers out-of-order events until dependencies satisfied
+- Requires event contract extension
+
+**Recommendation:** **Strategy B** (reconciliation via Read Contract) is already supported by V3.2B but needs explicit guidance. **Strategy A** requires new contract type.
+
+**Failure Handling Rule:**
+Command Center MUST treat events as hints and periodically reconcile aggregated views via Read Contract to PPAP Workflow. Event Contract must be extended with ordering and idempotency semantics. This is an architectural gap that must be closed before implementation.
+
+---
+
+### Scenario 8: Command Center Displays Stale Aggregated Data
+
+**Trigger Condition:**
+Command Center aggregates PPAP data from PPAP Workflow at time T0 and caches it for display performance. PPAP Workflow updates PPAP state at T1. Command Center continues displaying cached T0 data to users for minutes/hours until cache expires or user manually refreshes.
+
+**Failure Mode:**
+- Users make decisions based on stale aggregated view
+- Command Center shows PPAP as "In Progress" when it's actually "Submitted"
+- Assignments shown in Command Center don't match current PPAP Workflow state
+- No automatic cache invalidation when source data changes
+
+**Contract Trace Under Failure:**
+
+1. **Initial Aggregation (T0):**
+   - Command Center queries PPAP Workflow for user's assigned PPAPs
+   - Receives: `[{ id: "PPAP-1", status: "In Progress", assignedTo: "User A" }]`
+   - Caches data locally for performance
+
+2. **Source Update (T1):**
+   - PPAP Workflow changes PPAP-1 status to "Submitted"
+   - PPAP Workflow emits "status changed" event
+   - Command Center may or may not receive event (event delivery not guaranteed)
+
+3. **Stale Display (T2):**
+   - User views Command Center dashboard
+   - Sees PPAP-1 as "In Progress" (cached from T0)
+   - Actual state is "Submitted" (changed at T1)
+   - User attempts to edit PPAP-1, receives error: "Cannot edit submitted PPAP"
+
+4. **User Confusion:**
+   - Dashboard shows "In Progress" but edit fails
+   - No indication that view is stale
+   - User must manually refresh to see current state
+
+**Ownership Boundary Behavior:**
+
+- **PPAP Workflow Ownership:** PPAP state is correct and authoritative (V3.2A line 5682)
+- **Command Center Ownership:** Aggregated view is its own presentation (V3.2A line 5823-5837)
+- **Caching Violation:** Command Center is treating cached data as authoritative truth
+
+**Recovery Path:**
+
+1. **Detection:** User discovers mismatch when action fails
+2. **Manual Refresh:** User refreshes Command Center view
+3. **Reconciliation:** Command Center re-queries PPAP Workflow for current state
+4. **Prevention:** No automatic cache invalidation mechanism
+
+**Architectural Gap Verdict:**
+
+**❓ NOT A GAP — VIOLATES EXISTING RULE**
+
+**Gap Analysis Against V3.2A/V3.2B:**
+
+**Contract Trace:**
+1. **Command Center reads PPAP data:** Uses **Read Contract** (V3.2B line 6792)
+2. **PPAP Workflow owns PPAP state:** Single source of truth (V3.2A line 5682)
+3. **Command Center caches data:** Presentation optimization
+
+**The Analysis:**
+
+V3.2B Read Contract rules state (line 6516):
+- *"Reader MUST NOT cache data as authoritative truth"*
+- *"Reader MUST refresh from source when needed"*
+
+V3.2A Command Center rules state (line 5863):
+- *"Cache or store authoritative business data"* is **PROHIBITED**
+
+**Command Center is violating existing rules.**
+
+**Why This Is NOT a New Gap:**
+
+The architecture already prohibits this behavior:
+- Command Center is explicitly read-only aggregation (V3.2A line 5854)
+- Read Contract forbids caching as authoritative truth (V3.2B line 6516)
+- Command Center may cache for performance, but must treat cache as hint, not truth
+
+**The Correct Pattern:**
+
+Command Center MAY cache for performance, but:
+1. **Cache is not authoritative:** Always secondary to source data
+2. **Stale cache is acceptable:** If clearly indicated to user
+3. **Refresh on conflict:** Re-query source when cached data causes errors
+4. **Event-based invalidation:** Use events as cache invalidation hints (optional)
+
+**Alternatively, don't cache at all:**
+- Query PPAP Workflow on every page load
+- Accept performance cost for guaranteed freshness
+- This is fully supported by Read Contract
+
+**Verdict:**
+
+**✅ NO ARCHITECTURAL GAP**
+
+Command Center's caching issue is a **violation of existing V3.2B rules**, not a gap in the contract model.
+
+**Correct implementation:**
+- Either don't cache (always fresh reads)
+- Or cache with clear staleness indicators and refresh-on-error behavior
+- Use events as cache invalidation hints (Scenario 7 gap applies here)
+
+**Failure Handling Rule:**
+Command Center MUST NOT treat cached data as authoritative. Caching is permitted for performance optimization only if staleness is clearly indicated to users and cache is invalidated on conflicts. Preferably, rely on Read Contract for fresh data on every access.
+
+---
+
+### Scenario 9: Vault File Updated While Referenced Elsewhere
+
+**Trigger Condition:**
+User A uploads "Drawing-Rev1.pdf" to vault. Document Copilot references this file in a PPAP document. User B then uploads "Drawing-Rev2.pdf" and deletes "Drawing-Rev1.pdf". PPAP document now contains broken reference, or worse, reference silently resolves to Rev2 content when user expects Rev1.
+
+**Failure Mode:**
+- Document references file by name: "Drawing-Rev1.pdf"
+- File is replaced with different content (Rev2)
+- Document user expects Rev1 but gets Rev2
+- Or file is deleted and reference breaks
+- No versioning or immutability in vault
+
+**Contract Trace Under Failure:**
+
+1. **File Upload and Reference (T0):**
+   - User A uploads Drawing-Rev1.pdf via Workspace/Vault
+   - Vault assigns file ID: `file-abc123`
+   - Document Copilot generates PPAP document referencing `file-abc123`
+   - Document content: "See Drawing-Rev1.pdf for specifications"
+
+2. **File Replacement (T1):**
+   - User B uploads Drawing-Rev2.pdf to same location
+   - Depending on vault implementation:
+     - **Option A:** Overwrites file-abc123 with new content (ID reused)
+     - **Option B:** Creates new file ID file-xyz789, deletes file-abc123
+
+3. **Document Access (T2):**
+   - User views PPAP document created at T0
+   - Clicks reference to Drawing-Rev1.pdf
+   - **Option A:** Gets Rev2 content (silent data corruption)
+   - **Option B:** Gets 404 error (broken reference)
+
+**Ownership Boundary Behavior:**
+
+- **Workspace/Vault Ownership:** Correctly manages file lifecycle (V3.2A line 5956)
+- **Document Copilot Ownership:** Correctly created reference at T0 (V3.2A line 5765)
+- **File Versioning:** Not specified in V3.2A/V3.2B
+
+**Recovery Path:**
+
+1. **Option A (Overwrite):** User discovers they're viewing wrong file revision, must track down correct version
+2. **Option B (Delete):** User discovers broken reference, must find and re-link correct file
+3. **Prevention:** No versioning or immutability enforcement
+
+**Architectural Gap Verdict:**
+
+**❓ NOT A GAP — WORKSPACE/VAULT IMPLEMENTATION DETAIL**
+
+**Gap Analysis Against V3.2A/V3.2B:**
+
+**Contract Trace:**
+1. **Document Copilot holds file reference:** Uses **Reference Contract** (V3.2B line 6765)
+2. **Workspace/Vault owns file lifecycle:** Single source of truth (V3.2A line 5956)
+
+**The Analysis:**
+
+V3.2B Reference Contract states (line 6567-6568):
+- *"Reference MAY become stale; consuming domain MUST handle staleness"*
+- *"Owning domain controls lifecycle; reference holder does not"*
+
+**This scenario has two distinct issues:**
+
+**Issue 1: File Deletion (Broken Reference)**
+- Already covered in **Scenario 3**
+- Identified as CONFIRMED GAP (reference integrity)
+- Requires new contract pattern for reference validation or interest registration
+
+**Issue 2: File Replacement (Content Mutation)**
+- This is a **Workspace/Vault internal design decision**
+- Not a cross-domain contract concern
+
+**Workspace/Vault Authority:**
+
+Per V3.2A (line 5956), Workspace/Vault owns file lifecycle and can choose:
+
+**Option A: Mutable files** (file IDs are stable, content can change)
+- File ID `file-abc123` always refers to "Drawing.pdf"
+- Content of "Drawing.pdf" can be updated
+- References remain valid but point to latest content
+- Responsibility: Document creators must understand files are mutable
+
+**Option B: Immutable files** (file IDs are version-specific)
+- File ID `file-abc123` refers to specific content snapshot
+- Uploading new version creates new ID `file-xyz789`
+- References remain valid and point to exact content
+- Old versions remain accessible
+
+**Option C: Versioned files** (file names are stable, versions tracked)
+- File name "Drawing.pdf" has versions: v1, v2, v3
+- References can specify version or use "latest"
+- Old versions remain accessible
+
+**Verdict:**
+
+**✅ NO ARCHITECTURAL GAP**
+
+- File mutability vs. immutability is a Workspace/Vault internal design decision
+- Reference Contract acknowledges references may become stale (V3.2B line 6567)
+- Document Copilot is responsible for handling stale references (already covered in Scenario 3)
+
+**This is related to Scenario 3's reference integrity gap, but file versioning is not a contract concern—it's an implementation detail of Workspace/Vault.**
+
+**Recommendation:**
+
+Workspace/Vault SHOULD implement **immutable file versioning** to prevent silent content changes, but this is an implementation best practice, not a contract requirement.
+
+**Failure Handling Rule:**
+Workspace/Vault SHOULD implement immutable file storage or explicit versioning to prevent reference content from silently changing. Document Copilot MUST handle stale references per Scenario 3 gap resolution.
+
+---
+
+### Scenario 10: Partial Failure in Multi-Step Workflow
+
+**Trigger Condition:**
+User initiates multi-step PPAP workflow: (1) Generate 5 documents via Document Copilot, (2) Upload each to Vault, (3) Attach each to PPAP. Step 2 succeeds for documents 1-3, then fails (network error, storage quota exceeded, service timeout) for documents 4-5. User is left with partial completion: 3 documents attached, 2 missing.
+
+**Failure Mode:**
+- Multi-step workflow has no transaction boundary
+- Partial completion leaves PPAP in inconsistent state
+- No automatic rollback or retry mechanism
+- User must manually identify and retry failed steps
+
+**Contract Trace Under Failure:**
+
+1. **Workflow Initiation (T0):**
+   - User triggers PPAP document package generation
+   - Document Copilot generates 5 documents (all succeed)
+   - Documents stored in memory, ready for vault upload
+
+2. **Partial Upload Success (T1-T3):**
+   - T1: Document 1 uploaded to Vault (Request Contract to Workspace/Vault) → Success
+   - T2: Document 2 uploaded to Vault → Success
+   - T3: Document 3 uploaded to Vault → Success
+   - Vault returns file IDs: `file-001`, `file-002`, `file-003`
+
+3. **Upload Failure (T4-T5):**
+   - T4: Document 4 upload to Vault → **FAILURE** (storage quota exceeded)
+   - T5: Document 5 upload attempt → **ABORTED** (previous failure halts workflow)
+
+4. **Partial PPAP Attachment (T6):**
+   - Document Copilot requests PPAP Workflow to attach documents 1-3
+   - PPAP Workflow records 3 of 5 expected documents attached
+   - Documents 4-5 are not attached (not in vault)
+   - PPAP shows as "incomplete" but no clear indication which documents are missing
+
+**Ownership Boundary Behavior:**
+
+- **Document Copilot Ownership:** Successfully generated all 5 documents (V3.2A line 5750)
+- **Workspace/Vault Ownership:** Correctly accepted 3 uploads, correctly rejected 2 (quota enforcement)
+- **PPAP Workflow Ownership:** Correctly recorded 3 attachments (V3.2A line 5686)
+- **No domain violated ownership boundaries**
+
+**Recovery Path:**
+
+1. **Detection:** User notices only 3 of 5 documents attached
+2. **Diagnosis:** User must determine which documents failed and why
+3. **Retry:** User must manually re-generate documents 4-5 and retry upload
+4. **Prevention:** No automatic retry or transaction boundary
+
+**Architectural Gap Verdict:**
+
+**✅ NO ARCHITECTURAL GAP — WORKING AS DESIGNED**
+
+**Gap Analysis Against V3.2A/V3.2B:**
+
+**Contract Trace:**
+1. **Document Copilot generates documents:** Internal process (V3.2A line 5750-5763)
+2. **Document Copilot requests vault storage:** Uses **Request Contract** (V3.2B line 6764)
+3. **Workspace/Vault accepts or rejects:** Per Request Contract authority (V3.2B line 6527)
+4. **Document Copilot requests PPAP attachment:** Uses **Request Contract** to PPAP Workflow
+
+**The Analysis:**
+
+V3.2B Request Contract states (line 6529):
+- *"Request may be accepted, rejected, or queued by owning domain"*
+
+**Each step is an independent Request Contract:**
+- Document Copilot requests vault storage → Workspace/Vault decides
+- Document Copilot requests PPAP attachment → PPAP Workflow decides
+
+**There is no concept of "multi-step transaction" across domains in V3.2B.**
+
+**Why This Is NOT a Gap:**
+
+The architecture is working as designed:
+- Request Contract is atomic per-request, not multi-request
+- Each domain exercises its authority independently
+- Partial failures are expected and valid
+
+**Multi-step workflows are the CALLER's responsibility:**
+- Document Copilot initiated multi-step workflow
+- Document Copilot must handle partial failures
+- Document Copilot must implement retry logic
+
+**The Correct Pattern:**
+
+Document Copilot SHOULD implement:
+1. **Idempotent operations:** Each upload can be safely retried
+2. **Failure tracking:** Track which steps succeeded/failed
+3. **Retry logic:** Automatically retry failed steps
+4. **User notification:** Clearly indicate partial completion state
+5. **Compensation logic:** Option to rollback successful steps if workflow cannot complete
+
+**None of this requires new contract types.** This is caller responsibility.
+
+**Alternative: Saga Pattern**
+
+For complex multi-step workflows:
+- Define compensating actions for each step
+- If step N fails, execute compensations for steps 1..N-1
+- Document Copilot orchestrates saga, domains respond to requests
+
+**Already supported by Request Contract:** Requests can be compensating actions (e.g., "delete file-001").
+
+**Verdict:**
+
+**✅ NO ARCHITECTURAL GAP**
+
+- Request Contract is per-request atomic, not multi-request transactional
+- Multi-step workflow coordination is caller's responsibility
+- Saga pattern or retry logic can be implemented without new contracts
+- Partial failures are expected behavior, not architectural defect
+
+**Failure Handling Rule:**
+Multi-step workflows across domains MUST implement failure handling, retry logic, and compensation patterns at the caller level. Request Contract does not provide transactional guarantees across multiple requests. This is caller responsibility, not an architectural gap.
+
+---
+
+## Cross-Scenario Failure Pattern Analysis
+
+### Confirmed Architectural Gaps Summary
+
+Across Scenarios 1-10, **three architectural gaps** were identified. These gaps share a **common root cause**.
+
+#### Gap 1: Versioned Read / Conditional Operation Pattern
+
+**Affected Scenarios:**
+- Scenario 2: User resumes Copilot session after PPAP state changed
+- Scenario 4: EMIP data becomes stale during workflow
+- Scenario 5: Two users modify same PPAP simultaneously
+- Scenario 6: PPAP status changes during document generation
+
+**Symptom:**
+Consuming domain reads data from owning domain, then performs operations based on that read. Source data changes between read and operation, causing stale data usage or lost updates.
+
+**V3.2B Contract Types Involved:**
+- **Read Contract** (V3.2B line 6507-6518): Allows reading data but provides no version/timestamp mechanism
+- **Output Contract** (V3.2B line 6533-6543): "Versioned" refers to API versioning, not entity versioning
+- **Request Contract** (V3.2B line 6520-6530): Accepts requests but has no conditional semantics
+
+**What's Missing:**
+- No pattern for including version/timestamp metadata in outputs
+- No pattern for conditional requests (e.g., "update if version matches")
+- No pattern for detecting staleness before committing dependent operations
+- No guidance on version token format or semantics
+
+#### Gap 2: Reference Integrity / Lifecycle Coordination Pattern
+
+**Affected Scenarios:**
+- Scenario 3: File referenced by Copilot is deleted or replaced
+
+**Symptom:**
+Consuming domain holds references to entities owned by another domain. Owning domain modifies or deletes entity without notifying reference holders, causing broken references or stale reference metadata.
+
+**V3.2B Contract Types Involved:**
+- **Reference Contract** (V3.2B line 6559-6570): Acknowledges staleness but provides no validation mechanism
+- **Event Contract** (V3.2B line 6546-6557): Informational only, no guaranteed delivery
+
+**What's Missing:**
+- No pattern for validating reference existence before commit
+- No pattern for registering "reference interest" (notify before deletion)
+- No atomic check-and-commit for operations dependent on referenced entities
+- No guidance on reference tracking without violating semantic ownership boundaries
+
+#### Gap 3: Event Ordering / Sequence Integrity Pattern
+
+**Affected Scenarios:**
+- Scenario 7: Event arrives out-of-order or delayed
+
+**Symptom:**
+Event-consuming domain receives events out of order, duplicated, or with gaps, causing aggregated view inconsistency.
+
+**V3.2B Contract Types Involved:**
+- **Event Contract** (V3.2B line 6546-6557): Describes past occurrences but silent on ordering, deduplication, gaps
+
+**What's Missing:**
+- No ordering guarantees (FIFO, causal, total order)
+- No sequence number or event ID requirement
+- No idempotency contract (duplicate detection)
+- No gap detection or event replay mechanism
+
+---
+
+### Root Cause Analysis
+
+**All three gaps share a common architectural deficiency:**
+
+**V3.2B defines WHAT is communicated between domains but not WHEN, HOW FRESH, or IN WHAT ORDER.**
+
+**Temporal Context is Missing:**
+
+- **Read/Output/Request Contracts:** No temporal semantics (version, timestamp, freshness)
+- **Reference Contract:** No lifecycle coordination (notification, validation timing)
+- **Event Contract:** No ordering semantics (sequence, causality, delivery guarantees)
+
+**The V3.2B contract model is fundamentally STATELESS and TIMELESS:**
+- Contracts describe data shape and ownership transfer rules
+- Contracts do not describe temporal relationships between operations
+- Contracts do not provide mechanisms for detecting or handling staleness, ordering, or consistency
+
+**This is not a failure of V3.2B design—it's an incomplete specification.**
+
+V3.2B successfully defines:
+- ✅ Ownership boundaries (who controls what)
+- ✅ Communication patterns (read, request, event, output, reference)
+- ✅ Anti-patterns (no hidden coupling, no shadow ownership)
+
+V3.2B does NOT define:
+- ❌ Temporal coordination (version tokens, timestamps, sequence numbers)
+- ❌ Consistency semantics (staleness detection, conditional operations)
+- ❌ Ordering guarantees (event sequencing, causal dependencies)
+
+**These are not separate gaps—they are all manifestations of missing temporal semantics in V3.2B.**
+
+---
+
+## Failure Handling Rules
+
+The following rules address the **root causes** identified in the Cross-Scenario Analysis:
+
+### Rule 1: Temporal Context MUST Be Explicit
+
+**Applies to:** All scenarios involving read-then-operate patterns (Scenarios 2, 4, 5, 6)
+
+**Principle:**
+When a domain reads data from another domain and performs operations based on that read, the operation MUST validate that the source data has not changed since the read.
+
+**Implementation Requirement:**
+- All Output Contracts MUST include temporal metadata (version token, timestamp, or ETag)
+- All Request Contracts that depend on read data MUST accept conditional parameters
+- Owning domains MUST validate temporal conditions before executing requests
+- Rejections due to stale conditions MUST return clear error messages
+
+**V3.2B Extension Required:**
+Define **Versioned Read Contract** and **Conditional Request Contract** patterns.
+
+---
+
+### Rule 2: Reference Lifecycle Coordination MUST Be Explicit
+
+**Applies to:** All scenarios involving cross-domain references (Scenario 3)
+
+**Principle:**
+When a domain holds references to entities owned by another domain, the system MUST provide a mechanism to validate reference integrity or prevent reference breakage.
+
+**Implementation Requirement:**
+Choose one of three patterns:
+- **A) Immutable References:** Owning domain never deletes, only deprecates (versioned files)
+- **B) Pre-Commit Validation:** Consuming domain validates references before committing work
+- **C) Reference Interest Registration:** Consuming domain registers interest, owning domain notifies before deletion
+
+**V3.2B Extension Required:**
+Define **Reference Validation Contract** or **Reference Interest Contract** patterns.
+
+---
+
+### Rule 3: Event Ordering MUST Be Explicit
+
+**Applies to:** All scenarios involving event-driven aggregation (Scenario 7)
+
+**Principle:**
+When a domain consumes events from another domain for aggregation or reactive behavior, events MUST include sufficient metadata for ordering, deduplication, and gap detection.
+
+**Implementation Requirement:**
+- All events MUST include unique event ID (for deduplication)
+- All events MUST include sequence number or timestamp (for ordering)
+- All events MUST include entity ID (for per-entity ordering)
+- Event-consuming domains MUST implement idempotent event handling
+- Event-consuming domains SHOULD periodically reconcile via Read Contract
+
+**V3.2B Extension Required:**
+Define **Event Sequence Contract** with ordering and idempotency semantics.
+
+---
+
+### Rule 4: Multi-Step Workflows MUST Handle Partial Failure
+
+**Applies to:** All scenarios involving multi-request workflows (Scenario 10)
+
+**Principle:**
+When a domain orchestrates multi-step workflows across other domains, the orchestrator MUST handle partial failures gracefully.
+
+**Implementation Requirement:**
+- Orchestrating domain MUST track success/failure of each step
+- Orchestrating domain MUST implement retry logic for failed steps
+- Orchestrating domain MUST provide clear failure feedback to users
+- Orchestrating domain SHOULD implement compensation logic (saga pattern) for critical workflows
+
+**No V3.2B Extension Required:**
+Request Contract already supports this pattern. This is orchestrator responsibility.
+
+---
+
+### Rule 5: Cached Data MUST NOT Be Treated as Authoritative
+
+**Applies to:** All scenarios involving cached reads (Scenario 8)
+
+**Principle:**
+When a domain caches data read from another domain for performance, the cache MUST NOT be treated as authoritative truth.
+
+**Implementation Requirement:**
+- Caching domains MUST clearly indicate staleness to users
+- Caching domains MUST refresh on conflict (when cached data causes operation failure)
+- Caching domains SHOULD use events as cache invalidation hints
+- Preferably, avoid caching and rely on Read Contract for fresh data
+
+**No V3.2B Extension Required:**
+V3.2B already prohibits this (line 6516). This is rule enforcement, not gap closure.
+
+---
+
+## Architectural Gap Verdict
+
+### V3.2B Requires Extension: Temporal Semantics
+
+**Status:** 🚨 **CONFIRMED — V3.2B INCOMPLETE**
+
+**Finding:**
+
+V3.2B successfully defines **spatial boundaries** (ownership, communication patterns) but lacks **temporal semantics** (version, ordering, freshness).
+
+**Required Extensions:**
+
+#### Extension 1: Versioned Read Contract
+
+**Purpose:** Enable staleness detection and conditional operations
+
+**Pattern:**
+```
+Output Contract Extension:
+- Include version token or timestamp in all outputs
+- Version token format: ETag, sequence number, or timestamp
+
+Request Contract Extension:
+- Accept conditional parameters: "if-match", "if-none-match", "if-modified-since"
+- Validate conditions before executing mutation
+- Reject with 412 Precondition Failed if condition not met
+```
+
+**Applies to:** Scenarios 2, 4, 5, 6
+
+---
+
+#### Extension 2: Reference Integrity Contract
+
+**Purpose:** Enable reference validation and lifecycle coordination
+
+**Pattern Options:**
+
+**Option A: Reference Validation Contract**
+```
+New contract type:
+- Consuming domain queries: "Does reference X still exist?"
+- Owning domain responds with existence + version metadata
+- Consuming domain validates before commit
+```
+
+**Option B: Reference Interest Contract**
+```
+New contract type:
+- Consuming domain registers: "I reference entity X"
+- Owning domain tracks reference count
+- Owning domain notifies before deletion or rejects deletion
+```
+
+**Option C: Immutable Reference Contract**
+```
+Implementation requirement (not new contract):
+- Owning domain never deletes, only versions
+- References are immutable and always resolve
+```
+
+**Applies to:** Scenario 3
+
+---
+
+#### Extension 3: Event Sequence Contract
+
+**Purpose:** Enable ordered, idempotent event processing
+
+**Pattern:**
+```
+Event Contract Extension:
+- Include event ID (UUID) for deduplication
+- Include sequence number (per-entity monotonic counter)
+- Include entity ID for grouping
+- Include timestamp for ordering fallback
+
+Consuming domain requirements:
+- Implement idempotent event handling (same event ID processed once)
+- Buffer out-of-order events or process with gap tolerance
+- Periodically reconcile via Read Contract (events are hints, not truth)
+```
+
+**Applies to:** Scenario 7
+
+---
+
+### Implementation Guidance
+
+**V3.2B is NOT broken—it's foundational.**
+
+V3.2B defines ownership and communication patterns successfully. The gaps identified are **extensions** to handle temporal concerns, not replacements.
+
+**Recommended Approach:**
+
+1. **Accept V3.2B as-is** for ownership and basic contracts
+2. **Add V3.2B-Extension section** defining temporal patterns
+3. **Apply extensions consistently** across all domains
+4. **Treat extensions as required**, not optional
+
+**V3.2B-Extension becomes the complete contract specification.**
+
+---
 
 This document is the **implementation-grade source of truth** for EMIP-PPAP.
 

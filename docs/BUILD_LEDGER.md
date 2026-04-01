@@ -4,6 +4,301 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-01 11:25 CT - Phase V3.2D - Failure & Edge Case Scenario Validation
+
+**Summary:** Comprehensive validation of contract-based architecture under failure conditions and edge cases to identify architectural gaps before implementation
+
+**Type:** Architecture Stress-Test / Gap Analysis (Documentation Only)
+
+### Purpose
+
+**V3.2D validates that the architecture handles degraded states and failure conditions.**
+
+**Critical Question:** When normal conditions are violated (interrupted sessions, stale data, concurrent modifications, partial failures), can the V3.2A/V3.2B contract model:
+- Detect failures and stale data?
+- Maintain ownership boundaries during failures?
+- Provide recovery paths?
+- Avoid forcing prohibited patterns?
+
+**Validation Method:** Define 10 failure/edge case scenarios, trace contract behavior under failure, identify what contract types are missing, determine if gaps exist or if scenarios are resolvable with existing contracts.
+
+### Scenarios Tested
+
+**10 Failure and Edge Case Scenarios:**
+
+1. **Copilot Session Interrupted Mid-Generation** — Browser crash during document generation
+2. **User Resumes Session After PPAP State Changed** — Stale PPAP data in active Copilot session
+3. **File Referenced by Copilot is Deleted or Replaced** — Broken references to vault files
+4. **EMIP Data Becomes Stale During Workflow** — Workflow uses obsolete component data
+5. **Two Users Modify Same PPAP Simultaneously** — Lost update / optimistic concurrency failure
+6. **PPAP Status Changes During Document Generation** — Generated documents rejected due to workflow state change
+7. **Event Arrives Out-of-Order or Delayed** — Command Center receives events in wrong sequence
+8. **Command Center Displays Stale Aggregated Data** — Cached data diverges from source truth
+9. **Vault File Updated While Referenced Elsewhere** — File content changes after reference created
+10. **Partial Failure in Multi-Step Workflow** — Multi-domain workflow completes partially
+
+**Domains Exercised:** All six domains under failure conditions
+
+**Contract Types Analyzed:** All five contract types tested for temporal/consistency handling
+
+### Validation Results
+
+**🚨 3 CONFIRMED ARCHITECTURAL GAPS IDENTIFIED**
+
+#### Gap 1: Versioned Read / Conditional Operation Pattern
+
+**Affected Scenarios:** 2, 4, 5, 6
+
+**Symptom:** Consuming domain reads data, source data changes before dependent operation completes, causing stale data usage or lost updates.
+
+**Missing from V3.2B:**
+- No pattern for version tokens or timestamps in Output Contracts
+- No pattern for conditional requests ("update if version matches")
+- No mechanism for staleness detection before committing operations
+- Output Contract "versioned" refers to API versioning, not entity versioning
+
+**Root Cause:** V3.2B Read/Output/Request Contracts lack temporal semantics.
+
+#### Gap 2: Reference Integrity / Lifecycle Coordination Pattern
+
+**Affected Scenarios:** 3
+
+**Symptom:** Consuming domain holds references to entities owned by another domain. Owning domain deletes entity without notification, causing broken references.
+
+**Missing from V3.2B:**
+- No pattern for validating reference existence before commit
+- No pattern for registering "reference interest" (notify before deletion)
+- No atomic check-and-commit for operations dependent on referenced entities
+- Reference Contract acknowledges staleness but provides no validation mechanism
+
+**Root Cause:** V3.2B Reference Contract lacks lifecycle coordination semantics.
+
+#### Gap 3: Event Ordering / Sequence Integrity Pattern
+
+**Affected Scenarios:** 7
+
+**Symptom:** Event-consuming domain receives events out of order, duplicated, or with gaps, causing aggregated view inconsistency.
+
+**Missing from V3.2B:**
+- No ordering guarantees (FIFO, causal, total order)
+- No sequence number or event ID requirement
+- No idempotency contract (duplicate detection)
+- No gap detection or event replay mechanism
+
+**Root Cause:** V3.2B Event Contract lacks ordering and delivery semantics.
+
+---
+
+### Root Cause Analysis
+
+**All three gaps share a common architectural deficiency:**
+
+**V3.2B defines WHAT is communicated between domains but not WHEN, HOW FRESH, or IN WHAT ORDER.**
+
+**Temporal Context is Missing:**
+- Read/Output/Request Contracts: No temporal semantics (version, timestamp, freshness)
+- Reference Contract: No lifecycle coordination (notification, validation timing)
+- Event Contract: No ordering semantics (sequence, causality, delivery guarantees)
+
+**The V3.2B contract model is fundamentally STATELESS and TIMELESS:**
+- Contracts describe data shape and ownership transfer rules
+- Contracts do not describe temporal relationships between operations
+- Contracts do not provide mechanisms for detecting or handling staleness, ordering, or consistency
+
+**This is not a failure of V3.2B design—it's an incomplete specification.**
+
+V3.2B successfully defines:
+- ✅ Ownership boundaries (who controls what)
+- ✅ Communication patterns (read, request, event, output, reference)
+- ✅ Anti-patterns (no hidden coupling, no shadow ownership)
+
+V3.2B does NOT define:
+- ❌ Temporal coordination (version tokens, timestamps, sequence numbers)
+- ❌ Consistency semantics (staleness detection, conditional operations)
+- ❌ Ordering guarantees (event sequencing, causal dependencies)
+
+**These are not separate gaps—they are all manifestations of missing temporal semantics in V3.2B.**
+
+---
+
+### Scenarios with NO Gaps (Working as Designed)
+
+**Scenario 1: Copilot Session Interrupted** — ✅ No gap (stateless sessions, clean rollback)
+
+**Scenario 5: Concurrent PPAP Modification** — 🚨 UPGRADED TO GAP (initially classified as implementation detail, but requires same versioned read pattern as Scenarios 2, 4, 6)
+
+**Scenario 6: PPAP Status Change During Generation** — ✅ No new gap (Request Contract correctly rejects incompatible operations; manifestation of Scenario 2 gap)
+
+**Scenario 8: Command Center Stale Cache** — ✅ No gap (violates existing V3.2B rule against caching authoritative data)
+
+**Scenario 9: Vault File Updated While Referenced** — ✅ No gap (file mutability is Workspace/Vault internal design; deletion covered by Scenario 3 gap)
+
+**Scenario 10: Partial Failure in Multi-Step Workflow** — ✅ No gap (Request Contract is per-request atomic; multi-step coordination is caller responsibility)
+
+---
+
+### Required V3.2B Extensions
+
+#### Extension 1: Versioned Read Contract
+
+**Purpose:** Enable staleness detection and conditional operations
+
+**Pattern:**
+- Output Contracts include version token or timestamp
+- Request Contracts accept conditional parameters (if-match, if-none-match)
+- Owning domains validate conditions before executing mutations
+- Rejections return 412 Precondition Failed
+
+**Applies to:** Scenarios 2, 4, 5, 6
+
+#### Extension 2: Reference Integrity Contract
+
+**Purpose:** Enable reference validation and lifecycle coordination
+
+**Pattern Options:**
+- **A) Reference Validation Contract:** Query for reference existence before commit
+- **B) Reference Interest Contract:** Register interest, receive notification before deletion
+- **C) Immutable Reference Contract:** Never delete, only version (implementation choice)
+
+**Applies to:** Scenario 3
+
+#### Extension 3: Event Sequence Contract
+
+**Purpose:** Enable ordered, idempotent event processing
+
+**Pattern:**
+- Events include event ID (deduplication), sequence number (ordering), entity ID (grouping), timestamp
+- Consumers implement idempotent handling
+- Consumers periodically reconcile via Read Contract (events are hints, not truth)
+
+**Applies to:** Scenario 7
+
+---
+
+### Failure Handling Rules Added
+
+**5 Rules addressing root causes:**
+
+**Rule 1: Temporal Context MUST Be Explicit**
+- Applies to: Read-then-operate patterns (Scenarios 2, 4, 5, 6)
+- Requirement: Output Contracts include temporal metadata, Request Contracts accept conditional parameters
+- Extension Required: Versioned Read Contract, Conditional Request Contract
+
+**Rule 2: Reference Lifecycle Coordination MUST Be Explicit**
+- Applies to: Cross-domain references (Scenario 3)
+- Requirement: Choose immutable references, pre-commit validation, or interest registration
+- Extension Required: Reference Validation Contract or Reference Interest Contract
+
+**Rule 3: Event Ordering MUST Be Explicit**
+- Applies to: Event-driven aggregation (Scenario 7)
+- Requirement: Events include ID, sequence number, entity ID; consumers implement idempotency
+- Extension Required: Event Sequence Contract
+
+**Rule 4: Multi-Step Workflows MUST Handle Partial Failure**
+- Applies to: Multi-request workflows (Scenario 10)
+- Requirement: Orchestrator tracks success/failure, implements retry/compensation logic
+- Extension Required: None (Request Contract already supports this)
+
+**Rule 5: Cached Data MUST NOT Be Treated as Authoritative**
+- Applies to: Cached reads (Scenario 8)
+- Requirement: Cache is hint only, refresh on conflict, indicate staleness to users
+- Extension Required: None (V3.2B already prohibits this)
+
+---
+
+### Architectural Gap Verdict
+
+**Status:** 🚨 **CONFIRMED — V3.2B INCOMPLETE**
+
+**Finding:**
+
+V3.2B successfully defines **spatial boundaries** (ownership, communication patterns) but lacks **temporal semantics** (version, ordering, freshness).
+
+**Recommendation:**
+
+1. Accept V3.2B as-is for ownership and basic contracts
+2. Add V3.2B-Extension section defining temporal patterns
+3. Apply extensions consistently across all domains
+4. Treat extensions as required, not optional
+
+**V3.2B-Extension becomes the complete contract specification.**
+
+**V3.2B is NOT broken—it's foundational.** The gaps identified are extensions to handle temporal concerns, not replacements.
+
+---
+
+### Files Updated
+
+- `docs/BUILD_PLAN.md` — V3.2D section added (1,500+ lines)
+  - 10 failure/edge case scenario definitions
+  - Contract trace under failure for each scenario
+  - Ownership boundary behavior analysis
+  - Architectural gap verdicts (3 confirmed gaps)
+  - Cross-scenario failure pattern analysis
+  - Root cause analysis (missing temporal semantics)
+  - Failure handling rules (5 rules)
+  - V3.2B extension requirements (3 extensions)
+  - Implementation guidance
+- `docs/BUILD_LEDGER.md` — This decision record
+
+### Impact
+
+**Implementation:**
+- All future implementation MUST implement V3.2B extensions for temporal semantics
+- Versioned Read Contract required for any read-then-operate pattern
+- Reference Integrity Contract required for cross-domain references
+- Event Sequence Contract required for event-driven aggregation
+
+**Architecture:**
+- V3.2B remains foundational but is now recognized as incomplete
+- V3.2B-Extension section required before implementation can proceed
+- Temporal semantics are not optional—they are required for correctness
+
+**Validation:**
+- V3.2A + V3.2B + V3.2C validated happy-path workflows
+- V3.2D identified failure-path gaps requiring architectural extension
+- V3.2D completes pre-implementation validation cycle
+
+### Relationship to Prior Work
+
+**V3.2A (Domain Ownership):**
+- Defined what each domain owns
+- V3.2D validates ownership boundaries hold during failures
+
+**V3.2B (Interface Contracts):**
+- Defined how domains may communicate
+- V3.2D identifies missing temporal semantics in contract types
+
+**V3.2C (Scenario Validation):**
+- Proved V3.2A + V3.2B work for happy-path workflows
+- V3.2D proves V3.2B requires extension for failure scenarios
+
+**Complete Architectural Control:**
+- V3.2A: Ownership boundaries (what you control)
+- V3.2B: Interface contracts (how you communicate)
+- V3.2C: Happy-path validation (proves normal workflows work)
+- V3.2D: Failure-path validation (identifies temporal gaps)
+- V3.2B-Extension: Temporal semantics (closes identified gaps)
+
+### Rationale
+
+**Why Failure Validation Was Necessary:**
+
+V3.2C validated that happy-path workflows execute correctly. However, production systems must handle:
+- Interrupted operations
+- Stale data
+- Concurrent modifications
+- Out-of-order events
+- Partial failures
+
+Without V3.2D validation, these temporal concerns would emerge during implementation as ad-hoc solutions, potentially violating architectural boundaries.
+
+**V3.2D forces temporal concerns to be addressed architecturally, not tactically.**
+
+**Next Step:** Define V3.2B-Extension section with temporal contract patterns before implementation begins
+
+---
+
 ## 2026-04-01 08:47 CT - Phase V3.2C - Domain Interaction Scenario Validation
 
 **Summary:** Comprehensive validation that real-world workflows can execute using only V3.2A ownership rules and V3.2B interface contracts
