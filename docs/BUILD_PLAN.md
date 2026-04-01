@@ -5579,8 +5579,8 @@ This phase is strictly documentation and architecture planning. No application c
 
 ## V3.2A — System Domain Map
 
-**Last Updated:** 2026-03-31  
-**Status:** Architecture Planning (Documentation Phase)
+**Last Updated:** 2026-04-01  
+**Status:** Execution-Grade Architecture (Enforcement Pass Complete)
 
 ### Purpose
 
@@ -5694,6 +5694,18 @@ Manage PPAP lifecycle, workflow execution, assignment of work, and tracking of r
 - Workflow progression and gates
 - Assignment authority and responsibility
 
+**Exclusive Authority:**
+
+PPAP Workflow is the **ONLY** domain authorized to:
+- Determine PPAP status (pending, in-progress, complete, etc.)
+- Determine document completeness for workflow purposes
+- Determine PPAP readiness for submission
+- Determine approval eligibility and workflow gates
+- Make assignment decisions and changes
+- Progress workflow state based on conditions
+
+**Even when based on cross-domain data**, PPAP Workflow retains exclusive authority to interpret that data for workflow decisions. Other domains provide inputs; PPAP Workflow makes decisions.
+
 ### Does NOT Own
 
 | Area | Rationale |
@@ -5749,6 +5761,23 @@ Assist in the creation of engineering documents through AI-guided drafting, ques
 - AI-generated content and confidence levels
 - Question/answer flows and unresolved questions
 - Document generation profiles and schemas
+
+**Strict Constraints:**
+
+Document Copilot **MUST NOT:**
+- Determine workflow status or PPAP state
+- Approve documents or mark them as final
+- Finalize documents or commit them to vault
+- Influence assignment or readiness decisions
+- Determine document completeness for workflow purposes
+- Make workflow progression decisions
+
+Document Copilot **MAY ONLY:**
+- Generate draft content based on inputs
+- Ask questions to gather information
+- Structure information into document formats
+- Provide confidence metadata for user review
+- Produce outputs requiring explicit user approval
 
 ### Does NOT Own
 
@@ -5824,6 +5853,22 @@ Provide a user-centric operational surface that aggregates work, documents, sess
 
 **Explicit Principle:** Command Center is **read-only aggregation only**. It never modifies data owned by other domains. All actions initiated from Command Center are delegated to the owning domain.
 
+**Strict Constraints:**
+
+Command Center **MUST NOT:**
+- Compute, derive, or alter workflow state
+- Determine PPAP status, readiness, or completeness
+- Approve, finalize, or validate documents
+- Modify assignments or workflow progression
+- Cache or store authoritative business data
+- Perform business logic or decision-making
+
+Command Center **MUST:**
+- Display only data originating from owning domains
+- Delegate all state-changing actions to owning domains
+- Treat all displayed data as read-only references
+- Refresh aggregated views from source domains
+
 ### Consumes
 
 | Input | Source Domain |
@@ -5886,6 +5931,21 @@ Manage file storage, organization, and retrieval for user workspaces, PPAP attac
 
 **Explicit Principle:** Workspace/Vault stores **files only** — it never defines meaning, workflow, or business logic. A file is a blob of data with metadata; what that file means or how it's used belongs to other domains.
 
+**Strict Storage-Only Boundaries:**
+
+Workspace/Vault **MUST:**
+- Store file content and minimal retrieval metadata only
+- Provide access paths and references
+- Track storage quotas and file lifecycle
+
+Workspace/Vault **MUST NOT:**
+- Assign meaning, classification, or semantic tags to files
+- Infer relationships between files or documents
+- Determine document structure or format
+- Apply business logic to file content
+- Interpret file content for any purpose
+- Make decisions based on file content
+
 ### Consumes
 
 | Input | Source Domain |
@@ -5930,6 +5990,26 @@ Manage structured product/component intelligence including SKUs, components, par
 - Product structure and hierarchy
 - Component intelligence and insights
 
+**Exclusive Product Intelligence Authority:**
+
+Only EMIP Domain **MAY:**
+- Define SKUs and component identifiers
+- Define component specifications and attributes
+- Define parent/child relationships in product structure
+- Parse and interpret BOM files for component data
+- Derive component relationships and hierarchies
+
+Other Domains **MUST NOT:**
+- Create or infer product relationships
+- Define component structure or hierarchy
+- Parse BOMs for component intelligence
+- Derive SKU or component metadata
+
+Other Domains **MAY ONLY:**
+- Reference EMIP data as read-only inputs
+- Request component lookups from EMIP
+- Display EMIP-provided data without modification
+
 ### Does NOT Own
 
 | Area | Rationale |
@@ -5967,9 +6047,9 @@ The following rules govern how domains interact:
 
 #### Rule 1: No Direct Modification of Other Domain Data
 
-**No domain may directly modify another domain's owned data.**
+**No domain MUST directly modify another domain's owned data.**
 
-All modifications must go through the owning domain's interfaces. If Domain A needs to change data owned by Domain B, it must:
+All modifications **MUST** go through the owning domain's interfaces. If Domain A needs to change data owned by Domain B, it must:
 - Call Domain B's API/interface
 - Request the change
 - Let Domain B perform the modification
@@ -5978,7 +6058,7 @@ All modifications must go through the owning domain's interfaces. If Domain A ne
 
 #### Rule 2: Cross-Domain Interactions via Consumption of Outputs
 
-**All cross-domain interactions must occur via consumption of outputs.**
+**All cross-domain interactions MUST occur via consumption of outputs.**
 
 Domains communicate by:
 - Domain A produces an output
@@ -5991,94 +6071,107 @@ Domains communicate by:
 
 #### Rule 3: Command Center is Read-Only Aggregation Only
 
-**The Engineer Command Center never modifies data owned by other domains.**
+**The Engineer Command Center MUST NEVER modify data owned by other domains.**
 
-Command Center may:
-- Read data from other domains
-- Aggregate and present data
+Command Center **MUST:**
+- Read data from other domains (read-only)
+- Aggregate and present data without alteration
 - Initiate navigation to other domains
-- Store view preferences (its own data)
+- Store view preferences (its own data only)
 
-Command Center may NOT:
+Command Center **MUST NOT:**
 - Modify PPAP state
 - Modify document content
 - Modify copilot sessions
 - Modify files
 - Modify user identity
+- Compute or derive workflow state
+- Cache authoritative business data
 
 **Rationale:** Command Center is a presentation layer, not a business logic layer.
 
 #### Rule 4: Workspace/Vault Stores Files Only — Never Defines Meaning
 
-**The Workspace/Vault domain stores file content and metadata only.**
+**The Workspace/Vault domain MUST store file content and metadata only.**
 
-It does not:
+It **MUST NOT:**
 - Interpret file content
 - Define document structure
 - Enforce document rules
 - Understand business meaning
+- Infer relationships or classifications
+- Apply semantic tags or categories
 
-It only:
-- Stores the file
-- Tracks metadata (name, size, type, owner)
-- Organizes files
-- Provides access
+It **MUST ONLY:**
+- Store the file as binary/text data
+- Track metadata (name, size, type, owner, timestamps)
+- Organize files in folders/structure
+- Provide access paths and retrieval
 
 **Rationale:** Separation of storage from semantics.
 
 #### Rule 5: Document Copilot Produces Drafts Only — Never Final Authority
 
-**The Document Copilot domain produces draft outputs, never final documents.**
+**The Document Copilot domain MUST produce draft outputs only, never final documents.**
 
 Drafts:
-- Are AI-generated proposals
-- Require user review
-- Require user approval to become final
-- Are tracked with confidence levels
+- **MUST** be AI-generated proposals only
+- **MUST** require user review
+- **MUST** require explicit user approval to become final
+- **MUST** be tracked with confidence levels
+- **MUST NOT** be automatically finalized
 
-Final authority always belongs to:
-- The user (human approval)
-- The PPAP Workflow (status tracking)
-- The Workspace/Vault (final storage)
+Final authority **MUST** belong to:
+- The user (human approval required)
+- The PPAP Workflow (status tracking authority)
+- The Workspace/Vault (final storage authority)
+
+Document Copilot **MUST NOT:**
+- Approve its own outputs
+- Finalize documents without user action
+- Determine document completeness for workflow
 
 **Rationale:** Human-in-the-loop requirement, auditability, quality control.
 
 #### Rule 6: PPAP Workflow Owns Assignment and Status — Not Content
 
-**The PPAP Workflow domain owns who is assigned and what the status is — not the content of deliverables.**
+**The PPAP Workflow domain MUST own assignment and status authority exclusively — not the content of deliverables.**
 
-PPAP Workflow:
-- Tracks assignments
-- Manages workflow states
-- Enforces gates and boundaries
-- Tracks document requirements
-- Tracks completion status
+PPAP Workflow **MUST:**
+- Track assignments (exclusive authority)
+- Manage workflow states (exclusive authority)
+- Enforce gates and boundaries (exclusive authority)
+- Track document requirements
+- Determine completion status (exclusive authority)
+- Make all readiness and approval decisions
 
-PPAP Workflow does NOT:
+PPAP Workflow **MUST NOT:**
 - Create document content
 - Store document files
 - Define document structure
 - Generate AI drafts
+- Interpret file content for meaning
 
 **Rationale:** Separation of workflow orchestration from content creation.
 
 #### Rule 7: Core Platform is Foundation — Never Business Logic
 
-**The Core Platform provides foundational services only — never business logic.**
+**The Core Platform MUST provide foundational services only — never business logic.**
 
-Core Platform:
-- Identity
-- Authentication
-- Authorization
-- Storage primitives
-- Notification infrastructure
+Core Platform **MUST:**
+- Provide identity services
+- Provide authentication
+- Provide authorization
+- Provide storage primitives
+- Provide notification infrastructure
 
-Core Platform does NOT:
+Core Platform **MUST NOT:**
 - Understand PPAPs
 - Understand documents
 - Understand components
 - Enforce workflow rules
 - Generate content
+- Contain business domain logic
 
 **Rationale:** Foundation layer must remain agnostic to business domains.
 
@@ -6090,7 +6183,7 @@ The following principles govern data ownership across the system:
 
 #### Principle 1: Every Piece of Data Has Exactly One Owning Domain
 
-**No data may have multiple owning domains.**
+**No data MUST have multiple owning domains.**
 
 Examples:
 - User identity → Core Platform
@@ -6105,7 +6198,7 @@ Examples:
 
 #### Principle 2: No Duplication of Ownership Allowed
 
-**Data ownership cannot be shared or duplicated.**
+**Data ownership MUST NOT be shared or duplicated.**
 
 There is no such thing as "co-ownership" of data across domains.
 
@@ -6113,7 +6206,7 @@ There is no such thing as "co-ownership" of data across domains.
 
 #### Principle 3: Derived Data Must Reference Its Source Domain
 
-**If Domain B derives data from Domain A's data, Domain B must reference Domain A as the source.**
+**If Domain B derives data from Domain A's data, Domain B MUST reference Domain A as the source.**
 
 Examples:
 - Command Center aggregates PPAP status → references PPAP Workflow as source
@@ -6124,7 +6217,7 @@ Examples:
 
 #### Principle 4: Aggregation Does Not Equal Ownership
 
-**Aggregating data from multiple domains does not confer ownership of that data.**
+**Aggregating data from multiple domains MUST NOT confer ownership of that data.**
 
 Command Center aggregates data from:
 - PPAP Workflow (assignments)
@@ -6145,7 +6238,7 @@ Command Center does NOT own:
 
 #### Principle 5: Storage Does Not Equal Ownership
 
-**Storing data does not confer ownership of that data.**
+**Storing data MUST NOT confer ownership of that data.**
 
 Examples:
 - Workspace/Vault stores files → owns storage, not document meaning
@@ -6153,6 +6246,51 @@ Examples:
 - PPAP Workflow references files → owns the reference, not the file
 
 **Rationale:** Clear separation between storage mechanism and semantic ownership.
+
+#### Principle 6: Derived Data MUST NOT Become Authoritative
+
+**Derived or aggregated data MUST NOT become a source of truth.**
+
+Aggregation layers (Command Center, reporting, caching) **MUST:**
+- Treat derived data as read-only views
+- Reference source domains for authoritative data
+- Refresh from source domains, never persist as truth
+
+Aggregation layers **MUST NOT:**
+- Store derived data as authoritative
+- Make decisions based on cached/derived data
+- Allow derived data to diverge from source
+
+**Rationale:** Prevents "shadow" systems of record, ensures single source of truth.
+
+#### Principle 7: Contract Versioning for Domain Outputs
+
+**All domain outputs MUST be treated as versioned contracts.**
+
+When a domain produces outputs consumed by other domains:
+- Output structure is a contract
+- Breaking changes **MUST** be versioned or use adapters
+- Silent structural changes are **PROHIBITED**
+- Consumers **MUST** handle version negotiation
+
+**Rationale:** Prevents cascading failures from interface changes.
+
+#### Principle 8: Shared Mutable State is Strictly Prohibited
+
+**Shared mutable state across domains is absolutely forbidden.**
+
+**PROHIBITED:**
+- Shared database tables written by multiple domains
+- Shared caches modified by multiple domains
+- Cross-domain state storage
+- Direct database access across domain boundaries
+
+**REQUIRED:**
+- All interaction via outputs/consumption pattern
+- Each domain owns its own data store
+- Cross-domain data flow via APIs/events only
+
+**Rationale:** Prevents coupling, race conditions, unclear ownership.
 
 ---
 
@@ -6162,7 +6300,7 @@ The following rules prevent gradual erosion of domain boundaries:
 
 #### Rule 1: No Domain Expansion Without Explicit BUILD_PLAN Update
 
-**A domain may not expand its responsibilities without an explicit update to BUILD_PLAN.**
+**A domain MUST NOT expand its responsibilities without an explicit update to BUILD_PLAN.**
 
 If a team wants Domain A to take on new responsibilities:
 - Update BUILD_PLAN domain definition
@@ -6174,7 +6312,7 @@ If a team wants Domain A to take on new responsibilities:
 
 #### Rule 2: No Cross-Domain Logic Embedding
 
-**Business logic from one domain may not be embedded in another domain.**
+**Business logic from one domain MUST NOT be embedded in another domain.**
 
 Examples of violations:
 - PPAP Workflow logic in Command Center code
@@ -6185,7 +6323,7 @@ Examples of violations:
 
 #### Rule 3: No "Temporary" Shared Ownership
 
-**There is no such thing as temporary shared ownership.**
+**There MUST NOT be temporary shared ownership.**
 
 If data seems to need shared ownership:
 - Split the data into distinct concepts
@@ -6198,7 +6336,7 @@ If data seems to need shared ownership:
 
 #### Rule 4: No Silent Schema Overlap
 
-**Schemas from different domains may not silently overlap or conflict.**
+**Schemas from different domains MUST NOT silently overlap or conflict.**
 
 If Domain A and Domain B both have a "Document" concept:
 - They are different concepts with different meanings
@@ -6209,7 +6347,7 @@ If Domain A and Domain B both have a "Document" concept:
 
 #### Rule 5: All New Features Must Declare Domain Ownership
 
-**Before implementing any new feature, declare which domain owns the data and logic.**
+**Before implementing any new feature, teams MUST declare which domain owns the data and logic.**
 
 Feature specification must include:
 - Which domain owns the new data
@@ -6218,6 +6356,24 @@ Feature specification must include:
 - Data flow diagram
 
 **Rationale:** Forces architectural thinking before coding.
+
+#### Rule 6: Architectural Rules Override Functional Correctness
+
+**Any implementation that violates domain rules MUST be rejected, even if functionally correct.**
+
+**Enforcement:**
+- Code reviews **MUST** check domain boundary compliance
+- Functional correctness does **NOT** override architectural rules
+- "It works" is **NOT** sufficient justification
+- Violations **MUST** be refactored to comply with domain map
+
+**Examples of Rejectable Violations:**
+- Command Center computing workflow state (even if correct)
+- Document Copilot finalizing documents (even if user-approved)
+- Workspace/Vault inferring document relationships (even if accurate)
+- Cross-domain direct database access (even if performant)
+
+**Rationale:** Architectural integrity is non-negotiable for long-term maintainability.
 
 ---
 
