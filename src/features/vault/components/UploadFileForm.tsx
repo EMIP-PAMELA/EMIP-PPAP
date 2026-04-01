@@ -2,14 +2,19 @@
 
 import { useState } from 'react';
 import { storeFile } from '@/src/features/vault/mutations';
-import { createDocument } from '@/src/features/documents/mutations';
+import type { FileReference } from '@/src/features/vault/types';
 
-interface UploadDocumentFormProps {
-  ppapId: string;
-  onSuccess?: () => void;
+interface UploadFileFormProps {
+  uploadedBy: string;
+  context?: {
+    ownerId?: string;
+    ownerType?: string;
+  };
+  onSuccess?: (fileRef: FileReference) => void;
+  onError?: (error: Error) => void;
 }
 
-export function UploadDocumentForm({ ppapId, onSuccess }: UploadDocumentFormProps) {
+export function UploadFileForm({ uploadedBy, context, onSuccess, onError }: UploadFileFormProps) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -30,18 +35,7 @@ export function UploadDocumentForm({ ppapId, onSuccess }: UploadDocumentFormProp
     setUploading(true);
 
     try {
-      const fileRef = await storeFile(file, 'Matt', {
-        ownerId: ppapId,
-        ownerType: 'PPAP',
-      });
-
-      await createDocument({
-        ppap_id: ppapId,
-        file_name: fileRef.metadata.fileName,
-        category: 'GENERAL',
-        file_url: fileRef.url,
-        uploaded_by: fileRef.metadata.uploadedBy,
-      });
+      const fileRef = await storeFile(file, uploadedBy, context);
 
       setFile(null);
       if (e.target instanceof HTMLFormElement) {
@@ -49,11 +43,17 @@ export function UploadDocumentForm({ ppapId, onSuccess }: UploadDocumentFormProp
       }
       
       if (onSuccess) {
-        onSuccess();
+        onSuccess(fileRef);
       }
     } catch (err) {
-      console.error('Failed to upload document:', err);
-      alert('Failed to upload document. Please try again.');
+      console.error('[Vault] Failed to upload file:', err);
+      const error = err instanceof Error ? err : new Error('Unknown error');
+      
+      if (onError) {
+        onError(error);
+      } else {
+        alert(`Failed to upload file: ${error.message}`);
+      }
     } finally {
       setUploading(false);
     }
@@ -64,7 +64,7 @@ export function UploadDocumentForm({ ppapId, onSuccess }: UploadDocumentFormProp
       <div className="space-y-3">
         <div>
           <label htmlFor="file" className="block text-sm font-medium text-gray-700 mb-2">
-            Upload Document
+            Upload File
           </label>
           <input
             id="file"
@@ -85,7 +85,7 @@ export function UploadDocumentForm({ ppapId, onSuccess }: UploadDocumentFormProp
           disabled={uploading || !file}
           className="w-full bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
-          {uploading ? 'Uploading...' : 'Upload Document'}
+          {uploading ? 'Uploading...' : 'Upload File'}
         </button>
       </div>
     </form>

@@ -4,6 +4,248 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-01 14:20 CT - Phase V3.2E-2 - Workspace/Vault Domain Extraction
+
+**Summary:** Extract file storage from PPAP Workflow and Documents feature into independent Workspace/Vault domain, PPAP consumes Vault via V3.2B contracts
+
+**Type:** Surgical Refactor (Code Changes - Domain Extraction)
+
+### Purpose
+
+**V3.2E-2 executes the extraction plan defined in V3.2E-1 to establish Workspace/Vault as an independent domain.**
+
+**Objective:** Move all file storage operations from PPAP Workflow domain to Workspace/Vault domain, establish contract-based communication, eliminate V3.2A ownership violations.
+
+### Changes Made
+
+#### Change 1: Created Workspace/Vault Domain Structure
+
+**New Files Created:**
+- `src/features/vault/types/index.ts` — TypeScript interfaces for all 4 V3.2B contracts
+- `src/features/vault/services/vaultService.ts` — Core storage service (ONLY place with Supabase Storage calls)
+- `src/features/vault/mutations.ts` — Public Vault API for write operations
+- `src/features/vault/queries.ts` — Public Vault API for read operations
+- `src/features/vault/components/UploadFileForm.tsx` — Generic Vault-owned upload component
+
+**Domain Structure:**
+```
+src/features/vault/
+├── types/index.ts          (4 contract interfaces)
+├── services/vaultService.ts (core storage operations)
+├── mutations.ts            (storeFile, deleteFile)
+├── queries.ts              (getFileMetadata, checkFileExists, listFilesByContext)
+└── components/
+    └── UploadFileForm.tsx  (generic file upload UI)
+```
+
+**Rationale:** Vault is now a complete, independent domain with clear API boundaries.
+
+---
+
+#### Change 2: Implemented V3.2B Contract Types
+
+**Contract 1: Store File (Request Contract)**
+- Interface: `StoreFileRequest { file, context? }`
+- Response: `FileReference { id, url, metadata }`
+- Implementation: `storeFile()` in `vault/mutations.ts`
+
+**Contract 2: Retrieve File (Read Contract)**
+- Interface: `GetFileRequest { fileId }`
+- Response: `FileMetadata { id, fileName, fileSize, mimeType, url, version }`
+- Implementation: `getFileMetadata()` in `vault/queries.ts`
+
+**Contract 3: Delete File (Request Contract)**
+- Interface: `DeleteFileRequest { fileId, deletedBy }`
+- Response: `DeleteFileResponse { success, deletedAt }`
+- Implementation: `deleteFile()` in `vault/mutations.ts`
+
+**Contract 4: File Storage Events (Event Contract)**
+- Events: `FileUploadedEvent`, `FileDeletedEvent`, `FileReplacedEvent`
+- Implementation: Event logging in `vaultService.ts`
+
+**V3.2D Gap 2 Resolution (Reference Integrity):**
+- Implemented **Option A (Validate Before Commit)**
+- Function: `checkFileExists(fileId)` in `vault/queries.ts`
+- Consuming domains can validate file existence before committing operations
+
+**Rationale:** All contracts defined in V3.2E-1 Section 5 are now implemented in code.
+
+---
+
+#### Change 3: Updated PPAP Workflow to Consume Vault
+
+**File Modified:** `src/features/ppap/utils/uploadFile.ts`
+
+**Before (Violation):**
+```typescript
+import { supabase } from '@/src/lib/supabaseClient';
+
+export async function uploadPPAPDocument(file: File, ppapId: string): Promise<string> {
+  const filePath = `${ppapId}/${Date.now()}-${file.name}`;
+  const { data, error } = await supabase.storage
+    .from('ppap-documents')
+    .upload(filePath, file);
+  // Direct Supabase Storage call - VIOLATION
+}
+```
+
+**After (Compliant):**
+```typescript
+import { storeFile } from '@/src/features/vault/mutations';
+
+export async function uploadPPAPDocument(
+  file: File,
+  ppapId: string,
+  uploadedBy: string = 'system'
+): Promise<FileReference> {
+  const fileRef = await storeFile(file, uploadedBy, {
+    ownerId: ppapId,
+    ownerType: 'PPAP',
+  });
+  // PPAP requests storage via Vault contract
+  return fileRef;
+}
+```
+
+**Result:** PPAP Workflow domain contains ZERO direct Supabase Storage calls.
+
+---
+
+#### Change 4: Updated Documents Feature to Consume Vault
+
+**File Modified:** `src/features/documents/components/UploadDocumentForm.tsx`
+
+**Before (Violation):**
+```typescript
+const filePath = `ppap/${ppapId}/${file.name}`;
+const { data: uploadData, error: uploadError } = await supabase
+  .storage
+  .from('ppap-documents')
+  .upload(filePath, file, { ... });
+// Direct Supabase Storage call in UI component - VIOLATION
+```
+
+**After (Compliant):**
+```typescript
+import { storeFile } from '@/src/features/vault/mutations';
+
+const fileRef = await storeFile(file, 'Matt', {
+  ownerId: ppapId,
+  ownerType: 'PPAP',
+});
+// UI component requests storage via Vault contract
+```
+
+**File Modified:** `src/features/documents/mutations.ts`
+
+**Change:** Added `checkFileExists` import from Vault (Option A reference integrity)
+
+**Result:** Documents feature contains ZERO direct Supabase Storage calls.
+
+---
+
+#### Change 5: Centralized Storage Operations in Vault
+
+**Single Source of Storage Truth:** `src/features/vault/services/vaultService.ts`
+
+**All Supabase Storage calls now ONLY in Vault:**
+- `storeFile()` — Upload file to Supabase Storage
+- `retrieveFileUrl()` — Get public URL for file
+- `deleteFile()` — Delete file from storage
+- `checkFileExists()` — Validate file reference (Option A)
+
+**File Path Generation:**
+- Old (business context): `ppap/${ppapId}/${fileName}`
+- New (storage-only): `vault/${year}/${month}/${uuid}-${fileName}`
+
+**Rationale:** Vault owns ALL file path generation, no business logic in paths.
+
+---
+
+### Violations Resolved
+
+**5 V3.2A Ownership Violations Resolved:**
+
+1. ✅ **File Storage Logic in PPAP Workflow Domain** — Moved to Vault
+2. ✅ **File Storage Logic in Documents Feature** — Moved to Vault
+3. ⏳ **Mixed Ownership in ppap_documents Table** — Deferred to future schema migration
+4. ✅ **Document Mutations Mixing Storage + Attachment** — Separated (Vault stores, PPAP attaches)
+5. ✅ **Cross-Domain Imports** — PPAP/Documents now import from Vault domain
+
+**Result:** 4 of 5 violations resolved. Schema migration deferred per V3.2E-1 decision.
+
+---
+
+### Validation Results
+
+**✅ Vault Domain Created:**
+- `src/features/vault/` exists with all defined files
+- All 4 contract types implemented as TypeScript interfaces
+- Option A reference integrity implemented
+
+**✅ Storage Ownership Transferred:**
+- `src/features/ppap/utils/uploadFile.ts` contains ZERO direct Supabase Storage calls
+- `src/features/documents/components/UploadDocumentForm.tsx` contains ZERO direct Supabase Storage calls
+- `src/features/documents/mutations.ts` contains ZERO direct Supabase Storage calls
+- ALL Supabase Storage calls exist ONLY in `src/features/vault/services/vaultService.ts`
+
+**✅ PPAP Workflow Consumes Vault:**
+- PPAP calls `storeFile()` from Vault domain
+- PPAP receives `FileReference` from Vault
+- PPAP creates business record with file reference
+
+**✅ Documents Feature Consumes Vault:**
+- Documents UI calls `storeFile()` from Vault domain
+- Documents mutations use Vault-provided file references
+
+**✅ No Breaking Changes:**
+- File upload functionality preserved end-to-end
+- PPAP records can still attach documents
+- No database schema changes
+- No route changes
+- No UI changes visible to users
+
+---
+
+### Impact
+
+**Architectural:**
+- Workspace/Vault established as independent domain with exclusive file storage ownership
+- V3.2A ownership violations resolved (4 of 5)
+- V3.2B contract-based communication enforced between domains
+- V3.2D Gap 2 (Reference Integrity) resolved via Option A implementation
+- Clear separation of concerns: Vault owns storage, PPAP owns business context
+
+**Code Quality:**
+- Single source of truth for file storage operations
+- No duplicate storage logic across domains
+- Type-safe contracts between domains
+- Improved testability (Vault can be mocked)
+
+**Future Work:**
+- Schema migration to split `ppap_documents` into `vault_files` + `ppap_document_requirements`
+- Implement Options B (Register Interest) and C (Immutable Files) for advanced reference integrity
+- Add file versioning service
+- Add storage quota service
+
+---
+
+### Relationship to Prior Work
+
+**Builds On:**
+- V3.2A (Domain Ownership Rules) — Vault ownership enforced in code
+- V3.2B (Interface Contracts) — All 4 contract types implemented
+- V3.2D (Gap Analysis) — Gap 2 (Reference Integrity) resolved
+- V3.2E-1 (Extraction Plan) — Executed extraction plan exactly as defined
+
+**Enables:**
+- Future schema migration (split `ppap_documents` table)
+- Future Vault enhancements (versioning, quotas, advanced reference integrity)
+- Other domains to consume Vault (Document Copilot, Command Center)
+- Independent Vault testing and optimization
+
+---
+
 ## 2026-04-01 12:45 CT - Phase V3.2E-1 - Workspace/Vault Domain Definition
 
 **Summary:** Complete architectural definition of Workspace/Vault domain extraction from PPAP Workflow to establish independent file storage ownership

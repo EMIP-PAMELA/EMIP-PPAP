@@ -1,6 +1,7 @@
 import { supabase } from '@/src/lib/supabaseClient';
 import type { CreateDocumentInput, PPAPDocument } from '@/src/types/database.types';
 import { logEvent } from '@/src/features/events/mutations';
+import { checkFileExists } from '@/src/features/vault/queries';
 
 export async function createDocument(input: CreateDocumentInput): Promise<PPAPDocument> {
   const { data, error } = await supabase

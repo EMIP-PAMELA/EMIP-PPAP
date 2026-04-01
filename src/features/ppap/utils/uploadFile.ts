@@ -1,21 +1,20 @@
-import { supabase } from '@/src/lib/supabaseClient';
+import { storeFile } from '@/src/features/vault/mutations';
+import { retrieveFileUrl } from '@/src/features/vault/services/vaultService';
+import type { FileReference } from '@/src/features/vault/types';
 
-export async function uploadPPAPDocument(file: File, ppapId: string): Promise<string> {
-  const filePath = `${ppapId}/${Date.now()}-${file.name}`;
+export async function uploadPPAPDocument(
+  file: File,
+  ppapId: string,
+  uploadedBy: string = 'system'
+): Promise<FileReference> {
+  const fileRef = await storeFile(file, uploadedBy, {
+    ownerId: ppapId,
+    ownerType: 'PPAP',
+  });
 
-  const { data, error } = await supabase.storage
-    .from('ppap-documents')
-    .upload(filePath, file);
-
-  if (error) throw new Error(error.message);
-
-  return data.path;
+  return fileRef;
 }
 
 export async function downloadPPAPDocument(filePath: string): Promise<string> {
-  const { data } = await supabase.storage
-    .from('ppap-documents')
-    .getPublicUrl(filePath);
-
-  return data.publicUrl;
+  return retrieveFileUrl(filePath);
 }
