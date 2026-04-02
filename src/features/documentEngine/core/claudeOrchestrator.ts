@@ -22,14 +22,12 @@ import { getPromptTemplate } from '../templates/promptRegistry';
 // Claude API Configuration
 // ============================================================================
 
-const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+// Claude API call is proxied through /api/copilot (server-side route).
+// ANTHROPIC_API_KEY is read there, not here — it must not be accessed in browser code.
 const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
 const MAX_TOKENS_INITIAL = 8000;
 const TEMPERATURE = 0.3;
 const TOP_P = 0.9;
-
-// API key from environment variable (never hardcoded)
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 // ============================================================================
 // Claude API Request/Response Types
@@ -89,11 +87,6 @@ export async function orchestrate(
 ): Promise<CopilotDraft> {
   console.log('[ClaudeOrchestrator] Starting orchestration');
   console.log('[ClaudeOrchestrator] Document type:', inputPackage.template.documentType);
-  
-  // Validate API key
-  if (!ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY environment variable not set');
-  }
   
   // Retrieve prompt template from registry
   const promptTemplate = getPromptTemplate(inputPackage.template.documentType);
@@ -243,19 +236,17 @@ function buildClaudeRequest(
  */
 async function callClaudeAPI(request: ClaudeRequest): Promise<ClaudeResponse> {
   try {
-    const response = await fetch(CLAUDE_API_URL, {
+    const response = await fetch('/api/copilot', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY!,
-        'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify(request)
     });
-    
+
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Claude API error (${response.status}): ${errorText}`);
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(`Copilot API error (${response.status}): ${JSON.stringify(errorData)}`);
     }
     
     const claudeResponse: ClaudeResponse = await response.json();
