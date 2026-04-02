@@ -133,7 +133,7 @@ export function CopilotChatPanel({
         },
         systemPrompt: `You are an AI assistant helping generate ${documentType} documents.`,
         documentInstructions: 'Generate based on user requirements.',
-        bomData: parsedBomData && normalizedBom ? {
+        bomData: (parsedBomData || bomText) ? {
           raw: bomText || '',
           parsed: parsedBomData,
           normalized: normalizedBom
@@ -278,7 +278,9 @@ export function CopilotChatPanel({
               👋 Hello! I'm your Document Copilot. I'll help you generate PPAP documents by asking you questions and understanding your requirements.
             </p>
             <p className="text-gray-400 text-xs mt-2">
-              Start by uploading your BOM and describing what you need.
+              {(bomText || uploadedFiles?.bomFile)
+                ? 'BOM data received. Send a message to start generating your document.'
+                : 'Send a message to describe what you need.'}
             </p>
           </div>
         )}

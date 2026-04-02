@@ -262,6 +262,11 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
     setBomFile(null);
     setTemplateFile(null);
     setDrawingFile(null);
+    setBomText(null);
+    setParsedBomData(null);
+    setNormalizedBom(null);
+    setParsingError(null);
+    setComponentCount(0);
     setSaveSuccess(false);
     setSaveError(null);
   };
