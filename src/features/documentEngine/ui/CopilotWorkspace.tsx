@@ -166,8 +166,8 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
     if (mode === 'standalone') {
       // Standalone requires: BOM file uploaded AND parsed successfully, plus template file
       return (
-        bomFile !== null && 
-        normalizedBom !== null && 
+        bomFile !== null &&
+        (normalizedBom !== null || bomText !== null) &&
         parsingError === null &&
         !isParsing &&
         templateFile !== null
@@ -186,14 +186,14 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
       
       if (mode === 'standalone') {
         console.log('[CopilotWorkspace] Starting Standalone session...');
-        newSessionId = await launchStandaloneSession(selectedDocType, 'current-user');
+        newSessionId = await launchStandaloneSession(selectedDocType, null);
       } else {
         console.log('[CopilotWorkspace] Starting PPAP-Bound session...');
         newSessionId = await launchPpapBoundSession(
           ppapId!,
           selectedDocType,
           ppapContext,
-          'current-user'
+          null
         );
       }
       
@@ -464,7 +464,7 @@ export function CopilotWorkspace({ ppapId, documentType: preselectedDocType }: C
                   {!bomFile && <li>BOM PDF file required</li>}
                   {bomFile && isParsing && <li>Waiting for BOM parsing to complete...</li>}
                   {bomFile && parsingError && <li>BOM parsing failed - please upload a valid BOM PDF</li>}
-                  {bomFile && !normalizedBom && !isParsing && !parsingError && <li>BOM not yet parsed</li>}
+                  {bomFile && !normalizedBom && !bomText && !isParsing && !parsingError && <li>BOM not yet parsed</li>}
                   {!templateFile && <li>Excel template file required</li>}
                 </ul>
               </div>

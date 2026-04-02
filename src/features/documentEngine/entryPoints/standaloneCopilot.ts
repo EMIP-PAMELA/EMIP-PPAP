@@ -28,7 +28,7 @@ import { createCopilotSession } from '../services/copilotSessionManager';
  */
 export async function launchStandaloneSession(
   documentType: string,
-  createdBy: string
+  createdBy?: string | null
 ): Promise<string> {
   console.log('[StandaloneCopilot] Launching Standalone session:', {
     documentType,
@@ -48,7 +48,7 @@ export async function launchStandaloneSession(
     'standalone',
     documentType,
     undefined, // No ppapId for Standalone mode
-    createdBy
+    createdBy ?? undefined
   );
   
   console.log('[StandaloneCopilot] Copilot session created:', session.sessionId);

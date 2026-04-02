@@ -33,7 +33,7 @@ export async function launchPpapBoundSession(
   ppapId: string,
   documentType: string,
   ppapContext: PPAPContext,
-  createdBy: string
+  createdBy?: string | null
 ): Promise<string> {
   console.log('[PpapBoundCopilot] Launching PPAP-Bound session:', {
     ppapId,
@@ -69,9 +69,9 @@ export async function launchPpapBoundSession(
     'ppap-bound',
     documentType,
     ppapId,
-    createdBy
+    createdBy ?? undefined
   );
-  
+
   console.log('[PpapBoundCopilot] Copilot session created:', session.sessionId);
   
   // Step 4: Package inputs (for future use by orchestrator)
