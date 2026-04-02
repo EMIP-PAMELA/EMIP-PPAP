@@ -12357,3 +12357,142 @@ interface GetEmipContextResponse {
 **This completes V3.2F-1 domain definition.**
 
 **V3.2F-2 and V3.2F-3 may now proceed with implementation without making architectural decisions.**
+
+---
+
+## V3.2G-1: PPAP Workbook Output Architecture
+
+**Status:** DEFINED — Documentation only. No implementation in this batch.
+**Date:** 2026-04-02
+**Purpose:** Define the architecture for producing customer-deliverable Excel workbooks from Claude-generated document drafts. Reinstates Excel injection as a presentation layer.
+
+---
+
+### 1. Architecture Decision Update
+
+V3.2F-1 locked Excel injection as ABANDONED. That decision was correct in context: the old approach used ExcelJS as the **generation** engine (cell coordinate maps, deterministic row writing, no AI). That mechanism is permanently abandoned.
+
+V3.2G-1 reinstates Excel injection as a **presentation layer only**:
+
+- **Generation = Claude.** Claude produces structured JSON drafts via the Document Copilot pipeline.
+- **Injection = ExcelJS.** After the user approves a Claude draft, ExcelJS injects the approved content into the customer's workbook template (cosmetic rendering only).
+- The distinction is critical: injection does not generate content, it renders already-approved AI output into a deliverable format.
+
+**Locked rule (replaces V3.2F-1 abandonment rule):**
+
+> Direct Excel template injection as a GENERATION mechanism is abandoned. Excel injection as a PRESENTATION layer (injecting Claude-generated content into customer workbook templates) is reinstated as of V3.2G-1. Generation = Claude. Injection = ExcelJS presentation only.
+
+---
+
+### 2. Customer Template Storage Strategy
+
+Customer workbook templates are admin-uploaded once per customer and stored in Supabase Storage.
+
+**Bucket:** `ppap-templates`
+**Path pattern:** `ppap-templates/{customerName}/workbook.xlsx`
+**Example:** `ppap-templates/trane/workbook.xlsx`
+
+- Templates are uploaded by an admin via the admin UI (not yet built — tracked as future work).
+- At export time, the system retrieves the template from Storage, loads it with ExcelJS, and injects the approved Claude draft content.
+- The existing `vaultService.ts` `storeFile()` method targets the `ppap-documents` bucket and is NOT used for template retrieval. A separate `getCustomerTemplate(customerName)` function is needed in V3.2G-2.
+- The V2.8B.6 workbook rehydration pattern (load template, inject, create clean workbook, copy values + safe styles, serialize) is already implemented in `excelTemplateInjector.ts` and must be preserved.
+
+---
+
+### 3. Target User Workflow
+
+The complete post-V3.2G flow is:
+
+1. **User uploads BOM PDF** → BOM parsing pipeline extracts and normalizes data.
+2. **User selects document type** and optionally uploads customer Excel template.
+3. **User initiates generation** → Claude Orchestrator produces a structured JSON draft.
+4. **User reviews draft** in `CopilotDraftPreview` → accepts or requests changes.
+5. **Approved draft routes to export** → system retrieves customer template from Supabase Storage.
+6. **ExcelJS injects approved content** into customer workbook using cell coordinate maps.
+7. **Output workbook stored in Vault** (`ppap-documents` bucket) and made available for download.
+8. **PPAP record updated** (PPAP-Bound mode only) to reflect document completion.
+
+---
+
+### 4. Engineering Master Parser Requirements
+
+The BOM PDF pipeline currently extracts text and normalizes into `NormalizedBOM`. For Excel injection to work, Claude's output JSON must map cleanly to the customer workbook structure.
+
+This requires:
+
+- **Document-type-specific output schemas** defined in `promptRegistry.ts` per document type (PFMEA, Control Plan, Process Flow).
+- **Claude output format instructions** that match the cell coordinate maps already in `excelTemplateInjector.ts`.
+- **Validation step** between draft approval and injection: confirm required fields are present in Claude's JSON before attempting injection.
+
+The existing Trane cell coordinate maps in `excelTemplateInjector.ts` (`WorkbookCellMap` interface, `headerMappings`, `rowMappings`) are the target injection schema. Claude must be prompted to produce output that aligns with these maps.
+
+---
+
+### 5. Excel Injection Architecture (V3.2G Layer)
+
+**Entry point:** Post-approval export action in `CopilotWorkspace.tsx` review phase.
+
+**Flow:**
+
+```
+CopilotDraft (approved JSON)
+  → retrieveCustomerTemplate(customerName)       [new — vaultService extension]
+  → exportToExcelTemplate(draft, cellMap)        [existing — excelTemplateInjector.ts]
+  → downloadExcelFile(blob, filename)            [existing — excelTemplateInjector.ts]
+  → storeFile(blob, userId, ppapContext)         [existing — vaultService.ts]
+```
+
+**Key constraints (V2.8B.6 pattern must be preserved):**
+- Load template as source workbook (ExcelJS `readFile` / `load`)
+- Create a clean new workbook (never mutate the source)
+- Copy values and safe styles only (no protection metadata, no hidden state)
+- Serialize the clean workbook for download/storage
+
+**Cell coordinate maps** (`WorkbookCellMap`) remain document-type-specific and customer-specific. The existing Trane maps are the reference implementation.
+
+---
+
+### 6. Claude Output Format Alignment
+
+For each document type, the prompt template in `promptRegistry.ts` must instruct Claude to return JSON that matches the injection schema:
+
+- **Process Flow:** Operations array with `operationNumber`, `operationName`, `characteristics`, `controlMethod`
+- **PFMEA:** Failure mode rows with `processStep`, `potentialFailureMode`, `potentialEffect`, `severity`, `occurrence`, `detection`, `rpn`, `recommendedAction`
+- **Control Plan:** Control entries with `partNumber`, `processName`, `characteristicType`, `productCharacteristic`, `processCharacteristic`, `specificationTolerance`, `evaluationMeasurementTechnique`, `sampleSize`, `sampleFrequency`, `controlMethod`, `reactionPlan`
+
+These schemas are defined in V3.2G-2. The V3.2G-1 constraint is: **do not change `excelTemplateInjector.ts` until schemas are finalized.**
+
+---
+
+### 7. New Files Needed (V3.2G-2 scope)
+
+| File | Purpose |
+|------|---------|
+| `src/features/documentEngine/export/customerTemplateService.ts` | Retrieve customer workbook template from Supabase Storage |
+| `src/features/documentEngine/export/injectionSchemas.ts` | Per-document-type cell map schemas aligned to Claude output format |
+| `src/features/documentEngine/export/exportOrchestrator.ts` | Coordinate draft → template retrieval → injection → vault storage |
+| `app/api/export/route.ts` | Server-side export API route (template retrieval requires server-side Supabase access) |
+
+Existing files modified in V3.2G-2:
+- `src/features/documentEngine/ui/CopilotWorkspace.tsx` — add export action to review phase
+- `src/features/documentEngine/templates/promptRegistry.ts` — align output format schemas to injection schemas
+- `src/features/vault/services/vaultService.ts` — add `getCustomerTemplate()` method
+
+---
+
+### 8. V3.2G-2 Readiness Criteria
+
+V3.2G-2 (implementation) may begin when:
+
+1. `docs/BUILD_PLAN.md` contains this V3.2G-1 section (complete).
+2. `BOOTSTRAP.md` Excel injection rule updated to reflect presentation-layer reinstatement (complete).
+3. `excelTemplateInjector.ts` V2.8B.6 pattern verified operational (confirmed — 724 lines, rehydration pattern intact).
+4. Customer template storage path defined: `ppap-templates/{customerName}/workbook.xlsx` (defined above).
+5. Claude output format schemas drafted for at least one document type (PFMEA, Control Plan, or Process Flow).
+6. Claude Orchestrator pipeline V3.2F-3c confirmed end-to-end (confirmed — BOM parsing → Claude API → draft preview working).
+
+**V3.2G-2 must not begin until all 6 criteria are met.**
+
+---
+
+**This completes V3.2G-1 architecture definition.**

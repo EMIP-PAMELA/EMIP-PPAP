@@ -4,6 +4,56 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-02 - [ARCH] V3.2G-1 - PPAP Workbook Output Architecture Definition
+
+**Summary:** Define architecture for producing customer-deliverable Excel workbooks from Claude-generated drafts. Reinstate Excel injection as a presentation layer (not generation). No implementation in this batch.
+
+**Type:** Architecture / Documentation
+
+### Purpose
+
+V3.2F-1 abandoned Excel injection as a generation mechanism (correct decision — ExcelJS was never a generation tool). V3.2G-1 reinstates injection as a **presentation layer**: Claude generates structured JSON, user approves, ExcelJS injects into customer workbook template for delivery.
+
+### Decisions Made
+
+1. **Excel injection reinstated as presentation layer only.** Generation = Claude. Injection = ExcelJS cosmetic rendering.
+2. **Customer template storage:** `ppap-templates/{customerName}/workbook.xlsx` in Supabase Storage (admin-uploaded once per customer).
+3. **V2.8B.6 rehydration pattern preserved:** load template → inject → create clean workbook → copy values + safe styles → serialize. Already implemented in `excelTemplateInjector.ts`.
+4. **Claude output format must align to injection schemas** (`WorkbookCellMap` cell coordinate maps in `excelTemplateInjector.ts`). Output schemas finalized in V3.2G-2.
+5. **Export flow:** approved draft → `getCustomerTemplate()` → `exportToExcelTemplate()` → `storeFile()` to Vault.
+
+### Files Changed
+
+- `docs/BUILD_PLAN.md` — Added V3.2G-1 section (8 subsections: architecture decision, template storage, user workflow, parser requirements, injection architecture, Claude output format alignment, new files needed, readiness criteria)
+- `BOOTSTRAP.md` — Updated Excel injection governance rule to reflect presentation-layer reinstatement
+
+### Database Changes
+
+None.
+
+### New Files Needed (V3.2G-2 scope, not created here)
+
+- `src/features/documentEngine/export/customerTemplateService.ts`
+- `src/features/documentEngine/export/injectionSchemas.ts`
+- `src/features/documentEngine/export/exportOrchestrator.ts`
+- `app/api/export/route.ts`
+
+### V3.2G-2 Readiness Criteria
+
+All 6 criteria defined in `docs/BUILD_PLAN.md` V3.2G-1 Section 8 must be met before V3.2G-2 implementation begins.
+
+### Verification
+
+- BUILD_PLAN.md V3.2G-1 section written and complete
+- BOOTSTRAP.md Excel injection rule updated
+- No code changes — documentation only
+
+### Commit
+
+`V3.2G-1: Define PPAP workbook output architecture, customer template storage, reinstate Excel injection as presentation layer`
+
+---
+
 ## 2026-04-01 18:15 CT - Phase V3.2F-3c - BOM PDF Pipeline and Draft Preview Integration
 
 **Summary:** Complete the data pipeline: BOM PDF → text extraction → parsing → normalization → Claude. Integrate CopilotDraftPreview into review phase. Convert files to base64 for Claude API.

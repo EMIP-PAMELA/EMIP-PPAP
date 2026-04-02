@@ -246,7 +246,7 @@ Prior to V3.2F, the system attempted to generate PPAP documents by injecting BOM
   - **PPAP-Bound:** Context auto-loaded from PPAP record and EMIP stub. Route: `/ppap/[id]/copilot`. Emits `DocumentDraftCreatedEvent` to PPAP Workflow on draft acceptance.
   - **Standalone:** User manually uploads BOM PDF and selects document type. Route: `/copilot`. No PPAP context. Draft stored in Vault as standalone file.
 - **Input package sent to Claude:** Raw BOM text + parsed BOM data + normalized BOM (as structured JSON) + optional Excel template (base64) + optional engineering drawing (base64) + PPAP context (PPAP-Bound only).
-- **Direct Excel template injection is ABANDONED.** Do not reintroduce cell coordinate mapping, ExcelJS template modification, or any mechanism that writes generated values directly into Excel cells as a primary generation strategy.
+- **Direct Excel template injection as a GENERATION mechanism is abandoned.** Do not reintroduce ExcelJS as a content generation strategy. **Excel injection as a PRESENTATION layer (injecting Claude-generated content into customer workbook templates) is reinstated as of V3.2G-1.** Generation = Claude. Injection = ExcelJS presentation only. See `docs/BUILD_PLAN.md` V3.2G-1 for full architecture.
 - **All Claude output requires explicit user review** before being routed to Vault. Claude drafts are proposals; the user approves.
 - **Document Copilot must not mutate PPAP workflow state directly.** It emits events; PPAP Workflow acts on them.
 
