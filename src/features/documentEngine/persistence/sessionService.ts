@@ -78,7 +78,7 @@ export async function createSession(
       .insert({
         name,
         ppap_id: ppapId || null,
-        created_by: createdBy || null,
+        created_by: createdBy && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(createdBy) ? createdBy : null,
       })
       .select()
       .single();
