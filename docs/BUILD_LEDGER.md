@@ -4,6 +4,60 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-02 - [IMPL] V3.2F — Injection Engine V1 (Schema → Workbook)
+
+**Summary:** Implement a schema-driven injection engine that maps structured Copilot JSON output into an Excel workbook template. Excel is treated as a passive canvas — only cell values are written; no formatting, merges, or styles are touched.
+
+**Type:** Implementation (Controlled, Non-Breaking)
+
+### Purpose
+
+V3.2G-1 defined the presentation-layer architecture (Claude generates JSON → ExcelJS injects into customer workbook). This phase delivers the core injection infrastructure: a routing engine, a primary PFMEA handler, a PSW handler, and stubs for external-data-only document types.
+
+### Decisions Made
+
+1. **Dynamic header detection for PFMEA.** Sheet row scan uses keyword matching (≥2 of: "Failure Mode", "Effect", "Severity") rather than a hardcoded row number. Rationale: header position varies across customer template versions.
+2. **PSW uses label-text search, not cell coordinates.** The handler scans each cell for known label aliases and writes to the adjacent cell. Rationale: PSW layouts vary per customer; cell addresses are not stable across template versions.
+3. **Stub handlers throw immediately on call.** `handleDimensional` and `handleMaterialTest` throw with explicit error messages directing the caller to set activation state to `"external_required"`. They do not silently succeed.
+4. **`PFMEAData.rows` is the required schema shape.** Column mapping is static (A–H); it is defined as a constant and is the single source of truth for PFMEA field ordering.
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `src/features/documentEngine/injection/injectionEngine.ts` | Public entry point — loads template, routes documents to handlers, returns workbook |
+| `src/features/documentEngine/injection/sheets/pfmeaSheet.ts` | PFMEA handler — dynamic header detection, fixed A–H column mapping, value-only writes |
+| `src/features/documentEngine/injection/sheets/pswSheet.ts` | PSW handler — label-text search, adjacent-cell value writes |
+| `src/features/documentEngine/injection/sheets/dimensionalSheet.ts` | Stub — throws; dimensional results are external data |
+| `src/features/documentEngine/injection/sheets/materialTestSheet.ts` | Stub — throws; material test results are external data |
+
+### Files Modified
+
+None. No existing files were changed.
+
+### Database Changes
+
+None.
+
+### Validation
+
+- `npx tsc --noEmit` — zero new errors introduced by injection engine files
+- Pre-existing errors (admin pages, CreatePPAPForm, MarkupTool) are unchanged and documented in BOOTSTRAP.md Known Outstanding Issues
+- No formatting, merge, or style mutation code exists in any handler
+
+### Risks / Follow-Ups
+
+- **Sheet name matching is exact.** PFMEA handler searches for sheet named `"PFMEA"` exactly. If the Trane workbook uses a different sheet name, the handler will throw. Sheet name should be verified against `public/templates/trane/workbook.xlsx` before V3.2G-2.
+- **PSW sheet names searched:** `"PSW"`, `"Part Submission Warrant"`, `"Warrant"`. Same verification needed.
+- **ExcelJS server-side only.** Injection engine must only be called from API routes. Client-side import will fail at runtime.
+- **V3.2G-2 scope:** Wire injection engine into export orchestrator (`exportOrchestrator.ts`), template retrieval service, and Vault storage.
+
+### Intended Commit Message
+
+`V3.2F: Implement schema-driven injection engine with sheet handlers`
+
+---
+
 ## 2026-04-02 - [ARCH] V3.2E-REFINE — Copilot Contract Correction Pass
 
 **Summary:** Refine V3.2E Copilot Prompt Contract to remove implementation-specific file references, eliminate AI inference ambiguity, and decouple the output schema from Excel or any delivery format. Documentation correction only — no code or schema changes.
