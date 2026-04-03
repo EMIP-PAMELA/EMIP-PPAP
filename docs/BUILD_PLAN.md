@@ -12496,3 +12496,256 @@ V3.2G-2 (implementation) may begin when:
 ---
 
 **This completes V3.2G-1 architecture definition.**
+
+---
+
+## V3.2E — Copilot Prompt Contract
+
+**Status:** DEFINED — Documentation only. No implementation in this batch.
+**Date:** 2026-04-02
+**Type:** Architecture / Documentation
+
+---
+
+### A. Purpose
+
+The Document Copilot is treated as a **deterministic system component**, not an interactive AI assistant. This contract governs ALL AI interactions in the EMIP-PPAP system.
+
+**Core proposition:**
+- AI output must be **structured, predictable, and enforceable** — not conversational, probabilistic, or free-form.
+- The system is responsible for assembling inputs correctly. Claude is responsible for producing output that conforms to this contract exactly.
+- Any deviation from this contract — wrong structure, free text, missing fields, unsolicited documents — constitutes a **system fault**, not user error. The system must detect and reject nonconforming output.
+
+This contract exists because AI inconsistency is a quality and reliability risk in a PPAP compliance context. Engineering-critical values that are fabricated, misattributed, or structurally malformed cannot be caught downstream without a strict contract at the generation boundary.
+
+---
+
+### B. Core Principles
+
+1. **AI generates content, NOT system logic.**
+   Claude MUST produce structured document content (field values, narrative text, engineering specifications) based on provided context. Claude MUST NOT make routing decisions, infer PPAP readiness, assign ownership, or determine document activation state.
+
+2. **AI MUST follow strict output schema.**
+   Every response from Claude MUST conform to the Output Contract defined in Section E. No output that deviates from the schema may be accepted by the system.
+
+3. **AI MUST NOT generate inactive documents.**
+   Claude MUST NOT produce content for documents that are not marked "active" in the Document Activation Input (Section C). Static and suppressed documents are invisible to Claude.
+
+4. **AI MUST NOT infer ownership or workflow decisions.**
+   Claude MUST NOT assign document owners, set approval state, determine submission readiness, or make any inference about PPAP workflow position. These decisions belong exclusively to the PPAP Workflow domain.
+
+5. **AI MUST request missing data instead of guessing.**
+   When required engineering-critical input is absent, Claude MUST emit a `missing_data_requests` entry (Section F). Claude MUST NOT fabricate plausible values, interpolate from partial data, or produce partially populated output that silently omits required fields.
+
+---
+
+### C. Prompt Structure (System-Level)
+
+Every prompt sent to Claude in this system MUST include ALL five of the following sections, in this order. Omitting any section voids the contract.
+
+#### 1. System Role
+
+Defines Claude's identity and behavioral constraints for this call. Establishes that Claude is acting as a structured document generation engine, not a general assistant. Includes explicit prohibitions on free text, unsolicited documents, and fabrication.
+
+#### 2. Critical Rules
+
+An enumerated list of hard behavioral rules. These MUST use MUST / MUST NOT language. Rules address: output format enforcement, document activation scope, missing-data behavior, prohibited fabrication, and schema compliance. This section is loaded before any user-controlled input to prevent context poisoning.
+
+#### 3. Document Activation Input
+
+A structured declaration of which document types are active for this generation request. Derived from the Document Profile system. Claude MUST treat this list as the exclusive scope of generation. Documents not listed MUST NOT appear in output.
+
+Activation states passed to Claude:
+- `"active"` — Claude MUST generate content for this document type.
+- `"static"` — Claude MUST ignore this document type entirely.
+- `"external_required"` — Claude MUST NOT generate content; MUST emit a `missing_data_requests` entry noting that external data is required.
+
+#### 4. Context Input
+
+The full structured input package assembled by the AI integration layer. Includes:
+- Raw BOM text (extracted from PDF)
+- Parsed BOM data (structured JSON from the BOM parsing layer)
+- Normalized BOM (business entities from the BOM normalization layer)
+- EMIP context (from the EMIP context provider — mocked until EMIP storage is built)
+- PPAP context (PPAP-Bound mode only: customer, part number, revision, commodity)
+- Optional: customer workbook template (base64) — passed as context only; MUST NOT shape output structure
+- Optional: engineering drawing (base64)
+
+Claude MUST use only the data provided in the Context Input. Claude MUST NOT supplement with external knowledge not grounded in the provided context.
+
+#### 5. Output Contract
+
+The explicit schema instruction. Defines the exact JSON structure Claude must return. Specifies that no output outside this schema will be accepted. Must be the final section of the prompt so it is the most proximate instruction before Claude generates output.
+
+---
+
+### D. Document Activation Enforcement
+
+The Document Activation Input (Section C.3) is the exclusive scope gate for document generation. These rules are absolute:
+
+1. **Only `"active"` documents are generated.** Claude MUST produce output for each active document type in the `documents` map. Absence of a required active document in the output is a schema violation.
+
+2. **`"static"` documents are ignored.** Claude MUST NOT include static documents in output at any key. The word "static" MUST NOT appear in Claude's response.
+
+3. **`"external_required"` documents trigger data requests.** Claude MUST NOT attempt to generate content for these documents. Claude MUST emit one or more `missing_data_requests` entries explaining what external data is required and from whom.
+
+4. **Claude MUST NOT generate unsolicited documents.** If a document type is not present in the Document Activation Input, it MUST NOT appear in the output under any key or alias.
+
+5. **Activation state is determined by the system, not Claude.** Claude MUST NOT evaluate whether a document should be active based on context. The activation list is authoritative.
+
+---
+
+### E. Output Contract (Strict)
+
+**All Claude output MUST conform to this contract exactly. No exceptions.**
+
+#### Format
+
+- **JSON ONLY.** Claude MUST NOT emit any text outside the JSON object — no preamble, no explanation, no markdown fences, no closing commentary.
+- **No free text.** Narrative explanations, caveats, and model commentary are prohibited.
+- **No partial output.** Claude MUST NOT return a document with some fields populated and others silently omitted. Either a field is populated or it appears in `missing_data_requests`.
+
+#### Top-Level Structure
+
+```json
+{
+  "documents": {},
+  "missing_data_requests": []
+}
+```
+
+- `documents` — a map where each key is a document type identifier (e.g., `"pfmea"`, `"control_plan"`, `"process_flow"`) corresponding to an active document in the Document Activation Input. Each value conforms to the per-document schema defined by the prompt orchestration layer for that document type.
+- `missing_data_requests` — an array of request objects describing what data is absent and preventing complete generation. May be empty (`[]`) if all required data is present.
+
+#### Per-Document Schema
+
+Each document type has a strict, defined schema owned by the prompt orchestration layer. Schema is document-type-specific and format-agnostic — it is defined independently of any delivery format (Excel, PDF, or otherwise). Downstream formatting layers consume this schema; the schema MUST NOT be shaped by any downstream format's requirements. **A document object that does not conform to its schema is invalid and MUST be rejected by the system.**
+
+Minimum schema compliance rules:
+- All required fields for the document type MUST be present.
+- Field types MUST match declared types (string, number, array of objects, etc.).
+- Arrays MUST NOT be returned as scalars.
+- Nested objects MUST NOT be flattened.
+- Field names MUST match declared field identifiers exactly (no aliases, no case variants).
+
+#### `missing_data_requests` Entry Structure
+
+```json
+{
+  "document_type": "<document type identifier or 'global'>",
+  "field": "<field identifier or description>",
+  "reason": "<why this data is required>",
+  "source": "<where the data should come from — e.g., 'customer', 'engineering drawing', 'BOM'>"
+}
+```
+
+All four fields are required on every `missing_data_requests` entry.
+
+#### Schema Violations
+
+The following constitute schema violations. The system MUST reject output containing any of these:
+- Output is not valid JSON.
+- Top-level keys other than `documents` and `missing_data_requests` are present.
+- A key in `documents` does not correspond to an active document type.
+- A document object is missing required fields.
+- A document field has wrong type.
+- Free text appears anywhere outside field values.
+- A `missing_data_requests` entry is missing any of its four required fields.
+
+---
+
+### F. Missing Data Behavior
+
+1. **Claude MUST request missing required data.** When an engineering-critical field cannot be populated from the provided context, Claude MUST add a `missing_data_requests` entry rather than leaving the field empty or guessing.
+
+2. **Claude MUST NOT fabricate engineering-critical values.** Severity rankings, RPN values, characteristic tolerances, sample sizes, control method specifications, and similar engineering parameters MUST NOT be invented. These values are safety-critical in PPAP contexts.
+
+3. **Claude MAY ONLY derive values directly supported by the provided context.** A value is supported by context if it is explicitly present in the BOM data, EMIP context, PPAP context, or engineering drawing provided in the Context Input. Claude MUST NOT introduce new engineering assumptions, create implied process steps, or derive characteristics not explicitly present in the provided context. If context is insufficient to support a value, Claude MUST emit a `missing_data_requests` entry instead.
+
+4. **The system MUST surface `missing_data_requests` to the user.** Any non-empty `missing_data_requests` array MUST be displayed in the Copilot UI before the user can accept a draft. The user must explicitly acknowledge missing data before proceeding.
+
+5. **Missing data is not a generation failure.** A response that contains a valid `documents` map for active documents AND a populated `missing_data_requests` array is a valid, successful response — not an error. The system MUST handle this case without treating it as a fault.
+
+---
+
+### G. Determinism Requirement
+
+1. **Same input MUST produce same structure.** For a fixed context package and fixed Document Activation Input, Claude's output structure MUST be identical across calls. Field names, nesting, array ordering, and key presence MUST NOT vary by call.
+
+2. **Output MUST be stable for downstream consumers.** All downstream formatting layers depend on predictable field names, nesting, and structure. Structural variability in Claude output constitutes a system fault regardless of delivery format.
+
+3. **Variability MUST be minimized.** Where multiple valid phrasings exist, prompt templates MUST prefer language that constrains Claude's structural choices. Temperature settings and system role framing MUST favor low-variance output.
+
+4. **Determinism is a prompt engineering responsibility.** The AI integration layer and prompt orchestration layer jointly own the responsibility of constructing prompts that produce stable output. If output is structurally variable, the prompt MUST be revised — not the validation layer.
+
+---
+
+### H. Prohibited Behaviors
+
+The following behaviors are **explicitly forbidden** for Claude in this system. Any prompt template or orchestration logic that permits these behaviors violates this contract.
+
+| Prohibited Behavior | Rule |
+|---|---|
+| Generating documents not in the Document Activation Input | MUST NOT |
+| Outputting narrative explanations, model commentary, or caveats | MUST NOT |
+| Modifying, acknowledging, or referencing static documents | MUST NOT |
+| Producing partially structured data (some fields present, some silently missing) | MUST NOT |
+| Inventing engineering-critical values (severity, RPN, tolerances, sample sizes) | MUST NOT |
+| Emitting any text outside the top-level JSON object | MUST NOT |
+| Making PPAP workflow decisions (readiness, ownership, approval state) | MUST NOT |
+| Using knowledge not grounded in the provided context package | MUST NOT |
+| Returning an empty `documents` map when active documents were declared | MUST NOT |
+| Aliasing, abbreviating, or case-varying required field names | MUST NOT |
+
+---
+
+### I. Validation Rules
+
+The system MUST enforce the following validations on every Claude response before the response is surfaced to the user or stored:
+
+1. **JSON parse validation.** The response body MUST parse as valid JSON. A parse failure is a hard error; the system MUST NOT present malformed output to the user.
+
+2. **Top-level schema validation.** The parsed object MUST contain exactly `documents` (object) and `missing_data_requests` (array). Additional keys at the top level are invalid.
+
+3. **Document scope validation.** Every key in `documents` MUST match an active document type declared in the Document Activation Input for this request. Documents not in the activation list MUST be rejected even if they appear in the output.
+
+4. **Per-document required field validation.** Each document object MUST contain all required fields for its document type. Missing required fields MUST be flagged as a schema violation, not silently tolerated.
+
+5. **Field type validation.** Each field in each document object MUST match its declared type. Type mismatches MUST be flagged as schema violations.
+
+6. **`missing_data_requests` entry validation.** Every entry in the array MUST contain all four required fields (`document_type`, `field`, `reason`, `source`). Entries missing any field MUST be rejected.
+
+7. **Rejection behavior.** A response that fails any validation check MUST be rejected. The system MUST NOT accept partial validation success. On rejection:
+   - Log the validation error.
+   - Return an error state to the Copilot UI.
+   - Do NOT store the invalid draft in Vault.
+   - Do NOT advance the Copilot session to review phase.
+
+---
+
+### J. Relationship to Other Domains
+
+This contract defines Claude's output boundary. The responsibilities of other domains relative to Copilot output are:
+
+| Domain | Role relative to Copilot output |
+|---|---|
+| **Document Copilot** | Assembles input package, calls Claude, validates output schema, surfaces draft and missing-data requests to user. Owns this contract. |
+| **PPAP Workflow** | Evaluates document readiness and PPAP progression state after user accepts a draft. MUST NOT be called before user approval. |
+| **Workspace / Vault** | Stores approved draft output as files. Receives only post-approval, user-accepted content. MUST NOT store rejected or unreviewed drafts. |
+| **Engineer Command Center** | Displays Copilot session state and draft availability to users. READ-ONLY — MUST NOT trigger generation or validation. |
+| **EMIP** | Provides reference component data (currently stubbed). Supplies part of the Context Input package to the Orchestrator. Has no post-generation role. |
+
+**Critical boundary:** Document Copilot MUST NOT mutate PPAP state directly. It emits a `DocumentDraftCreatedEvent` after user approval; the PPAP Workflow domain handles that event and determines workflow impact.
+
+---
+
+### Non-Breaking Guarantee
+
+This section introduces no code changes, no UI changes, and no schema changes. It is documentation only.
+
+All constraints defined here align with existing architectural decisions in V3.2A (Domain Ownership), V3.2B (Interface Contracts), V3.2C (Scenario Validation), V3.2D (Failure Validation), and V3.2F-1 (Document Copilot Domain Definition). No existing rule is weakened or reversed by this contract.
+
+---
+
+**This completes the V3.2E Copilot Prompt Contract definition.**
+

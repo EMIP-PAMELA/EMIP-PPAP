@@ -4,6 +4,154 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-02 - [ARCH] V3.2E-REFINE — Copilot Contract Correction Pass
+
+**Summary:** Refine V3.2E Copilot Prompt Contract to remove implementation-specific file references, eliminate AI inference ambiguity, and decouple the output schema from Excel or any delivery format. Documentation correction only — no code or schema changes.
+
+**Type:** Documentation Correction
+
+### Changes Made
+
+**1. Implementation coupling removed.**
+All references to specific implementation files (`promptRegistry.ts`, `claudeOrchestrator.ts`, `excelTemplateInjector.ts`, `bomParser.ts`, `bomNormalizer.ts`, `getEmipContext()`) replaced with abstract terms: "prompt orchestration layer", "AI integration layer", "downstream formatting layer", "BOM parsing layer", "BOM normalization layer", "EMIP context provider".
+
+Rationale: The contract governs AI behavior, not implementation details. File-specific references couple the contract to transient implementation choices and create false confidence that the contract is implementation-validated when it is not.
+
+**2. AI inference rule tightened.**
+Replaced: `"Claude MAY use BOM context to infer non-critical values when the context strongly supports the inference"` — this left "non-critical" undefined and "strongly supports" subject to AI interpretation.
+
+Replaced with: `"Claude MAY ONLY derive values directly supported by the provided context"` with explicit enumeration of what counts as supported context and explicit MUST NOT rules: no new engineering assumptions, no implied process steps, no characteristics not explicitly present. If context is insufficient, MUST emit `missing_data_requests`.
+
+Rationale: The prior wording created a loophole that permitted AI to introduce process step names, operation sequences, and characteristic descriptions that had no explicit basis in the BOM or engineering data. In PPAP contexts, these fabrications are indistinguishable from real engineering data in the output.
+
+**3. Output schema decoupled from delivery format.**
+Removed: reference to "Excel injection schemas" as the basis for per-document schema definitions.
+
+Replaced with: schema is "format-agnostic — defined independently of any delivery format (Excel, PDF, or otherwise). Downstream formatting layers consume this schema; the schema MUST NOT be shaped by any downstream format's requirements."
+
+Also removed: reference to Excel injection layer as the reason determinism matters. Replaced with: "all downstream formatting layers depend on predictable field names, nesting, and structure."
+
+Also removed: note that customer workbook template is passed "for injection schema alignment hint only." Replaced with: "passed as context only; MUST NOT shape output structure."
+
+Rationale: The output contract is an AI behavioral contract. Coupling it to Excel means the AI schema would need to change every time the delivery format changes. Format-agnostic schema is consumed by whichever downstream formatter is active.
+
+### Files Changed
+
+- `docs/BUILD_PLAN.md` — V3.2E section refined (6 targeted wording changes; all sections and intent preserved)
+- `docs/BUILD_LEDGER.md` — This entry
+
+### Database Changes
+
+None.
+
+### Code Changes
+
+None.
+
+### Decisions Made
+
+- **Contract language is format-agnostic by rule.** Any future coupling of AI output schema to delivery format (Excel, PDF, etc.) violates this contract and requires an explicit architectural decision to override it.
+- **"Non-critical inference" loophole is closed.** The only permitted derivation is direct, explicitly traceable derivation from provided context. Implied engineering knowledge is prohibited.
+
+### Verification
+
+- No file-specific references remain in V3.2E section
+- AI behavior is stricter — inference rule has no ambiguous carve-outs
+- Output contract is format-agnostic — no Excel or PDF references in schema definition
+- All 10 subsections preserved with intent intact
+- No code changes introduced
+- No schema changes introduced
+
+### Intended Commit Message
+
+`V3.2E-REFINE: Remove implementation coupling and enforce AI-output independence`
+
+---
+
+## 2026-04-02 - [ARCH] V3.2E — Copilot Prompt Contract Definition
+
+**Summary:** Define the Copilot Prompt Contract (V1) — a system-level contract governing all Claude API interactions. Establishes deterministic output requirements, strict output schema, document activation enforcement, missing-data behavior rules, prohibited behaviors, and validation gates. Documentation only — no code or schema changes.
+
+**Type:** Architecture / Documentation
+
+### Reason for Phase
+
+The Document Copilot domain (V3.2F-1 through V3.2F-3c) defines the infrastructure for Claude API orchestration but does not define the behavioral contract governing what Claude must and must not do. Without a prompt contract, AI output is subject to structural variability, unsolicited content, silent field omission, and fabrication of engineering-critical values — all of which are unacceptable in a PPAP compliance context.
+
+### Problem Solved
+
+**AI inconsistency as a reliability risk.** In PPAP document generation:
+- Severity rankings, RPN values, and characteristic tolerances are engineering-critical. Fabricated values can pass visual review and produce nonconforming PPAP packages.
+- Structural variability in Claude output breaks the Excel injection layer (`excelTemplateInjector.ts`), which depends on predictable field names and nesting.
+- Free-text responses from Claude cannot be parsed, validated, or stored in Vault.
+- Without explicit activation scope enforcement, Claude may generate content for document types not requested, producing incorrect drafts that appear valid.
+
+### Approach: Contract-Driven AI
+
+V3.2E treats Claude as a deterministic system component with a strict behavioral contract:
+
+1. **Five-section prompt structure** — System Role → Critical Rules → Document Activation Input → Context Input → Output Contract — loaded in fixed order on every call.
+2. **JSON-only output** — No free text, no markdown, no commentary. Hard parse validation on every response.
+3. **Document Activation Enforcement** — Active/static/external_required states control what Claude generates. Claude has no discretion over scope.
+4. **Missing-data requests instead of fabrication** — Claude emits `missing_data_requests` entries for absent required data. The system surfaces these to the user before review.
+5. **Prohibited behaviors enumerated** — Fabrication, unsolicited documents, partial data, workflow decisions, field aliasing — all explicitly forbidden.
+6. **Validation gates** — System must validate JSON parse, top-level schema, document scope, required fields, field types, and missing-data entry completeness before surfacing any draft to the user.
+
+### Impact on System Reliability
+
+- Closes the AI behavioral gap left open by V3.2F-1 through V3.2F-3c.
+- Provides a stable behavioral specification that `promptRegistry.ts` and `claudeOrchestrator.ts` must implement in V3.2E-2 (future implementation phase).
+- Defines the validation boundary that separates the Document Copilot domain from the Vault and PPAP Workflow domains.
+- Establishes that schema violations are system faults, not user errors — enforcing accountability at the prompt engineering level.
+
+### Alignment with AI-First Architecture
+
+This contract is the governance layer for the architecture decision locked in V3.2F-1:
+
+> AI (Copilot) is the PRIMARY document generation engine. Excel is ONLY a delivery/output format.
+
+The contract ensures "AI as generation engine" is not aspirational — it is operationally enforced at the input, output, and validation boundaries.
+
+### Files Changed
+
+- `docs/BUILD_PLAN.md` — Added V3.2E section (10 subsections: Purpose, Core Principles, Prompt Structure, Document Activation Enforcement, Output Contract, Missing Data Behavior, Determinism Requirement, Prohibited Behaviors, Validation Rules, Domain Relationships)
+- `docs/BUILD_LEDGER.md` — This entry
+
+### Database Changes
+
+None.
+
+### Code Changes
+
+None.
+
+### Decisions Made
+
+- **Prompt structure is fixed at five sections in fixed order.** Rationale: ensures Critical Rules are loaded before any user-controlled input to prevent context poisoning.
+- **`missing_data_requests` is always present in output** (as empty array or populated). Rationale: consistent top-level schema enables simpler validation logic.
+- **Schema violations trigger full rejection, not partial acceptance.** Rationale: partial acceptance in PPAP contexts is more dangerous than regeneration, because silently missing fields may pass visual review.
+
+### Risks / Follow-Ups
+
+- **V3.2E-2 (future):** Implementation of this contract in `promptRegistry.ts` and `claudeOrchestrator.ts`. This phase defines what the implementation must achieve; V3.2E-2 delivers it.
+- **Schema alignment with V3.2G-1:** Per-document output schemas must be finalized in `promptRegistry.ts` to align Claude output to the Excel injection schemas in `excelTemplateInjector.ts`. This is a V3.2G-2 dependency.
+- **EMIP context remains stubbed.** The Context Input package includes EMIP data from `getEmipContext()` mock. Real EMIP queries are deferred until EMIP storage is built.
+
+### Verification
+
+- BUILD_PLAN.md V3.2E section written and complete with all 10 required subsections
+- All language uses MUST / MUST NOT — no optional or ambiguous behavior
+- No code changes introduced
+- No schema changes introduced
+- No UI changes introduced
+- All constraints align with V3.2A, V3.2B, V3.2C, V3.2D, and V3.2F-1 — no existing rules weakened
+
+### Intended Commit Message
+
+`V3.2E: Define Copilot prompt contract and deterministic AI behavior`
+
+---
+
 ## 2026-04-02 - [ARCH] V3.2G-1 - PPAP Workbook Output Architecture Definition
 
 **Summary:** Define architecture for producing customer-deliverable Excel workbooks from Claude-generated drafts. Reinstate Excel injection as a presentation layer (not generation). No implementation in this batch.
