@@ -11,9 +11,9 @@ export const renderPdfToImage = async (url: string): Promise<string> => {
   
   // Dynamic import ensures pdfjs is only loaded in browser, never during SSR
   const pdfjsLib = await import('pdfjs-dist');
-  
-  // V2.3: Use CDN worker for Next.js compatibility (avoid import.meta.url SSR issues)
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
+  // Use local worker served from /public — avoids CDN 404s and network dependency
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
   const loadingTask = pdfjsLib.getDocument(url);
   const pdf = await loadingTask.promise;

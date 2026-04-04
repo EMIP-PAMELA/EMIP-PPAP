@@ -94,6 +94,39 @@ None anticipated.
 
 ---
 
+## 2026-04-04 - [FIX] V3.2F.2-PDF — PDF Worker Local Serving
+
+**Status:** ✅ COMPLETE
+
+**Summary:** Replace CDN-sourced pdf.js worker in `renderPdfToImage.ts` with a locally served worker file. Eliminates 404 errors and removes network dependency for PDF rendering.
+
+**Type:** Correction (Non-Breaking, No Schema Changes)
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/utils/renderPdfToImage.ts` | `workerSrc` changed from CDN URL to `/pdf.worker.min.mjs` |
+| `public/pdf.worker.min.mjs` | Copied from `node_modules/pdfjs-dist/build/pdf.worker.min.mjs` (1.2MB) |
+
+### Decisions Made
+
+1. **Worker file is `.mjs` not `.js`.** pdfjs-dist v5.6.205 ships ESM-only — no `.js` worker exists. Used `pdf.worker.min.mjs` throughout. Consistent with the CDN URL already using `.mjs`.
+2. **`pdfToText.ts` worker not changed.** That file uses `new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url)` (bundler-resolved). Scoped fix is renderPdfToImage.ts only.
+
+### Validation
+
+- `npx tsc --noEmit` — zero new errors
+- Worker file verified at `public/pdf.worker.min.mjs` (1.2MB)
+- Resolves at `http://localhost:3000/pdf.worker.min.mjs` via Next.js static serving
+- Runtime PDF load requires manual browser test
+
+### Intended Commit Message
+
+`fix(pdf): replace CDN worker with local pdf.worker for reliable rendering`
+
+---
+
 ### Risks / Follow-Ups
 
 - MarkupTool currently imports `uploadFile` directly (documented violation in BUILD_PLAN.md §10376). This phase does not fix that violation — it is a pre-existing concern deferred to a future Vault boundary cleanup phase.
