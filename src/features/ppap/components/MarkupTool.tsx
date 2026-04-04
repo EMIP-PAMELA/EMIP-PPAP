@@ -533,9 +533,17 @@ export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolP
       throw new Error('Image element is not valid');
     }
 
-    // Use provided imageSrc (data URL for PDFs, signed URL for images)
+    // Priority: renderedImage (stable data URL, covers PDFs + pre-rendered) >
+    //           imageRef.current.src (already loaded in browser, avoids reload) >
+    //           throw (no valid source available)
     console.log('Loading image for export from provided source:', imageSrc.slice(0, 80));
-    img.src = imageSrc;
+    if (renderedImage) {
+      img.src = renderedImage;
+    } else if (imageRef.current) {
+      img.src = imageRef.current.src;
+    } else {
+      throw new Error('No valid image source for export');
+    }
 
     // Wait for image to load
     await new Promise<void>((resolve, reject) => {

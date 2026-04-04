@@ -94,6 +94,39 @@ None anticipated.
 
 ---
 
+## 2026-04-04 - [FIX] V3.2F.2-EXPORT — Export Blob URL Stability Fix
+
+**Status:** ✅ COMPLETE
+
+**Summary:** Replace `img.src = imageSrc` in `exportImageWithAnnotations` with a priority-based stable source selection. Fixes export failure in standalone mode where blob URLs are used as `fileUrl` but fail on re-assignment to `img.src`.
+
+**Type:** Correction (Non-Breaking, No Schema Changes)
+
+### Root Cause
+
+`handleExportMarkup` detects PDF files via `selectedFile.toLowerCase().endsWith('.pdf')`. In standalone mode, `selectedFile` is a blob URL (`blob:http://...`) which never ends in `.pdf`. Standalone PDFs were routed to the non-PDF branch, receiving `fileUrl` (the raw blob URL) as `exportImageSrc`. Setting `img.src = blobUrl` in `exportImageWithAnnotations` triggered `img.onerror`.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/features/ppap/components/MarkupTool.tsx` | Replaced `img.src = imageSrc` with priority logic: `renderedImage` first, then `imageRef.current.src`, then throw |
+
+### Decisions Made
+
+1. **Priority order: `renderedImage` > `imageRef.current.src` > throw.** `renderedImage` is a stable base64 data URL set by `renderPdfToImage` for all PDFs regardless of context. `imageRef.current.src` is the already-loaded src of the displayed `<img>` element — avoids forcing a reload. `imageSrc` parameter removed as the final assignment target.
+2. **`imageSrc` parameter retained for logging only.** The parameter is kept for the existing `console.log` on line 539. No signature change.
+
+### Validation
+
+- `npx tsc --noEmit` — zero new errors; pre-existing `FileReference` error line shifted 755→763 (offset by added lines), same error
+- Path trace: standalone PDF → `renderedImage` set by renderPdfToImage → `img.src = renderedImage` (data URL) → stable
+- Path trace: standalone image → `renderedImage = null` → `img.src = imageRef.current.src` (already-loaded blob URL) → stable
+- Path trace: PPAP image → `renderedImage = null` → `img.src = imageRef.current.src` (already-loaded signed URL) → stable
+- Runtime verification requires manual browser test
+
+---
+
 ## 2026-04-04 - [FIX] V3.2F.2-PDF — PDF Worker Local Serving
 
 **Status:** ✅ COMPLETE
