@@ -9,8 +9,9 @@ import { renderPdfToImage } from '@/src/utils/renderPdfToImage';
 import { sanitizeColorsForExport } from '@/src/utils/sanitizeColorsForExport';
 
 interface MarkupToolProps {
-  ppapId: string;
-  partNumber: string;
+  context: 'ppap' | 'standalone';
+  ppapId?: string;
+  partNumber?: string;
   onClose: () => void;
 }
 
@@ -46,7 +47,7 @@ interface UploadedFile {
   file_path: string;
 }
 
-export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
+export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolProps) {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [mode, setMode] = useState<InteractionMode>('navigate');
   const [selectedTool, setSelectedTool] = useState<AnnotationShape>('circle');
@@ -69,9 +70,13 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   const exportRef = useRef<HTMLDivElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  // Maps blob URL → original file name for standalone mode (avoids dep array issues)
+  const standaloneFilesRef = useRef<Map<string, string>>(new Map());
 
-  // Load uploaded files using shared utility
+  // Load uploaded files using shared utility — PPAP mode only
   useEffect(() => {
+    if (context !== 'ppap') return;
+    if (!ppapId) return;
     const fetchFiles = async () => {
       try {
         const docs = await getPPAPDocuments(ppapId);
@@ -83,7 +88,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     };
 
     fetchFiles();
-  }, [ppapId]);
+  }, [ppapId, context]);
 
   // Auto-select first file when uploadedFiles changes
   useEffect(() => {
@@ -98,11 +103,29 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     console.log('selectedFile (after auto):', selectedFile);
   }, [uploadedFiles, selectedFile]);
 
-  // Generate signed URL when file is selected
+  // Generate URL when file is selected — Supabase signed URL in ppap mode, direct blob URL in standalone
   useEffect(() => {
     if (!selectedFile || typeof selectedFile !== 'string') {
       setFileUrl(null);
       setRenderedImage(null);
+      return;
+    }
+
+    if (context === 'standalone') {
+      // selectedFile is a blob URL — use directly, no Supabase
+      setFileUrl(selectedFile);
+      const fileName = standaloneFilesRef.current.get(selectedFile) ?? '';
+      if (fileName.toLowerCase().endsWith('.pdf')) {
+        renderPdfToImage(selectedFile)
+          .then(imageDataUrl => setRenderedImage(imageDataUrl))
+          .catch(error => {
+            console.error('PDF render failed:', error);
+            setRenderedImage(null);
+            alert('Failed to render PDF preview. The file may be corrupted or unsupported.');
+          });
+      } else {
+        setRenderedImage(null);
+      }
       return;
     }
 
@@ -143,11 +166,16 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     };
 
     loadUrl();
-  }, [selectedFile]);
+  }, [selectedFile, context]);
 
-  // Load existing annotations for selected file
+  // Load existing annotations for selected file — PPAP mode only
   useEffect(() => {
     if (!selectedFile) {
+      setAnnotations([]);
+      return;
+    }
+
+    if (context !== 'ppap') {
       setAnnotations([]);
       return;
     }
@@ -179,7 +207,7 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     };
 
     fetchAnnotations();
-  }, [ppapId, selectedFile]);
+  }, [ppapId, selectedFile, context]);
 
   // Helper for visual marker shorthand (ASCII-safe for PDF export)
   const getMarkerLabel = (shape: AnnotationShape): string => {
@@ -297,6 +325,11 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
   };
 
   const handleSaveAnnotations = async () => {
+    if (context !== 'ppap') {
+      alert('Annotations cannot be saved in standalone mode. Use Export to save your work.');
+      return;
+    }
+
     if (!selectedFile) {
       alert('Please select a drawing first');
       return;
@@ -676,6 +709,16 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (context === 'standalone') {
+      // No Supabase — use object URL for local display only
+      const objectUrl = URL.createObjectURL(file);
+      standaloneFilesRef.current.set(objectUrl, file.name);
+      setUploadedFiles(prev => [...prev, { file_name: file.name, file_path: objectUrl }]);
+      setSelectedFile(objectUrl);
+      e.target.value = '';
+      return;
+    }
+
     setUploading(true);
     try {
       // Guard: ensure ppapId is valid before event logging
@@ -851,13 +894,15 @@ export function MarkupTool({ ppapId, partNumber, onClose }: MarkupToolProps) {
 
                   {/* Action Buttons */}
                   <div className="pt-2 space-y-2">
-                    <button
-                      onClick={handleSaveAnnotations}
-                      disabled={loading}
-                      className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors font-medium text-sm"
-                    >
-                      {loading ? 'Saving...' : '💾 Save Annotations'}
-                    </button>
+                    {context === 'ppap' && (
+                      <button
+                        onClick={handleSaveAnnotations}
+                        disabled={loading}
+                        className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors font-medium text-sm"
+                      >
+                        {loading ? 'Saving...' : '💾 Save Annotations'}
+                      </button>
+                    )}
                     <button
                       onClick={handleExportMarkup}
                       disabled={exporting || !selectedFile || annotations.length === 0}

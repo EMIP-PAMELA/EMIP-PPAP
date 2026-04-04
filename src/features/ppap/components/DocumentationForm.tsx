@@ -389,8 +389,22 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                       </div>
                     )}
 
-                    {/* Phase 21: Upload only - all creation goes through Document Workspace */}
+                    {/* V3.2F.2: ballooned_drawing gets a dedicated Markup Tool action */}
                     <div className="flex gap-2">
+                      {doc.id === 'ballooned_drawing' && (
+                        <button
+                          onClick={() => router.push(`/ppap/${ppapId}/markup`)}
+                          disabled={isReadOnly}
+                          title={isReadOnly ? 'View-only mode — contact coordinator to make changes' : 'Open Drawing Markup Tool'}
+                          className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
+                            isReadOnly
+                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                          }`}
+                        >
+                          Markup Tool
+                        </button>
+                      )}
                       {/* Upload Button */}
                       <label
                         title={

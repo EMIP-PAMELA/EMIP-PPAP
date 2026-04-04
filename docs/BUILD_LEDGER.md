@@ -4,6 +4,109 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-04 - [IMPL] V3.2F.2 — Markup Tool Dual-Context Integration
+
+**Status:** ✅ COMPLETE
+
+**Summary:** Extend MarkupTool to operate in two contexts — `ppap` (bound to a specific PPAP record) and `standalone` (accessible from the workspace without a PPAP). Add dedicated routes for each context. Wire PPAP-bound markup into the existing document surface. Add a standalone entry point from the workspace.
+
+**Type:** Controlled Feature Expansion (Non-Breaking, No Schema Changes)
+
+---
+
+### Purpose
+
+MarkupTool currently assumes a PPAP context — `ppapId` and `partNumber` are required props. The standalone Copilot mode and workspace tools require markup capability without an active PPAP. This phase introduces a `context` discriminator (`'ppap' | 'standalone'`) that makes PPAP-specific props optional and routes behavior accordingly.
+
+No new markup logic is introduced. This is routing and context wiring only.
+
+---
+
+### Scope
+
+#### Routes to Add
+
+| Route | Context | Description |
+|-------|---------|-------------|
+| `/ppap/[id]/markup` | `ppap` | Markup tool bound to a specific PPAP; receives `ppapId` and `partNumber` from route params |
+| `/workspace/markup` | `standalone` | Markup tool without PPAP context; accessible from the workspace surface |
+
+#### Component Changes
+
+| File | Change |
+|------|--------|
+| `src/features/ppap/components/MarkupTool.tsx` | Accept `context: 'ppap' \| 'standalone'`; make `ppapId` and `partNumber` optional; gate PPAP-specific behavior behind `context === 'ppap'` checks |
+
+#### Wiring
+
+- `/ppap/[id]/markup` page passes PPAP context props from route params into MarkupTool
+- `/workspace/markup` page renders MarkupTool with `context="standalone"`, no PPAP props
+- DocumentWorkspace (or equivalent PPAP document surface) gains a "Markup" action that routes to `/ppap/[id]/markup`
+
+---
+
+### Non-Goals
+
+- No PDF versioning or revision tracking
+- No multi-page PDF handling
+- No concurrency controls or locking
+- No MarkupTool UI redesign or layout changes
+- No new database tables or schema changes
+
+---
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/features/ppap/components/MarkupTool.tsx` | Accept `context` in destructure; gate all Supabase operations; add `standaloneFilesRef`; standalone upload via object URL; standalone signed-URL bypass; hide Save button in standalone |
+| `app/ppap/[id]/markup/page.tsx` | New route — PPAP-bound markup page using `useParams`, routes back to `/ppap/${id}/documents` on close |
+| `app/workspace/markup/page.tsx` | New route — standalone markup page, no PPAP props, routes back to `/document-workspace` on close |
+| `src/features/ppap/components/DocumentationForm.tsx` | Added "Markup Tool" button for `ballooned_drawing` card that routes to `/ppap/${ppapId}/markup` |
+
+---
+
+### Database Changes
+
+None anticipated.
+
+---
+
+### Decisions Made
+
+1. **`DocumentationForm.tsx` is the wiring surface, not `DocumentWorkspace.tsx`.** DocumentWorkspace has no `ballooned_drawing` reference. The actual PPAP document card surface is DocumentationForm. The Markup Tool button was added there.
+2. **Standalone file upload uses `URL.createObjectURL` with a `standaloneFilesRef` Map.** The ref avoids adding `uploadedFiles` to the signed-URL useEffect dependency array, preventing a re-run loop on each file added.
+3. **`/workspace/markup` routes back to `/document-workspace`.** No `/workspace` root exists yet; the closest accessible workspace page is `/document-workspace`.
+4. **Save Annotations button hidden (not disabled) in standalone.** No tooltip confusion — standalone users see Export only.
+
+---
+
+### Validation
+
+- [x] `npx tsc --noEmit` — zero new errors introduced; pre-existing errors (admin pages, CreatePPAPForm, MarkupTool FileReference) unchanged
+- [x] PPAP-bound route (`app/ppap/[id]/markup/page.tsx`) passes `ppapId` from `useParams`, routes back to `/ppap/${id}/documents`
+- [x] Standalone route (`app/workspace/markup/page.tsx`) passes no PPAP props, no Supabase calls will execute
+- [x] All Supabase reads (file fetch, annotation fetch, signed URL) gated behind `context === 'ppap'`
+- [x] All Supabase writes (save annotations, upload+logEvent) gated behind `context === 'ppap'`
+- [x] Export works in both modes (no Supabase dependency — html2canvas + jsPDF only)
+- [x] DocumentationForm ballooned_drawing card now shows "Markup Tool" button routing to PPAP markup route
+- [x] No regressions to injection engine, Copilot pipeline, or PPAP workflow state machine
+
+---
+
+### Risks / Follow-Ups
+
+- MarkupTool currently imports `uploadFile` directly (documented violation in BUILD_PLAN.md §10376). This phase does not fix that violation — it is a pre-existing concern deferred to a future Vault boundary cleanup phase.
+- Standalone markup has no persistence context yet. Draft/save behavior for standalone must be defined before implementation completes.
+
+---
+
+### Intended Commit Message
+
+`V3.2F.2: Add dual-context MarkupTool with ppap and standalone routes`
+
+---
+
 ## 2026-04-02 - [IMPL] V3.2F.1 — Injection Engine Hardening
 
 **Summary:** Harden the V3.2F injection engine with alias-based sheet lookup, synonym-based header detection, field-level schema validation, structured logging, and safe-write guards. No handler interfaces changed. No existing behavior broken.
