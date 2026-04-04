@@ -4,6 +4,59 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-02 - [IMPL] V3.2F.1 — Injection Engine Hardening
+
+**Summary:** Harden the V3.2F injection engine with alias-based sheet lookup, synonym-based header detection, field-level schema validation, structured logging, and safe-write guards. No handler interfaces changed. No existing behavior broken.
+
+**Type:** Implementation Refinement (Non-Breaking, Stability Focus)
+
+### Purpose
+
+V3.2F implemented the core injection pipeline. V3.2F.1 makes it reliable across customer template variations — different sheet names, different header labels, invalid or missing schema data — without changing any handler signatures or injection logic.
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `injection/utils/sheetAliases.ts` | SHEET_ALIASES map + `findSheetByAlias()` with normalized name matching |
+| `injection/utils/headerMatcher.ts` | `normalize()`, `HEADER_SYNONYMS` map, `countHeaderFieldMatches()` |
+| `injection/utils/schemaValidator.ts` | `validatePFMEA()` — field-level validation, throws descriptively, no auto-correction |
+| `injection/utils/injectionLogger.ts` | `logEvent()` — structured JSON log entries for all injection events |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `injection/sheets/pfmeaSheet.ts` | Uses `findSheetByAlias`, `countHeaderFieldMatches`, `validatePFMEA`, `logEvent`; `detectHeaderRow` now throws instead of returning null |
+| `injection/sheets/pswSheet.ts` | Uses `findSheetByAlias`, `logEvent`; removed local `findPSWSheet` helper; `cell.col → cell.fullAddress.col` for numeric column index |
+
+### Decisions Made
+
+1. **`cell.fullAddress.col` not `cell.col` for numeric column index.** ExcelJS `Cell extends Address` where `Address.col` is `string` (the column letter). `Cell.fullAddress.col` is `number`. Discovered during tsc check.
+2. **`detectHeaderRow` throws instead of returning null.** The caller in `handlePFMEA` had a null check that was always followed by a throw anyway. Collapsing to a direct throw removes a redundant code path.
+3. **`validatePFMEA` returns `void`, caller casts after.** Avoids type export coupling between schemaValidator and pfmeaSheet. Clean boundary.
+4. **HEADER_SYNONYMS are pre-normalized lowercase strings.** Comparison is `normalizedCellText.includes(synonym)` — no double-normalization needed.
+
+### Database Changes
+
+None.
+
+### Validation
+
+- `npx tsc --noEmit` — zero new errors from injection files
+- Pre-existing errors unchanged (admin pages, CreatePPAPForm, MarkupTool — documented in BOOTSTRAP.md)
+
+### Risks / Follow-Ups
+
+- Actual sheet names in `public/templates/trane/workbook.xlsx` not yet verified against aliases. If Trane uses a name not in `SHEET_ALIASES`, the handler will throw with a clear error identifying the mismatch — this is correct behavior. Verify sheet names in V3.2G-2.
+- HEADER_SYNONYMS cover common variations; additional synonyms may be needed after real-world template testing.
+
+### Intended Commit Message
+
+`V3.2F.1: Harden injection engine with aliasing, validation, and logging`
+
+---
+
 ## 2026-04-02 - [IMPL] V3.2F — Injection Engine V1 (Schema → Workbook)
 
 **Summary:** Implement a schema-driven injection engine that maps structured Copilot JSON output into an Excel workbook template. Excel is treated as a passive canvas — only cell values are written; no formatting, merges, or styles are touched.
