@@ -27,7 +27,7 @@ import { DeletePPAPButton } from './DeletePPAPButton';
 import { PPAPHeader } from './PPAPHeader';
 import { currentUser } from '@/src/lib/mockUser';
 import PPAPActivityFeed from './PPAPActivityFeed';
-import { RecentActivityStrip } from './RecentActivityStrip';
+import { PPAPActivityPanel } from './PPAPActivityPanel';
 
 // Post-ack states: Copilot and document generation are available
 const POST_ACK_STATUSES: PPAPStatus[] = [
@@ -56,10 +56,6 @@ interface PPAPDetailLayoutProps {
 export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPAPDetailLayoutProps) {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
 
-  const handleViewAllActivity = () => {
-    setActiveTab('activity');
-  };
-
   const role = currentUser.role;
   const isCoordinator = role === 'coordinator' || role === 'admin';
   const isEngineer = role === 'engineer';
@@ -82,8 +78,8 @@ export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPA
           <DeletePPAPButton ppapId={ppap.id} ppapNumber={ppap.ppap_number} />
         </div>
 
-        {/* V3.3A.8: Recent Activity Strip */}
-        <RecentActivityStrip ppapId={ppap.id} onViewAll={handleViewAllActivity} />
+        {/* V3.3A.10: Floating Activity Panel */}
+        <PPAPActivityPanel ppapId={ppap.id} />
 
         {/* Role badge */}
         <div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-2 rounded text-sm font-semibold text-blue-800">
