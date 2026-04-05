@@ -11,23 +11,7 @@ interface InitiationFormProps {
   isReadOnly?: boolean;
 }
 
-type Section = 'project_info' | 'contacts' | 'part_info' | 'drawing' | 'shipment' | 'warrant';
-
-interface InitiationData {
-  project_name: string;
-  project_number: string;
-  quality_rep: string;
-  quality_email: string;
-  rd_rep: string;
-  sourcing_rep: string;
-  part_number: string;
-  part_description: string;
-  drawing_number: string;
-  revision: string;
-  parts_producible: boolean;
-  capability_met: boolean;
-  sample_quantity: string;
-  ship_to_location: string;
+interface WarrantValidation {
   drawing_understood: boolean;
   part_defined: boolean;
   packaging_met: boolean;
@@ -35,65 +19,25 @@ interface InitiationData {
 
 export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = false }: InitiationFormProps) {
   const router = useRouter();
-  const [activeSection, setActiveSection] = useState<Section>('project_info');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [successMessage, setSuccessMessage] = useState('');
 
-  const [formData, setFormData] = useState<InitiationData>({
-    project_name: '',
-    project_number: '',
-    quality_rep: '',
-    quality_email: '',
-    rd_rep: '',
-    sourcing_rep: '',
-    part_number: partNumber,
-    part_description: '',
-    drawing_number: '',
-    revision: '',
-    parts_producible: false,
-    capability_met: false,
-    sample_quantity: '',
-    ship_to_location: '',
+  const [validations, setValidations] = useState<WarrantValidation>({
     drawing_understood: false,
     part_defined: false,
     packaging_met: false,
   });
 
-  const sections: { key: Section; label: string }[] = [
-    { key: 'project_info', label: 'Project Info' },
-    { key: 'contacts', label: 'Contacts' },
-    { key: 'part_info', label: 'Part Info' },
-    { key: 'drawing', label: 'Drawing Data' },
-    { key: 'shipment', label: 'Shipment' },
-    { key: 'warrant', label: 'Warrant' },
-  ];
-
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.project_name) newErrors.project_name = 'Project Name is required';
-    if (!formData.quality_rep) newErrors.quality_rep = 'Quality Rep is required';
-    if (!formData.quality_email) newErrors.quality_email = 'Quality Email is required';
-    if (!formData.part_description) newErrors.part_description = 'Part Description is required';
-    if (!formData.drawing_number) newErrors.drawing_number = 'Drawing Number is required';
-    if (!formData.revision) newErrors.revision = 'Revision is required';
-    if (!formData.sample_quantity) newErrors.sample_quantity = 'Sample Quantity is required';
-    if (!formData.ship_to_location) newErrors.ship_to_location = 'Ship To Location is required';
-
-    if (!formData.parts_producible) {
-      newErrors.parts_producible = 'Must confirm parts are producible';
-    }
-    if (!formData.capability_met) {
-      newErrors.capability_met = 'Must confirm capability is met';
-    }
-    if (!formData.drawing_understood) {
+    if (!validations.drawing_understood) {
       newErrors.drawing_understood = 'Must confirm drawing is understood';
     }
-    if (!formData.part_defined) {
+    if (!validations.part_defined) {
       newErrors.part_defined = 'Must confirm part is defined';
     }
-    if (!formData.packaging_met) {
+    if (!validations.packaging_met) {
       newErrors.packaging_met = 'Must confirm packaging is met';
     }
 
@@ -103,12 +47,11 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
 
   const handleAdvancePhase = async () => {
     setErrors({});
-    setSuccessMessage('');
 
     if (!validateForm()) {
       setErrors(prev => ({
         ...prev,
-        _form: 'Please complete all required fields and confirmations',
+        _form: 'Please complete all required confirmations',
       }));
       return;
     }
@@ -116,21 +59,13 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
     setLoading(true);
 
     try {
-      // Phase 3F.2.4: Use READY_TO_ACKNOWLEDGE (correct PPAPStatus)
-      // Mapping: READY_TO_ACKNOWLEDGE → READY_FOR_ACKNOWLEDGEMENT → DOCUMENTATION
       console.log('Phase 3F.2.4: Transitioning INITIATION → READY_TO_ACKNOWLEDGE');
-      
-      // Phase 3F.6: Log state write attempt
-      console.log('Phase 3F.6 - STATE WRITE ATTEMPT', {
-        to: 'READY_TO_ACKNOWLEDGE',
-        source: 'InitiationForm.tsx',
-      });
       
       const result = await updatePPAPState(
         ppapId,
         'READY_TO_ACKNOWLEDGE',
-        'Matt', // TODO: Replace with actual user ID
-        'engineer' // TODO: Replace with actual user role
+        'Matt',
+        'engineer'
       );
 
       if (!result.success) {
@@ -138,9 +73,6 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
       }
 
       console.log('Phase 3F.2.4: State transition successful, UI will advance to DOCUMENTATION');
-      
-      // Phase 3F.2.3: Refresh UI to reflect state change
-      // UI will automatically update based on ppap.status
       router.refresh();
       
     } catch (error) {
@@ -155,8 +87,8 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
     }
   };
 
-  const updateField = (field: keyof InitiationData, value: string | boolean) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const updateValidation = (field: keyof WarrantValidation, value: boolean) => {
+    setValidations(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => {
         const newErrors = { ...prev };
@@ -178,8 +110,12 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
 
   return (
     <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-300 rounded-xl shadow-sm p-8">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Initiation Phase</h2>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Initiation Phase - Validation & Confirmation</h2>
+          <p className="text-sm text-gray-600 mt-1">Review PPAP details and confirm readiness to proceed</p>
+        </div>
         {ppapType && (
           <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
             <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">PPAP Type</span>
@@ -187,383 +123,176 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between mb-2">
-        <div />
-        {successMessage && (
-          <div className="text-sm font-semibold text-green-800 bg-green-100 border border-green-300 px-6 py-3 rounded-lg shadow-sm">
-            {successMessage || ''}
+
+      {/* V3.3A.2: Read-Only PPAP Summary */}
+      <div className="mb-8 bg-white border border-gray-200 rounded-lg p-6">
+        <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          PPAP Information Summary
+        </h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-3 bg-gray-50 rounded border border-gray-200">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Part Number</p>
+            <p className="text-sm font-medium text-gray-900">{partNumber || 'Not specified'}</p>
           </div>
-        )}
+          
+          <div className="p-3 bg-gray-50 rounded border border-gray-200">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">PPAP ID</p>
+            <p className="text-sm font-mono text-gray-900">{ppapId}</p>
+          </div>
+        </div>
+
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+          <p className="text-xs font-semibold text-blue-700 mb-1">ℹ️ Note</p>
+          <p className="text-sm text-blue-900">
+            All project details were captured during PPAP creation. Review the information above and complete the validation checklist below to proceed.
+          </p>
+        </div>
       </div>
 
-      <div className="flex gap-8">
-        <div className="w-56 flex-shrink-0">
-          <nav className="space-y-2">
-            {sections.map(section => (
-              <button
-                key={section.key}
-                onClick={() => setActiveSection(section.key)}
-                className={`w-full text-left px-4 py-3 text-sm font-semibold rounded-lg transition-all ${
-                  activeSection === section.key
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-gray-700 hover:bg-gray-200 bg-white border border-gray-200'
-                }`}
-              >
-                {section.label}
-              </button>
-            ))}
-          </nav>
+      {/* Form Errors */}
+      {errors._form && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800 font-medium">
+          {errors._form}
         </div>
+      )}
 
-        <div className="flex-1 bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-          {errors._form && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800 font-medium">
-              {errors._form || ''}
-            </div>
-          )}
-
-          {activeSection === 'project_info' && (
-            <div className="space-y-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b border-gray-200">PPAP Project Information</h3>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Project Name <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.project_name || ''}
-                  onChange={(e) => updateField('project_name', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
-                    errors.project_name ? 'border-red-400' : 'border-gray-300'
-                  }`}
-                  placeholder="Enter project name"
-                />
-                {errors.project_name && (
-                  <p className="mt-1 text-sm text-red-600">{errors.project_name || ''}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Project Number
-                </label>
-                <input
-                  type="text"
-                  value={formData.project_number || ''}
-                  onChange={(e) => updateField('project_number', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter project number (optional)"
-                />
-              </div>
-            </div>
-          )}
-
-          {activeSection === 'contacts' && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Contacts</h3>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Quality Rep <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.quality_rep || ''}
-                  onChange={(e) => updateField('quality_rep', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
-                    errors.quality_rep ? 'border-red-400' : 'border-gray-300'
-                  }`}
-                  placeholder="Enter quality representative name"
-                />
-                {errors.quality_rep && (
-                  <p className="mt-1 text-sm text-red-600">{errors.quality_rep || ''}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Quality Email <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="email"
-                  value={formData.quality_email || ''}
-                  onChange={(e) => updateField('quality_email', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
-                    errors.quality_email ? 'border-red-400' : 'border-gray-300'
-                  }`}
-                  placeholder="quality@example.com"
-                />
-                {errors.quality_email && (
-                  <p className="mt-1 text-sm text-red-600">{errors.quality_email || ''}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  R&D Rep
-                </label>
-                <input
-                  type="text"
-                  value={formData.rd_rep || ''}
-                  onChange={(e) => updateField('rd_rep', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter R&D representative (optional)"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Sourcing Rep
-                </label>
-                <input
-                  type="text"
-                  value={formData.sourcing_rep || ''}
-                  onChange={(e) => updateField('sourcing_rep', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter sourcing representative (optional)"
-                />
-              </div>
-            </div>
-          )}
-
-          {activeSection === 'part_info' && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Part Information</h3>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Part Number
-                </label>
-                <input
-                  type="text"
-                  value={formData.part_number || ''}
-                  disabled
-                  className="w-full px-3 py-2 border border-gray-300 rounded bg-gray-50 text-gray-600"
-                />
-                <p className="mt-1 text-xs text-gray-500">Pre-filled from PPAP record</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Part Description <span className="text-red-600">*</span>
-                </label>
-                <textarea
-                  value={formData.part_description || ''}
-                  onChange={(e) => updateField('part_description', e.target.value)}
-                  rows={3}
-                  className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
-                    errors.part_description ? 'border-red-400' : 'border-gray-300'
-                  }`}
-                  placeholder="Enter detailed part description"
-                />
-                {errors.part_description && (
-                  <p className="mt-1 text-sm text-red-600">{errors.part_description || ''}</p>
-                )}
-              </div>
-
-              <div className="flex items-center gap-4 p-3 bg-gray-50 rounded">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.parts_producible}
-                    onChange={(e) => updateField('parts_producible', e.target.checked)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-sm font-medium text-gray-700">
-                    Parts are producible <span className="text-red-600">*</span>
-                  </span>
-                </label>
-              </div>
-              {errors.parts_producible && (
-                <p className="mt-1 text-sm text-red-600">{errors.parts_producible || ''}</p>
-              )}
-
-              <div className="flex items-center gap-4 p-3 bg-gray-50 rounded">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.capability_met}
-                    onChange={(e) => updateField('capability_met', e.target.checked)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-sm font-medium text-gray-700">
-                    Capability requirements met <span className="text-red-600">*</span>
-                  </span>
-                </label>
-              </div>
-              {errors.capability_met && (
-                <p className="mt-1 text-sm text-red-600">{errors.capability_met || ''}</p>
-              )}
-            </div>
-          )}
-
-          {activeSection === 'drawing' && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Drawing Data</h3>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Drawing Number <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.drawing_number || ''}
-                  onChange={(e) => updateField('drawing_number', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
-                    errors.drawing_number ? 'border-red-400' : 'border-gray-300'
-                  }`}
-                  placeholder="Enter drawing number"
-                />
-                {errors.drawing_number && (
-                  <p className="mt-1 text-sm text-red-600">{errors.drawing_number || ''}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Revision <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.revision || ''}
-                  onChange={(e) => updateField('revision', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
-                    errors.revision ? 'border-red-400' : 'border-gray-300'
-                  }`}
-                  placeholder="e.g., Rev A, Rev 1"
-                />
-                {errors.revision && (
-                  <p className="mt-1 text-sm text-red-600">{errors.revision || ''}</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeSection === 'shipment' && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Shipment Info</h3>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Sample Quantity <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.sample_quantity || ''}
-                  onChange={(e) => updateField('sample_quantity', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
-                    errors.sample_quantity ? 'border-red-400' : 'border-gray-300'
-                  }`}
-                  placeholder="e.g., 100 pieces"
-                />
-                {errors.sample_quantity && (
-                  <p className="mt-1 text-sm text-red-600">{errors.sample_quantity || ''}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Ship To Location <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.ship_to_location || ''}
-                  onChange={(e) => updateField('ship_to_location', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 ${
-                    errors.ship_to_location ? 'border-red-400' : 'border-gray-300'
-                  }`}
-                  placeholder="Enter destination location"
-                />
-                {errors.ship_to_location && (
-                  <p className="mt-1 text-sm text-red-600">{errors.ship_to_location || ''}</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeSection === 'warrant' && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Warrant Section</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                All confirmations are required to advance to the next phase.
+      {/* V3.3A.2: Warrant Validation Checklist */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h3 className="text-lg font-bold text-gray-900 mb-2">Validation Checklist</h3>
+        <p className="text-sm text-gray-600 mb-6">
+          All confirmations are required to advance to the Documentation Phase.
+        </p>
+        
+        <div className="space-y-4">
+          <div className={`flex items-start gap-3 p-4 rounded-lg border-2 transition-all ${
+            validations.drawing_understood 
+              ? 'bg-green-50 border-green-300' 
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <input
+              type="checkbox"
+              id="drawing_understood"
+              checked={validations.drawing_understood}
+              onChange={(e) => updateValidation('drawing_understood', e.target.checked)}
+              disabled={isReadOnly}
+              className={`mt-0.5 w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 ${
+                isReadOnly ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+              }`}
+            />
+            <label htmlFor="drawing_understood" className="flex-1 cursor-pointer">
+              <span className="text-sm font-semibold text-gray-900">
+                Drawing is understood <span className="text-red-600">*</span>
+              </span>
+              <p className="text-xs text-gray-600 mt-1">
+                Confirm that all engineering drawings and specifications are clear and understood
               </p>
-              
-              {/* Read-Only Banner */}
-              {isReadOnly && (
-                <div className="px-6 py-4 bg-yellow-50 border-b-2 border-yellow-300">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">🔒</span>
-                    <div>
-                      <p className="text-sm font-bold text-yellow-900 uppercase tracking-wide">Preview Mode</p>
-                      <p className="text-sm text-yellow-800">Complete previous phases to unlock this section</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded">
-                  <input
-                    type="checkbox"
-                    checked={formData.drawing_understood}
-                    onChange={(e) => updateField('drawing_understood', e.target.checked)}
-                    disabled={isReadOnly}
-                    className={`w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 ${
-                      isReadOnly ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                  />
-                  <label className="text-sm font-medium text-gray-700">
-                    Drawing is understood <span className="text-red-600">*</span>
-                  </label>
-                </div>
-                {errors.drawing_understood && (
-                  <p className="mt-1 text-sm text-red-600">{errors.drawing_understood || ''}</p>
-                )}
-
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded">
-                  <input
-                    type="checkbox"
-                    checked={formData.part_defined}
-                    onChange={(e) => updateField('part_defined', e.target.checked)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                  />
-                  <label className="text-sm font-medium text-gray-700">
-                    Part is properly defined <span className="text-red-600">*</span>
-                  </label>
-                </div>
-                {errors.part_defined && (
-                  <p className="mt-1 text-sm text-red-600">{errors.part_defined || ''}</p>
-                )}
-
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded">
-                  <input
-                    type="checkbox"
-                    checked={formData.packaging_met}
-                    onChange={(e) => updateField('packaging_met', e.target.checked)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                  />
-                  <label className="text-sm font-medium text-gray-700">
-                    Packaging requirements met <span className="text-red-600">*</span>
-                  </label>
-                </div>
-                {errors.packaging_met && (
-                  <p className="mt-1 text-sm text-red-600">{errors.packaging_met || ''}</p>
-                )}
-              </div>
-            </div>
+            </label>
+            {validations.drawing_understood && (
+              <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            )}
+          </div>
+          {errors.drawing_understood && (
+            <p className="ml-8 text-sm text-red-600">{errors.drawing_understood}</p>
           )}
 
-          <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end">
-            <button
-              onClick={handleAdvancePhase}
-              disabled={loading}
-              className="px-6 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Advancing Phase...' : 'Send to Next Phase →'}
-            </button>
+          <div className={`flex items-start gap-3 p-4 rounded-lg border-2 transition-all ${
+            validations.part_defined 
+              ? 'bg-green-50 border-green-300' 
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <input
+              type="checkbox"
+              id="part_defined"
+              checked={validations.part_defined}
+              onChange={(e) => updateValidation('part_defined', e.target.checked)}
+              disabled={isReadOnly}
+              className={`mt-0.5 w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 ${
+                isReadOnly ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+              }`}
+            />
+            <label htmlFor="part_defined" className="flex-1 cursor-pointer">
+              <span className="text-sm font-semibold text-gray-900">
+                Part is properly defined <span className="text-red-600">*</span>
+              </span>
+              <p className="text-xs text-gray-600 mt-1">
+                Confirm that part specifications, materials, and requirements are clearly defined
+              </p>
+            </label>
+            {validations.part_defined && (
+              <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            )}
           </div>
+          {errors.part_defined && (
+            <p className="ml-8 text-sm text-red-600">{errors.part_defined}</p>
+          )}
+
+          <div className={`flex items-start gap-3 p-4 rounded-lg border-2 transition-all ${
+            validations.packaging_met 
+              ? 'bg-green-50 border-green-300' 
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <input
+              type="checkbox"
+              id="packaging_met"
+              checked={validations.packaging_met}
+              onChange={(e) => updateValidation('packaging_met', e.target.checked)}
+              disabled={isReadOnly}
+              className={`mt-0.5 w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 ${
+                isReadOnly ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+              }`}
+            />
+            <label htmlFor="packaging_met" className="flex-1 cursor-pointer">
+              <span className="text-sm font-semibold text-gray-900">
+                Packaging requirements met <span className="text-red-600">*</span>
+              </span>
+              <p className="text-xs text-gray-600 mt-1">
+                Confirm that packaging specifications and requirements are understood and achievable
+              </p>
+            </label>
+            {validations.packaging_met && (
+              <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            )}
+          </div>
+          {errors.packaging_met && (
+            <p className="ml-8 text-sm text-red-600">{errors.packaging_met}</p>
+          )}
         </div>
+      </div>
+
+      {/* Action Button */}
+      <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end">
+        <button
+          onClick={handleAdvancePhase}
+          disabled={loading || isReadOnly}
+          className="px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
+        >
+          {loading ? (
+            <>
+              <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Confirming...
+            </>
+          ) : (
+            <>
+              Confirm & Move to Documentation Phase
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+            </>
+          )}
+        </button>
       </div>
     </div>
   );
