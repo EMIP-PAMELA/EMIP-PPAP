@@ -26,6 +26,8 @@ import { DocumentationForm } from './DocumentationForm';
 import { DeletePPAPButton } from './DeletePPAPButton';
 import { PPAPHeader } from './PPAPHeader';
 import { currentUser } from '@/src/lib/mockUser';
+import PPAPActivityFeed from './PPAPActivityFeed';
+import { RecentActivityStrip } from './RecentActivityStrip';
 
 // Post-ack states: Copilot and document generation are available
 const POST_ACK_STATUSES: PPAPStatus[] = [
@@ -54,6 +56,10 @@ interface PPAPDetailLayoutProps {
 export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPAPDetailLayoutProps) {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
 
+  const handleViewAllActivity = () => {
+    setActiveTab('activity');
+  };
+
   const role = currentUser.role;
   const isCoordinator = role === 'coordinator' || role === 'admin';
   const isEngineer = role === 'engineer';
@@ -75,6 +81,9 @@ export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPA
           <PPAPHeader ppap={ppap} />
           <DeletePPAPButton ppapId={ppap.id} ppapNumber={ppap.ppap_number} />
         </div>
+
+        {/* V3.3A.8: Recent Activity Strip */}
+        <RecentActivityStrip ppapId={ppap.id} onViewAll={handleViewAllActivity} />
 
         {/* Role badge */}
         <div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-2 rounded text-sm font-semibold text-blue-800">
@@ -178,46 +187,9 @@ export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPA
               </div>
             )}
 
-            {/* ── ACTIVITY TAB ── */}
+            {/* ── ACTIVITY TAB ── V3.3A.8: Unified Activity Feed */}
             {activeTab === 'activity' && (
-              <div className="space-y-6">
-                {/* Events */}
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900 mb-3">Event Log</h3>
-                  {events && events.length > 0 ? (
-                    <div className="space-y-2">
-                      {events.map((event: any, i: number) => (
-                        <div key={event.id || i} className="flex items-start gap-3 p-3 bg-white border border-gray-200 rounded-lg text-sm">
-                          <span className="text-gray-400 text-xs whitespace-nowrap mt-0.5">
-                            {new Date(event.created_at || event.timestamp).toLocaleString()}
-                          </span>
-                          <span className="font-medium text-gray-900">{event.event_type}</span>
-                          {event.actor && (
-                            <span className="text-gray-500 text-xs">by {event.actor}</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-500">No events recorded yet.</p>
-                  )}
-                </div>
-
-                {/* Conversations */}
-                {conversations && conversations.length > 0 && (
-                  <div>
-                    <h3 className="text-base font-semibold text-gray-900 mb-3">Conversations</h3>
-                    <div className="space-y-2">
-                      {conversations.map((conv: any, i: number) => (
-                        <div key={conv.id || i} className="p-3 bg-white border border-gray-200 rounded-lg text-sm">
-                          <p className="font-medium text-gray-900">{conv.subject || conv.message_type || 'Message'}</p>
-                          {conv.content && <p className="text-gray-600 text-xs mt-1">{conv.content}</p>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <PPAPActivityFeed ppapId={ppap.id} />
             )}
 
           </div>
