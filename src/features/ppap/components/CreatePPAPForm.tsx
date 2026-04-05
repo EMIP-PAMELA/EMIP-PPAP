@@ -8,6 +8,7 @@ import { logEvent } from '@/src/features/events/mutations';
 import { supabase } from '@/src/lib/supabaseClient';
 import type { CreatePPAPInput, PPAPType } from '@/src/types/database.types';
 import { VALID_PLANTS } from '../utils/plantValidation';
+import { VALID_DEPARTMENTS, DEPARTMENT_LABELS, DEPARTMENT_DESCRIPTIONS } from '../config/departments';
 import {
   DOCUMENT_REGISTRY,
   DocumentMode,
@@ -60,6 +61,11 @@ export function CreatePPAPForm() {
 
       if (!formData.plant) {
         throw new Error('Please select a production plant');
+      }
+
+      // V3.3A.5: Validate department is selected
+      if (!formData.department) {
+        throw new Error('Please select a responsible department');
       }
 
       // V3.3A: Validate document scope
@@ -294,6 +300,32 @@ export function CreatePPAPForm() {
               value={formData.request_date || ''}
               onChange={(e) => handleChange('request_date', e.target.value)}
             />
+          </div>
+
+          {/* V3.3A.5: Department Queue Assignment */}
+          <div>
+            <label htmlFor="department" className="block text-sm font-semibold text-gray-700 mb-2">
+              Responsible Department <span className="text-red-600">*</span>
+            </label>
+            <select
+              id="department"
+              required
+              className="w-full px-4 py-3 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              value={formData.department || ''}
+              onChange={(e) => handleChange('department', e.target.value)}
+            >
+              <option value="">Select Department</option>
+              {VALID_DEPARTMENTS.map((dept) => (
+                <option key={dept} value={dept}>
+                  {DEPARTMENT_LABELS[dept]}
+                </option>
+              ))}
+            </select>
+            {formData.department && (
+              <p className="mt-1 text-xs text-gray-600">
+                {DEPARTMENT_DESCRIPTIONS[formData.department]}
+              </p>
+            )}
           </div>
         </div>
       </div>

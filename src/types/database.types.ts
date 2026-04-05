@@ -100,7 +100,8 @@ export interface PPAPRecord {
   ppap_type?: PPAPType | null;
   status: PPAPStatus;
   workflow_phase: string;
-  assigned_to?: string | null;
+  department: string; // V3.3A.5: Department queue assignment
+  assigned_to?: string | null; // V3.3A.5: Individual owner (null = unclaimed)
   assigned_role?: string | null;
   created_at: string;
   updated_at: string;
@@ -155,6 +156,7 @@ export interface CreatePPAPInput {
   plant?: string;
   request_date: string;
   ppap_type: PPAPType;
+  department: string; // V3.3A.5: Required department for queue assignment
 }
 
 export interface UpdatePPAPInput {

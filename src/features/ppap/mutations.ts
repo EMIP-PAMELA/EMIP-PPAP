@@ -22,6 +22,7 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
     throw new Error('Invalid plant value. Must be one of: Ft. Smith, Ball Ground, Warner Robins');
   }
   
+  // V3.3A.5: Department queue model - assign to department, leave owner null
   const { data, error } = await supabase
     .from('ppap_records')
     .insert({
@@ -31,6 +32,8 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
       plant: sanitizedPlant,
       request_date: input.request_date,
       ppap_type: input.ppap_type,
+      department: input.department, // V3.3A.5: Required department for queue
+      assigned_to: null, // V3.3A.5: Starts unclaimed in department queue
       status: 'NEW',
     })
     .select()

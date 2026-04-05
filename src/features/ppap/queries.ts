@@ -6,6 +6,8 @@ export interface PPAPListFilters {
   plant?: string;
   customer?: string;
   assigned_to?: string;
+  department?: string; // V3.3A.5: Filter by department queue
+  unclaimed?: boolean; // V3.3A.5: Show only unclaimed PPAPs in queue
   mold_required?: boolean;
 }
 
@@ -29,6 +31,16 @@ export async function getAllPPAPs(filters?: PPAPListFilters) {
 
   if (filters?.assigned_to) {
     query = query.eq('assigned_to', filters.assigned_to);
+  }
+
+  // V3.3A.5: Department queue filtering
+  if (filters?.department) {
+    query = query.eq('department', filters.department);
+  }
+
+  // V3.3A.5: Unclaimed filter (department queue)
+  if (filters?.unclaimed === true) {
+    query = query.is('assigned_to', null);
   }
 
   if (filters?.mold_required !== undefined) {

@@ -21,6 +21,11 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
   const [assignedTo, setAssignedTo] = useState(ppap.assigned_to || null);
   const [takingOwnership, setTakingOwnership] = useState(false);
   
+  // V3.3A.5: Current user (in production, get from auth context)
+  const currentUser = 'System User';
+  const isOwner = assignedTo === currentUser;
+  const isUnclaimed = !assignedTo;
+  
   // Phase sync fix: Derive phase from status (single source of truth)
   const derivedPhase = mapStatusToPhase(ppap.status);
   const nextActionData = getNextAction(derivedPhase, ppap.status);
@@ -36,23 +41,24 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
   const handleTakeOwnership = async () => {
     setTakingOwnership(true);
     try {
-      const currentUser = 'System User'; // In production, get from auth context
-      
-      // Update ownership
+      // V3.3A.5: Claim ownership from department queue
       await supabase
         .from('ppap_records')
         .update({ 
           assigned_to: currentUser,
+          status: 'POST_ACK_IN_PROGRESS', // V3.3A.5: Set to in-progress when claimed
           updated_at: new Date().toISOString(),
         })
         .eq('id', ppap.id);
       
-      // Log ownership event
+      // Log ownership claim event
       await logEvent({
         ppap_id: ppap.id,
         event_type: 'ASSIGNED',
         event_data: {
           assigned_to: currentUser,
+          department: ppap.department,
+          claimed_from_queue: true,
         },
         actor: currentUser,
         actor_role: 'Engineer',
@@ -132,20 +138,48 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
               <p className="text-xl font-semibold text-gray-900">{ppap.part_number}</p>
             </div>
           </div>
+          {/* V3.3A.5: Department Queue + Ownership Display */}
           <div className="flex items-center gap-3">
-            {!assignedTo && (
+            {/* Department Queue Badge */}
+            <div className="px-4 py-2 bg-purple-50 border border-purple-200 rounded-lg">
+              <span className="text-xs font-semibold text-purple-700 uppercase tracking-wide">Department</span>
+              <p className="text-sm font-medium text-purple-900">{ppap.department}</p>
+            </div>
+            
+            {/* Ownership Status */}
+            {isUnclaimed && (
               <button
                 onClick={handleTakeOwnership}
                 disabled={takingOwnership}
                 className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                {takingOwnership ? 'Taking...' : '✋ Take Ownership'}
+                {takingOwnership ? 'Claiming...' : '✋ Claim Ownership'}
               </button>
             )}
             {assignedTo && (
-              <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-                <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Owner</span>
-                <p className="text-sm font-medium text-blue-900">{assignedTo || ''}</p>
+              <div className={`px-4 py-2 border rounded-lg ${
+                isOwner 
+                  ? 'bg-blue-50 border-blue-200' 
+                  : 'bg-yellow-50 border-yellow-200'
+              }`}>
+                <span className={`text-xs font-semibold uppercase tracking-wide ${
+                  isOwner ? 'text-blue-700' : 'text-yellow-700'
+                }`}>
+                  {isOwner ? 'You Own This' : 'Owner'}
+                </span>
+                <p className={`text-sm font-medium ${
+                  isOwner ? 'text-blue-900' : 'text-yellow-900'
+                }`}>
+                  {assignedTo}
+                </p>
+              </div>
+            )}
+            
+            {/* Read-Only Warning */}
+            {assignedTo && !isOwner && (
+              <div className="px-4 py-2 bg-red-50 border border-red-200 rounded-lg">
+                <span className="text-xs font-semibold text-red-700 uppercase tracking-wide">🔒 Read-Only</span>
+                <p className="text-xs text-red-900">Only owner can edit</p>
               </div>
             )}
           </div>
