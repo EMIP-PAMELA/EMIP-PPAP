@@ -1037,7 +1037,7 @@ export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolP
                   >
                     {annotation.shape === 'circle' && (
                       <div
-                        className={`w-4 h-4 rounded-full border-2 ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-[10px] shadow cursor-${draggingAnnotationId === annotation.id ? 'grabbing' : 'grab'} ${hoverScale} ${textColor}`}
+                        className={`w-7 h-7 rounded-full border-2 ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-xs shadow cursor-${draggingAnnotationId === annotation.id ? 'grabbing' : 'grab'} ${hoverScale} ${textColor}`}
                         onMouseDown={(e) => handleAnnotationDragStart(e, annotation.id)}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1052,7 +1052,7 @@ export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolP
                     )}
                     {annotation.shape === 'box' && (
                       <div
-                        className={`w-4 h-4 border-2 ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-[10px] shadow cursor-${draggingAnnotationId === annotation.id ? 'grabbing' : 'grab'} ${hoverScale} ${textColor}`}
+                        className={`w-6 h-6 border-2 ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center font-bold text-xs shadow cursor-${draggingAnnotationId === annotation.id ? 'grabbing' : 'grab'} ${hoverScale} ${textColor}`}
                         onMouseDown={(e) => handleAnnotationDragStart(e, annotation.id)}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1081,7 +1081,7 @@ export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolP
                           className={`absolute inset-0 ${borderWidth} ${TYPE_COLORS[annotation.type]} bg-white bg-opacity-75 flex items-center justify-center shadow`}
                           style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }}
                         >
-                          <span className={`font-bold text-xs ${textColor} mt-1`}>{annotation.label_number}</span>
+                          <span className={`font-bold text-xs ${textColor}`} style={{ marginTop: '-2px' }}>{annotation.label_number}</span>
                         </div>
                       </div>
                     )}

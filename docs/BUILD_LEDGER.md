@@ -94,6 +94,38 @@ None anticipated.
 
 ---
 
+## 2026-04-05 - [REFINE] V3.2F.4 — Annotation Marker Rendering Fix
+
+**Status:** ✅ COMPLETE
+
+**Summary:** Increase circle and box marker size for better readability; fix triangle label vertical positioning. Purely presentational — no annotation logic, data, or export pipeline touched.
+
+**Type:** Refinement (Presentation Only, No Logic Changes)
+
+### Context
+
+Markers are rendered as HTML/CSS elements (not canvas). Spec guidance used canvas API values; translated to Tailwind equivalents.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/features/ppap/components/MarkupTool.tsx` | Circle: `w-4 h-4 text-[10px]` → `w-7 h-7 text-xs`; Box: `w-4 h-4 text-[10px]` → `w-6 h-6 text-xs`; Triangle label: removed `mt-1`, added `style={{ marginTop: '-2px' }}` |
+
+### Decisions Made
+
+1. **`w-7 h-7` for circle (28px), `w-6 h-6` for box (24px).** Translates spec's `radius = fontSize * 1.4` (→ 28px diameter) and `size = fontSize * 2.2` (→ 22px ≈ 24px) with 10px base font.
+2. **`text-xs` (12px) instead of `text-[10px]`.** Larger container warrants slightly larger text; `text-xs` is the nearest Tailwind step.
+3. **Triangle: `mt-1` removed, `marginTop: '-2px'` applied.** `mt-1` (+4px) was shifting the label downward past the triangle's visual centroid. A small negative offset (-2px) nudges the number upward toward the centroid.
+
+### Validation
+
+- `npx tsc --noEmit` — zero new errors
+- All three marker shape edits confirmed correct by code read
+- Arrow and text shapes untouched
+
+---
+
 ## 2026-04-04 - [REFINE] V3.2F.3 — Annotation Sheet Format Simplification
 
 **Status:** ✅ COMPLETE
