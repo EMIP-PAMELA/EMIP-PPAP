@@ -14,6 +14,15 @@ import { logEvent } from '@/src/features/events/mutations';
 import { sanitizePlant } from './utils/plantValidation';
 
 export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
+  // V3.3A.16I: Check authentication state for RLS debugging
+  const { data: { user } } = await supabase.auth.getUser();
+  console.log('AUTH STATE', {
+    authenticated: !!user,
+    userId: user?.id,
+    email: user?.email,
+    role: user?.role,
+  });
+  
   // Phase 3H.9: Sanitize plant value before write (blocks invalid plants)
   const sanitizedPlant = sanitizePlant(input.plant);
   
@@ -39,6 +48,15 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
   
   // V3.3A.16F: Final payload verification before insert
   console.log('FINAL INSERT PAYLOAD', JSON.stringify(payload, null, 2));
+  
+  // V3.3A.16I: Log RLS policy context
+  console.log('RLS CONTEXT', {
+    table: 'ppap_records',
+    operation: 'INSERT',
+    policy: 'Allow all authenticated users to insert ppap_records',
+    requirement: 'TO authenticated WITH CHECK (true)',
+    userAuthenticated: !!user,
+  });
   
   // V3.3A.5: Department queue model - assign to department, leave owner null
   const { data, error } = await supabase
