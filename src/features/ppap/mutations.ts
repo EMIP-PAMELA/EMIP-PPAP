@@ -22,20 +22,25 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
     throw new Error('Invalid plant value. Must be one of: Ft. Smith, Ball Ground, Warner Robins');
   }
   
+  // V3.3A.16A: Build payload and log for debugging
+  const payload = {
+    ppap_number: input.ppap_number.trim(),
+    part_number: input.part_number,
+    customer_name: input.customer_name,
+    plant: sanitizedPlant,
+    request_date: input.request_date,
+    ppap_type: input.ppap_type,
+    department: input.department,
+    assigned_to: null,
+    status: 'NEW' as const,
+  };
+  
+  console.log('CREATE PPAP INPUT', JSON.stringify(payload, null, 2));
+  
   // V3.3A.5: Department queue model - assign to department, leave owner null
   const { data, error } = await supabase
     .from('ppap_records')
-    .insert({
-      ppap_number: input.ppap_number.trim(),
-      part_number: input.part_number,
-      customer_name: input.customer_name,
-      plant: sanitizedPlant,
-      request_date: input.request_date,
-      ppap_type: input.ppap_type,
-      department: input.department, // V3.3A.5: Required department for queue
-      assigned_to: null, // V3.3A.5: Starts unclaimed in department queue
-      status: 'NEW',
-    })
+    .insert(payload)
     .select()
     .maybeSingle();
 
