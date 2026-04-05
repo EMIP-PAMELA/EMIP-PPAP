@@ -17,20 +17,20 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
   // Phase 3H.9: Sanitize plant value before write (blocks invalid plants)
   const sanitizedPlant = sanitizePlant(input.plant);
   
-  // Phase 3H.12: Explicit error if plant validation fails
-  if (sanitizedPlant === null && input.plant) {
-    throw new Error('Invalid plant value. Must be one of: Ft. Smith, Ball Ground, Warner Robins');
+  // V3.3A.16E: Enforce plant requirement (database requires NOT NULL)
+  if (!sanitizedPlant) {
+    throw new Error('Production plant is required');
   }
   
   // V3.3A.16A: Build payload and log for debugging
   // V3.3A.16C: Removed assigned_to - column doesn't exist in current schema
+  // V3.3A.16E: Removed ppap_type - column doesn't exist in database schema
   const payload = {
     ppap_number: input.ppap_number.trim(),
     part_number: input.part_number,
     customer_name: input.customer_name,
     plant: sanitizedPlant,
     request_date: input.request_date,
-    ppap_type: input.ppap_type,
     department: input.department,
     status: 'NEW' as const,
   };
