@@ -1,18 +1,14 @@
 'use client';
 
 /**
- * Phase 3H.14: Simplified Document Workflow
+ * V3.3A.3: Document Scope-Driven Execution
  * 
- * REMOVED:
- * - Required Documents Checklist (user should not select requirements)
- * - Sidebar navigation (checklist/upload/readiness/confirmation)
- * - Fake checkboxes (docs_ready, can_meet_date)
- * - Duplicate upload sections
- * 
- * NEW STRUCTURE:
- * - Unified Document Execution panel (system-driven)
- * - Submission Gate (merged readiness + confirmation)
- * - System-calculated readiness
+ * COMPLETE REWRITE:
+ * - All documents rendered from documentScope (retrieved from PPAP_CREATED event)
+ * - Mode-based behavior: generated, assisted, static, na
+ * - Status tracking: not_started, in_progress, complete
+ * - Completion enforcement: blocks progression until all required docs complete
+ * - NO hardcoded document lists
  */
 
 import { useState, useEffect } from 'react';
@@ -22,113 +18,124 @@ import { updatePPAPState } from '../utils/updatePPAPState';
 import { currentUser } from '@/src/lib/mockUser';
 import { uploadPPAPDocument } from '../utils/uploadFile';
 import { getPPAPDocuments } from '../utils/getPPAPDocuments';
+import { getDocumentScope } from '../utils/getDocumentScope';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
+import { 
+  DOCUMENT_REGISTRY, 
+  MODE_LABELS, 
+  MODE_BADGE_CLASSES,
+  DocumentMode 
+} from '../config/documentRegistry';
+import {
+  DocumentCardData,
+  DocumentStatus,
+  isActionableDocument,
+  getActionLabel,
+  areRequiredDocumentsComplete,
+} from '../types/documentStatus';
 
 interface DocumentationFormProps {
   ppapId: string;
   partNumber: string;
-  initialSection?: string; // Phase 3H.14: Deprecated, kept for compatibility
+  initialSection?: string;
   isReadOnly?: boolean;
   currentPhase?: 'pre-ack' | 'post-ack';
 }
 
-type DocumentAction = 'upload' | 'create';
-
-interface DocumentItem {
-  id: string;
-  name: string;
-  requirement_level: 'REQUIRED' | 'CONDITIONAL';
-  status: 'missing' | 'ready';
-  actions: DocumentAction[];
-  file?: {
-    name: string;
-    uploaded_at: string;
-  };
-}
-
-interface UploadedFile {
-  file_name: string;
-  file_path: string;
-  document_type: string;
-  uploaded_at: string;
-}
-
-// Phase 3H.14: Document configuration - system determines requirements
-const DOCUMENT_CONFIG: DocumentItem[] = [
-  { id: 'ballooned_drawing', name: 'Ballooned Drawing', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
-  { id: 'design_record', name: 'Design Record', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
-  { id: 'dimensional_results', name: 'Dimensional Results', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
-  { id: 'dfmea', name: 'DFMEA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
-  { id: 'pfmea', name: 'PFMEA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
-  { id: 'control_plan', name: 'Control Plan', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
-  { id: 'msa', name: 'MSA', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
-  { id: 'material_test_results', name: 'Material Test Results', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
-  { id: 'initial_process_studies', name: 'Initial Process Studies', requirement_level: 'REQUIRED', status: 'missing', actions: ['upload', 'create'] },
-  { id: 'packaging', name: 'Packaging Specification', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload', 'create'] },
-  { id: 'tooling', name: 'Tooling Documentation', requirement_level: 'CONDITIONAL', status: 'missing', actions: ['upload', 'create'] },
-];
-
-
-export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOnly = false, currentPhase = 'post-ack' }: DocumentationFormProps) {
+export function DocumentationForm({ 
+  ppapId, 
+  partNumber, 
+  initialSection, 
+  isReadOnly = false, 
+  currentPhase = 'post-ack' 
+}: DocumentationFormProps) {
   const router = useRouter();
-  const [documents, setDocuments] = useState<DocumentItem[]>(DOCUMENT_CONFIG);
+  const [documents, setDocuments] = useState<DocumentCardData[]>([]);
+  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState('');
   
-  // Phase 3H.14: Submission gate data (simplified)
+  // Submission gate data
   const [suggestedDate, setSuggestedDate] = useState('');
   const [comments, setComments] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
   
-  // Phase 3H.1: Active work zone
   const [isSectionExpanded, setIsSectionExpanded] = useState(true);
   const isActiveWorkZone = currentPhase === 'post-ack';
 
-  // Phase 3H.14: System-calculated readiness
-  const allDocsReady = documents.filter(d => d.requirement_level === 'REQUIRED').every(d => d.status === 'ready');
-  const readyCount = documents.filter(d => d.status === 'ready').length;
-  const totalRequired = documents.filter(d => d.requirement_level === 'REQUIRED').length;
-
-  // Fetch uploaded files and sync with document state
+  // V3.3A.3: Load document scope and sync with uploaded files
   useEffect(() => {
-    const fetchUploadedFiles = async () => {
+    const loadDocuments = async () => {
       try {
-        const docs = await getPPAPDocuments(ppapId);
-        console.log('📂 Documents loaded:', docs.length);
+        setLoading(true);
         
-        const files = docs.map(doc => ({
-          file_name: doc.file_name,
-          file_path: doc.file_path,
-          document_type: doc.document_type || 'general',
-          uploaded_at: new Date().toISOString(),
-        }));
+        // 1. Retrieve document scope from PPAP_CREATED event
+        const scope = await getDocumentScope(ppapId);
+        
+        if (scope.length === 0) {
+          console.warn('No document scope found - PPAP may be missing PPAP_CREATED event');
+          setLoading(false);
+          return;
+        }
 
-        // Update document status based on uploaded files
-        setDocuments(prevDocs => 
-          prevDocs.map(doc => {
-            const uploadedFile = files.find(f => f.document_type === doc.id);
-            if (uploadedFile) {
-              return {
-                ...doc,
-                status: 'ready' as const,
-                file: {
-                  name: uploadedFile.file_name,
-                  uploaded_at: uploadedFile.uploaded_at,
-                },
-              };
+        // 2. Get uploaded files
+        const uploadedFiles = await getPPAPDocuments(ppapId);
+        
+        // 3. Build document cards from scope
+        const documentCards: DocumentCardData[] = scope
+          .filter(entry => entry.required) // Only show required documents
+          .map(entry => {
+            const config = DOCUMENT_REGISTRY.find(d => d.id === entry.documentId);
+            if (!config) {
+              console.warn('Document config not found for', entry.documentId);
+              return null;
             }
-            return doc;
+
+            // Check if file uploaded
+            const uploadedFile = uploadedFiles.find(f => f.document_type === entry.documentId);
+            
+            // Determine status
+            let status: DocumentStatus = 'not_started';
+            if (uploadedFile) {
+              status = 'complete';
+            }
+
+            return {
+              documentId: entry.documentId,
+              name: config.name,
+              mode: entry.mode,
+              owner: entry.owner,
+              required: entry.required,
+              status,
+              filePath: uploadedFile?.file_path,
+              fileName: uploadedFile?.file_name,
+            };
           })
-        );
+          .filter(Boolean) as DocumentCardData[];
+
+        console.log('📋 Documents loaded from scope:', {
+          total: documentCards.length,
+          required: documentCards.filter(d => d.required).length,
+          complete: documentCards.filter(d => d.status === 'complete').length,
+        });
+
+        setDocuments(documentCards);
       } catch (error) {
-        console.error('Failed to fetch uploaded files:', error);
+        console.error('Failed to load documents:', error);
+        setErrors({ _form: 'Failed to load document configuration' });
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchUploadedFiles();
+    loadDocuments();
   }, [ppapId]);
+
+  // Calculate readiness
+  const allRequiredComplete = areRequiredDocumentsComplete(documents);
+  const completeCount = documents.filter(d => d.status === 'complete').length;
+  const requiredCount = documents.filter(d => d.required && isActionableDocument(d.mode)).length;
 
   // Document upload handler
   const handleDocumentUpload = async (documentId: string, event: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,42 +148,35 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     try {
       const file = files[0];
       
-      console.log('📄 DOCUMENT UPLOADED', {
-        documentType: documentId,
-        fileName: file.name,
-        timestamp: new Date().toISOString(),
-      });
-
-      const filePath = await uploadPPAPDocument(file, ppapId);
+      const fileRef = await uploadPPAPDocument(file, ppapId);
 
       await logEvent({
         ppap_id: ppapId,
         event_type: 'DOCUMENT_ADDED',
         event_data: {
           file_name: file.name,
-          file_path: filePath,
+          file_path: fileRef.url,
           document_type: documentId,
         },
         actor: currentUser.name,
         actor_role: currentUser.role,
       });
 
+      // Update document status
       setDocuments(prevDocs =>
         prevDocs.map(doc =>
-          doc.id === documentId
+          doc.documentId === documentId
             ? {
                 ...doc,
-                status: 'ready' as const,
-                file: {
-                  name: file.name,
-                  uploaded_at: new Date().toISOString(),
-                },
+                status: 'complete' as DocumentStatus,
+                filePath: fileRef.url,
+                fileName: file.name,
               }
             : doc
         )
       );
 
-      setSuccessMessage(`Successfully uploaded ${file.name}`);
+      setSuccessMessage(`✓ ${file.name} uploaded successfully`);
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (error) {
       console.error('Upload failed:', error);
@@ -187,13 +187,11 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     }
   };
 
-
   // Submit handler
   const handleSubmit = async () => {
     setErrors({});
     setSuccessMessage('');
 
-    // Phase 3H.14: Validation
     const newErrors: Record<string, string> = {};
     
     if (!suggestedDate) {
@@ -204,8 +202,8 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
       newErrors.acknowledgement = 'You must acknowledge the submission';
     }
     
-    if (!allDocsReady) {
-      newErrors._form = 'All required documents must be uploaded before submission';
+    if (!allRequiredComplete) {
+      newErrors._form = 'All required documents must be complete before submission';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -222,7 +220,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
         event_data: {
           submission_date: suggestedDate,
           comments: comments,
-          documents_ready: readyCount,
+          documents_complete: completeCount,
           total_documents: documents.length,
         },
         actor: currentUser.name,
@@ -254,12 +252,86 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
     }
   };
 
+  // Render document action button based on mode
+  const renderDocumentAction = (doc: DocumentCardData) => {
+    switch (doc.mode) {
+      case 'generated':
+        return (
+          <button
+            onClick={() => router.push(`/ppap/${ppapId}/copilot?documentType=${doc.documentId}`)}
+            disabled={isReadOnly}
+            className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+          >
+            🤖 Generate with AI
+          </button>
+        );
+      
+      case 'assisted':
+        // Special case for ballooned_drawing
+        if (doc.documentId === 'ballooned_drawing') {
+          return (
+            <button
+              onClick={() => router.push(`/ppap/${ppapId}/markup`)}
+              disabled={isReadOnly}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+            >
+              🖊️ Markup Tool
+            </button>
+          );
+        }
+        return (
+          <button
+            onClick={() => router.push(`/ppap/${ppapId}/documents`)}
+            disabled={isReadOnly}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+          >
+            📝 Open Workspace
+          </button>
+        );
+      
+      case 'static':
+        return (
+          <label className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-lg cursor-pointer text-center text-sm font-medium transition-colors">
+            {doc.status === 'complete' ? '📤 Replace' : '📤 Upload'}
+            <input
+              type="file"
+              className="sr-only"
+              onChange={(e) => handleDocumentUpload(doc.documentId, e)}
+              disabled={isReadOnly || uploading}
+              accept=".pdf,.doc,.docx,.xls,.xlsx"
+            />
+          </label>
+        );
+      
+      case 'na':
+        return (
+          <div className="flex-1 px-4 py-2 bg-gray-100 text-gray-400 rounded-lg text-center text-sm font-medium">
+            N/A - Not Required
+          </div>
+        );
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-gray-300 p-8">
+        <div className="flex items-center justify-center gap-3">
+          <svg className="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span className="text-gray-600">Loading document configuration...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       {/* Collapsed summary */}
       {!isActiveWorkZone && !isSectionExpanded && (
         <div className="px-6 py-4 text-sm text-gray-600">
-          <p>Documents: {readyCount}/{documents.length} ready</p>
+          <p>Documents: {completeCount}/{documents.length} complete</p>
         </div>
       )}
 
@@ -277,7 +349,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
               }`}>
                 {isActiveWorkZone ? '📄 ' : ''}Documentation Phase
               </h2>
-              <p className="text-sm text-gray-600 mt-1">Prepare and upload required PPAP documentation</p>
+              <p className="text-sm text-gray-600 mt-1">Execute document scope defined during PPAP creation</p>
             </div>
             {!isActiveWorkZone && (
               <button
@@ -296,7 +368,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
             <CurrentTaskBanner
               phase="Post-Acknowledgement"
               currentStep="Document Execution"
-              instruction="Upload required documents or create from templates"
+              instruction="Complete all required documents according to configured scope"
               icon="📄"
             />
           </div>
@@ -324,33 +396,34 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
               </div>
             )}
 
-            {/* Phase 3H.14: UNIFIED DOCUMENT EXECUTION PANEL */}
+            {/* V3.3A.3: SCOPE-DRIVEN DOCUMENT EXECUTION */}
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">Document Execution</h3>
                   <p className="text-sm text-gray-600 mt-1">
-                    System-determined required documents • {readyCount} of {totalRequired} required documents ready
+                    Scope-driven • {completeCount} of {requiredCount} required documents complete
                   </p>
                 </div>
-                <button
-                  onClick={() => router.push(`/ppap/${ppapId}/documents`)}
-                  disabled={isReadOnly}
-                  title={isReadOnly ? 'View-only mode — contact coordinator to make changes' : 'Open Document Workspace for all document generation'}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-                >
-                  � Open Document Workspace
-                </button>
               </div>
+
+              {documents.length === 0 && (
+                <div className="p-8 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
+                  <p className="text-yellow-800 font-medium">No document scope configured</p>
+                  <p className="text-sm text-yellow-700 mt-1">
+                    This PPAP may have been created before document scope was implemented.
+                  </p>
+                </div>
+              )}
 
               {/* Document cards */}
               <div className="grid grid-cols-1 gap-4">
                 {documents.map((doc) => (
                   <div
-                    key={doc.id}
-                    className={`border rounded-lg p-4 transition-all ${
-                      doc.status === 'ready'
-                        ? 'border-green-300 bg-green-50'
+                    key={doc.documentId}
+                    className={`border-2 rounded-lg p-4 transition-all ${
+                      doc.status === 'complete'
+                        ? 'border-green-400 bg-green-50'
                         : 'border-gray-300 bg-white'
                     }`}
                   >
@@ -358,85 +431,42 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="text-sm font-semibold text-gray-900">{doc.name}</h4>
-                        <span
-                          className={`px-2 py-0.5 text-xs font-semibold rounded ${
-                            doc.requirement_level === 'REQUIRED'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}
-                        >
-                          {doc.requirement_level}
+                        <span className={`px-2 py-0.5 text-xs font-semibold rounded ${MODE_BADGE_CLASSES[doc.mode]}`}>
+                          {MODE_LABELS[doc.mode]}
                         </span>
+                        {doc.owner && (
+                          <span className="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded border border-blue-200">
+                            👤 {doc.owner}
+                          </span>
+                        )}
                       </div>
                       <span
                         className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                          doc.status === 'ready'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-600'
+                          doc.status === 'complete'
+                            ? 'bg-green-600 text-white'
+                            : 'bg-gray-200 text-gray-600'
                         }`}
                       >
-                        {doc.status === 'ready' ? '✓ Ready' : 'Missing'}
+                        {doc.status === 'complete' ? '✓ Complete' : 'Not Started'}
                       </span>
                     </div>
 
                     {/* File Info */}
-                    {doc.file && (
-                      <div className="mb-3 p-2 bg-white border border-green-200 rounded text-xs">
-                        <p className="font-medium text-gray-900">{doc.file.name}</p>
-                        <p className="text-gray-600">
-                          Uploaded {new Date(doc.file.uploaded_at).toLocaleString()}
-                        </p>
+                    {doc.fileName && (
+                      <div className="mb-3 p-2 bg-white border border-green-300 rounded text-xs">
+                        <p className="font-medium text-gray-900">📎 {doc.fileName}</p>
                       </div>
                     )}
 
-                    {/* V3.2F.2: ballooned_drawing gets a dedicated Markup Tool action */}
+                    {/* Mode-based action */}
                     <div className="flex gap-2">
-                      {doc.id === 'ballooned_drawing' && (
-                        <button
-                          onClick={() => router.push(`/ppap/${ppapId}/markup`)}
-                          disabled={isReadOnly}
-                          title={isReadOnly ? 'View-only mode — contact coordinator to make changes' : 'Open Drawing Markup Tool'}
-                          className={`flex-1 px-4 py-2 text-sm font-medium rounded transition-colors ${
-                            isReadOnly
-                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                              : 'bg-blue-600 text-white hover:bg-blue-700'
-                          }`}
-                        >
-                          Markup Tool
-                        </button>
-                      )}
-                      {/* Upload Button */}
-                      <label
-                        title={
-                          isReadOnly
-                            ? 'View-only mode — contact coordinator to make changes'
-                            : uploading
-                            ? 'Upload in progress — please wait'
-                            : doc.status === 'ready'
-                            ? `Replace existing ${doc.name} file`
-                            : `Upload ${doc.name} file (PDF, Word, Excel) to mark as ready`
-                        }
-                        className={`w-full px-4 py-2 text-sm font-medium text-center rounded transition-colors ${
-                          isReadOnly || uploading
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300 cursor-pointer'
-                        }`}
-                      >
-                        {uploading ? '⏳ Uploading...' : doc.status === 'ready' ? '📤 Replace' : '📤 Upload'}
-                        <input
-                          type="file"
-                          className="sr-only"
-                          onChange={(e) => handleDocumentUpload(doc.id, e)}
-                          disabled={isReadOnly || uploading}
-                          accept=".pdf,.doc,.docx,.xls,.xlsx"
-                        />
-                      </label>
+                      {renderDocumentAction(doc)}
                     </div>
 
                     {/* Error Message */}
-                    {errors[doc.id] && (
+                    {errors[doc.documentId] && (
                       <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
-                        {errors[doc.id]}
+                        {errors[doc.documentId]}
                       </div>
                     )}
                   </div>
@@ -444,20 +474,20 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
               </div>
             </div>
 
-            {/* Phase 3H.14: SUBMISSION GATE (merged readiness + confirmation) */}
+            {/* SUBMISSION GATE */}
             <div className={`border-2 rounded-lg p-6 transition-all ${
-              allDocsReady 
+              allRequiredComplete 
                 ? 'border-green-400 bg-green-50' 
                 : 'border-gray-300 bg-gray-50'
             }`}>
               <div className="flex items-center gap-3 mb-4">
-                <span className="text-2xl">{allDocsReady ? '🟢' : '🔴'}</span>
+                <span className="text-2xl">{allRequiredComplete ? '🟢' : '🔴'}</span>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">Submission Gate</h3>
                   <p className="text-sm text-gray-600">
-                    {allDocsReady 
-                      ? 'Ready for submission - all required documents uploaded' 
-                      : `Not ready - ${totalRequired - readyCount} required document(s) missing`}
+                    {allRequiredComplete 
+                      ? 'Ready for submission - all required documents complete' 
+                      : `Not ready - ${requiredCount - completeCount} required document(s) incomplete`}
                   </p>
                 </div>
               </div>
@@ -530,7 +560,7 @@ export function DocumentationForm({ ppapId, partNumber, initialSection, isReadOn
               </div>
               <button
                 onClick={handleSubmit}
-                disabled={loading || isReadOnly || !allDocsReady || !acknowledged || !suggestedDate}
+                disabled={loading || isReadOnly || !allRequiredComplete || !acknowledged || !suggestedDate}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm"
               >
                 {loading ? 'Submitting...' : isReadOnly ? '🔒 Preview Mode' : 'Submit Documentation & Advance to Sample →'}
