@@ -31,11 +31,21 @@ interface PanelState {
   minimized: boolean;
 }
 
-const DEFAULT_STATE: PanelState = {
-  position: { x: window.innerWidth - 420, y: 80 }, // Top-right
-  size: { width: 400, height: 600 },
-  minimized: false,
+// V3.3A.13: Smart default docking - smaller, less intrusive
+const getDefaultState = (): PanelState => {
+  const width = 380;
+  const height = 420;
+  const x = Math.max(20, Math.min(window.innerWidth - width - 20, window.innerWidth - 420));
+  const y = 100;
+  
+  return {
+    position: { x, y },
+    size: { width, height },
+    minimized: false,
+  };
 };
+
+const DEFAULT_STATE: PanelState = getDefaultState();
 
 const MIN_WIDTH = 300;
 const MIN_HEIGHT = 250;
@@ -61,14 +71,22 @@ export function PPAPActivityPanel({ ppapId }: PPAPActivityPanelProps) {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        // V3.3A.13: Clamp saved position to viewport
+        const clampedX = Math.max(0, Math.min(parsed.position?.x || DEFAULT_STATE.position.x, window.innerWidth - (parsed.size?.width || DEFAULT_STATE.size.width)));
+        const clampedY = Math.max(80, parsed.position?.y || DEFAULT_STATE.position.y);
+        
         setState({
-          position: parsed.position || DEFAULT_STATE.position,
+          position: { x: clampedX, y: clampedY },
           size: parsed.size || DEFAULT_STATE.size,
           minimized: parsed.minimized ?? DEFAULT_STATE.minimized,
         });
       } catch (error) {
         console.warn('Failed to parse saved panel state:', error);
+        setState(getDefaultState());
       }
+    } else {
+      // V3.3A.13: Apply smart defaults on first load
+      setState(getDefaultState());
     }
   }, []);
 

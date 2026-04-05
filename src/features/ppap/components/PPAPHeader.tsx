@@ -73,14 +73,15 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
     }
   };
   
+  // V3.3A.14: Reduce visual aggression - use informational tones
   const getBannerColor = () => {
     switch (nextActionData.priority) {
       case 'urgent':
         return 'bg-red-50 border-red-300 text-red-900';
       case 'warning':
-        return 'bg-yellow-50 border-yellow-300 text-yellow-900';
+        return 'bg-blue-50 border-blue-200 text-blue-900'; // Changed from yellow to blue
       default:
-        return 'bg-gray-50 border-gray-300 text-gray-900';
+        return 'bg-gray-50 border-gray-200 text-gray-900';
     }
   };
 
@@ -98,13 +99,15 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
           </div>
           {/* Phase 3H.12/3H.13.5: Phase vs Status clarity with interpretation */}
           <div className="text-right">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Phase (Derived)</div>
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Current Phase</div>
             <div className="text-sm font-semibold text-gray-700">{derivedPhase}</div>
-            <div className="text-xs text-gray-500 uppercase tracking-wide mt-1">Status (Raw)</div>
-            <div className="text-sm font-mono text-gray-700">{ppap.status}</div>
-            {/* Phase 3H.13.5: Interpreted guidance */}
+            <div className="text-xs text-gray-500 uppercase tracking-wide mt-1">Status</div>
+            <div className="text-sm font-semibold text-gray-700">
+              {ppap.status === 'READY_TO_ACKNOWLEDGE' ? 'Validation Pending' : ppap.status.replace(/_/g, ' ')}
+            </div>
+            {/* V3.3A.14: Non-blocking status guidance */}
             <div className="text-xs text-gray-600 mt-2 italic max-w-xs">
-              {ppap.status === 'READY_TO_ACKNOWLEDGE' && 'Coordinator must acknowledge before work continues'}
+              {ppap.status === 'READY_TO_ACKNOWLEDGE' && 'Pre-build validation pending (Coordinator review required before release)'}
               {ppap.status === 'POST_ACK_IN_PROGRESS' && 'Work actively ongoing'}
               {ppap.status === 'AWAITING_SUBMISSION' && 'Ready for submission to customer'}
               {ppap.status === 'SUBMITTED' && 'Under customer review'}
