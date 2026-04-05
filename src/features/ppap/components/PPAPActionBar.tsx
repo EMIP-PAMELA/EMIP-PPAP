@@ -24,8 +24,9 @@ export default function PPAPActionBar({ ppapId, ppapState, validations }: Props)
   const postAckReady = isPostAckReady(validations);
 
   const showAssign = canAssignPPAP(currentUser.role);
-  const showAcknowledge = ppapState === 'READY_FOR_ACKNOWLEDGEMENT';
-  const showSubmit = ppapState === 'READY_FOR_SUBMISSION';
+  // V3.3A: compare directly against PPAPStatus values
+  const showAcknowledge = ppapState === 'READY_TO_ACKNOWLEDGE';
+  const showSubmit = ppapState === 'AWAITING_SUBMISSION';
 
   const canAcknowledge = canAcknowledgePPAP(currentUser.role, ppapState) && preAckReady;
   const canSubmit = canSubmitPPAP(currentUser.role, ppapState) && postAckReady;
@@ -194,7 +195,7 @@ export default function PPAPActionBar({ ppapId, ppapState, validations }: Props)
         )}
 
         <div className="ml-auto text-xs text-gray-500">
-          Phase 3G: Real state transitions with persistence
+          V3.3A: State-driven actions
         </div>
       </div>
     </div>

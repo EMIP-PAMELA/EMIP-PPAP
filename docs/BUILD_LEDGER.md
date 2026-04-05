@@ -4,6 +4,211 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-05 - [IMPL] V3.3A-SCOPE — Document Scope Model + Intake UI
+
+**Status:** ✅ COMPLETE
+
+**Summary:** Introduce document mode model (`generated | assisted | static | na`) and document type registry. Add document scope selection table to PPAP intake form. Validate scope before PPAP creation. Log scope snapshot as event_data at creation time.
+
+**Type:** Model + UI Only (No Schema Changes)
+
+---
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/features/ppap/config/documentRegistry.ts` | NEW — document type registry with modes, defaults, editability, ai-capability |
+| `src/features/ppap/components/CreatePPAPForm.tsx` | Added document scope state, scope table UI, scope validation, scope event logging |
+
+---
+
+### Data Model
+
+```ts
+type DocumentMode = 'generated' | 'assisted' | 'static' | 'na';
+
+interface DocumentScopeEntry {
+  documentId: string;
+  required: boolean;
+  mode: DocumentMode;
+  owner: string;
+}
+```
+
+### Mode Definitions
+
+| Mode | Meaning | Owner Required |
+|------|---------|---------------|
+| `generated` | Claude produces from BOM + context | Yes |
+| `assisted` | Tool-assisted (Markup Tool, etc.) | Yes |
+| `static` | Manual/boilerplate/supplier upload | No |
+| `na` | Not applicable | No |
+
+### Default Modes (Trane wire harness baseline)
+
+| Document | Default | Rationale |
+|----------|---------|-----------|
+| Ballooned Drawing | `assisted` | Markup Tool; non-editable mode |
+| Design Record | `static` | Customer-supplied |
+| Dimensional Results | `static` | Lab data |
+| DFMEA | `na` | Typically N/A for wire harness |
+| PFMEA | `generated` | Claude-capable |
+| Control Plan | `generated` | Claude-capable |
+| MSA | `na` | Typically N/A |
+| Material Test Results | `static` | Supplier certs |
+| Initial Process Studies | `na` | Typically N/A |
+| Packaging Spec | `static` | CONDITIONAL |
+| Tooling Docs | `na` | CONDITIONAL |
+
+### Persistence Note
+
+`ppap_records` has no `document_scope` column. Scope is logged as `event_data` on the `PPAP_CREATED` event. Full persistence requires a new `ppap_document_scope` table — deferred schema task.
+
+### Validation Rules Applied
+
+- Required docs with mode `na` → error
+- Required docs with mode `generated` or `assisted` and no owner → error
+
+---
+
+**Validation:** `npx tsc --noEmit` — only pre-existing known errors (FileReference, admin pages). Zero new errors.
+
+**Commit message:** `feat(intake): add document scope model and intake selection UI`
+
+---
+
+## 2026-04-05 - [IMPL] V3.3A-ENFORCE — Workflow State Enforcement Pass
+
+**Status:** ✅ COMPLETE
+
+**Summary:** Enforce V3.3A workflow design in UI. Align all state comparisons with PPAPStatus values from database.types.ts. Fix acknowledge/submit action visibility bugs. Gate document generation and Copilot to post-ack states only. Implement tab structure on PPAP detail page. Create /ppap/[id]/copilot route. Remove /copilot?ppapId pattern.
+
+**Type:** Workflow Enforcement / UI Alignment (No Schema Changes)
+
+---
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/features/ppap/utils/permissions.ts` | Fixed `canAcknowledgePPAP` and `canSubmitPPAP` to compare against PPAPStatus values (`READY_TO_ACKNOWLEDGE`, `AWAITING_SUBMISSION`) instead of derived labels |
+| `src/features/ppap/components/PPAPActionBar.tsx` | Fixed `showAcknowledge` and `showSubmit` to compare against correct PPAPStatus values |
+| `src/features/ppap/components/PPAPAcknowledgementBanner.tsx` | Fixed state comparison to use `ppapStatus === 'READY_TO_ACKNOWLEDGE'` directly |
+| `src/features/ppap/utils/stateWorkflowMapping.ts` | Fixed `canEditPreAckValidations` and `canEditPostAckValidations` to use PPAPStatus values |
+| `src/features/ppap/utils/stateMachine.ts` | Full rewrite: aligned with PPAPStatus, removed IN_REVIEW, exported PPAPState as alias for PPAPStatus |
+| `src/features/ppap/components/PPAPDetailLayout.tsx` | NEW — tab-based PPAP detail layout (Overview/Validations/Documents/Activity), Copilot gated to post-ack |
+| `app/ppap/[id]/page.tsx` | Replaced junk-drawer layout with PPAPDetailLayout |
+| `app/ppap/[id]/copilot/page.tsx` | NEW — PPAP-bound Copilot route |
+| `app/copilot/page.tsx` | Standalone only; removed ppapId query param support |
+
+---
+
+### Decisions Made
+
+- **PPAPStatus is the single source of truth.** All state comparisons in permission checks, action bar visibility, and validation editability now compare directly against PPAPStatus database values. Derived state labels (e.g. `READY_FOR_ACKNOWLEDGEMENT`) are for display only and must not be used for logic gating.
+- **Copilot gated at Documents tab entry.** If PPAP status is not in a post-ack state, Documents tab shows a lock notice instead of document cards and Copilot entry.
+- **IN_REVIEW removed from state machine.** Not used in practice; merges into pre-ack flow per V3.3A.
+- **PPAPIntakeSnapshot, PPAPActivityFeed (stub), ConversationList grid, EventHistory grid removed from PPAP detail page.** Activity tab uses live `events` and `conversations` passed from server component. Stub components removed from the rendered page.
+
+---
+
+### Bugs Fixed
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| Acknowledge button never appeared | `showAcknowledge = ppapState === 'READY_FOR_ACKNOWLEDGEMENT'` but DB uses `READY_TO_ACKNOWLEDGE` | Fixed string comparison |
+| Submit button never appeared | `showSubmit = ppapState === 'READY_FOR_SUBMISSION'` but DB uses `AWAITING_SUBMISSION` | Fixed string comparison |
+| Pre-ack validations not locking after ack | `canEditPreAckValidations` checked derived state labels, not PPAPStatus | Fixed to use PPAPStatus |
+| Post-ack validations always locked | `canEditPostAckValidations` checked `IN_VALIDATION` and `READY_FOR_SUBMISSION` (derived labels) | Fixed to `POST_ACK_IN_PROGRESS` and `AWAITING_SUBMISSION` |
+| Acknowledgement banner never appeared | Compared `derivedState === 'READY_FOR_ACKNOWLEDGEMENT'` instead of `ppapStatus === 'READY_TO_ACKNOWLEDGE'` | Fixed |
+
+---
+
+### Validation
+
+- `npx tsc --noEmit` — only pre-existing known errors. Zero new errors.
+- All state comparisons now use PPAPStatus values from database.types.ts.
+- Copilot entry hidden for pre-ack states; visible for post-ack states with correct route.
+- Tab structure renders correctly for all roles.
+
+---
+
+**Commit message:** `feat(workflow): enforce V3.3A state machine alignment and tab structure`
+
+---
+
+## 2026-04-05 - [STAB] V3.2F.7-ALIGN — CopilotChatPanel UI Stabilization
+
+**Status:** ✅ COMPLETE
+
+**Summary:** Align CopilotChatPanel UI behavior with deterministic document generation model. Remove chat-system ambiguity. Send Follow-Up no longer requires text input. Visual hierarchy established: Generate Document (primary/green) > Send Follow-Up (secondary/blue).
+
+**Type:** Stabilization / UI Alignment (No Logic Changes, No Schema Changes)
+
+**Files Changed:**
+- `src/features/documentEngine/ui/CopilotChatPanel.tsx` — removed `!inputValue.trim()` guard from Send button; renamed "Send" → "Send Follow-Up"; reduced button emphasis (font-medium, lighter blue); added helper text above input area; updated placeholder
+
+**Decisions Made:** None — UI-only alignment to match existing system behavior.
+
+**Validation:** `npx tsc --noEmit` — only pre-existing known errors. Zero new errors.
+
+**Commit message:** `style(copilot): align chat panel UI with deterministic generation model`
+
+---
+
+## 2026-04-04 - [IMPL] V3.2F.7 — Document-Type Driven Prompt Injection System
+
+**Status:** ✅ COMPLETE
+
+**Summary:** Wire claudeOrchestrator.ts to use prompt template registry values (systemPrompt, documentInstructions, outputFormat) instead of generic fallback strings from inputPackage. Add "Generate Document" button to CopilotChatPanel that triggers Claude without requiring user-typed input, enabling zero-friction document generation from BOM data alone.
+
+**Type:** Controlled Feature Enhancement (Non-Breaking, No Schema Changes)
+
+---
+
+### Purpose
+
+Prior to this phase, claudeOrchestrator.ts called `getPromptTemplate()` but ignored the returned values — using `inputPackage.systemPrompt` (generic string) and `inputPackage.template.outputFormat` (empty `{}`) instead. This meant the AIAG-standard prompt templates in promptRegistry.ts had no effect on generation quality. Additionally, users had to type a message before generation could start, creating unnecessary friction.
+
+---
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/features/documentEngine/core/claudeOrchestrator.ts` | Use `promptTemplate.systemPrompt`, `promptTemplate.documentInstructions`, `promptTemplate.outputFormat` instead of inputPackage generic fields |
+| `src/features/documentEngine/ui/CopilotChatPanel.tsx` | Add `handleGenerateDocument()`, allow empty-message sends, add "Generate Document" button, update placeholder text |
+
+---
+
+### Decisions Made
+
+- **Do not duplicate prompt templates.** Spec initially suggested creating `src/features/copilot/promptTemplates.ts`. Decision: do not create duplicate. Fix the orchestrator to use the existing `promptRegistry.ts` values instead. The registry already contains comprehensive AIAG-standard templates.
+- **Allow empty-message generation.** When "Generate Document" is clicked, `handleSendMessage('')` is called with an empty override. No user message bubble is added to the UI. Claude receives the full template-driven system prompt and BOM data without a user message in the conversation array.
+
+---
+
+### Validation
+
+- TypeScript check: `npx tsc --noEmit` — only pre-existing known errors (admin pages, FileReference). Zero new errors.
+- `promptTemplate.outputFormat` resolves from registry (not `{}`); system prompt is template-driven.
+- "Generate Document" button visible and enabled when BOM data present, disabled during loading.
+- Send button still requires typed text (unchanged behavior for follow-up messages).
+
+---
+
+### Risks / Follow-ups
+
+- `inputPackage.systemPrompt` and `inputPackage.documentInstructions` fields on the `any`-typed input package are now unused — they remain in the object built by CopilotChatPanel but are ignored by the orchestrator. Low risk; these could be cleaned up in a future pass.
+- Empty-message generation sends only BOM data + template prompts; if BOM data is absent, Claude will receive minimal input. Existing `validateRequiredInputs` will throw if BOM is required but absent.
+
+---
+
+**Commit message:** `feat(copilot): implement document-type driven prompt injection system`
+
+---
+
 ## 2026-04-04 - [IMPL] V3.2F.2 — Markup Tool Dual-Context Integration
 
 **Status:** ✅ COMPLETE

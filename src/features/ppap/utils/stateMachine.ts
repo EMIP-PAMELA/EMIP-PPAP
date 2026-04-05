@@ -1,55 +1,42 @@
-export type PPAPState =
-  | 'INITIATED'
-  | 'INTAKE_COMPLETE'
-  | 'IN_PROGRESS'
-  | 'IN_REVIEW'
-  | 'READY_FOR_ACKNOWLEDGEMENT'
-  | 'ACKNOWLEDGED'
-  | 'POST_ACK_ASSIGNED'
-  | 'IN_VALIDATION'
-  | 'READY_FOR_SUBMISSION'
-  | 'SUBMITTED'
-  | 'ACCEPTED'
-  | 'REJECTED'
-  | 'COMPLETE'
-  | 'BLOCKED'
-  | 'ON_HOLD';
+/**
+ * PPAP State Machine
+ * V3.3A: Aligned with PPAPStatus from database.types.ts.
+ * IN_REVIEW removed per V3.3A design — not a valid workflow state.
+ *
+ * NOTE: Authoritative transition logic lives in updatePPAPState.ts (isValidTransition).
+ * This file re-exports types and provides a canTransition guard used by ppapTransitionGuard.ts.
+ */
 
-const VALID_TRANSITIONS: Record<PPAPState, PPAPState[]> = {
-  INITIATED: ['INTAKE_COMPLETE', 'IN_PROGRESS', 'BLOCKED', 'ON_HOLD'],
-  INTAKE_COMPLETE: ['IN_PROGRESS', 'READY_FOR_ACKNOWLEDGEMENT', 'BLOCKED'],
-  IN_PROGRESS: ['IN_REVIEW', 'READY_FOR_ACKNOWLEDGEMENT', 'BLOCKED'],
-  IN_REVIEW: ['READY_FOR_ACKNOWLEDGEMENT', 'IN_PROGRESS', 'BLOCKED'],
-  READY_FOR_ACKNOWLEDGEMENT: ['ACKNOWLEDGED'],
-  ACKNOWLEDGED: ['POST_ACK_ASSIGNED', 'IN_VALIDATION'],
-  POST_ACK_ASSIGNED: ['IN_VALIDATION'],
-  IN_VALIDATION: ['READY_FOR_SUBMISSION', 'BLOCKED'],
-  READY_FOR_SUBMISSION: ['SUBMITTED'],
-  SUBMITTED: ['ACCEPTED', 'REJECTED'],
-  REJECTED: ['IN_VALIDATION'],
-  ACCEPTED: ['COMPLETE'],
-  COMPLETE: [],
-  BLOCKED: ['IN_PROGRESS', 'IN_VALIDATION'],
-  ON_HOLD: ['IN_PROGRESS'],
+import { PPAPStatus } from '@/src/types/database.types';
+
+// Re-export PPAPStatus as PPAPState for backward compatibility with ppapTransitionGuard.ts
+export type PPAPState = PPAPStatus;
+
+const VALID_TRANSITIONS: Record<PPAPStatus, PPAPStatus[]> = {
+  NEW:                  ['INTAKE_COMPLETE', 'PRE_ACK_ASSIGNED', 'ON_HOLD', 'BLOCKED'],
+  INTAKE_COMPLETE:      ['PRE_ACK_ASSIGNED', 'BLOCKED'],
+  PRE_ACK_ASSIGNED:     ['PRE_ACK_IN_PROGRESS', 'BLOCKED'],
+  PRE_ACK_IN_PROGRESS:  ['READY_TO_ACKNOWLEDGE', 'ON_HOLD', 'BLOCKED'],
+  READY_TO_ACKNOWLEDGE: ['ACKNOWLEDGED'],
+  ACKNOWLEDGED:         ['POST_ACK_ASSIGNED'],
+  POST_ACK_ASSIGNED:    ['POST_ACK_IN_PROGRESS', 'BLOCKED'],
+  POST_ACK_IN_PROGRESS: ['AWAITING_SUBMISSION', 'ON_HOLD', 'BLOCKED'],
+  AWAITING_SUBMISSION:  ['SUBMITTED', 'ON_HOLD', 'BLOCKED'],
+  SUBMITTED:            ['APPROVED', 'ON_HOLD', 'BLOCKED'],
+  APPROVED:             ['CLOSED'],
+  ON_HOLD:              ['PRE_ACK_IN_PROGRESS', 'POST_ACK_IN_PROGRESS', 'AWAITING_SUBMISSION'],
+  BLOCKED:              ['PRE_ACK_IN_PROGRESS', 'POST_ACK_IN_PROGRESS', 'AWAITING_SUBMISSION'],
+  CLOSED:               [],
 };
 
-export function canTransition(
-  current: PPAPState,
-  next: PPAPState
-): boolean {
+export function canTransition(current: PPAPState, next: PPAPState): boolean {
   return VALID_TRANSITIONS[current]?.includes(next) ?? false;
 }
 
-export function transitionPPAPState(
-  currentState: PPAPState,
-  nextState: PPAPState
-): PPAPState {
+export function transitionPPAPState(currentState: PPAPState, nextState: PPAPState): PPAPState {
   if (!canTransition(currentState, nextState)) {
     throw new Error(`Invalid transition: ${currentState} → ${nextState}`);
   }
-
-  // TODO Phase 3C: log state transition event
-
   return nextState;
 }
 

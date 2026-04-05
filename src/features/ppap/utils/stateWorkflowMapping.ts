@@ -99,31 +99,33 @@ export function mapStateToWorkflowPhase(state: string): WorkflowPhase {
 /**
  * Determines if pre-ack validations are editable based on state.
  * Pre-ack validations can only be edited BEFORE acknowledgement.
+ * V3.3A: Uses PPAPStatus values directly (not derived labels).
  */
 export function canEditPreAckValidations(state: string): boolean {
   const preAckStates = [
-    'INITIATED',
-    'IN_REVIEW',
+    'NEW',
     'INTAKE_COMPLETE',
-    'IN_PROGRESS',
-    'READY_FOR_ACKNOWLEDGEMENT',
+    'PRE_ACK_ASSIGNED',
+    'PRE_ACK_IN_PROGRESS',
+    'READY_TO_ACKNOWLEDGE',
   ];
-  
+
   return preAckStates.includes(state);
 }
 
 /**
  * Determines if post-ack validations are editable based on state.
  * Post-ack validations can only be edited AFTER acknowledgement.
+ * V3.3A: Uses PPAPStatus values directly (not derived labels).
  */
 export function canEditPostAckValidations(state: string): boolean {
   const postAckStates = [
     'ACKNOWLEDGED',
     'POST_ACK_ASSIGNED',
-    'IN_VALIDATION',
-    'READY_FOR_SUBMISSION',
+    'POST_ACK_IN_PROGRESS',
+    'AWAITING_SUBMISSION',
   ];
-  
+
   return postAckStates.includes(state);
 }
 

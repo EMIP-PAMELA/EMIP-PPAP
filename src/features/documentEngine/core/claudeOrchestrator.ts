@@ -87,7 +87,8 @@ export async function orchestrate(
 ): Promise<CopilotDraft> {
   console.log('[ClaudeOrchestrator] Starting orchestration');
   console.log('[ClaudeOrchestrator] Document type:', inputPackage.template.documentType);
-  
+  console.log('[Copilot] Using template:', inputPackage.template.documentType);
+
   // Retrieve prompt template from registry
   const promptTemplate = getPromptTemplate(inputPackage.template.documentType);
   console.log('[ClaudeOrchestrator] Prompt template:', promptTemplate.name);
@@ -147,16 +148,16 @@ function buildClaudeRequest(
 ): ClaudeRequest {
   console.log('[ClaudeOrchestrator] Building Claude API request...');
   
-  // Start with system prompt
-  const systemPrompt = inputPackage.systemPrompt;
-  
+  // Use template-driven system prompt and instructions — deterministic, not user-supplied
+  const systemPrompt = promptTemplate.systemPrompt;
+
   // Build user message content array
   const messageContent: ClaudeMessage['content'] = [];
-  
-  // Add document instructions
+
+  // Add document instructions from template registry
   messageContent.push({
     type: 'text',
-    text: `${inputPackage.documentInstructions}\n\n---\n\n`
+    text: `${promptTemplate.documentInstructions}\n\n---\n\n`
   });
   
   // Add BOM PDF as base64 document if available
@@ -194,10 +195,10 @@ function buildClaudeRequest(
     });
   }
   
-  // Add output format specification
+  // Add output format specification from prompt template registry
   messageContent.push({
     type: 'text',
-    text: `Required Output Format:\n${JSON.stringify(inputPackage.template.outputFormat, null, 2)}\n\n---\n\n`
+    text: `Required Output Format:\n${JSON.stringify(promptTemplate.outputFormat, null, 2)}\n\n---\n\n`
   });
   
   // Add generation instructions

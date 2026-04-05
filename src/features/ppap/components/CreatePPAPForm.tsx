@@ -8,6 +8,16 @@ import { logEvent } from '@/src/features/events/mutations';
 import { supabase } from '@/src/lib/supabaseClient';
 import type { CreatePPAPInput, PPAPType } from '@/src/types/database.types';
 import { VALID_PLANTS } from '../utils/plantValidation';
+import {
+  DOCUMENT_REGISTRY,
+  DocumentMode,
+  DocumentScopeEntry,
+  MODE_LABELS,
+  MODE_BADGE_CLASSES,
+  buildDefaultScope,
+  validateScope,
+  requiresOwner,
+} from '../config/documentRegistry';
 
 interface UploadedFile {
   file_name: string;
@@ -31,6 +41,12 @@ export function CreatePPAPForm() {
   const [uploading, setUploading] = useState(false);
   const tempPpapId = useRef(generateTempId());
 
+  // V3.3A: Document scope state — initialized to registry defaults
+  const [documentScope, setDocumentScope] = useState<DocumentScopeEntry[]>(() =>
+    buildDefaultScope()
+  );
+  const [scopeErrors, setScopeErrors] = useState<string[]>([]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -41,19 +57,45 @@ export function CreatePPAPForm() {
       if (!formData.ppap_number || !formData.part_number || !formData.customer_name || !formData.request_date || !formData.ppap_type) {
         throw new Error('Please fill in all required fields');
       }
-      
+
       if (!formData.plant) {
         throw new Error('Please select a production plant');
       }
-      
+
+      // V3.3A: Validate document scope
+      const scopeValidationErrors = validateScope(documentScope);
+      if (scopeValidationErrors.length > 0) {
+        setScopeErrors(scopeValidationErrors);
+        setLoading(false);
+        return;
+      }
+      setScopeErrors([]);
+
       // Phase 3H.12: Log creation input
       console.log('🆕 CREATE PPAP INPUT', {
         partNumber: formData.part_number,
         customer: formData.customer_name,
         plant: formData.plant,
+        documentScope,
       });
 
       const ppap = await createPPAP(formData as CreatePPAPInput);
+
+      // V3.3A: Log document scope as event_data snapshot at creation time.
+      // Note: ppap_records has no document_scope column — persistence deferred until
+      // ppap_document_scope table is created. Scope is preserved here in the event log.
+      await logEvent({
+        ppap_id: ppap.id,
+        event_type: 'PPAP_CREATED',
+        event_data: {
+          document_scope: documentScope,
+          ppap_type: formData.ppap_type,
+          customer: formData.customer_name,
+          part_number: formData.part_number,
+        },
+        actor: 'System User',
+        actor_role: 'coordinator',
+      });
 
       // CRITICAL: Log DOCUMENT_ADDED events with real PPAP ID only
       if (uploadedFiles.length > 0) {
@@ -96,6 +138,21 @@ export function CreatePPAPForm() {
 
   const handleChange = (field: keyof CreatePPAPInput, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // V3.3A: Document scope helpers
+  const updateScopeEntry = (documentId: string, patch: Partial<DocumentScopeEntry>) => {
+    setDocumentScope((prev) =>
+      prev.map((entry) =>
+        entry.documentId === documentId ? { ...entry, ...patch } : entry
+      )
+    );
+    setScopeErrors([]); // clear errors on any change
+  };
+
+  const resetScopeToDefaults = () => {
+    setDocumentScope(buildDefaultScope(formData.ppap_type));
+    setScopeErrors([]);
   };
 
   const handleInitialUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -238,6 +295,147 @@ export function CreatePPAPForm() {
               onChange={(e) => handleChange('request_date', e.target.value)}
             />
           </div>
+        </div>
+      </div>
+
+      {/* V3.3A: Document Scope Selection */}
+      <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-8">
+        <div className="flex items-center justify-between mb-6 pb-3 border-b border-gray-200">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">Document Scope</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Configure which documents are required and how each will be produced.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={resetScopeToDefaults}
+            className="text-xs text-blue-600 hover:text-blue-800 font-medium underline"
+          >
+            Reset to defaults
+          </button>
+        </div>
+
+        {/* Scope validation errors */}
+        {scopeErrors.length > 0 && (
+          <div className="mb-4 bg-red-50 border border-red-300 rounded-lg px-4 py-3 space-y-1">
+            {scopeErrors.map((e, i) => (
+              <p key={i} className="text-sm text-red-800">{e}</p>
+            ))}
+          </div>
+        )}
+
+        {/* Document scope table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <th className="text-left pb-2 pr-4 w-48">Document</th>
+                <th className="text-center pb-2 px-3 w-20">Required</th>
+                <th className="text-left pb-2 px-3 w-44">Mode</th>
+                <th className="text-left pb-2 pl-3">Owner</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {documentScope.map((entry) => {
+                const config = DOCUMENT_REGISTRY.find((d) => d.id === entry.documentId)!;
+                const isNa = entry.mode === 'na';
+                const needsOwner = entry.required && requiresOwner(entry.mode);
+
+                return (
+                  <tr
+                    key={entry.documentId}
+                    className={`${isNa ? 'opacity-50' : ''} transition-opacity`}
+                  >
+                    {/* Document name + requirement badge */}
+                    <td className="py-2.5 pr-4">
+                      <span className="font-medium text-gray-900">{config.name}</span>
+                      <span
+                        className={`ml-2 text-xs px-1.5 py-0.5 rounded font-semibold ${
+                          config.requirementLevel === 'REQUIRED'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-yellow-100 text-yellow-700'
+                        }`}
+                      >
+                        {config.requirementLevel === 'REQUIRED' ? 'REQ' : 'COND'}
+                      </span>
+                    </td>
+
+                    {/* Required toggle */}
+                    <td className="py-2.5 px-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={entry.required}
+                        onChange={(e) =>
+                          updateScopeEntry(entry.documentId, {
+                            required: e.target.checked,
+                            // If un-requiring and mode was na, keep na. Otherwise keep mode.
+                          })
+                        }
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                    </td>
+
+                    {/* Mode dropdown */}
+                    <td className="py-2.5 px-3">
+                      {config.modeEditable ? (
+                        <select
+                          value={entry.mode}
+                          onChange={(e) =>
+                            updateScopeEntry(entry.documentId, {
+                              mode: e.target.value as DocumentMode,
+                              // Clear owner when switching to static/na
+                              owner: requiresOwner(e.target.value as DocumentMode) ? entry.owner : '',
+                            })
+                          }
+                          disabled={!entry.required}
+                          className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+                        >
+                          {(['generated', 'assisted', 'static', 'na'] as DocumentMode[]).map((m) => (
+                            // Only show 'generated'/'assisted' for AI-capable docs
+                            (!config.aiCapable && (m === 'generated')) ? null :
+                            <option key={m} value={m}>{MODE_LABELS[m]}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        // Non-editable mode — display only
+                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-semibold ${MODE_BADGE_CLASSES[entry.mode]}`}>
+                          {MODE_LABELS[entry.mode]}
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Owner field — only shown when required */}
+                    <td className="py-2.5 pl-3">
+                      {needsOwner ? (
+                        <input
+                          type="text"
+                          value={entry.owner}
+                          onChange={(e) =>
+                            updateScopeEntry(entry.documentId, { owner: e.target.value })
+                          }
+                          placeholder="Assign to..."
+                          className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Legend */}
+        <div className="mt-4 pt-3 border-t border-gray-100 flex flex-wrap gap-3">
+          {(['generated', 'assisted', 'static', 'na'] as DocumentMode[]).map((m) => (
+            <span key={m} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${MODE_BADGE_CLASSES[m]}`}>
+              {MODE_LABELS[m]}
+            </span>
+          ))}
+          <span className="text-xs text-gray-500 ml-2 self-center">Owner required for Generated and Assisted modes</span>
         </div>
       </div>
 

@@ -95,25 +95,30 @@ export function CopilotChatPanel({
     });
   };
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoading || disabled) return;
+  const handleGenerateDocument = async () => {
+    await handleSendMessage('');
+  };
 
-    const userMessage = inputValue.trim();
-    setInputValue('');
+  const handleSendMessage = async (overrideMessage?: string) => {
+    const userMessage = overrideMessage !== undefined ? overrideMessage : inputValue.trim();
+    if (isLoading || disabled) return;
+    // Allow empty message — system will inject prompt from template registry
+    if (overrideMessage === undefined) setInputValue('');
     setIsLoading(true);
 
     try {
       // Add user message to UI
-      const newUserMessage: Message = {
-        role: 'user',
-        content: userMessage,
-        timestamp: new Date().toISOString(),
-        messageType: 'text'
-      };
-      setMessages(prev => [...prev, newUserMessage]);
-
-      // Save user message to session
-      await addUserMessage(sessionId, userMessage);
+      // Only add user message bubble if user typed something
+      if (userMessage) {
+        const newUserMessage: Message = {
+          role: 'user',
+          content: userMessage,
+          timestamp: new Date().toISOString(),
+          messageType: 'text'
+        };
+        setMessages(prev => [...prev, newUserMessage]);
+        await addUserMessage(sessionId, userMessage);
+      }
 
       // Call Claude orchestrator with real input package
       console.log('[CopilotChatPanel] Calling Claude orchestrator with real BOM data...');
@@ -355,6 +360,18 @@ export function CopilotChatPanel({
 
       {/* Input Area */}
       <div className="px-6 py-4 border-t border-gray-200">
+        <p className="text-xs text-gray-500 mb-2">
+          Generate document automatically, or ask a follow-up question
+        </p>
+        <div className="flex gap-2 mb-2">
+          <button
+            onClick={handleGenerateDocument}
+            disabled={disabled || isLoading}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed font-semibold text-sm whitespace-nowrap"
+          >
+            {isLoading ? '...' : 'Generate Document'}
+          </button>
+        </div>
         <div className="flex gap-3">
           <input
             type="text"
@@ -362,18 +379,18 @@ export function CopilotChatPanel({
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
             disabled={disabled || isLoading}
-            placeholder="Type your message or answer to Claude's question..."
+            placeholder="Type a follow-up question or additional context..."
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
           />
           <button
-            onClick={handleSendMessage}
-            disabled={disabled || isLoading || !inputValue.trim()}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
+            onClick={() => handleSendMessage()}
+            disabled={disabled || isLoading}
+            className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed font-medium text-sm"
           >
-            {isLoading ? '...' : 'Send'}
+            {isLoading ? '...' : 'Send Follow-Up'}
           </button>
         </div>
-        <p className="text-xs text-gray-500 mt-2">
+        <p className="text-xs text-gray-400 mt-2">
           Powered by Claude Sonnet 4 • Responses are AI-generated and should be reviewed
         </p>
       </div>

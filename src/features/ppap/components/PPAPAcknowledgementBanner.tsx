@@ -14,7 +14,8 @@ export default function PPAPAcknowledgementBanner({ ppapStatus, validations }: P
   const derivedState = mapStatusToState(ppapStatus);
   const preAckReady = isPreAckReady(validations);
 
-  if (derivedState === 'READY_FOR_ACKNOWLEDGEMENT' && preAckReady) {
+  // V3.3A: compare against PPAPStatus directly, not derived label
+  if (ppapStatus === 'READY_TO_ACKNOWLEDGE' && preAckReady) {
     return (
       <div className="bg-green-50 text-green-800 border border-green-200 rounded-lg p-4 mb-6">
         <h3 className="text-lg font-semibold mb-2">✅ Ready for Acknowledgement</h3>

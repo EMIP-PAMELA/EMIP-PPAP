@@ -39,12 +39,14 @@ export function canAssignPPAP(role: UserRole): boolean {
 }
 
 export function canAcknowledgePPAP(role: UserRole, state: string): boolean {
-  if (state !== 'READY_FOR_ACKNOWLEDGEMENT') return false;
+  // V3.3A: compare against PPAPStatus value, not derived label
+  if (state !== 'READY_TO_ACKNOWLEDGE') return false;
   return role === 'admin' || role === 'coordinator';
 }
 
 export function canSubmitPPAP(role: UserRole, state: string): boolean {
-  if (state !== 'READY_FOR_SUBMISSION') return false;
+  // V3.3A: compare against PPAPStatus value, not derived label
+  if (state !== 'AWAITING_SUBMISSION') return false;
   return role === 'admin' || role === 'engineer';
 }
 
