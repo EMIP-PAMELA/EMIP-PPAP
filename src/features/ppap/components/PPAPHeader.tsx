@@ -119,16 +119,16 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
       </div>
 
       <div className="p-6 border-b border-gray-200">
-        {/* V3.3A.12: Breadcrumb Navigation */}
-        <div className="flex items-center text-sm font-medium mb-4">
+        {/* V3.3A.15: Enhanced Breadcrumb Navigation with Visibility */}
+        <div className="inline-flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-md shadow-sm mb-4 hover:bg-gray-100 transition-colors">
           <Link
             href="/ppap"
-            className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 transition-colors"
+            className="text-blue-600 font-semibold hover:text-blue-800 hover:underline flex items-center gap-1 transition-colors"
           >
             ← Dashboard
           </Link>
-          <span className="mx-2 text-gray-400">/</span>
-          <span className="text-gray-700 font-semibold">
+          <span className="text-gray-400">/</span>
+          <span className="text-gray-800 font-semibold">
             {ppap.ppap_number}
           </span>
         </div>

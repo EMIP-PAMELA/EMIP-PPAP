@@ -3,13 +3,14 @@
 /**
  * V3.3A.10: Floating Activity Panel
  * V3.3A.11: Activity Signal System
+ * V3.3A.15: Resize Handle UX Improvement
  * 
  * Draggable, resizable, minimizable floating panel for PPAP activity feed.
  * 
  * Features:
  * - Floating panel (default top-right)
  * - Draggable from header
- * - Resizable from bottom-right corner
+ * - Resizable from bottom-left corner (V3.3A.15: moved for better UX)
  * - Minimize to small pill
  * - Restore to previous size/position
  * - Persist state in localStorage
@@ -191,14 +192,19 @@ export function PPAPActivityPanel({ ppapId }: PPAPActivityPanelProps) {
   const handleMouseMoveResize = (e: MouseEvent) => {
     if (!isResizing) return;
 
-    const deltaX = e.clientX - resizeStart.x;
+    // V3.3A.15: Bottom-left resize - width increases when dragging LEFT, height when dragging DOWN
+    const deltaX = resizeStart.x - e.clientX; // Inverted for left-side resize
     const deltaY = e.clientY - resizeStart.y;
 
     const newWidth = Math.max(MIN_WIDTH, resizeStart.width + deltaX);
     const newHeight = Math.max(MIN_HEIGHT, resizeStart.height + deltaY);
 
+    // Adjust position to keep right edge fixed when resizing from left
+    const newX = state.position.x - (newWidth - state.size.width);
+
     setState(prev => ({
       ...prev,
+      position: { ...prev.position, x: newX },
       size: { width: newWidth, height: newHeight },
     }));
   };
@@ -363,15 +369,14 @@ export function PPAPActivityPanel({ ppapId }: PPAPActivityPanelProps) {
         <PPAPActivityFeed ppapId={ppapId} />
       </div>
 
-      {/* Resize Handle - Bottom-right corner */}
+      {/* V3.3A.15: Resize Handle - Bottom-left corner for better UX when docked */}
       <div
         onMouseDown={handleMouseDownResize}
-        className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize"
-        style={{
-          background: 'linear-gradient(135deg, transparent 50%, #9CA3AF 50%)',
-        }}
+        className="absolute bottom-0 left-0 w-5 h-5 cursor-sw-resize flex items-end justify-start p-1"
         title="Resize"
-      />
+      >
+        <div className="w-3 h-3 border-l-2 border-b-2 border-gray-400 opacity-60" />
+      </div>
     </div>
   );
 }
