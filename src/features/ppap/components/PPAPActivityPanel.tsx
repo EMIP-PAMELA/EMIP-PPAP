@@ -2,6 +2,7 @@
 
 /**
  * V3.3A.10: Floating Activity Panel
+ * V3.3A.11: Activity Signal System
  * 
  * Draggable, resizable, minimizable floating panel for PPAP activity feed.
  * 
@@ -12,11 +13,13 @@
  * - Minimize to small pill
  * - Restore to previous size/position
  * - Persist state in localStorage
+ * - Visual signals: unread (blue), issue (yellow), risk (red)
  */
 
 import { useState, useEffect, useRef } from 'react';
 import PPAPActivityFeed from './PPAPActivityFeed';
-import { getIssueCount } from '../utils/activityService';
+import { getActivities, getIssueCount } from '../utils/activityService';
+import { Activity } from '../types/activity';
 
 interface PPAPActivityPanelProps {
   ppapId: string;
@@ -37,10 +40,15 @@ const DEFAULT_STATE: PanelState = {
 const MIN_WIDTH = 300;
 const MIN_HEIGHT = 250;
 const STORAGE_KEY = 'ppap_activity_panel_state';
+const LAST_VIEWED_KEY = 'ppap_activity_last_viewed';
+
+type SignalState = 'default' | 'unread' | 'issue' | 'risk';
 
 export function PPAPActivityPanel({ ppapId }: PPAPActivityPanelProps) {
   const [state, setState] = useState<PanelState>(DEFAULT_STATE);
   const [issueCount, setIssueCount] = useState(0);
+  const [riskCount, setRiskCount] = useState(0);
+  const [signalState, setSignalState] = useState<SignalState>('default');
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -69,17 +77,57 @@ export function PPAPActivityPanel({ ppapId }: PPAPActivityPanelProps) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
 
-  // Load issue count
+  // Load activities and determine signal state
   useEffect(() => {
-    loadIssueCount();
+    loadActivitySignals();
+    const interval = setInterval(loadActivitySignals, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
   }, [ppapId]);
 
-  const loadIssueCount = async () => {
+  const loadActivitySignals = async () => {
     try {
-      const count = await getIssueCount(ppapId);
-      setIssueCount(count);
+      const activities = await getActivities(ppapId);
+      
+      // Count issues and risks
+      const issues = activities.filter(a => a.priority === 'issue').length;
+      const risks = activities.filter(a => a.priority === 'risk').length;
+      setIssueCount(issues);
+      setRiskCount(risks);
+      
+      // Determine signal state (priority: risk > issue > unread > default)
+      if (risks > 0) {
+        setSignalState('risk');
+      } else if (issues > 0) {
+        setSignalState('issue');
+      } else {
+        // Check for unread activity
+        const lastViewed = localStorage.getItem(`${LAST_VIEWED_KEY}_${ppapId}`);
+        if (lastViewed && activities.length > 0) {
+          const lastViewedTime = new Date(lastViewed).getTime();
+          const latestActivityTime = new Date(activities[0].createdAt).getTime();
+          if (latestActivityTime > lastViewedTime) {
+            setSignalState('unread');
+          } else {
+            setSignalState('default');
+          }
+        } else if (activities.length > 0 && !lastViewed) {
+          setSignalState('unread');
+        } else {
+          setSignalState('default');
+        }
+      }
     } catch (error) {
-      console.error('Failed to load issue count:', error);
+      console.error('Failed to load activity signals:', error);
+    }
+  };
+
+  // Mark as viewed when panel is opened (expanded)
+  const markAsViewed = () => {
+    const now = new Date().toISOString();
+    localStorage.setItem(`${LAST_VIEWED_KEY}_${ppapId}`, now);
+    // Only clear unread state, not issue/risk states
+    if (signalState === 'unread') {
+      setSignalState('default');
     }
   };
 
@@ -166,14 +214,67 @@ export function PPAPActivityPanel({ ppapId }: PPAPActivityPanelProps) {
 
   // Toggle minimize
   const toggleMinimize = () => {
+    const willExpand = state.minimized;
     setState(prev => ({
       ...prev,
       minimized: !prev.minimized,
     }));
+    // Mark as viewed when expanding
+    if (willExpand) {
+      markAsViewed();
+    }
   };
 
-  // MINIMIZED STATE: Small pill
+  // Get visual styles based on signal state
+  const getSignalStyles = () => {
+    switch (signalState) {
+      case 'risk':
+        return {
+          border: 'border-red-500',
+          shadow: 'shadow-2xl shadow-red-200',
+          animation: 'animate-pulse',
+          glow: 'ring-2 ring-red-300',
+        };
+      case 'issue':
+        return {
+          border: 'border-yellow-400',
+          shadow: 'shadow-2xl shadow-yellow-100',
+          animation: '',
+          glow: 'ring-1 ring-yellow-200',
+        };
+      case 'unread':
+        return {
+          border: 'border-blue-400',
+          shadow: 'shadow-2xl shadow-blue-100',
+          animation: '',
+          glow: 'ring-1 ring-blue-200',
+        };
+      default:
+        return {
+          border: 'border-gray-300',
+          shadow: 'shadow-2xl',
+          animation: '',
+          glow: '',
+        };
+    }
+  };
+
+  const styles = getSignalStyles();
+
+  // MINIMIZED STATE: Small pill with signal color
   if (state.minimized) {
+    const pillBg = signalState === 'risk' ? 'bg-red-600 hover:bg-red-700' :
+                   signalState === 'issue' ? 'bg-yellow-500 hover:bg-yellow-600' :
+                   signalState === 'unread' ? 'bg-blue-600 hover:bg-blue-700' :
+                   'bg-gray-600 hover:bg-gray-700';
+    
+    const pillBorder = signalState === 'risk' ? 'border-2 border-red-400' :
+                       signalState === 'issue' ? 'border-2 border-yellow-300' :
+                       signalState === 'unread' ? 'border-2 border-blue-400' :
+                       'border border-gray-400';
+    
+    const pillAnimation = signalState === 'risk' ? 'animate-pulse' : '';
+    
     return (
       <div
         ref={panelRef}
@@ -183,20 +284,20 @@ export function PPAPActivityPanel({ ppapId }: PPAPActivityPanelProps) {
           left: `${state.position.x}px`,
           zIndex: 9999,
         }}
-        className="bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg cursor-pointer hover:bg-blue-700 transition-colors flex items-center gap-2"
+        className={`${pillBg} ${pillBorder} ${pillAnimation} text-white px-4 py-2 rounded-full shadow-lg cursor-pointer transition-colors flex items-center gap-2`}
         onClick={toggleMinimize}
       >
         <span className="text-sm font-semibold">Activity</span>
-        {issueCount > 0 && (
-          <span className="px-2 py-0.5 bg-yellow-400 text-yellow-900 text-xs font-bold rounded-full">
-            ⚠️ {issueCount}
+        {(issueCount > 0 || riskCount > 0) && (
+          <span className="px-2 py-0.5 bg-white bg-opacity-90 text-gray-900 text-xs font-bold rounded-full">
+            {riskCount > 0 ? '🚨' : '⚠️'} {issueCount + riskCount}
           </span>
         )}
       </div>
     );
   }
 
-  // EXPANDED STATE: Full floating panel
+  // EXPANDED STATE: Full floating panel with signal styling
   return (
     <div
       ref={panelRef}
@@ -208,18 +309,23 @@ export function PPAPActivityPanel({ ppapId }: PPAPActivityPanelProps) {
         height: `${state.size.height}px`,
         zIndex: 9999,
       }}
-      className="bg-white rounded-lg shadow-2xl border-2 border-gray-300 flex flex-col overflow-hidden"
+      className={`bg-white rounded-lg ${styles.shadow} border-2 ${styles.border} ${styles.glow} ${styles.animation} flex flex-col overflow-hidden`}
     >
-      {/* Header - Draggable */}
+      {/* Header - Draggable with signal-based color */}
       <div
         onMouseDown={handleMouseDownDrag}
-        className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 cursor-move flex items-center justify-between select-none"
+        className={`${
+          signalState === 'risk' ? 'bg-gradient-to-r from-red-600 to-red-700' :
+          signalState === 'issue' ? 'bg-gradient-to-r from-yellow-500 to-yellow-600' :
+          signalState === 'unread' ? 'bg-gradient-to-r from-blue-600 to-blue-700' :
+          'bg-gradient-to-r from-gray-600 to-gray-700'
+        } text-white px-4 py-3 cursor-move flex items-center justify-between select-none`}
       >
         <div className="flex items-center gap-2">
           <span className="text-base font-bold">Activity</span>
-          {issueCount > 0 && (
-            <span className="px-2 py-0.5 bg-yellow-400 text-yellow-900 text-xs font-bold rounded-full">
-              ⚠️ {issueCount}
+          {(issueCount > 0 || riskCount > 0) && (
+            <span className="px-2 py-0.5 bg-white bg-opacity-90 text-gray-900 text-xs font-bold rounded-full">
+              {riskCount > 0 ? '🚨' : '⚠️'} {issueCount + riskCount}
             </span>
           )}
         </div>
