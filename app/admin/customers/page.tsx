@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getCurrentUser, isAdmin } from '../../../features/auth/userService';
+import { getCurrentUser, isAdmin } from '@/src/features/auth/userService';
 import {
   getCustomers,
   createCustomer,
@@ -11,7 +11,7 @@ import {
   removeTemplateFromCustomer,
   getTemplatesForCustomer,
   type Customer
-} from '../../../features/customer/customerService';
+} from '@/src/features/customer/customerService';
 
 export default function CustomersPage() {
   const router = useRouter();
@@ -64,7 +64,7 @@ export default function CustomersPage() {
 
   const loadAvailableTemplates = async () => {
     try {
-      const { listTemplates, listDynamicTemplateIds } = await import('../../../features/documentEngine/templates/registry');
+      const { listTemplates, listDynamicTemplateIds } = await import('@/src/features/documentEngine/templates/registry');
       const allTemplates = listTemplates();
       const dynamicIds = listDynamicTemplateIds();
 

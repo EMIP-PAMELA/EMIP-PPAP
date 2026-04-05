@@ -8,7 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getCurrentUser, isAdmin } from '../../../features/auth/userService';
+import { getCurrentUser, isAdmin } from '@/src/features/auth/userService';
 
 type TemplateInfo = {
   id: string;
@@ -45,7 +45,7 @@ export default function TemplateManagementPage() {
   // Load templates from registry
   const loadTemplates = async () => {
     try {
-      const { listTemplates, listDynamicTemplateIds } = await import('../../../features/documentEngine/templates/registry');
+      const { listTemplates, listDynamicTemplateIds } = await import('@/src/features/documentEngine/templates/registry');
       const allTemplates = listTemplates();
       const dynamicIds = listDynamicTemplateIds();
 
@@ -77,10 +77,10 @@ export default function TemplateManagementPage() {
       const fileContent = await file.text();
 
       // Parse and validate
-      const { parseWorkbookTemplate, convertToTemplateDefinition } = await import('../../../features/documentEngine/templates/templateIngestionService');
-      const { registerDynamicTemplate, hasTemplate } = await import('../../../features/documentEngine/templates/registry');
-      const { saveDynamicTemplate, templateExists } = await import('../../../features/documentEngine/templates/templatePersistenceService');
-      const { getCurrentUser } = await import('../../../features/auth/userService');
+      const { parseWorkbookTemplate, convertToTemplateDefinition } = await import('@/src/features/documentEngine/templates/templateIngestionService');
+      const { registerDynamicTemplate, hasTemplate } = await import('@/src/features/documentEngine/templates/registry');
+      const { saveDynamicTemplate, templateExists } = await import('@/src/features/documentEngine/templates/templatePersistenceService');
+      const { getCurrentUser } = await import('@/src/features/auth/userService');
 
       const ingestedTemplate = parseWorkbookTemplate(fileContent);
       const templateDefinition = convertToTemplateDefinition(ingestedTemplate);
@@ -149,7 +149,7 @@ export default function TemplateManagementPage() {
       setUploadError(null);
       setUploadSuccess(null);
 
-      const { deleteDynamicTemplate } = await import('../../../features/documentEngine/templates/templatePersistenceService');
+      const { deleteDynamicTemplate } = await import('@/src/features/documentEngine/templates/templatePersistenceService');
       
       const deleted = await deleteDynamicTemplate(templateId);
       if (!deleted) {

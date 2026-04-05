@@ -730,12 +730,12 @@ export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolP
         throw new Error('Cannot log document event without valid PPAP id');
       }
 
-      const path = await uploadPPAPDocument(file, ppapId);
+      const fileRef = await uploadPPAPDocument(file, ppapId);
 
       console.log('DOCUMENT_ADDED write', {
         ppapId,
         fileName: file.name,
-        filePath: path,
+        filePath: fileRef.url,
       });
 
       await logEvent({
@@ -743,7 +743,7 @@ export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolP
         event_type: 'DOCUMENT_ADDED',
         event_data: {
           file_name: file.name,
-          file_path: path,
+          file_path: fileRef.url,
           document_type: 'drawing',
         },
         actor: 'System User',
@@ -756,7 +756,7 @@ export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolP
       setUploadedFiles(docs);
 
       // Auto-select new file
-      setSelectedFile(path);
+      setSelectedFile(fileRef.url);
 
       alert('Drawing uploaded successfully!');
     } catch (error) {

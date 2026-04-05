@@ -165,14 +165,14 @@ export function CreatePPAPForm() {
     for (const file of files) {
       try {
         // Upload to storage (organized by temp folder for now)
-        const path = await uploadPPAPDocument(file, tempPpapId.current);
+        const fileRef = await uploadPPAPDocument(file, tempPpapId.current);
 
         // DO NOT log event yet - no real PPAP id exists
         // Event logging deferred until handleSubmit with real ppap.id
 
         uploadedList.push({
           file_name: file.name,
-          file_path: path,
+          file_path: fileRef.url,
         });
       } catch (err) {
         console.error('Upload failed for', file.name, ':', err);
