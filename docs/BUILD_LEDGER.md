@@ -94,6 +94,40 @@ None anticipated.
 
 ---
 
+## 2026-04-04 - [REFINE] V3.2F.3 — Annotation Sheet Format Simplification
+
+**Status:** ✅ COMPLETE
+
+**Summary:** Remove shape labels (CIRCLE, BOX, etc.) from annotation sheet output. New format promotes balloon number as primary identifier with type and description only.
+
+**Type:** Refinement (Presentation Only, No Logic Changes)
+
+### Before / After
+
+| Before | After |
+|--------|-------|
+| `3. CIRCLE [DIM] description` | `3 (dimension) - description` |
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/features/ppap/components/MarkupTool.tsx` | Both annotation sheet loops updated — removed `markerLabel`/`typeShorthand` variables; new `annotationLine` format |
+
+### Decisions Made
+
+1. **`replace_all` used** — both annotation loops (`exportPdfAnnotationsOnly` and `exportImageWithAnnotations`) were identical; replaced atomically.
+2. **`description` fallback unchanged** — `String(ann.description || 'No description')` already present; no new fallback needed.
+3. **`getMarkerLabel` and `getTypeShorthand` helpers retained** — they are still present in the component; removing them is out of scope for this phase.
+
+### Validation
+
+- `npx tsc --noEmit` — zero new errors; pre-existing `FileReference` error shifted 763→759 (4 lines removed)
+- Both annotation sheet generation paths confirmed updated (grep verified)
+- No annotation data model, numbering, or export pipeline touched
+
+---
+
 ## 2026-04-04 - [FIX] V3.2F.2-COLOR — html2canvas Color Sanitization Fix
 
 **Status:** ✅ COMPLETE

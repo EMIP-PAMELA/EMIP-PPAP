@@ -491,15 +491,13 @@ export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolP
 
     y += 25;
 
-    // Add annotations with ASCII-safe labels
+    // Add annotations — balloon number as primary identifier, type and description only
     sortedAnnotations.forEach((ann, index) => {
-      const markerLabel = getMarkerLabel(ann.shape);
-      const typeShorthand = getTypeShorthand(ann.type);
       const description = String(ann.description || 'No description');
-      
+
       pdf.setFontSize(10);
       pdf.setFont(undefined, 'normal');
-      const annotationLine = `${ann.label_number}. ${markerLabel} ${typeShorthand} ${description}`;
+      const annotationLine = `${ann.label_number} (${ann.type}) - ${description}`;
       pdf.text(annotationLine, 40, y);
 
       y += 16;
@@ -682,15 +680,13 @@ export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolP
 
     y += 25;
 
-    // Add annotations with ASCII-safe labels
+    // Add annotations — balloon number as primary identifier, type and description only
     sortedAnnotations.forEach((ann, index) => {
-      const markerLabel = getMarkerLabel(ann.shape);
-      const typeShorthand = getTypeShorthand(ann.type);
       const description = String(ann.description || 'No description');
-      
+
       pdf.setFontSize(10);
       pdf.setFont(undefined, 'normal');
-      const annotationLine = `${ann.label_number}. ${markerLabel} ${typeShorthand} ${description}`;
+      const annotationLine = `${ann.label_number} (${ann.type}) - ${description}`;
       pdf.text(annotationLine, 40, y);
 
       y += 16;
