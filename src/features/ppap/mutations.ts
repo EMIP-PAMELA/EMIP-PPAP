@@ -37,6 +37,9 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
   
   console.log('CREATE PPAP INPUT', JSON.stringify(payload, null, 2));
   
+  // V3.3A.16B: Final payload verification before insert
+  console.log('FINAL INSERT PAYLOAD', payload);
+  
   // V3.3A.5: Department queue model - assign to department, leave owner null
   const { data, error } = await supabase
     .from('ppap_records')
