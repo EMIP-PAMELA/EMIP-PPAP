@@ -94,6 +94,39 @@ None anticipated.
 
 ---
 
+## 2026-04-04 - [FIX] V3.2F.2-COLOR — html2canvas Color Sanitization Fix
+
+**Status:** ✅ COMPLETE
+
+**Summary:** Fix a structural bug in `sanitizeColorsForExport.ts` where `getComputedStyle` was called on detached (cloned) elements instead of the original attached elements. The old approach was non-functional — Tailwind v4 oklch colors were invisible to detached `getComputedStyle`, so the clone reached html2canvas unsanitized. The fix reads from original elements and inlines resolved values into the clone.
+
+**Type:** Correction (Non-Breaking, No Schema Changes)
+
+### Root Cause
+
+`sanitizeColorsForExport` cloned the element first (detaching it from the DOM), then called `window.getComputedStyle()` on elements in the detached clone. Detached elements do not have resolved CSS from class-based stylesheets. Tailwind v4 uses `oklch()` for its color palette; these values only appear in `getComputedStyle` for elements attached to the document. The function read default/empty values, found nothing unsafe, and returned the clone unmodified. When html2canvas processed the clone (attached offscreen), Tailwind classes resolved to `oklch(...)` and the crash occurred.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/utils/sanitizeColorsForExport.ts` | Full rewrite: reads computed styles from original (attached) elements; inlines resolved values into clone elements; retains unsafe-color detection with fallbacks |
+
+### Decisions Made
+
+1. **Read from original, write to clone.** `getComputedStyle(originalEl)` resolves correctly because the original is attached to the live DOM. Inlining the resolved values into the clone ensures html2canvas sees inline styles (highest specificity) and never re-resolves class-based oklch.
+2. **Always inline resolved values, not just unsafe ones.** Safe Tailwind values (e.g., `rgb(...)`) are also inlined. This locks them in and prevents any re-resolution by html2canvas that might encounter CSS variables in the off-screen clone.
+3. **Include root element.** The original loop used `querySelectorAll('*')` (children only). The new loop includes the root `element` itself.
+4. **SVG properties guarded.** `fill` and `stroke` are only set if `computed.fill`/`computed.stroke` are non-empty — avoids setting irrelevant properties on non-SVG elements.
+
+### Validation
+
+- `npx tsc --noEmit` — zero new errors
+- Structural fix verified by code trace: `window.getComputedStyle(origEl)` called while `origEl` is in the live DOM
+- Runtime browser test required to confirm oklch error is resolved
+
+---
+
 ## 2026-04-04 - [FIX] V3.2F.2-EXPORT — Export Blob URL Stability Fix
 
 **Status:** ✅ COMPLETE
