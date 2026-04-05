@@ -116,15 +116,18 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
       </div>
 
       <div className="p-6 border-b border-gray-200">
-        <div className="mb-4">
-          <Link href="/ppap">
-            <button className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-md transition-colors">
-              ← Back to Dashboard
-            </button>
+        {/* V3.3A.12: Breadcrumb Navigation */}
+        <div className="flex items-center text-sm font-medium mb-4">
+          <Link
+            href="/ppap"
+            className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 transition-colors"
+          >
+            ← Dashboard
           </Link>
-          <p className="text-sm text-gray-500 mt-2">
-            PPAP Dashboard &gt; {ppap.ppap_number}
-          </p>
+          <span className="mx-2 text-gray-400">/</span>
+          <span className="text-gray-700 font-semibold">
+            {ppap.ppap_number}
+          </span>
         </div>
 
         <div className="flex items-start justify-between mb-4">
