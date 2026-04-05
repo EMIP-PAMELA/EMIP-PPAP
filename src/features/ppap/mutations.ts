@@ -23,6 +23,7 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
   }
   
   // V3.3A.16A: Build payload and log for debugging
+  // V3.3A.16C: Removed assigned_to - column doesn't exist in current schema
   const payload = {
     ppap_number: input.ppap_number.trim(),
     part_number: input.part_number,
@@ -31,7 +32,6 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
     request_date: input.request_date,
     ppap_type: input.ppap_type,
     department: input.department,
-    assigned_to: null,
     status: 'NEW' as const,
   };
   
