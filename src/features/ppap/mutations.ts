@@ -26,8 +26,9 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
   // V3.3A.16C: Removed assigned_to - column doesn't exist in current schema
   // V3.3A.16E: Removed ppap_type - column doesn't exist in database schema
   // V3.3A.16F: Normalize department casing and timestamp format
+  // V3.3A.16G: Add timestamp suffix to ensure uniqueness during testing
   const payload = {
-    ppap_number: input.ppap_number.trim(),
+    ppap_number: `${input.ppap_number.trim()}-${Date.now()}`,
     part_number: input.part_number,
     customer_name: input.customer_name,
     plant: sanitizedPlant,
