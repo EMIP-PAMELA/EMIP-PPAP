@@ -25,20 +25,19 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
   // V3.3A.16A: Build payload and log for debugging
   // V3.3A.16C: Removed assigned_to - column doesn't exist in current schema
   // V3.3A.16E: Removed ppap_type - column doesn't exist in database schema
+  // V3.3A.16F: Normalize department casing and timestamp format
   const payload = {
     ppap_number: input.ppap_number.trim(),
     part_number: input.part_number,
     customer_name: input.customer_name,
     plant: sanitizedPlant,
-    request_date: input.request_date,
-    department: input.department,
+    request_date: new Date(input.request_date).toISOString(),
+    department: input.department?.toLowerCase(),
     status: 'NEW' as const,
   };
   
-  console.log('CREATE PPAP INPUT', JSON.stringify(payload, null, 2));
-  
-  // V3.3A.16B: Final payload verification before insert
-  console.log('FINAL INSERT PAYLOAD', payload);
+  // V3.3A.16F: Final payload verification before insert
+  console.log('FINAL INSERT PAYLOAD', JSON.stringify(payload, null, 2));
   
   // V3.3A.5: Department queue model - assign to department, leave owner null
   const { data, error } = await supabase
