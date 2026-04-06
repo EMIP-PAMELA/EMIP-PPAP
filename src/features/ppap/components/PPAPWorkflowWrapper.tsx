@@ -92,20 +92,20 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     }
   }, []);
 
-  // V3.4 Phase 5: Block derived state execution until validations are loaded
-  if (!validationsLoaded) {
-    return (
-      <div className="bg-white border border-gray-300 rounded-lg p-6 shadow-sm">
-        <div className="text-center">
-          <div className="text-gray-700 font-medium">⏳ Loading workflow data...</div>
-          <div className="text-sm text-gray-500 mt-2">Initializing validation requirements</div>
-        </div>
-      </div>
-    );
-  }
-
-  // V3.4 Phase 5: Derive state from PPAP data (deterministic) - memoized with dependencies
+  // V3.4 Phase 6: FIX HOOK ORDER - All hooks MUST be declared before any conditional returns
+  // Derive state from PPAP data (deterministic) - memoized with dependencies
   const derivedStateContext = useMemo(() => {
+    // Only compute if validations are loaded, otherwise return loading state
+    if (!validationsLoaded) {
+      return {
+        state: 'INTAKE' as const,
+        label: 'Loading',
+        reason: 'Loading validation data...',
+        nextAction: 'Loading workflow data...',
+        canProgress: false,
+      };
+    }
+    
     console.log('🔍 V3.4 DERIVED STATE INPUT', {
       ppapId: ppap.id,
       ppapStatus: ppap.status,
@@ -131,8 +131,28 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   
   const derivedPhase = mapDerivedStateToPhase(derivedStateContext.state);
   
-  // V3.4 Phase 5: Removed duplicate action systems (getNextAction, getNextActionV2)
-  // derivedStateContext is now the ONLY source of truth
+  // V3.4 Phase 6: Single runtime workflow truth - simple viewModel
+  const viewModel = {
+    state: derivedStateContext.state,
+    task: derivedStateContext.nextAction,
+    reason: derivedStateContext.reason,
+    canProgress: derivedStateContext.canProgress,
+    phase: derivedPhase,
+  };
+  
+  console.log('🔒 PHASE 6 VIEW MODEL', viewModel);
+  
+  // V3.4 Phase 6: Early return AFTER all hooks
+  if (!validationsLoaded) {
+    return (
+      <div className="bg-white border border-gray-300 rounded-lg p-6 shadow-sm">
+        <div className="text-center">
+          <div className="text-gray-700 font-medium">⏳ Loading workflow data...</div>
+          <div className="text-sm text-gray-500 mt-2">Initializing validation requirements</div>
+        </div>
+      </div>
+    );
+  }
   
   const scrollToActivePhase = () => {
     if (activePhaseRef.current) {
@@ -148,11 +168,10 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     scrollToActivePhase();
   };
 
-  // V3.4 Phase 4: Determine current phase from derived state (not selectedPhase)
-  // Use derived state to determine if we're in pre-ack or post-ack validation phase
-  const currentPhase = derivedStateContext.state === 'INTAKE' || 
-                       derivedStateContext.state === 'PRE_ACK_VALIDATION' || 
-                       derivedStateContext.state === 'READY_FOR_ACK' 
+  // V3.4 Phase 6: Determine current phase from viewModel (single source of truth)
+  const currentPhase = viewModel.state === 'INTAKE' || 
+                       viewModel.state === 'PRE_ACK_VALIDATION' || 
+                       viewModel.state === 'READY_FOR_ACK' 
                        ? 'pre-ack' 
                        : 'post-ack';
   
@@ -204,11 +223,11 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
       {/* Phase 3H.6: Conditional Rendering Based on View Mode */}
       {viewMode === 'workflow' ? (
         <>
-          {/* V3.4 Phase 2: Current Task Banner - Driven by Derived State */}
+          {/* V3.4 Phase 6: Current Task Banner - Driven by viewModel (single source of truth) */}
           <CurrentTaskBanner
-            phase={WORKFLOW_PHASE_LABELS[derivedPhase as WorkflowPhase] || ''}
-            currentStep={derivedStateContext.nextAction}
-            instruction={derivedStateContext.reason}
+            phase={WORKFLOW_PHASE_LABELS[viewModel.phase as WorkflowPhase] || ''}
+            currentStep={viewModel.task}
+            instruction={viewModel.reason}
             icon="🎯"
           />
 
@@ -245,6 +264,7 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
               ppapId={ppap.id}
               currentPhase={currentPhase}
               ppapStatus={ppap.status}
+              derivedPhase={viewModel.phase}
             />
           </div>
         </div>

@@ -59,7 +59,8 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
     setLoading(true);
 
     try {
-      console.log('Phase 3F.2.4: Transitioning INITIATION → READY_TO_ACKNOWLEDGE');
+      // V3.4 Phase 6: Manual transition removed - state derives from validation completion
+      // console.log('Phase 3F.2.4: Transitioning INITIATION → READY_TO_ACKNOWLEDGE');
       
       const result = await updatePPAPState(
         ppapId,

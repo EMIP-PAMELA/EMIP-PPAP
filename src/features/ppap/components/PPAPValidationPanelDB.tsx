@@ -31,6 +31,7 @@ interface Props {
   ppapId: string;
   currentPhase: 'pre-ack' | 'post-ack';
   ppapStatus?: PPAPStatus;
+  derivedPhase?: string; // V3.4 Phase 6: Receive phase from parent (single source of truth)
 }
 
 const STATUS_ICONS = {
@@ -47,7 +48,7 @@ const STATUS_COLORS = {
   approved: 'text-purple-600 bg-purple-100',
 };
 
-export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus }: Props) {
+export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus, derivedPhase: derivedPhaseProp }: Props) {
   const router = useRouter();
   const [validations, setValidations] = useState<DBValidation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,8 +64,8 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
   const canEditPreAck = canEditPreAckValidations(derivedState);
   const canEditPostAck = canEditPostAckValidations(derivedState);
   
-  // Phase 3H.11: Derive actual phase from status for display logic
-  const derivedPhase = ppapStatus ? mapStatusToPhase(ppapStatus) : 'INITIATION';
+  // V3.4 Phase 6: Use derivedPhase from parent (single source of truth) or fallback
+  const derivedPhase = derivedPhaseProp || (ppapStatus ? mapStatusToPhase(ppapStatus) : 'INITIATION');
   const showPreAckActive = derivedPhase === 'INITIATION';
   const showPostAckActive = derivedPhase === 'DOCUMENTATION';
 
