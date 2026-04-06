@@ -68,20 +68,7 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   // Phase 3F.6: Log state after refresh
   console.log('Phase 3F.6 - STATE AFTER REFRESH', ppap.status);
 
-  // Phase 3F.4: SINGLE SOURCE OF TRUTH - ppap.status
-  // DIRECT MAPPING: PPAPStatus → WorkflowPhase (explicit switch statement)
-  const selectedPhase = mapStatusToPhase(ppap.status);
   const activePhaseRef = useRef<HTMLDivElement>(null);
-
-  // Phase 3F.4: Critical error guard
-  if (!selectedPhase) {
-    console.error('Phase 3F.4 - CRITICAL: Unmapped PPAP status', ppap.status);
-  }
-
-  // Phase 3F.4: Debug logging
-  useEffect(() => {
-    logStateToPhaseMapping(ppap.status, selectedPhase);
-  }, [ppap.status, selectedPhase]);
 
   // Auto-scroll to active phase on mount
   useEffect(() => {
@@ -126,42 +113,77 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
       canProgress: context.canProgress,
     });
     
-    // V3.4 Phase 7: Intake derivation check
-    const preAckValidations = validations.filter(v => v.category === 'pre-ack' && v.required);
-    const intakeValidations = preAckValidations.slice(0, 3);
-    const intakeCompleteCount = intakeValidations.filter(
-      v => v.status === 'complete' || v.status === 'approved'
-    ).length;
-    console.log('🔍 PHASE 7 INTAKE DERIVATION CHECK', {
-      ppapId: ppap.id,
-      intakeCompleteCount,
-      intakeTotalRequired: 3,
-      derivedState: context.state,
-      intakeValidations: intakeValidations.map(v => ({ 
-        key: v.validation_key, 
-        status: v.status 
-      })),
-    });
+    // V3.5: Use completed_at for all completion checks (removed status string matching)
+  const preAckValidations = validations.filter(v => v.category === 'pre-ack' && v.required);
+  const intakeValidations = preAckValidations.slice(0, 3);
+  const intakeCompleteCount = intakeValidations.filter(v => v.completed_at != null).length;
+  
+  console.log('🔍 V3.5 INTAKE VALIDATION CHECK', {
+    ppapId: ppap.id,
+    intakeCompleteCount,
+    intakeTotalRequired: 3,
+    derivedState: context.state,
+    intakeValidations: intakeValidations.map(v => ({ 
+      key: v.validation_key, 
+      completed_at: v.completed_at,
+      completed_by: v.completed_by,
+    })),
+  });
     
     return context;
   }, [ppap, validations, documents, validationsLoaded]);
   
-  const derivedPhase = mapDerivedStateToPhase(derivedStateContext.state);
+  // V3.5: PHASE_MAP - Single source of truth for state-to-label conversion
+  const PHASE_MAP: Record<string, string> = {
+    'INTAKE': 'Initiation',
+    'PRE_ACK_VALIDATION': 'Pre-Acknowledgement',
+    'READY_FOR_ACK': 'Pre-Acknowledgement',
+    'DOCUMENTATION': 'Documentation',
+    'SUBMISSION_READY': 'Documentation',
+    'SUBMITTED': 'Review',
+    'APPROVED': 'Complete',
+    'REJECTED': 'Closed',
+  };
   
-  // V3.4 Phase 6.5: Normalize viewModel to render-safe primitives (prevent React #418)
-  const viewModel = {
+  // V3.5: Unified UI Model - SINGLE SOURCE OF TRUTH for ALL UI decisions
+  const uiModel = {
+    // Core derived state
     state: String(derivedStateContext?.state ?? ''),
     task: String(derivedStateContext?.nextAction ?? ''),
     reason: String(derivedStateContext?.reason ?? ''),
     canProgress: Boolean(derivedStateContext?.canProgress),
-    phase: String(derivedPhase ?? ''),
+    
+    // Phase labels
+    phaseLabel: PHASE_MAP[derivedStateContext?.state ?? 'INTAKE'] || 'Unknown',
+    
+    // Validation progress (use completed_at, not status)
+    validationProgress: {
+      intake: {
+        complete: validations.filter(v => v.category === 'pre-ack' && v.required).slice(0, 3).filter(v => v.completed_at != null).length,
+        total: 3,
+      },
+      preAck: {
+        complete: validations.filter(v => v.category === 'pre-ack' && v.required).filter(v => v.completed_at != null || v.approved_at != null).length,
+        total: validations.filter(v => v.category === 'pre-ack' && v.required).length,
+      },
+      postAck: {
+        complete: validations.filter(v => v.category === 'post-ack' && v.required).filter(v => v.approved_at != null).length,
+        total: validations.filter(v => v.category === 'post-ack' && v.required).length,
+      },
+    },
+    
+    // Document progress
+    documentProgress: {
+      complete: documents.filter(d => d.status === 'ready').length,
+      total: documents.length,
+    },
   };
   
-  console.log('🔒 PHASE 6.5 VIEW MODEL', viewModel);
-  console.log('🔒 PHASE 6.5 TASK CONSISTENCY', {
-    bannerTask: viewModel.task,
-    bannerReason: viewModel.reason,
-  });
+  console.log('🧠 V3.5 DERIVED STATE (MASTER)', derivedStateContext);
+  console.log('🎯 V3.5 UI MODEL (SINGLE SOURCE OF TRUTH)', uiModel);
+  
+  // V3.5: Map derived state to workflow phase for legacy components
+  const selectedPhase = mapDerivedStateToPhase(derivedStateContext.state);
   
   // V3.4 Phase 6: Early return AFTER all hooks
   if (!validationsLoaded) {
@@ -190,9 +212,9 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   };
 
   // V3.4 Phase 6: Determine current phase from viewModel (single source of truth)
-  const currentPhase = viewModel.state === 'INTAKE' || 
-                       viewModel.state === 'PRE_ACK_VALIDATION' || 
-                       viewModel.state === 'READY_FOR_ACK' 
+  const currentPhase = uiModel.state === 'INTAKE' || 
+                       uiModel.state === 'PRE_ACK_VALIDATION' || 
+                       uiModel.state === 'READY_FOR_ACK' 
                        ? 'pre-ack' 
                        : 'post-ack';
   
@@ -246,13 +268,13 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
         <>
           {/* V3.4 Phase 6: Current Task Banner - Driven by viewModel (single source of truth) */}
           <CurrentTaskBanner
-            phase={WORKFLOW_PHASE_LABELS[viewModel.phase as WorkflowPhase] || ''}
-            currentStep={viewModel.task}
-            instruction={viewModel.reason}
+            phase={uiModel.phaseLabel}
+            currentStep={uiModel.task}
+            instruction={uiModel.reason}
             icon="🎯"
           />
 
-          <PhaseIndicator currentPhase={selectedPhase} onPhaseClick={handlePhaseClick} />
+          <PhaseIndicator currentPhase={selectedPhase as any} onPhaseClick={handlePhaseClick} />
       
       {/* Phase 3F UI Fix: State-based rendering with safety fallback */}
       {selectedPhase === 'INITIATION' && (
@@ -284,8 +306,8 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             <PPAPValidationPanelDB
               ppapId={ppap.id}
               currentPhase={currentPhase}
-              ppapStatus={ppap.status}
-              derivedPhase={viewModel.phase}
+              derivedState={derivedStateContext.state}
+              uiModel={uiModel}
             />
           </div>
         </div>

@@ -231,7 +231,8 @@ export function isPreAckReady(validations: DBValidation[]): boolean {
   const preAckRequired = validations.filter(
     v => v.category === 'pre-ack' && v.required
   );
-  return preAckRequired.every(v => v.status === 'complete' || v.status === 'approved');
+  // V3.5: Use completed_at presence instead of status string
+  return preAckRequired.every(v => v.completed_at != null || v.approved_at != null);
 }
 
 /**
@@ -241,7 +242,8 @@ export function isPostAckReady(validations: DBValidation[]): boolean {
   const postAckRequired = validations.filter(
     v => v.category === 'post-ack' && v.required
   );
-  return postAckRequired.every(v => v.status === 'approved');
+  // V3.5: Use approved_at presence instead of status string
+  return postAckRequired.every(v => v.approved_at != null);
 }
 
 /**
@@ -254,8 +256,9 @@ export function getValidationSummary(
   const relevant = validations.filter(
     v => v.category === category && v.required
   );
+  // V3.5: Use completed_at/approved_at presence instead of status string
   const completed = relevant.filter(
-    v => v.status === 'complete' || v.status === 'approved'
+    v => v.completed_at != null || v.approved_at != null
   );
 
   return `${completed.length}/${relevant.length}`;

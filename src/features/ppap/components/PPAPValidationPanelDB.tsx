@@ -30,8 +30,20 @@ import { CurrentTaskBanner } from './CurrentTaskBanner';
 interface Props {
   ppapId: string;
   currentPhase: 'pre-ack' | 'post-ack';
-  ppapStatus?: PPAPStatus;
-  derivedPhase?: string; // V3.4 Phase 6: Receive phase from parent (single source of truth)
+  derivedState: string; // V3.5: Derived state from parent
+  uiModel: {
+    state: string;
+    task: string;
+    reason: string;
+    canProgress: boolean;
+    phaseLabel: string;
+    validationProgress: {
+      intake: { complete: number; total: number };
+      preAck: { complete: number; total: number };
+      postAck: { complete: number; total: number };
+    };
+    documentProgress: { complete: number; total: number };
+  };
 }
 
 const STATUS_ICONS = {
@@ -48,26 +60,25 @@ const STATUS_COLORS = {
   approved: 'text-purple-600 bg-purple-100',
 };
 
-export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus, derivedPhase: derivedPhaseProp }: Props) {
+export default function PPAPValidationPanelDB({ ppapId, currentPhase, derivedState, uiModel }: Props) {
   const router = useRouter();
   const [validations, setValidations] = useState<DBValidation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [initializing, setInitializing] = useState(false);
+  const [currentUser] = useState({ id: 'user-123', name: 'Current User', role: 'engineer' as const });
   
-  // Phase 3H.1: Collapsible state for active work zone
+  // Phase 3H.13: Section states
   const [isExpanded, setIsExpanded] = useState(true);
   
-  // Phase 3F: Determine editability based on state
-  const derivedState = ppapStatus ? mapStatusToState(ppapStatus) : 'INITIATED';
+  // V3.5: Use uiModel state instead of ppapStatus
   const canEditPreAck = canEditPreAckValidations(derivedState);
   const canEditPostAck = canEditPostAckValidations(derivedState);
   
-  // V3.4 Phase 6: Use derivedPhase from parent (single source of truth) or fallback
-  const derivedPhase = derivedPhaseProp || (ppapStatus ? mapStatusToPhase(ppapStatus) : 'INITIATION');
-  const showPreAckActive = derivedPhase === 'INITIATION';
-  const showPostAckActive = derivedPhase === 'DOCUMENTATION';
+  // V3.5: Use uiModel.state to determine active sections
+  const showPreAckActive = uiModel.state === 'INTAKE' || uiModel.state === 'PRE_ACK_VALIDATION';
+  const showPostAckActive = uiModel.state === 'DOCUMENTATION' || uiModel.state === 'SUBMISSION_READY';
 
   // Phase 3H.13.5: Fetch validations with auto-retry (system handles failure)
   useEffect(() => {
@@ -156,7 +167,7 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
       return; // Post-ack validations locked before acknowledgement
     }
 
-    if (updating) return; // Prevent concurrent updates
+    if (updatingId) return; // Prevent concurrent updates
 
     // Determine next status
     const statusCycle = validation.requires_approval
@@ -175,7 +186,7 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
       return;
     }
 
-    setUpdating(validation.id);
+    setUpdatingId(validation.id);
     setError(null);
 
     try {
@@ -199,7 +210,7 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
       console.error('Failed to update validation:', err);
       setError(err instanceof Error ? err.message : 'Failed to update validation');
     } finally {
-      setUpdating(null);
+      setUpdatingId(null);
     }
   };
 
@@ -244,7 +255,7 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
 
         <div className="space-y-2">
           {validationList.map((validation, index) => {
-            const isUpdating = updating === validation.id;
+            const isUpdating = updatingId === validation.id;
             
             // Phase 3F.13: Determine validation state (ACTIVE, COMPLETE, LOCKED)
             const isComplete = validation.status === 'complete' || validation.status === 'approved';
