@@ -14,7 +14,7 @@ import { useState, useEffect as useEffectImport, useMemo } from 'react';
 import { getValidations, DBValidation } from '../utils/validationDatabase';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
 import { PPAPControlPanel } from './PPAPControlPanel';
-import { derivePPAPState, getStateLabel } from '../utils/derivedStateMachine';
+import { derivePPAPState, getStateLabel, getWorkflowPhaseFromDerivedState } from '../utils/derivedStateMachine';
 
 interface PPAPWorkflowWrapperProps {
   ppap: PPAPRecord;
@@ -258,6 +258,16 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
                        ? 'pre-ack' 
                        : 'post-ack';
   
+  // V3.9: Map derived state to WorkflowPhase for progress tracker
+  const workflowPhase = getWorkflowPhaseFromDerivedState(derivedStateContext.state);
+  
+  // V3.9: WORKFLOW STEP RESOLUTION - Single authority for progress tracker
+  console.log('📍 V3.9 WORKFLOW STEP RESOLUTION', {
+    derivedState: derivedStateContext.state,
+    workflowPhase: workflowPhase,
+    stepNumber: ['INITIATION', 'DOCUMENTATION', 'SAMPLE', 'REVIEW', 'COMPLETE'].indexOf(workflowPhase) + 1,
+  });
+  
   // V3.8: SINGLE PHASE AUTHORITY - Unified state snapshot
   console.log('🛡 V3.8 SINGLE PHASE AUTHORITY', {
     status: ppap.status,
@@ -265,6 +275,7 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     uiPhase: uiModel.phaseLabel,
     renderState: renderState,
     currentPhase,
+    workflowPhase,
   });
 
   // V3.8: SYSTEM STATE SNAPSHOT (unified with derived state)
@@ -315,7 +326,7 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             icon="🎯"
           />
 
-          <PhaseIndicator currentPhase={uiModel.phaseLabel as any} onPhaseClick={handlePhaseClick} />
+          <PhaseIndicator currentPhase={workflowPhase} onPhaseClick={handlePhaseClick} />
       
       {/* V3.8: SINGLE AUTHORITY RENDER GATES - Use derivedState.state directly */}
       {/* INTAKE state -> Initiation UI */}

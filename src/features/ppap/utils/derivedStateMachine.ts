@@ -219,6 +219,37 @@ export function mapDerivedStateToPhase(state: DerivedPPAPState): string {
 }
 
 /**
+ * V3.9: Map derived state to WorkflowPhase for progress tracker
+ * This is the SINGLE AUTHORITY for workflow step highlighting
+ */
+export function getWorkflowPhaseFromDerivedState(state: DerivedPPAPState): 'INITIATION' | 'DOCUMENTATION' | 'SAMPLE' | 'REVIEW' | 'COMPLETE' {
+  switch (state) {
+    case 'INTAKE':
+      return 'INITIATION';
+    
+    case 'PRE_ACK_VALIDATION':
+    case 'READY_FOR_ACK':
+    case 'DOCUMENTATION':
+      return 'DOCUMENTATION';
+    
+    case 'SUBMISSION_READY':
+      return 'SAMPLE';
+    
+    case 'SUBMITTED':
+      return 'REVIEW';
+    
+    case 'APPROVED':
+      return 'COMPLETE';
+    
+    case 'REJECTED':
+      return 'COMPLETE'; // Rejected PPAPs are also "complete" in workflow terms
+    
+    default:
+      return 'INITIATION';
+  }
+}
+
+/**
  * Get human-readable state label
  */
 export function getStateLabel(state: DerivedPPAPState): string {
