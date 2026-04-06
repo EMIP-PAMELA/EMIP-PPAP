@@ -126,6 +126,23 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
       canProgress: context.canProgress,
     });
     
+    // V3.4 Phase 7: Intake derivation check
+    const preAckValidations = validations.filter(v => v.category === 'pre-ack' && v.required);
+    const intakeValidations = preAckValidations.slice(0, 3);
+    const intakeCompleteCount = intakeValidations.filter(
+      v => v.status === 'complete' || v.status === 'approved'
+    ).length;
+    console.log('🔍 PHASE 7 INTAKE DERIVATION CHECK', {
+      ppapId: ppap.id,
+      intakeCompleteCount,
+      intakeTotalRequired: 3,
+      derivedState: context.state,
+      intakeValidations: intakeValidations.map(v => ({ 
+        key: v.validation_key, 
+        status: v.status 
+      })),
+    });
+    
     return context;
   }, [ppap, validations, documents, validationsLoaded]);
   

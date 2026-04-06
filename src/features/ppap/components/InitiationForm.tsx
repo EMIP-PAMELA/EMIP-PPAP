@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { updatePPAPState } from '../utils/updatePPAPState';
+import { getValidations, updateValidationStatus } from '../utils/validationDatabase';
+import { currentUser } from '@/src/lib/mockUser';
 
 interface InitiationFormProps {
   ppapId: string;
@@ -59,24 +61,37 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
     setLoading(true);
 
     try {
-      // V3.4 Phase 6.5: Runtime state write DISABLED - workflow state derives from validation completion
-      // State transitions now happen automatically via derivePPAPState() logic
-      // Manual updatePPAPState() calls removed from normal page flow to prevent runtime contradictions
+      // V3.4 Phase 7: Persist intake confirmations into validation data
+      // The first 3 pre-ack validations represent the intake confirmations
+      // derivePPAPState() checks if first 3 validations are complete to move past INTAKE
       
-      // const result = await updatePPAPState(
-      //   ppapId,
-      //   'READY_TO_ACKNOWLEDGE',
-      //   'Matt',
-      //   'engineer'
-      // );
-      // if (!result.success) {
-      //   throw new Error(result.error || 'Failed to update state');
-      // }
+      const allValidations = await getValidations(ppapId);
+      const preAckValidations = allValidations.filter(v => v.category === 'pre-ack' && v.required);
+      const intakeValidations = preAckValidations.slice(0, 3);
       
-      // V3.4 Phase 6.5: Form submission succeeds without manual state write
-      // Derived state will update automatically on next page load/refresh
-
-      console.log('Phase 3F.2.4: State transition successful, UI will advance to DOCUMENTATION');
+      if (intakeValidations.length < 3) {
+        throw new Error('Validation data not initialized. Please contact support.');
+      }
+      
+      // Mark first 3 validations as complete to represent intake confirmations
+      await Promise.all([
+        updateValidationStatus(intakeValidations[0].id, 'complete', currentUser.id, currentUser.role),
+        updateValidationStatus(intakeValidations[1].id, 'complete', currentUser.id, currentUser.role),
+        updateValidationStatus(intakeValidations[2].id, 'complete', currentUser.id, currentUser.role),
+      ]);
+      
+      console.log('PHASE 7 INTAKE SAVE RESULT', {
+        ppapId,
+        saved: true,
+        confirmations: {
+          drawingUnderstood: validations.drawing_understood,
+          partProperlyDefined: validations.part_defined,
+          packagingRequirementsMet: validations.packaging_met,
+        },
+        persistedValidations: intakeValidations.map(v => ({ id: v.id, key: v.validation_key })),
+      });
+      
+      // Router refresh will trigger re-read of validations and state derivation
       router.refresh();
       
     } catch (error) {
