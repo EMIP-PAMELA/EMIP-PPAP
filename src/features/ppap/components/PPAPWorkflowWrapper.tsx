@@ -131,16 +131,20 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   
   const derivedPhase = mapDerivedStateToPhase(derivedStateContext.state);
   
-  // V3.4 Phase 6: Single runtime workflow truth - simple viewModel
+  // V3.4 Phase 6.5: Normalize viewModel to render-safe primitives (prevent React #418)
   const viewModel = {
-    state: derivedStateContext.state,
-    task: derivedStateContext.nextAction,
-    reason: derivedStateContext.reason,
-    canProgress: derivedStateContext.canProgress,
-    phase: derivedPhase,
+    state: String(derivedStateContext?.state ?? ''),
+    task: String(derivedStateContext?.nextAction ?? ''),
+    reason: String(derivedStateContext?.reason ?? ''),
+    canProgress: Boolean(derivedStateContext?.canProgress),
+    phase: String(derivedPhase ?? ''),
   };
   
-  console.log('🔒 PHASE 6 VIEW MODEL', viewModel);
+  console.log('🔒 PHASE 6.5 VIEW MODEL', viewModel);
+  console.log('🔒 PHASE 6.5 TASK CONSISTENCY', {
+    bannerTask: viewModel.task,
+    bannerReason: viewModel.reason,
+  });
   
   // V3.4 Phase 6: Early return AFTER all hooks
   if (!validationsLoaded) {

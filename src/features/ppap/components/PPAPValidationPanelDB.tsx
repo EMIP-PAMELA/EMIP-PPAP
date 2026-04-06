@@ -390,17 +390,21 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
         </div>
       )}
 
-      {/* Phase 3H.1: Current Task Banner (replaces Next Action Panel) */}
+      {/* V3.4 Phase 6.5: Section-scoped active step indicator (subordinate to main banner) */}
       {isActiveSection && activeStep && (
-        <CurrentTaskBanner
-          phase="Pre-Acknowledgement"
-          currentStep={activeStep.name}
-          instruction={
-            preAckValidations[activeStepIndex + 1]
+        <div className="mb-3 p-3 bg-blue-50 border-l-4 border-blue-500 rounded">
+          <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">
+            Active Validation Step
+          </div>
+          <div className="text-base font-semibold text-blue-900">
+            {activeStep.name}
+          </div>
+          <div className="text-sm text-blue-700 mt-1">
+            {preAckValidations[activeStepIndex + 1]
               ? `Next: ${preAckValidations[activeStepIndex + 1].name}`
-              : 'Final step - Complete to enable acknowledgement'
-          }
-        />
+              : 'Final step - Complete to enable acknowledgement'}
+          </div>
+        </div>
       )}
 
       {/* Phase 3H.1: All Complete Banner */}

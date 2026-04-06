@@ -59,19 +59,22 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
     setLoading(true);
 
     try {
-      // V3.4 Phase 6: Manual transition removed - state derives from validation completion
-      // console.log('Phase 3F.2.4: Transitioning INITIATION → READY_TO_ACKNOWLEDGE');
+      // V3.4 Phase 6.5: Runtime state write DISABLED - workflow state derives from validation completion
+      // State transitions now happen automatically via derivePPAPState() logic
+      // Manual updatePPAPState() calls removed from normal page flow to prevent runtime contradictions
       
-      const result = await updatePPAPState(
-        ppapId,
-        'READY_TO_ACKNOWLEDGE',
-        'Matt',
-        'engineer'
-      );
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update state');
-      }
+      // const result = await updatePPAPState(
+      //   ppapId,
+      //   'READY_TO_ACKNOWLEDGE',
+      //   'Matt',
+      //   'engineer'
+      // );
+      // if (!result.success) {
+      //   throw new Error(result.error || 'Failed to update state');
+      // }
+      
+      // V3.4 Phase 6.5: Form submission succeeds without manual state write
+      // Derived state will update automatically on next page load/refresh
 
       console.log('Phase 3F.2.4: State transition successful, UI will advance to DOCUMENTATION');
       router.refresh();
