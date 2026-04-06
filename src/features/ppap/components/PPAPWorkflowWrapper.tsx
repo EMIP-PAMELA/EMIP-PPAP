@@ -16,6 +16,7 @@ import { getValidations, DBValidation } from '../utils/validationDatabase';
 import { getNextAction as getNextActionV2 } from '../utils/getNextActionV2';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
 import { PPAPControlPanel } from './PPAPControlPanel';
+import { derivePPAPState, mapDerivedStateToPhase, getStateLabel } from '../utils/derivedStateMachine';
 
 interface PPAPWorkflowWrapperProps {
   ppap: PPAPRecord;
@@ -88,10 +89,22 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     }
   }, []);
 
+  // V3.4: Derive state from PPAP data (deterministic)
+  const derivedStateContext = derivePPAPState(ppap, validations, documents);
+  const derivedPhase = mapDerivedStateToPhase(derivedStateContext.state);
+  
   // Phase sync fix: Use derived phase from status (NOT ppap.workflow_phase)
   const nextActionData = getNextAction(selectedPhase, ppap.status);
   const nextActionV2 = getNextActionV2(ppap.status, validations, documents);
   
+  console.log('🎯 V3.4 DERIVED STATE', {
+    state: derivedStateContext.state,
+    label: getStateLabel(derivedStateContext.state),
+    reason: derivedStateContext.reason,
+    nextAction: derivedStateContext.nextAction,
+    canProgress: derivedStateContext.canProgress,
+    derivedPhase,
+  });
   console.log('🎯 NEXT ACTION', nextActionV2);
   
   const scrollToActivePhase = () => {
