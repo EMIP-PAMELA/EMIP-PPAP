@@ -117,8 +117,16 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
         updateSuccess: true,
       });
       
-      // Router refresh will trigger re-read of validations and state derivation
-      router.refresh();
+      // V3.7: Explicit UI transition trigger after successful state update
+      console.log('🚀 V3.7 UI TRANSITION TRIGGER', {
+        from: 'NEW',
+        to: result.newState,
+        triggeredBy: 'intake_completion',
+      });
+      
+      // Force navigation to refresh PPAP data with new status
+      // router.replace ensures immediate transition to Documentation phase
+      router.replace(`/ppap/${ppapId}`);
       
     } catch (error) {
       console.error('Failed to advance phase:', error);

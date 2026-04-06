@@ -41,6 +41,7 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   }
   
   // V3.4 Phase 5: Fetch validations and track loading state
+  // V3.7: React to ppap.status changes to trigger UI transition after state update
   useEffectImport(() => {
     async function fetchValidations() {
       try {
@@ -49,15 +50,29 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
         const data = await getValidations(ppap.id, ppap.status);
         setValidations(data);
         setValidationsLoaded(true);
-        console.log('✅ V3.6 VALIDATIONS LOADED', { count: data.length, ppapStatus: ppap.status });
+        console.log('✅ V3.7 VALIDATIONS LOADED (Status-reactive)', { count: data.length, ppapStatus: ppap.status });
       } catch (err) {
         console.error('Failed to fetch validations:', err);
         setValidationsLoaded(true); // Set to true even on error to prevent infinite loading
       }
     }
     fetchValidations();
-  }, [ppap.id]);
+  }, [ppap.id, ppap.status]); // V3.7: Added ppap.status dependency
 
+  // V3.7: STATUS CHANGE DETECTION
+  const previousStatusRef = useRef<PPAPStatus | null>(null);
+  
+  useEffectImport(() => {
+    if (previousStatusRef.current !== null && previousStatusRef.current !== ppap.status) {
+      console.log('🧭 V3.7 STATUS CHANGE DETECTED', {
+        from: previousStatusRef.current,
+        to: ppap.status,
+        ppapId: ppap.id,
+      });
+    }
+    previousStatusRef.current = ppap.status;
+  }, [ppap.status, ppap.id]);
+  
   // V3.6: STATE REGRESSION PROTECTION
   // Prevent PPAP status from regressing to earlier states after progression
   const protectedStatusOrder: PPAPStatus[] = [
@@ -74,9 +89,10 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     'APPROVED',
   ];
   
-  console.log('🔒 V3.6 STATE LOCK CHECK', {
+  console.log('🔒 V3.7 STATE LOCK CHECK (with change detection)', {
     ppapId: ppap.id,
     currentStatus: ppap.status,
+    previousStatus: previousStatusRef.current,
     statusIndex: protectedStatusOrder.indexOf(ppap.status),
     ppapNumber: ppap.ppap_number,
   });
@@ -139,8 +155,9 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   const intakeValidations = preAckValidations.slice(0, 3);
   const intakeCompleteCount = intakeValidations.filter(v => v.completed_at != null).length;
   
-  console.log('🔍 V3.5 INTAKE VALIDATION CHECK', {
+  console.log('🔍 V3.7 INTAKE VALIDATION CHECK (Status-reactive)', {
     ppapId: ppap.id,
+    ppapStatus: ppap.status,
     intakeCompleteCount,
     intakeTotalRequired: 3,
     derivedState: context.state,
