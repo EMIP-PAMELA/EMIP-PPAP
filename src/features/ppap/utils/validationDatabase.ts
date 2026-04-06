@@ -101,8 +101,9 @@ export async function initializeValidations(ppapId: string): Promise<void> {
 /**
  * Fetch all validations for a PPAP.
  * Phase 3H.11: Auto-seed if missing (prevents 0/0 display)
+ * V3.6: Only auto-seed for NEW PPAPs to prevent re-seeding after progression
  */
-export async function getValidations(ppapId: string): Promise<DBValidation[]> {
+export async function getValidations(ppapId: string, ppapStatus?: string): Promise<DBValidation[]> {
   const { data, error } = await supabase
     .from('ppap_validations')
     .select('*')
@@ -113,10 +114,18 @@ export async function getValidations(ppapId: string): Promise<DBValidation[]> {
     throw new Error(`Failed to fetch validations: ${error.message}`);
   }
 
-  // Phase 3H.11: Auto-seed if no validations exist
-  // Phase 3H.12: Enhanced error handling - fail loudly, not silently
+  // V3.6: Auto-seed ONLY if no validations exist AND PPAP status is NEW
+  // This prevents re-seeding after progression which would trigger state regression
   if (!data || data.length === 0) {
-    console.warn('⚠️ NO VALIDATIONS FOUND - AUTO-SEEDING DEFAULT SET', { ppapId });
+    if (ppapStatus && ppapStatus !== 'NEW') {
+      console.error('🚨 CRITICAL: Missing validations for non-NEW PPAP', { ppapId, ppapStatus });
+      throw new Error(
+        `Validation data missing for PPAP ${ppapId} with status ${ppapStatus}. ` +
+        `This indicates data corruption. Please contact system administrator.`
+      );
+    }
+    
+    console.warn('⚠️ NO VALIDATIONS FOUND - AUTO-SEEDING DEFAULT SET (NEW PPAP ONLY)', { ppapId });
     
     try {
       await initializeValidations(ppapId);

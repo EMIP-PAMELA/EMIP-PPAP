@@ -44,6 +44,7 @@ export async function updatePPAPState(
   userId: string,
   userRole: string
 ): Promise<StateTransitionResult> {
+  let oldState: PPAPStatus | undefined;
   try {
     // Phase 3F.10: GLOBAL TRACE - Log authorized state write with stack trace
     console.log('🔥 STATE WRITE (AUTHORIZED)', {
@@ -87,7 +88,7 @@ export async function updatePPAPState(
       throw new Error(`Failed to fetch current PPAP state: ${fetchError?.message || 'PPAP not found'}`);
     }
 
-    const oldState = currentPPAP.status;
+    oldState = currentPPAP.status;
 
     // Phase 3F.6: Backward transition guard
     const invalidBackwardTransitions: Array<[PPAPStatus, PPAPStatus]> = [
@@ -120,7 +121,7 @@ export async function updatePPAPState(
       return {
         success: false,
         ppapId,
-        oldState,
+        oldState: oldState as PPAPStatus,
         newState,
         error: `Invalid backward transition: Cannot move from ${oldState} to ${newState}`,
       };
@@ -196,16 +197,17 @@ export async function updatePPAPState(
     return {
       success: true,
       ppapId,
-      oldState,
+      oldState: oldState as PPAPStatus,
       newState,
     };
   } catch (error) {
     console.error('State transition failed:', error);
     
+    // V3.6: No fallback to 'NEW' - use fetched state or 'CLOSED' for errors
     return {
       success: false,
       ppapId,
-      oldState: 'NEW', // Fallback
+      oldState: (oldState || 'CLOSED') as PPAPStatus, // Use fetched state or error fallback
       newState,
       error: error instanceof Error ? error.message : 'Unknown error occurred',
     };

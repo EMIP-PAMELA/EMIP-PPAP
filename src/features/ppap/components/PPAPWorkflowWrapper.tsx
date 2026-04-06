@@ -45,10 +45,11 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     async function fetchValidations() {
       try {
         setValidationsLoaded(false);
-        const data = await getValidations(ppap.id);
+        // V3.6: Pass ppap.status to prevent auto-seeding for non-NEW PPAPs
+        const data = await getValidations(ppap.id, ppap.status);
         setValidations(data);
         setValidationsLoaded(true);
-        console.log('✅ V3.4 VALIDATIONS LOADED', { count: data.length });
+        console.log('✅ V3.6 VALIDATIONS LOADED', { count: data.length, ppapStatus: ppap.status });
       } catch (err) {
         console.error('Failed to fetch validations:', err);
         setValidationsLoaded(true); // Set to true even on error to prevent infinite loading
@@ -57,6 +58,29 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     fetchValidations();
   }, [ppap.id]);
 
+  // V3.6: STATE REGRESSION PROTECTION
+  // Prevent PPAP status from regressing to earlier states after progression
+  const protectedStatusOrder: PPAPStatus[] = [
+    'NEW',
+    'INTAKE_COMPLETE',
+    'PRE_ACK_ASSIGNED',
+    'PRE_ACK_IN_PROGRESS',
+    'READY_TO_ACKNOWLEDGE',
+    'ACKNOWLEDGED',
+    'POST_ACK_ASSIGNED',
+    'POST_ACK_IN_PROGRESS',
+    'AWAITING_SUBMISSION',
+    'SUBMITTED',
+    'APPROVED',
+  ];
+  
+  console.log('🔒 V3.6 STATE LOCK CHECK', {
+    ppapId: ppap.id,
+    currentStatus: ppap.status,
+    statusIndex: protectedStatusOrder.indexOf(ppap.status),
+    ppapNumber: ppap.ppap_number,
+  });
+  
   // Phase 3F.5: Log PPAP received in wrapper
   console.log('Phase 3F.5 - PPAP RECEIVED IN WRAPPER', {
     id: ppap.id,
@@ -64,9 +88,6 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     ppap_number: ppap.ppap_number,
     updated_at: ppap.updated_at,
   });
-
-  // Phase 3F.6: Log state after refresh
-  console.log('Phase 3F.6 - STATE AFTER REFRESH', ppap.status);
 
   const activePhaseRef = useRef<HTMLDivElement>(null);
 

@@ -91,6 +91,8 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, derivedSta
         // Phase 3H.13.5: Auto-retry on failure (ONE attempt)
         let data: DBValidation[];
         try {
+          // V3.6: Pass undefined for ppapStatus - panel doesn't have access to it
+          // If validations are truly missing, this will fail appropriately
           data = await getValidations(ppapId);
         } catch (firstError) {
           console.warn('⚠️ Retrying validation initialization...', firstError);
