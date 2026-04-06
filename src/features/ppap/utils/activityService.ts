@@ -16,16 +16,20 @@ export async function getActivities(ppapId: string): Promise<Activity[]> {
   const events = await getEventsByPPAPId(ppapId);
   const systemActivities = events.map(eventToActivity);
   
+  // V3.4 Phase 5: Temporarily disabled - ppap_activities table not yet created
   // Get user-posted activities
-  const { data: userActivities, error } = await supabase
-    .from('ppap_activities')
-    .select('*')
-    .eq('ppap_id', ppapId)
-    .order('created_at', { ascending: false });
+  // const { data: userActivities, error } = await supabase
+  //   .from('ppap_activities')
+  //   .select('*')
+  //   .eq('ppap_id', ppapId)
+  //   .order('created_at', { ascending: false });
+  const userActivities: any[] = [];
+  const error = null;
   
-  if (error && error.code !== 'PGRST116') { // Ignore "table not found" during migration
-    console.warn('Failed to fetch user activities:', error);
-  }
+  // Error handling disabled while table doesn't exist
+  // if (error && error.code !== 'PGRST116') {
+  //   console.warn('Failed to fetch user activities:', error);
+  // }
   
   const userActivityList: Activity[] = (userActivities || []).map((a: any) => ({
     id: a.id,
@@ -53,53 +57,64 @@ export async function getActivities(ppapId: string): Promise<Activity[]> {
  * Create a user-posted activity
  */
 export async function createActivity(input: CreateActivityInput): Promise<Activity> {
-  const { data, error } = await supabase
-    .from('ppap_activities')
-    .insert({
-      ppap_id: input.ppapId,
-      activity_type: input.type,
-      priority: input.priority || 'normal',
-      message: input.message,
-      user_id: input.userId || null,
-      user_name: input.userName || null,
-      user_role: input.userRole || null,
-      metadata: input.metadata || null,
-    })
-    .select()
-    .single();
+  // V3.4 Phase 5: Temporarily disabled - ppap_activities table not yet created
+  throw new Error('ppap_activities table not yet created - createActivity disabled');
   
-  if (error) {
-    throw new Error(`Failed to create activity: ${error.message}`);
-  }
-  
-  return {
-    id: data.id,
-    ppapId: data.ppap_id,
-    type: data.activity_type,
-    priority: data.priority,
-    message: data.message,
-    userId: data.user_id,
-    userName: data.user_name,
-    userRole: data.user_role,
-    metadata: data.metadata,
-    createdAt: data.created_at,
-  };
+  // const { data, error } = await supabase
+  //   .from('ppap_activities')
+  //   .insert({
+  //     ppap_id: input.ppapId,
+  //     activity_type: input.type,
+  //     priority: input.priority || 'normal',
+  //     message: input.message,
+  //     user_id: input.userId || null,
+  //     user_name: input.userName || null,
+  //     user_role: input.userRole || null,
+  //     metadata: input.metadata || null,
+  //   })
+  //   .select()
+  //   .single();
+  // 
+  // if (error) {
+  //   console.error('Failed to create activity:', error);
+  //   throw error;
+  // }
+  // 
+  // if (!data) {
+  //   throw new Error('Failed to create activity: no data returned');
+  // }
+  // 
+  // return {
+  //   id: data.id,
+  //   ppapId: data.ppap_id,
+  //   type: data.activity_type,
+  //   priority: data.priority,
+  //   message: data.message,
+  //   userId: data.user_id,
+  //   userName: data.user_name,
+  //   userRole: data.user_role,
+  //   metadata: data.metadata,
+  //   createdAt: data.created_at,
+  // };
 }
 
 /**
  * Get count of open issues for a PPAP
  */
 export async function getIssueCount(ppapId: string): Promise<number> {
-  const { data, error } = await supabase
-    .from('ppap_activities')
-    .select('id', { count: 'exact', head: true })
-    .eq('ppap_id', ppapId)
-    .in('priority', ['issue', 'risk']);
+  // V3.4 Phase 5: Temporarily disabled - ppap_activities table not yet created
+  // const { data, error } = await supabase
+  //   .from('ppap_activities')
+  //   .select('id', { count: 'exact', head: true })
+  //   .eq('ppap_id', ppapId)
+  //   .in('priority', ['issue', 'risk']);
+  const error = null;
   
-  if (error && error.code !== 'PGRST116') {
-    console.warn('Failed to count issues:', error);
-    return 0;
-  }
+  // Error handling disabled while table doesn't exist
+  // if (error && error.code !== 'PGRST116') {
+  //   console.warn('Failed to count issues:', error);
+  //   return 0;
+  // }
   
-  return data?.length || 0;
+  return 0; // Return 0 while table doesn't exist
 }

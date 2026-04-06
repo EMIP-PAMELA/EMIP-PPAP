@@ -8,12 +8,10 @@ import { DocumentationForm } from './DocumentationForm';
 import { SampleForm } from './SampleForm';
 import { ReviewForm } from './ReviewForm';
 import { WorkflowPhase, isValidWorkflowPhase, WORKFLOW_PHASE_LABELS, WORKFLOW_PHASES } from '../constants/workflowPhases';
-import { getNextAction } from '../utils/getNextAction';
 import { mapStatusToPhase, logStateToPhaseMapping } from '../utils/stateWorkflowMapping';
 import PPAPValidationPanelDB from './PPAPValidationPanelDB';
-import { useState, useEffect as useEffectImport } from 'react';
+import { useState, useEffect as useEffectImport, useMemo } from 'react';
 import { getValidations, DBValidation } from '../utils/validationDatabase';
-import { getNextAction as getNextActionV2 } from '../utils/getNextActionV2';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
 import { PPAPControlPanel } from './PPAPControlPanel';
 import { derivePPAPState, mapDerivedStateToPhase, getStateLabel } from '../utils/derivedStateMachine';
@@ -26,8 +24,9 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   // Phase 3H.6: View mode toggle (workflow vs control)
   const [viewMode, setViewMode] = useState<'workflow' | 'control'>('workflow');
   
-  // Phase 3H.2: State for validations and documents for next action
+  // V3.4 Phase 5: State for validations and documents - track loading state
   const [validations, setValidations] = useState<DBValidation[]>([]);
+  const [validationsLoaded, setValidationsLoaded] = useState(false);
   const [documents, setDocuments] = useState<any[]>([]); // Simplified for now
   
   // Phase 3F.5: Guard against null/undefined PPAP
@@ -41,14 +40,18 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     );
   }
   
-  // Phase 3H.2: Fetch validations for next action calculation
+  // V3.4 Phase 5: Fetch validations and track loading state
   useEffectImport(() => {
     async function fetchValidations() {
       try {
+        setValidationsLoaded(false);
         const data = await getValidations(ppap.id);
         setValidations(data);
+        setValidationsLoaded(true);
+        console.log('✅ V3.4 VALIDATIONS LOADED', { count: data.length });
       } catch (err) {
-        console.error('Failed to fetch validations for next action:', err);
+        console.error('Failed to fetch validations:', err);
+        setValidationsLoaded(true); // Set to true even on error to prevent infinite loading
       }
     }
     fetchValidations();
@@ -89,47 +92,47 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     }
   }, []);
 
-  // V3.4 Phase 3: Log inputs to derivePPAPState for debugging
-  console.log('🔍 V3.4 DERIVED STATE INPUT', {
-    ppapId: ppap.id,
-    ppapStatus: ppap.status,
-    validationsCount: validations.length,
-    validationsLoaded: validations.length > 0,
-    documentsCount: documents.length,
-    documentsLoaded: documents.length > 0,
-    acknowledgedDate: (ppap as any).acknowledged_date,
-    submittedDate: (ppap as any).submitted_date,
-  });
+  // V3.4 Phase 5: Block derived state execution until validations are loaded
+  if (!validationsLoaded) {
+    return (
+      <div className="bg-white border border-gray-300 rounded-lg p-6 shadow-sm">
+        <div className="text-center">
+          <div className="text-gray-700 font-medium">⏳ Loading workflow data...</div>
+          <div className="text-sm text-gray-500 mt-2">Initializing validation requirements</div>
+        </div>
+      </div>
+    );
+  }
+
+  // V3.4 Phase 5: Derive state from PPAP data (deterministic) - memoized with dependencies
+  const derivedStateContext = useMemo(() => {
+    console.log('🔍 V3.4 DERIVED STATE INPUT', {
+      ppapId: ppap.id,
+      ppapStatus: ppap.status,
+      validationsCount: validations.length,
+      validationsLoaded,
+      documentsCount: documents.length,
+      acknowledgedDate: (ppap as any).acknowledged_date,
+      submittedDate: (ppap as any).submitted_date,
+    });
+    
+    const context = derivePPAPState(ppap, validations, documents);
+    
+    console.log('🎯 V3.4 DERIVED STATE RESULT', {
+      state: context.state,
+      label: getStateLabel(context.state),
+      reason: context.reason,
+      nextAction: context.nextAction,
+      canProgress: context.canProgress,
+    });
+    
+    return context;
+  }, [ppap, validations, documents, validationsLoaded]);
   
-  // V3.4: Derive state from PPAP data (deterministic)
-  const derivedStateContext = derivePPAPState(ppap, validations, documents);
   const derivedPhase = mapDerivedStateToPhase(derivedStateContext.state);
   
-  // V3.4 Phase 3: Log derived state result
-  console.log('🎯 V3.4 DERIVED STATE RESULT', {
-    state: derivedStateContext.state,
-    label: getStateLabel(derivedStateContext.state),
-    reason: derivedStateContext.reason,
-    nextAction: derivedStateContext.nextAction,
-    canProgress: derivedStateContext.canProgress,
-    derivedPhase,
-  });
-  
-  // Phase sync fix: Use derived phase from status (NOT ppap.workflow_phase)
-  const nextActionData = getNextAction(selectedPhase, ppap.status);
-  const nextActionV2 = getNextActionV2(ppap.status, validations, documents);
-  
-  // V3.4 Phase 4: UI Sync verification
-  console.log('🔒 V3.4 UI SYNC CHECK', {
-    bannerSource: 'derivedStateContext.nextAction',
-    bannerValue: derivedStateContext.nextAction,
-    derivedPhase,
-    selectedPhase,
-    validationCount: validations.length,
-    ppapStatus: ppap.status,
-  });
-  
-  console.log('🎯 NEXT ACTION V2', nextActionV2);
+  // V3.4 Phase 5: Removed duplicate action systems (getNextAction, getNextActionV2)
+  // derivedStateContext is now the ONLY source of truth
   
   const scrollToActivePhase = () => {
     if (activePhaseRef.current) {
