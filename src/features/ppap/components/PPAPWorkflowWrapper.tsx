@@ -89,15 +89,24 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     }
   }, []);
 
+  // V3.4 Phase 3: Log inputs to derivePPAPState for debugging
+  console.log('🔍 V3.4 DERIVED STATE INPUT', {
+    ppapId: ppap.id,
+    ppapStatus: ppap.status,
+    validationsCount: validations.length,
+    validationsLoaded: validations.length > 0,
+    documentsCount: documents.length,
+    documentsLoaded: documents.length > 0,
+    acknowledgedDate: (ppap as any).acknowledged_date,
+    submittedDate: (ppap as any).submitted_date,
+  });
+  
   // V3.4: Derive state from PPAP data (deterministic)
   const derivedStateContext = derivePPAPState(ppap, validations, documents);
   const derivedPhase = mapDerivedStateToPhase(derivedStateContext.state);
   
-  // Phase sync fix: Use derived phase from status (NOT ppap.workflow_phase)
-  const nextActionData = getNextAction(selectedPhase, ppap.status);
-  const nextActionV2 = getNextActionV2(ppap.status, validations, documents);
-  
-  console.log('🎯 V3.4 DERIVED STATE', {
+  // V3.4 Phase 3: Log derived state result
+  console.log('🎯 V3.4 DERIVED STATE RESULT', {
     state: derivedStateContext.state,
     label: getStateLabel(derivedStateContext.state),
     reason: derivedStateContext.reason,
@@ -105,7 +114,12 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     canProgress: derivedStateContext.canProgress,
     derivedPhase,
   });
-  console.log('🎯 NEXT ACTION', nextActionV2);
+  
+  // Phase sync fix: Use derived phase from status (NOT ppap.workflow_phase)
+  const nextActionData = getNextAction(selectedPhase, ppap.status);
+  const nextActionV2 = getNextActionV2(ppap.status, validations, documents);
+  
+  console.log('🎯 NEXT ACTION V2', nextActionV2);
   
   const scrollToActivePhase = () => {
     if (activePhaseRef.current) {
