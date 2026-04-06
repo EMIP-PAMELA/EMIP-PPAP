@@ -79,8 +79,21 @@ export function derivePPAPState(
 
   // Count intake confirmations (first 3 pre-ack validations)
   const intakeValidations = preAckValidations.slice(0, 3);
+  
+  // V3.4 Phase 7.1B: Debug actual validation state
+  console.log('🔍 PHASE 7.1B INTAKE VALIDATION DEBUG', {
+    intakeValidations: intakeValidations.map(v => ({
+      key: v.validation_key,
+      status: v.status,
+      completed_at: v.completed_at,
+      completed_by: v.completed_by,
+    })),
+  });
+  
+  // V3.4 Phase 7.1B: Use completed_at presence as primary completion indicator
+  // This is more reliable than status string matching
   const intakeConfirmations = intakeValidations.filter(
-    v => v.status === 'complete' || v.status === 'approved'
+    v => v.completed_at != null || v.status === 'complete' || v.status === 'approved'
   ).length;
 
   // Check document completion
