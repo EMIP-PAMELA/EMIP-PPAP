@@ -65,8 +65,18 @@ export async function createPPAP(input: CreatePPAPInput): Promise<PPAPRecord> {
     .select()
     .maybeSingle();
 
+  // V3.3A.16K: Log raw response for diagnostics
+  console.log('INSERT RESPONSE DATA:', data);
+
   if (error) {
-    throw new Error(`Failed to create PPAP: ${error.message}`);
+    // V3.3A.16K: Expose full Supabase error details
+    console.error('SUPABASE INSERT ERROR FULL:', error);
+    console.error('ERROR MESSAGE:', error.message);
+    console.error('ERROR DETAILS:', error.details);
+    console.error('ERROR HINT:', error.hint);
+    console.error('ERROR CODE:', error.code);
+
+    throw new Error(`Supabase Insert Failed: ${error.message}`);
   }
 
   if (!data) {
