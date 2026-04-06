@@ -172,11 +172,11 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
       {/* Phase 3H.6: Conditional Rendering Based on View Mode */}
       {viewMode === 'workflow' ? (
         <>
-          {/* Phase 3H.2: Current Task Banner (ALWAYS VISIBLE AT TOP) */}
+          {/* V3.4 Phase 2: Current Task Banner - Driven by Derived State */}
           <CurrentTaskBanner
-            phase={WORKFLOW_PHASE_LABELS[selectedPhase] || ''}
-            currentStep={nextActionV2.label}
-            instruction={nextActionV2.instruction}
+            phase={WORKFLOW_PHASE_LABELS[derivedPhase as WorkflowPhase] || ''}
+            currentStep={derivedStateContext.nextAction}
+            instruction={derivedStateContext.reason}
             icon="🎯"
           />
 

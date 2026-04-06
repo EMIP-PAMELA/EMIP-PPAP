@@ -18,7 +18,6 @@ import { getValidationGuidance } from '../utils/validationGuidance';
 import { PPAPStatus } from '@/src/types/database.types';
 import { mapStatusToState } from '../utils/ppapTableHelpers';
 import { canEditPreAckValidations, canEditPostAckValidations, mapStatusToPhase } from '../utils/stateWorkflowMapping';
-import { updatePPAPState } from '../utils/updatePPAPState';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
 
 /**
@@ -192,14 +191,8 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
         prev.map(v => (v.id === validation.id ? updated : v))
       );
 
-      // Phase 3H: Check for auto state transitions
-      const updatedValidations = validations.map(v => 
-        v.id === validation.id ? updated : v
-      );
-
-      await checkAutoTransition(updatedValidations);
-
-      // Refresh UI
+      // V3.4 Phase 2: State derives automatically from data - no manual transitions needed
+      // Refresh UI to show new derived state
       router.refresh();
     } catch (err) {
       console.error('Failed to update validation:', err);
@@ -209,58 +202,8 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
     }
   };
 
-  /**
-   * Phase 3H: Auto state transition integration
-   * Check if validation completion triggers state transition
-   */
-  const checkAutoTransition = async (updatedValidations: DBValidation[]) => {
-    if (!ppapStatus) return;
-
-    const preAckReady = isPreAckReady(updatedValidations);
-    const postAckReady = isPostAckReady(updatedValidations);
-
-    // Auto-transition: Pre-ack complete → READY_FOR_ACKNOWLEDGEMENT
-    if (preAckReady && ppapStatus === 'PRE_ACK_IN_PROGRESS') {
-      try {
-        // Phase 3F.6: Log state write attempt
-        console.log('Phase 3F.6 - STATE WRITE ATTEMPT', {
-          from: ppapStatus,
-          to: 'READY_TO_ACKNOWLEDGE',
-          source: 'PPAPValidationPanelDB.tsx (auto-transition)',
-        });
-        
-        await updatePPAPState(
-          ppapId,
-          'READY_TO_ACKNOWLEDGE',
-          currentUser.id,
-          currentUser.role
-        );
-      } catch (err) {
-        console.error('Auto-transition to READY_FOR_ACKNOWLEDGEMENT failed:', err);
-      }
-    }
-
-    // Auto-transition: Post-ack approved → READY_FOR_SUBMISSION
-    if (postAckReady && ppapStatus === 'POST_ACK_IN_PROGRESS') {
-      try {
-        // Phase 3F.6: Log state write attempt
-        console.log('Phase 3F.6 - STATE WRITE ATTEMPT', {
-          from: ppapStatus,
-          to: 'AWAITING_SUBMISSION',
-          source: 'PPAPValidationPanelDB.tsx (auto-transition)',
-        });
-        
-        await updatePPAPState(
-          ppapId,
-          'AWAITING_SUBMISSION',
-          currentUser.id,
-          currentUser.role
-        );
-      } catch (err) {
-        console.error('Auto-transition to READY_FOR_SUBMISSION failed:', err);
-      }
-    }
-  };
+  // V3.4 Phase 2: Auto-transitions removed - state derives automatically from validation data
+  // No manual state updates needed - derivePPAPState() handles all state logic
 
   const renderValidationSection = (
     title: string,
