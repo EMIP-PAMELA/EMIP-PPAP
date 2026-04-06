@@ -14,7 +14,7 @@ import { useState, useEffect as useEffectImport, useMemo } from 'react';
 import { getValidations, DBValidation } from '../utils/validationDatabase';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
 import { PPAPControlPanel } from './PPAPControlPanel';
-import { derivePPAPState, mapDerivedStateToPhase, getStateLabel } from '../utils/derivedStateMachine';
+import { derivePPAPState, getStateLabel } from '../utils/derivedStateMachine';
 
 interface PPAPWorkflowWrapperProps {
   ppap: PPAPRecord;
@@ -220,8 +220,10 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   console.log('🧠 V3.5 DERIVED STATE (MASTER)', derivedStateContext);
   console.log('🎯 V3.5 UI MODEL (SINGLE SOURCE OF TRUTH)', uiModel);
   
-  // V3.5: Map derived state to workflow phase for legacy components
-  const selectedPhase = mapDerivedStateToPhase(derivedStateContext.state);
+  // V3.8: REMOVED LEGACY PHASE RESOLVER
+  // Use derivedStateContext.state directly as SINGLE AUTHORITY for rendering
+  // No more mapDerivedStateToPhase - it was causing PRE_ACK_VALIDATION -> INITIATION mapping bug
+  const renderState = derivedStateContext.state;
   
   // V3.4 Phase 6: Early return AFTER all hooks
   if (!validationsLoaded) {
@@ -250,55 +252,56 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   };
 
   // V3.4 Phase 6: Determine current phase from viewModel (single source of truth)
-  const currentPhase = uiModel.state === 'INTAKE' || 
-                       uiModel.state === 'PRE_ACK_VALIDATION' || 
-                       uiModel.state === 'READY_FOR_ACK' 
+  const currentPhase = renderState === 'INTAKE' || 
+                       renderState === 'PRE_ACK_VALIDATION' || 
+                       renderState === 'READY_FOR_ACK' 
                        ? 'pre-ack' 
                        : 'post-ack';
   
-  // Phase 3H.11: GLOBAL STATE SNAPSHOT
-  console.log('� SYSTEM STATE SNAPSHOT', {
+  // V3.8: SINGLE PHASE AUTHORITY - Unified state snapshot
+  console.log('🛡 V3.8 SINGLE PHASE AUTHORITY', {
     status: ppap.status,
-    phase: selectedPhase,
+    derivedState: derivedStateContext.state,
+    uiPhase: uiModel.phaseLabel,
+    renderState: renderState,
     currentPhase,
+  });
+
+  // V3.8: SYSTEM STATE SNAPSHOT (unified with derived state)
+  console.log('📊 SYSTEM STATE SNAPSHOT', {
+    status: ppap.status,
+    derivedState: derivedStateContext.state,
+    phaseLabel: uiModel.phaseLabel,
     validations: validations?.length || 0,
     documents: documents?.length || 0,
     viewMode,
     ppapId: ppap.id,
   });
   
-  // Phase 3H.11: PHASE DERIVATION CHECK
-  console.log('🧭 PHASE DERIVATION CHECK', {
-    status: ppap.status,
-    derivedPhase: selectedPhase,
-  });
-  
   return (
-    <div className="space-y-3">
+    <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm space-y-6">
       {/* Phase 3H.6: View Mode Toggle */}
-      <div className="bg-white border border-gray-300 rounded-lg p-2 shadow-sm mb-3">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setViewMode('workflow')}
-            className={`flex-1 px-4 py-2 text-sm font-semibold rounded transition-colors ${
-              viewMode === 'workflow'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            📋 Workflow View
-          </button>
-          <button
-            onClick={() => setViewMode('control')}
-            className={`flex-1 px-4 py-2 text-sm font-semibold rounded transition-colors ${
-              viewMode === 'control'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            🎛️ Control Panel
-          </button>
-        </div>
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setViewMode('workflow')}
+          className={`flex-1 px-4 py-2 text-sm font-semibold rounded transition-colors ${
+            viewMode === 'workflow'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          📋 Workflow View
+        </button>
+        <button
+          onClick={() => setViewMode('control')}
+          className={`flex-1 px-4 py-2 text-sm font-semibold rounded transition-colors ${
+            viewMode === 'control'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          🎛️ Control Panel
+        </button>
       </div>
 
       {/* Phase 3H.6: Conditional Rendering Based on View Mode */}
@@ -312,10 +315,11 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             icon="🎯"
           />
 
-          <PhaseIndicator currentPhase={selectedPhase as any} onPhaseClick={handlePhaseClick} />
+          <PhaseIndicator currentPhase={uiModel.phaseLabel as any} onPhaseClick={handlePhaseClick} />
       
-      {/* Phase 3F UI Fix: State-based rendering with safety fallback */}
-      {selectedPhase === 'INITIATION' && (
+      {/* V3.8: SINGLE AUTHORITY RENDER GATES - Use derivedState.state directly */}
+      {/* INTAKE state -> Initiation UI */}
+      {renderState === 'INTAKE' && (
         <div ref={activePhaseRef}>
           <InitiationForm
             ppapId={ppap.id}
@@ -326,7 +330,8 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
         </div>
       )}
 
-      {selectedPhase === 'DOCUMENTATION' && (
+      {/* PRE_ACK_VALIDATION or DOCUMENTATION state -> Documentation UI */}
+      {(renderState === 'PRE_ACK_VALIDATION' || renderState === 'DOCUMENTATION' || renderState === 'READY_FOR_ACK') && (
         <div ref={activePhaseRef}>
           {/* Phase 3H.13: Document Execution FIRST (action before context) */}
           <DocumentationForm
@@ -351,7 +356,8 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
         </div>
       )}
 
-      {selectedPhase === 'SAMPLE' && (
+      {/* SUBMISSION_READY state -> Sample UI */}
+      {renderState === 'SUBMISSION_READY' && (
         <div ref={activePhaseRef}>
           <SampleForm
             ppapId={ppap.id}
@@ -361,7 +367,8 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
         </div>
       )}
 
-      {selectedPhase === 'REVIEW' && (
+      {/* SUBMITTED state -> Review UI */}
+      {renderState === 'SUBMITTED' && (
         <div ref={activePhaseRef}>
           <ReviewForm
             ppapId={ppap.id}
@@ -371,22 +378,11 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
         </div>
       )}
 
-      {selectedPhase === 'COMPLETE' && (
+      {/* APPROVED state -> Complete UI */}
+      {renderState === 'APPROVED' && (
         <div ref={activePhaseRef} className="bg-white border border-gray-200 rounded-lg p-4">
           <h2 className="text-xl font-bold text-gray-900 mb-4">COMPLETE Phase</h2>
           <p className="text-green-700 font-medium">✓ PPAP workflow complete!</p>
-        </div>
-      )}
-
-      {/* Safety fallback: Render initiation form if no phase matches */}
-      {!['INITIATION', 'DOCUMENTATION', 'SAMPLE', 'REVIEW', 'COMPLETE'].includes(selectedPhase) && (
-        <div ref={activePhaseRef}>
-          <InitiationForm
-            ppapId={ppap.id}
-            partNumber={ppap.part_number || ''}
-            ppapType={ppap.ppap_type}
-            isReadOnly={false}
-          />
         </div>
       )}
         </>
