@@ -119,6 +119,16 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
   const nextActionData = getNextAction(selectedPhase, ppap.status);
   const nextActionV2 = getNextActionV2(ppap.status, validations, documents);
   
+  // V3.4 Phase 4: UI Sync verification
+  console.log('🔒 V3.4 UI SYNC CHECK', {
+    bannerSource: 'derivedStateContext.nextAction',
+    bannerValue: derivedStateContext.nextAction,
+    derivedPhase,
+    selectedPhase,
+    validationCount: validations.length,
+    ppapStatus: ppap.status,
+  });
+  
   console.log('🎯 NEXT ACTION V2', nextActionV2);
   
   const scrollToActivePhase = () => {
@@ -135,8 +145,13 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     scrollToActivePhase();
   };
 
-  // Phase 3H.2: Determine current phase for active work zone
-  const currentPhase = selectedPhase === 'INITIATION' || selectedPhase === 'DOCUMENTATION' && ppap.status.includes('PRE_ACK') ? 'pre-ack' : 'post-ack';
+  // V3.4 Phase 4: Determine current phase from derived state (not selectedPhase)
+  // Use derived state to determine if we're in pre-ack or post-ack validation phase
+  const currentPhase = derivedStateContext.state === 'INTAKE' || 
+                       derivedStateContext.state === 'PRE_ACK_VALIDATION' || 
+                       derivedStateContext.state === 'READY_FOR_ACK' 
+                       ? 'pre-ack' 
+                       : 'post-ack';
   
   // Phase 3H.11: GLOBAL STATE SNAPSHOT
   console.log('� SYSTEM STATE SNAPSHOT', {
