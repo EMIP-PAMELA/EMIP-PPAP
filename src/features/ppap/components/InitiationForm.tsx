@@ -91,6 +91,32 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
         persistedValidations: intakeValidations.map(v => ({ id: v.id, key: v.validation_key })),
       });
       
+      // V3.4 Phase 7.2: Enforce status transition after validation persistence
+      // Database status field must advance so UI can progress
+      console.log('🚨 PHASE 7.2 TRANSITION CHECK', {
+        validationsComplete: 3,
+        requiredCount: 3,
+        canProgress: true,
+        currentStatus: 'NEW',
+        nextStatus: 'READY_TO_ACKNOWLEDGE',
+      });
+      
+      const result = await updatePPAPState(
+        ppapId,
+        'READY_TO_ACKNOWLEDGE',
+        currentUser.id,
+        currentUser.role
+      );
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update PPAP status');
+      }
+      
+      console.log('✅ PHASE 7.2 STATUS UPDATED', {
+        newStatus: 'READY_TO_ACKNOWLEDGE',
+        updateSuccess: true,
+      });
+      
       // Router refresh will trigger re-read of validations and state derivation
       router.refresh();
       
