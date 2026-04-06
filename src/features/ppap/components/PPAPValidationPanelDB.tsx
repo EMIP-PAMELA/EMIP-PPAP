@@ -353,6 +353,7 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
     );
   }
 
+  // V3.4 Phase 2.5: Data-driven completion checks (use existing filtered arrays)
   const preAckReady = isPreAckReady(validations);
   const postAckReady = isPostAckReady(validations);
 
@@ -417,9 +418,9 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, ppapStatus
       {/* Phase 3H.13.5: Smart display with action-driven guidance */}
       {(isActiveSection || isExpanded) && (
         <>
-          {/* Pre-Ack Validations - always show, but with different labels */}
+          {/* V3.4 Phase 2.5: Data-driven label - only show "Completed" if actually complete */}
           {renderValidationSection(
-            showPreAckActive ? 'Pre-Acknowledgement Validations' : 'Pre-Acknowledgement Validations (Completed)',
+            preAckReady ? 'Pre-Acknowledgement Validations (Completed)' : 'Pre-Acknowledgement Validations',
             'pre-ack',
             preAckValidations
           )}
