@@ -1,10 +1,117 @@
 # EMIP-PPAP System Architecture & Build Plan
 
-**Last Updated:** 2026-03-28 11:56 CT  
-**Version:** 3F.15 + Implementation Update (Phases 9-21)  
-**Status:** Architectural Blueprint + Implementation Reconciliation
+**Last Updated:** 2026-04-07 14:35 CT  
+**Version:** V5.0 - 3-Layer Architecture Realignment  
+**Status:** Foundation Layer Established + Architectural Blueprint
 
-**Previous Version:** Archived to `BUILD_PLAN_ARCHIVE_20260325.md`
+**Previous Version:** 3F.15 + Implementation Update (Phases 9-21)  
+**Archive:** `BUILD_PLAN_ARCHIVE_20260325.md`
+
+---
+
+## V5.0 ARCHITECTURE REALIGNMENT (2026-04-07)
+
+### System Architecture - Three Layers
+
+**V5.0 establishes EMIP as a properly layered system with clear separation of concerns:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ LAYER 3: APPLICATION / UI                                   │
+│ - Workflow screens                                          │
+│ - Dashboards                                                │
+│ - User interaction components                               │
+└─────────────────────────────────────────────────────────────┘
+                          ↓ consumes
+┌─────────────────────────────────────────────────────────────┐
+│ LAYER 2: DOMAIN ENGINES                                     │
+│ - PPAP (process/state engine)                  [COMPLETE]   │
+│ - Copper Index (cost/analytics engine)        [SCAFFOLDED] │
+│ - Future modules (DFMEA, MSA, etc.)                         │
+└─────────────────────────────────────────────────────────────┘
+                          ↓ consumes
+┌─────────────────────────────────────────────────────────────┐
+│ LAYER 1: FOUNDATION (EMIP Core)              [V5.0 NEW]    │
+│ - BOM Repository (canonical data store)                     │
+│ - Parser Engine (shared BOM parsing)                        │
+│ - Data Services (single access point)                       │
+│ - Ingestion Pipeline (normalize & store)                    │
+│ - Parts Master (future)                                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### V5.0 Core Components
+
+**EMIP Core Data Backbone** (`src/core/`)
+
+1. **BOM Repository** (`src/core/data/bom/`)
+   - Canonical BOM data model with full traceability
+   - Normalized storage format (parent/child/qty/unit/metadata)
+   - Source tracking (visual_export, engineering_master, manual_entry)
+   - Versioning and revision control
+
+2. **Parser Service** (`src/core/parser/`)
+   - Pure parsing engine (NO side effects, NO feature coupling)
+   - Extracted from documentEngine to foundation layer
+   - Shared across all feature modules
+   - Confidence scoring and error handling
+   - Parser version tracking (V5.0.0)
+
+3. **BOM Service** (`src/core/services/`)
+   - **SINGLE ACCESS POINT** for all BOM data
+   - Methods: `getBOM()`, `getFlattenedBOM()`, `getWireLines()`, `getBOMBySource()`
+   - Abstract data source (in-memory cache V5.0, database V5.1)
+   - Debug logging for all BOM access
+
+4. **Ingestion Pipeline** (`src/core/data/bom/ingestion.ts`)
+   - Parse → Normalize → Store pipeline
+   - Wire detection and enrichment
+   - Full metadata capture (source, timestamp, parser version)
+   - Validation before ingestion
+
+### V5.0 Module Boundaries - CRITICAL RULES
+
+**✅ ALLOWED:**
+- Feature modules consume BOM via `core/services/bomService`
+- Domain engines operate on engineering data
+- UI components call domain engines
+
+**❌ FORBIDDEN:**
+- Feature modules MUST NOT parse BOM independently
+- Feature modules MUST NOT own BOM data
+- NO cross-feature imports (PPAP ← → Copper Index)
+- NO parsing logic outside `core/parser`
+
+### Copper Index Module (Scaffolded)
+
+**Status:** Placeholder structure created, not yet implemented
+
+**Location:** `src/features/copper-index/`
+
+**Purpose:** Calculate copper costs for wire harness assemblies
+
+**Architecture Compliance:**
+- ✅ Imports BOM via `core/services/bomService` (enforced)
+- ✅ NO parsing logic (uses core)
+- ✅ Isolated from PPAP module
+- 🔲 Implementation pending (future phase)
+
+### V5.0 Impact on Existing Systems
+
+**PPAP Workflow System:**
+- ✅ Fully preserved and operational
+- ✅ No breaking changes
+- ✅ Can now consume BOM via core services if needed
+
+**Document Engine:**
+- ✅ Continues to operate as before
+- 🔄 Can migrate to use `core/parser` and `core/services` (optional optimization)
+- ✅ No breaking changes
+
+**Build Status:**
+- ✅ All existing functionality intact
+- ✅ New core layer added without disruption
+- ✅ TypeScript compilation successful
 
 ---
 
