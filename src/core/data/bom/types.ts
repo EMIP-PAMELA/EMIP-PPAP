@@ -76,6 +76,19 @@ export interface BOMRecord {
   /** Revision number if available from source */
   revision?: string | null;
   
+  // ============================================================
+  // VERSION CONTROL FIELDS (V5.2 Requirement)
+  // ============================================================
+  
+  /** V5.2: Is this the current active BOM version? Only one active per part. */
+  is_active?: boolean;
+  
+  /** V5.2: Ingestion batch ID - groups all records from single ingestion */
+  ingestion_batch_id?: string;
+  
+  /** V5.2: Optional sequential version number for user reference */
+  version_number?: number | null;
+  
   /** Created/updated timestamps */
   created_at?: string;
   updated_at?: string;

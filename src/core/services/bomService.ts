@@ -34,18 +34,18 @@ import { supabase } from '@/src/lib/supabaseClient';
 /**
  * Get BOM for a specific part number
  * 
- * V5.1: Queries Supabase database for persistence
+ * V5.2: Returns ONLY active BOM version
  * 
- * Returns all child components for the given parent part.
+ * Returns all child components for the given parent part (active version only).
  * 
  * @param partNumber Parent part number
- * @returns Array of BOM records
+ * @returns Array of BOM records (active version)
  */
 export async function getBOM(partNumber: string): Promise<BOMRecord[]> {
-  console.log('🧠 V5.1 BOM DATABASE ACCESS', {
+  console.log('🧠 V5.2 BOM DATABASE ACCESS', {
     partNumber,
     source: 'Supabase',
-    operation: 'getBOM',
+    operation: 'getBOM (active only)',
     timestamp: new Date().toISOString(),
   });
   
@@ -53,6 +53,7 @@ export async function getBOM(partNumber: string): Promise<BOMRecord[]> {
     .from('bom_records')
     .select('*')
     .eq('parent_part_number', partNumber)
+    .eq('is_active', true) // V5.2: Filter for active version only
     .order('operation_step', { ascending: true });
   
   if (error) {
@@ -62,7 +63,7 @@ export async function getBOM(partNumber: string): Promise<BOMRecord[]> {
   
   const records = data || [];
   
-  console.log(`🧠 [BOM Service] Retrieved ${records.length} records for ${partNumber} from database`);
+  console.log(`🧠 [BOM Service] Retrieved ${records.length} active records for ${partNumber}`);
   
   return records as BOMRecord[];
 }
@@ -179,6 +180,81 @@ export async function getWireLines(partNumber: string): Promise<WireBOM> {
     wires,
     totalWireLength
   };
+}
+
+/**
+ * Get BOM history for a specific part number
+ * 
+ * V5.2: Returns ALL versions (active + inactive) grouped by batch
+ * 
+ * Useful for auditing, version comparison, and rollback scenarios.
+ * 
+ * @param partNumber Parent part number
+ * @returns Array of all BOM records for this part (all versions)
+ */
+export async function getBOMHistory(partNumber: string): Promise<{
+  versions: Array<{
+    batchId: string;
+    isActive: boolean;
+    versionNumber: number | null;
+    ingestionTimestamp: string;
+    recordCount: number;
+    records: BOMRecord[];
+  }>;
+}> {
+  console.log('🧠 V5.2 BOM DATABASE ACCESS', {
+    partNumber,
+    source: 'Supabase',
+    operation: 'getBOMHistory (all versions)',
+    timestamp: new Date().toISOString(),
+  });
+  
+  const { data, error } = await supabase
+    .from('bom_records')
+    .select('*')
+    .eq('parent_part_number', partNumber)
+    .order('ingestion_timestamp', { ascending: false })
+    .order('operation_step', { ascending: true });
+  
+  if (error) {
+    console.error('🧠 [BOM Service] Database error:', error);
+    throw new Error(`Failed to retrieve BOM history for ${partNumber}: ${error.message}`);
+  }
+  
+  const allRecords = (data || []) as BOMRecord[];
+  
+  // Group by ingestion_batch_id
+  const batchMap = new Map<string, BOMRecord[]>();
+  
+  for (const record of allRecords) {
+    const batchId = record.ingestion_batch_id || 'unknown';
+    if (!batchMap.has(batchId)) {
+      batchMap.set(batchId, []);
+    }
+    batchMap.get(batchId)!.push(record);
+  }
+  
+  // Convert to version array
+  const versions = Array.from(batchMap.entries()).map(([batchId, records]) => {
+    const firstRecord = records[0];
+    return {
+      batchId,
+      isActive: firstRecord.is_active || false,
+      versionNumber: firstRecord.version_number || null,
+      ingestionTimestamp: firstRecord.ingestion_timestamp,
+      recordCount: records.length,
+      records
+    };
+  });
+  
+  // Sort by ingestion timestamp (most recent first)
+  versions.sort((a, b) => 
+    new Date(b.ingestionTimestamp).getTime() - new Date(a.ingestionTimestamp).getTime()
+  );
+  
+  console.log(`🧠 [BOM Service] Retrieved ${versions.length} versions (${allRecords.length} total records) for ${partNumber}`);
+  
+  return { versions };
 }
 
 /**

@@ -1,5 +1,5 @@
 /**
- * V5.0 EMIP Core - BOM Ingestion Pipeline
+ * V5.2 EMIP Core - BOM Ingestion Pipeline (Active Version Control)
  * 
  * FOUNDATION LAYER - BOM Data Ingestion and Normalization
  * 
@@ -9,6 +9,13 @@
  * - Normalize and enrich records
  * - Store in canonical format with full traceability
  * - Track source, version, timestamp
+ * - Enforce active version control (one active BOM per part)
+ * 
+ * V5.2 Enhancements:
+ * - Generate ingestion batch IDs for version tracking
+ * - Deactivate previous active BOM before inserting new version
+ * - Prevent duplicate active BOMs
+ * - Enhanced data integrity validation
  * 
  * Architecture:
  * - Uses core/parser/parserService for parsing
@@ -19,6 +26,7 @@
 import { BOMRecord, RawBOMData, ParseResult, RawComponent, RawOperation } from './types';
 import { parseBOMText, parseBOMWithValidation, PARSER_VERSION } from '../../parser/parserService';
 import { storeBOM } from '../../services/bomService';
+import { supabase } from '@/src/lib/supabaseClient';
 
 // ============================================================
 // INGESTION SOURCE TYPES
@@ -108,19 +116,23 @@ function detectWire(component: RawComponent): {
 /**
  * Normalize raw component to canonical BOM record
  * 
+ * V5.2: Includes batch ID and active flag for version control
+ * 
  * Converts raw parser output to normalized database format.
  * 
  * @param component Raw component from parser
  * @param operation Raw operation data
  * @param masterPartNumber Parent part number
  * @param metadata Ingestion metadata
+ * @param ingestionBatchId V5.2: Batch ID for this ingestion
  * @returns Normalized BOM record
  */
 function normalizeComponent(
   component: RawComponent,
   operation: RawOperation,
   masterPartNumber: string,
-  metadata: IngestionMetadata
+  metadata: IngestionMetadata,
+  ingestionBatchId: string
 ): BOMRecord {
   const wireDetection = detectWire(component);
   
@@ -153,6 +165,10 @@ function normalizeComponent(
     parser_version: PARSER_VERSION,
     revision: metadata.revision,
     
+    // V5.2: Version Control
+    ingestion_batch_id: ingestionBatchId,
+    is_active: true,
+    
     // Timestamps
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -168,7 +184,9 @@ function normalizeComponent(
 /**
  * Ingest BOM from raw text
  * 
- * Full pipeline: Parse → Normalize → Store
+ * V5.2: Full pipeline with active version control
+ * 
+ * Pipeline: Parse → Validate → Deactivate Old → Normalize → Store
  * 
  * @param text Raw BOM text
  * @param metadata Ingestion metadata
@@ -184,6 +202,19 @@ export async function ingestBOMFromText(
   const warnings: string[] = [];
   
   try {
+    // V5.2: Step 0 - Duplicate Protection Check
+    const { data: existingRecords } = await supabase
+      .from('bom_records')
+      .select('id')
+      .eq('source_reference', metadata.sourceReference)
+      .eq('is_active', true)
+      .limit(1);
+    
+    if (existingRecords && existingRecords.length > 0) {
+      warnings.push(`BOM from source "${metadata.sourceReference}" already exists. Proceeding with re-ingestion (old version will be deactivated).`);
+      console.warn(`🛡 V5.2 [BOM Ingestion] Re-ingesting existing source: ${metadata.sourceReference}`);
+    }
+    
     // Step 1: Parse
     const parseResult: ParseResult = parseBOMWithValidation(text);
     
@@ -211,22 +242,72 @@ export async function ingestBOMFromText(
     // Collect warnings from parser
     parseResult.warnings.forEach(warn => warnings.push(warn.message));
     
-    // Step 2: Normalize
+    // V5.2: Step 1.5 - Generate Ingestion Batch ID
+    const ingestionBatchId = crypto.randomUUID();
+    
+    console.log(`🛡 V5.2 [BOM Ingestion] Generated batch ID: ${ingestionBatchId}`);
+    
+    // V5.2: Step 1.6 - Deactivate Previous Active BOM (CRITICAL)
+    const { data: deactivatedRecords, error: deactivateError } = await supabase
+      .from('bom_records')
+      .update({ is_active: false })
+      .eq('parent_part_number', rawData.masterPartNumber)
+      .eq('is_active', true)
+      .select('id');
+    
+    if (deactivateError) {
+      console.error(`🚨 V5.2 BOM INTEGRITY ERROR:`, deactivateError);
+      errors.push(`Failed to deactivate previous BOM: ${deactivateError.message}`);
+      throw new Error(`Active BOM deactivation failed: ${deactivateError.message}`);
+    }
+    
+    const deactivatedCount = deactivatedRecords?.length || 0;
+    
+    if (deactivatedCount > 0) {
+      console.log(`🛡 V5.2 ACTIVE BOM CONTROL`, {
+        partNumber: rawData.masterPartNumber,
+        newBatchId: ingestionBatchId,
+        previousActiveDeactivated: true,
+        deactivatedRecordCount: deactivatedCount,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    
+    // Step 2: Normalize with V5.2 batch ID
     const normalizedRecords: BOMRecord[] = [];
     
     for (const operation of rawData.operations) {
       for (const component of operation.components) {
+        // V5.2: Validate required fields before normalization
+        if (!component.detectedPartId || !operation.step) {
+          console.error(`🚨 V5.2 BOM INTEGRITY ERROR`, {
+            issue: 'Missing required field',
+            partId: component.detectedPartId,
+            operationStep: operation.step,
+            rawLine: component.rawLine
+          });
+          errors.push(`Invalid component: missing part ID or operation step`);
+          continue;
+        }
+        
         const normalized = normalizeComponent(
           component,
           operation,
           rawData.masterPartNumber,
-          metadata
+          metadata,
+          ingestionBatchId // V5.2: Pass batch ID
         );
         normalizedRecords.push(normalized);
       }
     }
     
     console.log(`🧠 [BOM Ingestion] Normalized ${normalizedRecords.length} components`);
+    
+    // V5.2: Final validation before store
+    if (normalizedRecords.length === 0) {
+      errors.push('No valid records to store after normalization');
+      throw new Error('Ingestion failed: no valid records');
+    }
     
     // Step 3: Store
     await storeBOM(rawData.masterPartNumber, normalizedRecords);
