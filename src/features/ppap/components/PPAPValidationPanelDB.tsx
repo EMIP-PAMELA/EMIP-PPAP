@@ -19,6 +19,9 @@ import { PPAPStatus } from '@/src/types/database.types';
 import { mapStatusToState } from '../utils/ppapTableHelpers';
 import { canEditPreAckValidations, canEditPostAckValidations, mapStatusToPhase } from '../utils/stateWorkflowMapping';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
+import { executeValidationStep, isValidationStepClickable } from '../workflow/validationStepExecutor';
+import { ValidationStepWorkspace } from './ValidationStepWorkspace';
+import { DerivedPPAPState } from '../utils/derivedStateMachine';
 
 /**
  * Phase 3H - Persistent Validation Engine
@@ -69,6 +72,12 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, derivedSta
   const [initializing, setInitializing] = useState(false);
   const [currentUser] = useState({ id: 'user-123', name: 'Current User', role: 'engineer' as const });
   
+  // V4.0: Validation step workspace state
+  const [activeWorkspace, setActiveWorkspace] = useState<{
+    validationKey: string;
+    validation: DBValidation;
+  } | null>(null);
+
   // Phase 3H.13: Section states
   const [isExpanded, setIsExpanded] = useState(true);
   
@@ -160,6 +169,7 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, derivedSta
     totalSteps: preAckValidations.length,
   });
 
+  // V4.0: New validation click handler - opens workspace for wired steps
   const handleValidationClick = async (validation: DBValidation) => {
     // Phase 3F: Check if validation is editable based on state
     if (validation.category === 'pre-ack' && !canEditPreAck) {
@@ -171,6 +181,35 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, derivedSta
 
     if (updatingId) return; // Prevent concurrent updates
 
+    // Determine validation state
+    const isComplete = validation.status === 'complete' || validation.status === 'approved';
+    const isActive = validation.category === 'pre-ack' && activeStep?.id === validation.id;
+    const isLocked = validation.category === 'pre-ack' && !isComplete && !isActive && validation.required;
+
+    // V4.0: Try to execute validation step action (opens workspace if wired)
+    const executed = executeValidationStep(
+      {
+        validation,
+        derivedState: derivedState as DerivedPPAPState,
+        ppapId,
+        isActive,
+        isLocked,
+        isComplete,
+      },
+      (validationKey, val) => {
+        // Open workspace
+        setActiveWorkspace({ validationKey, validation: val });
+      }
+    );
+
+    // If step was executed (workspace opened), return early
+    if (executed) {
+      return;
+    }
+
+    // V4.0: Fallback to legacy cycle behavior for unwired steps
+    // This allows existing functionality to continue working
+    
     // Determine next status
     const statusCycle = validation.requires_approval
       ? ['not_started', 'in_progress', 'complete', 'approved']
@@ -264,6 +303,15 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, derivedSta
             const isActive = category === 'pre-ack' && activeStep?.id === validation.id;
             const isLocked = category === 'pre-ack' && !isComplete && !isActive && validation.required;
             
+            // V4.0: Check if step is clickable (has wired action or legacy cycle)
+            const hasWiredAction = isValidationStepClickable(
+              validation,
+              derivedState as DerivedPPAPState,
+              isActive,
+              isLocked,
+              isComplete
+            );
+            
             // Phase 3F.13: Override flexibility - allow if already complete
             const canClick = isEditable && !isUpdating && !isLocked;
 
@@ -334,13 +382,28 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, derivedSta
                   </div>
                 </div>
 
-                <span
-                  className={`px-3 py-1 text-xs font-medium rounded-full ${
-                    STATUS_COLORS[validation.status]
-                  }`}
-                >
-                  {validation.status.replace('_', ' ')}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-3 py-1 text-xs font-medium rounded-full ${
+                      STATUS_COLORS[validation.status]
+                    }`}
+                  >
+                    {validation.status.replace('_', ' ')}
+                  </span>
+                  
+                  {/* V4.0: Visual affordance for wired validation steps */}
+                  {hasWiredAction && isActive && (
+                    <svg 
+                      className="w-5 h-5 text-blue-600" 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <title>Click to open workspace</title>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -478,7 +541,26 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, derivedSta
         </div>
       )}
 
-      {/* Phase 3H.11: Removed redundant summary footer */}
+      {error && (
+        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+          ❌ {error}
+        </div>
+      )}
+      
+      {/* V4.0: Validation Step Workspace Modal */}
+      {activeWorkspace && (
+        <ValidationStepWorkspace
+          validationKey={activeWorkspace.validationKey}
+          validation={activeWorkspace.validation}
+          ppapId={ppapId}
+          onClose={() => setActiveWorkspace(null)}
+          onComplete={() => {
+            // Refresh validations after completion
+            setActiveWorkspace(null);
+            window.location.reload(); // Force full refresh to recalculate derived state
+          }}
+        />
+      )}
     </div>
   );
 }
