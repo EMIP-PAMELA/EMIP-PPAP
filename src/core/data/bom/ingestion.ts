@@ -25,8 +25,14 @@
 
 import { BOMRecord, RawBOMData, ParseResult, RawComponent, RawOperation } from './types';
 import { parseBOMText, parseBOMWithValidation, PARSER_VERSION } from '../../parser/parserService';
-import { storeBOM } from '../../services/bomService';
+import { storeBOM, getBOM } from '../../services/bomService';
 import { supabase } from '@/src/lib/supabaseClient';
+import { 
+  normalizeRevision, 
+  determineRevisionAction, 
+  extractRevisionFromRecords,
+  type NormalizedRevision 
+} from '../../services/revisionService';
 
 // ============================================================
 // INGESTION SOURCE TYPES
@@ -37,7 +43,11 @@ export type IngestionSourceType = 'visual_export' | 'engineering_master' | 'manu
 export interface IngestionMetadata {
   sourceReference: string;
   sourceType: IngestionSourceType;
-  revision?: string;
+  revision?: string | null;
+  
+  /** V5.3: Optional artifact URL and path (linked after PDF upload) */
+  artifactUrl?: string | null;
+  artifactPath?: string | null;
   uploadedBy?: string;
   notes?: string;
 }
@@ -132,7 +142,9 @@ function normalizeComponent(
   operation: RawOperation,
   masterPartNumber: string,
   metadata: IngestionMetadata,
-  ingestionBatchId: string
+  ingestionBatchId: string,
+  normalizedRevision: NormalizedRevision, // V5.2.5: Pass revision
+  isActive: boolean // V5.2.5: Active flag determined by revision logic
 ): BOMRecord {
   const wireDetection = detectWire(component);
   
@@ -163,11 +175,18 @@ function normalizeComponent(
     source_type: metadata.sourceType,
     ingestion_timestamp: new Date().toISOString(),
     parser_version: PARSER_VERSION,
-    revision: metadata.revision,
+    revision: normalizedRevision.revision, // V5.2.5: Normalized revision
     
     // V5.2: Version Control
     ingestion_batch_id: ingestionBatchId,
-    is_active: true,
+    is_active: isActive, // V5.2.5: Determined by revision logic
+    
+    // V5.2.5: Revision Intelligence
+    revision_order: normalizedRevision.order,
+    
+    // V5.3: Artifact Storage
+    artifact_url: metadata.artifactUrl || null,
+    artifact_path: metadata.artifactPath || null,
     
     // Timestamps
     created_at: new Date().toISOString(),
@@ -247,28 +266,74 @@ export async function ingestBOMFromText(
     
     console.log(`🛡 V5.2 [BOM Ingestion] Generated batch ID: ${ingestionBatchId}`);
     
-    // V5.2: Step 1.6 - Deactivate Previous Active BOM (CRITICAL)
-    const { data: deactivatedRecords, error: deactivateError } = await supabase
-      .from('bom_records')
-      .update({ is_active: false })
-      .eq('parent_part_number', rawData.masterPartNumber)
-      .eq('is_active', true)
-      .select('id');
+    // V5.2.5: Step 1.6 - Normalize Revision
+    const incomingRevision = normalizeRevision(rawData.revision_raw || metadata.revision);
     
-    if (deactivateError) {
-      console.error(`🚨 V5.2 BOM INTEGRITY ERROR:`, deactivateError);
-      errors.push(`Failed to deactivate previous BOM: ${deactivateError.message}`);
-      throw new Error(`Active BOM deactivation failed: ${deactivateError.message}`);
-    }
+    console.log(`🧠 V5.2.5 [BOM Ingestion] Normalized revision:`, {
+      raw: rawData.revision_raw || metadata.revision,
+      normalized: incomingRevision.revision,
+      order: incomingRevision.order
+    });
     
-    const deactivatedCount = deactivatedRecords?.length || 0;
+    // V5.2.5: Step 1.7 - Fetch Existing Active BOM to Check Revision
+    const existingActiveBOM = await getBOM(rawData.masterPartNumber);
+    const existingRevision = extractRevisionFromRecords(existingActiveBOM);
     
-    if (deactivatedCount > 0) {
-      console.log(`🛡 V5.2 ACTIVE BOM CONTROL`, {
+    // V5.2.5: Step 1.8 - Determine Revision Action (TRUTH-BASED)
+    const revisionDecision = determineRevisionAction(incomingRevision, existingRevision);
+    
+    console.log(`🧠 V5.2.5 REVISION DECISION`, {
+      partNumber: rawData.masterPartNumber,
+      incomingRevision: incomingRevision.revision,
+      incomingOrder: incomingRevision.order,
+      existingRevision: existingRevision?.revision || 'none',
+      existingOrder: existingRevision?.order || 0,
+      action: revisionDecision.action,
+      reason: revisionDecision.reason,
+      timestamp: new Date().toISOString(),
+    });
+    
+    // V5.2.5: Step 1.9 - Apply Revision Action
+    let shouldActivate = false;
+    let deactivatedCount = 0;
+    
+    if (revisionDecision.action === 'ACTIVATE' || revisionDecision.action === 'REPLACE') {
+      // Deactivate existing active BOM (newer or same revision)
+      const { data: deactivatedRecords, error: deactivateError } = await supabase
+        .from('bom_records')
+        .update({ is_active: false })
+        .eq('parent_part_number', rawData.masterPartNumber)
+        .eq('is_active', true)
+        .select('id');
+      
+      if (deactivateError) {
+        console.error(`🚨 V5.2 BOM INTEGRITY ERROR:`, deactivateError);
+        errors.push(`Failed to deactivate previous BOM: ${deactivateError.message}`);
+        throw new Error(`Active BOM deactivation failed: ${deactivateError.message}`);
+      }
+      
+      deactivatedCount = deactivatedRecords?.length || 0;
+      shouldActivate = true;
+      
+      console.log(`🛡 V5.2.5 ACTIVE BOM CONTROL`, {
         partNumber: rawData.masterPartNumber,
         newBatchId: ingestionBatchId,
+        action: revisionDecision.action,
         previousActiveDeactivated: true,
         deactivatedRecordCount: deactivatedCount,
+        timestamp: new Date().toISOString(),
+      });
+    } else if (revisionDecision.action === 'ARCHIVE') {
+      // Archive mode: DO NOT deactivate existing, insert as inactive
+      shouldActivate = false;
+      warnings.push(`Incoming revision (${incomingRevision.revision}) is older than existing (${existingRevision?.revision}). Storing as archived version (inactive).`);
+      
+      console.log(`🛡 V5.2.5 ACTIVE BOM CONTROL`, {
+        partNumber: rawData.masterPartNumber,
+        newBatchId: ingestionBatchId,
+        action: 'ARCHIVE',
+        previousActivePreserved: true,
+        incomingStored: 'inactive',
         timestamp: new Date().toISOString(),
       });
     }
@@ -295,7 +360,9 @@ export async function ingestBOMFromText(
           operation,
           rawData.masterPartNumber,
           metadata,
-          ingestionBatchId // V5.2: Pass batch ID
+          ingestionBatchId, // V5.2: Pass batch ID
+          incomingRevision, // V5.2.5: Pass normalized revision
+          shouldActivate // V5.2.5: Pass active flag from revision decision
         );
         normalizedRecords.push(normalized);
       }

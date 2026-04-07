@@ -69,6 +69,67 @@ function extractMasterPN(text: string): string {
   return "UNKNOWN";
 }
 
+/**
+ * Extract revision from BOM header
+ * 
+ * V5.2.5: Pure extraction - NO logic, NO comparison
+ * 
+ * Looks for revision patterns in BOM header/metadata:
+ * - "REV A", "Rev: B", "Revision 01"
+ * - "R A", "R: B"
+ * 
+ * @param text Raw BOM text
+ * @returns Raw revision string or null if not found
+ */
+function extractRevision(text: string): string | null {
+  // Take first 500 characters for header search (don't scan entire BOM)
+  const header = text.substring(0, 500);
+  
+  // Pattern 1: REV/REVISION followed by revision value
+  const revMatch = header.match(/(?:REV(?:ISION)?\.?|R)[\s:]+([A-Z0-9]{1,10})/i);
+  if (revMatch) {
+    return revMatch[1].trim();
+  }
+  
+  // Pattern 2: Standalone revision in header (e.g., "A" on its own line)
+  // Only if in first few lines and looks like revision format
+  const lines = header.split(/\r?\n/).slice(0, 5);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Single letter or short alphanumeric that looks like revision
+    if (/^[A-Z]$|^[A-Z]{2}$|^\d{1,2}$|^[A-Z]\d{1,2}$/i.test(trimmed)) {
+      // Additional check: not part of other data
+      if (!line.includes('NH') && !line.includes('Type:') && !line.includes('----')) {
+        return trimmed;
+      }
+    }
+  }
+  
+  // Not found
+  return null;
+}
+
+/**
+ * Extract revision date from BOM header
+ * 
+ * V5.2.5: Pure extraction - NO logic
+ * 
+ * @param text Raw BOM text
+ * @returns Raw revision date string or null if not found
+ */
+function extractRevisionDate(text: string): string | null {
+  const header = text.substring(0, 500);
+  
+  // Pattern: DATE or REV DATE followed by date
+  const dateMatch = header.match(/(?:REV(?:ISION)?\s+)?DATE[\s:]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i);
+  if (dateMatch) {
+    return dateMatch[1].trim();
+  }
+  
+  // Not found
+  return null;
+}
+
 function detectStep(line: string): { 
   step: string; 
   resourceId: string; 
@@ -420,13 +481,23 @@ export function parseBOMText(text: string): RawBOMData {
   }
   
   const totalComponents = operations.reduce((sum, op) => sum + op.components.length, 0);
+  // V5.2.5: Extract revision metadata (pure extraction, no logic)
+  const revision_raw = extractRevision(normalizedText);
+  const revision_date_raw = extractRevisionDate(normalizedText);
+  
+  if (revision_raw) {
+    console.log(`🧠 [EMIP Core Parser V5.2.5] Extracted revision: ${revision_raw}`);
+  }
+  
   console.log(`🧠 [EMIP Core Parser] Complete: ${masterPN} - ${operations.length} operations, ${totalComponents} components`);
   
   return {
     masterPartNumber: masterPN,
     operations,
     rawText: normalizedText,
-    pageLogs
+    pageLogs,
+    revision_raw,
+    revision_date_raw
   };
 }
 

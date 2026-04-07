@@ -89,6 +89,17 @@ export interface BOMRecord {
   /** V5.2: Optional sequential version number for user reference */
   version_number?: number | null;
   
+  // V5.2.5: Revision Intelligence
+  /** V5.2.5: Numeric order for revision comparison (higher = newer) */
+  revision_order?: number;
+  
+  // V5.3: Artifact Storage
+  /** V5.3: Public URL to original engineering master PDF */
+  artifact_url?: string | null;
+  
+  /** V5.3: Storage path for artifact in Supabase Storage */
+  artifact_path?: string | null;
+  
   /** Created/updated timestamps */
   created_at?: string;
   updated_at?: string;
@@ -146,9 +157,11 @@ export interface RawComponent {
 }
 
 /**
- * Raw BOM data structure from parser
+ * Raw BOM data from parser output
  * 
- * Output format from parser before normalization.
+ * This is the direct output from parserService before normalization.
+ * 
+ * V5.2.5: Added revision extraction fields
  */
 export interface RawBOMData {
   /** Master part number */
@@ -162,6 +175,12 @@ export interface RawBOMData {
   
   /** Page-level parsing logs */
   pageLogs: PageLog[];
+  
+  /** V5.2.5: Raw revision string extracted from BOM header (null if not found) */
+  revision_raw?: string | null;
+  
+  /** V5.2.5: Raw revision date string extracted from BOM header (null if not found) */
+  revision_date_raw?: string | null;
   
   /** Process instructions extracted from text */
   processInstructions?: ProcessInstruction[];
