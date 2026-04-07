@@ -15,6 +15,7 @@ interface CurrentTaskBannerProps {
   nextStep?: string;
   onActionClick?: () => void;
   actionLabel?: string;
+  derivedState?: string; // V4.1: For phase-aware messaging
 }
 
 export function CurrentTaskBanner({ 
@@ -24,8 +25,17 @@ export function CurrentTaskBanner({
   icon = '🎯',
   nextStep,
   onActionClick,
-  actionLabel
+  actionLabel,
+  derivedState
 }: CurrentTaskBannerProps) {
+  // V4.1: Phase-aware messaging override
+  let displayStep = currentStep;
+  let displayInstruction = instruction;
+  
+  if (derivedState === 'PRE_ACK_VALIDATION') {
+    displayStep = 'Complete Pre-Acknowledgement Engineering Validations';
+    displayInstruction = 'Finish the required engineering validation steps to unlock full documentation execution. These are formal validations, separate from the intake confirmations you already completed.';
+  }
   return (
     <div className="mb-3 p-4 bg-gradient-to-r from-blue-600 to-blue-700 border-2 border-blue-800 rounded-xl shadow-lg">
       <div className="flex items-center justify-between">
@@ -35,14 +45,14 @@ export function CurrentTaskBanner({
             <h3 className="text-sm font-bold text-blue-100 uppercase tracking-wider mb-1">
               🎯 CURRENT TASK
             </h3>
-            {currentStep && (
+            {displayStep && (
               <p className="text-2xl font-bold text-white mb-1">
-                {currentStep}
+                {displayStep}
               </p>
             )}
-            {instruction && (
+            {displayInstruction && (
               <p className="text-base text-blue-100 mb-2">
-                {instruction}
+                {displayInstruction}
               </p>
             )}
             {nextStep && (

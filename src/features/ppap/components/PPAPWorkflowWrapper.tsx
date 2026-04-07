@@ -14,6 +14,7 @@ import { useState, useEffect as useEffectImport, useMemo } from 'react';
 import { getValidations, DBValidation } from '../utils/validationDatabase';
 import { CurrentTaskBanner } from './CurrentTaskBanner';
 import { PPAPControlPanel } from './PPAPControlPanel';
+import { IntakeConfirmationsSummary } from './IntakeConfirmationsSummary';
 import { derivePPAPState, getStateLabel, getWorkflowPhaseFromDerivedState } from '../utils/derivedStateMachine';
 
 interface PPAPWorkflowWrapperProps {
@@ -289,6 +290,17 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
     ppapId: ppap.id,
   });
   
+  // V4.1: WORKFLOW UI STRUCTURE - Track section visibility
+  console.log('🧭 V4.1 WORKFLOW UI STRUCTURE', {
+    derivedState: derivedStateContext.state,
+    currentTask: uiModel.task,
+    intakeSummaryVisible: renderState === 'PRE_ACK_VALIDATION',
+    preAckSectionVisible: renderState === 'PRE_ACK_VALIDATION' || renderState === 'DOCUMENTATION' || renderState === 'READY_FOR_ACK',
+    documentationSectionVisible: renderState === 'PRE_ACK_VALIDATION' || renderState === 'DOCUMENTATION' || renderState === 'READY_FOR_ACK',
+    documentationPrimary: renderState === 'DOCUMENTATION' || renderState === 'READY_FOR_ACK',
+    validationPrimary: renderState === 'PRE_ACK_VALIDATION',
+  });
+  
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm space-y-6">
       {/* Phase 3H.6: View Mode Toggle */}
@@ -324,6 +336,7 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
             currentStep={uiModel.task}
             instruction={uiModel.reason}
             icon="🎯"
+            derivedState={derivedStateContext.state}
           />
 
           <PhaseIndicator currentPhase={workflowPhase} onPhaseClick={handlePhaseClick} />
@@ -344,26 +357,55 @@ export function PPAPWorkflowWrapper({ ppap }: PPAPWorkflowWrapperProps) {
       {/* PRE_ACK_VALIDATION or DOCUMENTATION state -> Documentation UI */}
       {(renderState === 'PRE_ACK_VALIDATION' || renderState === 'DOCUMENTATION' || renderState === 'READY_FOR_ACK') && (
         <div ref={activePhaseRef}>
-          {/* Phase 3H.13: Document Execution FIRST (action before context) */}
-          <DocumentationForm
-            ppapId={ppap.id}
-            partNumber={ppap.part_number || ''}
-            isReadOnly={false}
-            currentPhase={currentPhase}
-          />
+          {/* V4.1: Show intake confirmations summary for PRE_ACK_VALIDATION state */}
+          {renderState === 'PRE_ACK_VALIDATION' && (
+            <IntakeConfirmationsSummary />
+          )}
           
-          {/* Phase 3H.13: Validation Status SECOND (context after action) */}
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold text-gray-500 mb-2">
-              Validation Status
-            </h3>
-            <PPAPValidationPanelDB
+          {/* V4.1: Pre-Ack Validations FIRST during PRE_ACK_VALIDATION (primary work) */}
+          {renderState === 'PRE_ACK_VALIDATION' && (
+            <div className="mb-6">
+              <PPAPValidationPanelDB
+                ppapId={ppap.id}
+                currentPhase={currentPhase}
+                derivedState={derivedStateContext.state}
+                uiModel={uiModel}
+              />
+            </div>
+          )}
+          
+          {/* V4.1: Document Execution secondary during PRE_ACK_VALIDATION, primary after */}
+          <div className={renderState === 'PRE_ACK_VALIDATION' ? 'opacity-75' : ''}>
+            {renderState === 'PRE_ACK_VALIDATION' && (
+              <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-900 font-medium">
+                  📄 Documentation Scope Loaded
+                </p>
+                <p className="text-xs text-blue-700 mt-1">
+                  Document execution will become primary after validation progress. You may review scope now but focus on completing validations above first.
+                </p>
+              </div>
+            )}
+            
+            <DocumentationForm
               ppapId={ppap.id}
+              partNumber={ppap.part_number || ''}
+              isReadOnly={false}
               currentPhase={currentPhase}
-              derivedState={derivedStateContext.state}
-              uiModel={uiModel}
             />
           </div>
+          
+          {/* V4.1: Validation Status shown after documentation in DOCUMENTATION/READY_FOR_ACK states */}
+          {(renderState === 'DOCUMENTATION' || renderState === 'READY_FOR_ACK') && (
+            <div className="mt-6">
+              <PPAPValidationPanelDB
+                ppapId={ppap.id}
+                currentPhase={currentPhase}
+                derivedState={derivedStateContext.state}
+                uiModel={uiModel}
+              />
+            </div>
+          )}
         </div>
       )}
 

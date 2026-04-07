@@ -444,19 +444,26 @@ export default function PPAPValidationPanelDB({ ppapId, currentPhase, derivedSta
         : 'p-3 border border-gray-300'
     }`}>
       {/* Phase 3H.1: Section Header with Collapse Toggle */}
-      <div className="flex items-center justify-between mb-3">
-        <h2 className={`text-xl font-bold ${
-          isActiveSection ? 'text-blue-900' : 'text-gray-600'
-        }`}>
-          {isActiveSection ? '📋 ' : ''}Validation Checklist
-        </h2>
-        {!isActiveSection && (
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
-          >
-            {isExpanded ? '▼ Collapse' : '▶ Expand'}
-          </button>
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className={`text-xl font-bold ${
+            isActiveSection ? 'text-blue-900' : 'text-gray-600'
+          }`}>
+            {isActiveSection ? '� ' : ''}Pre-Acknowledgement Engineering Validations
+          </h2>
+          {!isActiveSection && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+            >
+              {isExpanded ? '▼ Collapse' : '▶ Expand'}
+            </button>
+          )}
+        </div>
+        {isActiveSection && (
+          <p className="text-sm text-gray-600">
+            Formal engineering validation steps required before documentation execution can proceed. These are separate from the intake confirmations completed earlier.
+          </p>
         )}
       </div>
 
