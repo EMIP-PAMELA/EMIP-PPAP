@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { updatePPAPState } from '../utils/updatePPAPState';
-import { getValidations, updateValidationStatus } from '../utils/validationDatabase';
 import { currentUser } from '@/src/lib/mockUser';
 
 interface InitiationFormProps {
@@ -61,41 +60,22 @@ export function InitiationForm({ ppapId, partNumber, ppapType, isReadOnly = fals
     setLoading(true);
 
     try {
-      // V3.4 Phase 7: Persist intake confirmations into validation data
-      // The first 3 pre-ack validations represent the intake confirmations
-      // derivePPAPState() checks if first 3 validations are complete to move past INTAKE
+      // V3.4 Phase 7: Intake confirmations validated
+      // Validations remain user-driven and will be completed in Documentation phase
       
-      const allValidations = await getValidations(ppapId);
-      const preAckValidations = allValidations.filter(v => v.category === 'pre-ack' && v.required);
-      const intakeValidations = preAckValidations.slice(0, 3);
-      
-      if (intakeValidations.length < 3) {
-        throw new Error('Validation data not initialized. Please contact support.');
-      }
-      
-      // Mark first 3 validations as complete to represent intake confirmations
-      await Promise.all([
-        updateValidationStatus(intakeValidations[0].id, 'complete', currentUser.id, currentUser.role),
-        updateValidationStatus(intakeValidations[1].id, 'complete', currentUser.id, currentUser.role),
-        updateValidationStatus(intakeValidations[2].id, 'complete', currentUser.id, currentUser.role),
-      ]);
-      
-      console.log('PHASE 7 INTAKE SAVE RESULT', {
+      console.log('PHASE 7 INTAKE CONFIRMATIONS VALIDATED', {
         ppapId,
-        saved: true,
         confirmations: {
           drawingUnderstood: validations.drawing_understood,
           partProperlyDefined: validations.part_defined,
           packagingRequirementsMet: validations.packaging_met,
         },
-        persistedValidations: intakeValidations.map(v => ({ id: v.id, key: v.validation_key })),
       });
       
-      // V3.4 Phase 7.2: Enforce status transition after validation persistence
-      // Database status field must advance so UI can progress
+      // V3.4 Phase 7.2: Status transition to enable Documentation phase
+      // Validations will be completed by user in Documentation phase
       console.log('🚨 PHASE 7.2 TRANSITION CHECK', {
-        validationsComplete: 3,
-        requiredCount: 3,
+        intakeConfirmed: true,
         canProgress: true,
         currentStatus: 'NEW',
         nextStatus: 'READY_TO_ACKNOWLEDGE',
