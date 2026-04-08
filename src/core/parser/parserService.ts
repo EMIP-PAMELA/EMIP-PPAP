@@ -72,11 +72,13 @@ function extractMasterPN(text: string): string {
 /**
  * Extract revision from BOM header
  * 
- * V5.2.5: Pure extraction - NO logic, NO comparison
+ * V5.7.3: Canonical revision extraction from header end
  * 
- * Looks for revision patterns in BOM header/metadata:
- * - "REV A", "Rev: B", "Revision 01"
- * - "R A", "R: B"
+ * CableQuest BOM format:
+ * - Leading "M" is NOT the revision
+ * - Revision is at END of header line
+ * - Formats: "( 01", "(01", "01"
+ * - Always 2 digits
  * 
  * @param text Raw BOM text
  * @returns Raw revision string or null if not found
@@ -84,28 +86,63 @@ function extractMasterPN(text: string): string {
 function extractRevision(text: string): string | null {
   // Take first 500 characters for header search (don't scan entire BOM)
   const header = text.substring(0, 500);
+  const lines = header.split(/\r?\n/).slice(0, 10);
+  
+  // V5.7.3: STEP 1 - Find header line with part number
+  for (const line of lines) {
+    // Header line contains part number pattern (NH or numeric format)
+    if (/NH\d{2}-\d{6}-\d{2}|\d{12}/.test(line)) {
+      console.log('🧠 V5.7.3 REVISION EXTRACTION - Header line found:', line);
+      
+      // V5.7.3: STEP 2 - Extract revision from END of line
+      // Match optional parenthesis + 2 digits at end, avoiding decimals
+      // Negative lookbehind to avoid matching "00" from "1.00"
+      const revisionMatch = line.match(/(?<!\d\.)\(?\s*(\d{2})\s*$/);
+      
+      if (revisionMatch) {
+        const extractedRevision = revisionMatch[1];
+        
+        // V5.7.3: STEP 3 - Validate: ensure NOT part of decimal
+        if (/\d+\.\d{2}\s*$/.test(line)) {
+          console.log('🧠 V5.7.3 REVISION EXTRACTION - Skipping decimal match:', extractedRevision);
+          continue;
+        }
+        
+        console.log('🧠 V5.7.3 REVISION EXTRACTION', {
+          headerLine: line.substring(0, 100),
+          extractedRevision: extractedRevision,
+          source: 'header_end'
+        });
+        
+        return extractedRevision;
+      }
+    }
+  }
+  
+  // V5.7.3: STEP 5 - Fallback to legacy patterns
+  console.log('🧠 V5.7.3 REVISION EXTRACTION - No header-end revision found, trying fallback patterns');
   
   // Pattern 1: REV/REVISION followed by revision value
   const revMatch = header.match(/(?:REV(?:ISION)?\.?|R)[\s:]+([A-Z0-9]{1,10})/i);
   if (revMatch) {
+    console.log('🧠 V5.7.3 REVISION EXTRACTION - Fallback match (REV pattern):', revMatch[1]);
     return revMatch[1].trim();
   }
   
   // Pattern 2: Standalone revision in header (e.g., "A" on its own line)
-  // Only if in first few lines and looks like revision format
-  const lines = header.split(/\r?\n/).slice(0, 5);
   for (const line of lines) {
     const trimmed = line.trim();
     // Single letter or short alphanumeric that looks like revision
     if (/^[A-Z]$|^[A-Z]{2}$|^\d{1,2}$|^[A-Z]\d{1,2}$/i.test(trimmed)) {
       // Additional check: not part of other data
       if (!line.includes('NH') && !line.includes('Type:') && !line.includes('----')) {
+        console.log('🧠 V5.7.3 REVISION EXTRACTION - Fallback match (standalone):', trimmed);
         return trimmed;
       }
     }
   }
   
-  // Not found
+  console.log('🧠 V5.7.3 REVISION EXTRACTION - No revision found');
   return null;
 }
 
