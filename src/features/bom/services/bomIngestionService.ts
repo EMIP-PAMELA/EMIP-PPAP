@@ -59,44 +59,50 @@ import { parseBOMText } from '../extraction/bomParser';
  * @returns Extracted part number or null if not found
  */
 function extractPartNumberFromFilename(fileName: string): string | null {
-  // Remove .pdf extension and common prefixes/suffixes
-  const nameWithoutExt = fileName
-    .replace(/\.pdf$/i, '')
-    .replace(/^BOM[_\s-]*/i, '')
-    .replace(/[_\s-]*BOM$/i, '')
+  // V5.7: Preserve full part number - remove extensions and BOM suffix ONLY
+  let cleaned = fileName
+    .replace(/\.pdf$/i, '') // Remove .pdf extension
     .trim();
   
+  // Remove "BOM" suffix if present (with optional separators)
+  cleaned = cleaned.replace(/[\s_-]*BOM$/i, '');
+  
+  // Remove "BOM" prefix if present (with optional separators)
+  cleaned = cleaned.replace(/^BOM[\s_-]*/i, '');
+  
+  cleaned = cleaned.trim();
+  
   // Pattern 1: NH followed by digits with optional dashes (NH45-110858-01)
-  const nhDashMatch = nameWithoutExt.match(/NH\d{2}-\d{6}-\d{2}/i);
+  const nhDashMatch = cleaned.match(/NH\d{2}-\d{6}-\d{2}/i);
   if (nhDashMatch) {
     return nhDashMatch[0];
   }
   
   // Pattern 2: NH followed by 12 consecutive digits
-  const nhMatch = nameWithoutExt.match(/NH\d{12}/i);
+  const nhMatch = cleaned.match(/NH\d{12}/i);
   if (nhMatch) {
     return nhMatch[0];
   }
   
   // Pattern 3: XX-XXXXXX-XX format (common part number pattern)
-  const dashPatternMatch = nameWithoutExt.match(/\d{2}-\d{6}-\d{2}/);
+  const dashPatternMatch = cleaned.match(/\d{2}-\d{6}-\d{2}/);
   if (dashPatternMatch) {
     return dashPatternMatch[0];
   }
   
   // Pattern 4: 12+ consecutive digits
-  const digitMatch = nameWithoutExt.match(/\d{12,}/);
+  const digitMatch = cleaned.match(/\d{12,}/);
   if (digitMatch) {
     return digitMatch[0];
   }
   
-  // Pattern 5: First significant word/code in filename
-  const firstWordMatch = nameWithoutExt.match(/^([A-Z0-9][A-Z0-9-]{5,})/i);
-  if (firstWordMatch) {
-    return firstWordMatch[1];
+  // Pattern 5: Use entire cleaned filename if it looks like a part number
+  // Must be at least 6 characters and contain alphanumeric with optional dashes
+  if (/^[A-Z0-9][A-Z0-9-]{5,}$/i.test(cleaned)) {
+    return cleaned;
   }
   
-  return null; // Return null instead of 'UNKNOWN'
+  return null;
 }
 
 /**

@@ -48,12 +48,13 @@ export async function getAllActiveBOMs(): Promise<Array<{
   hasArtifact: boolean;
   updatedAt: string;
 }>> {
-  console.log('🧠 V6.1 BOM DATABASE ACCESS', {
+  console.log('🧠 V5.7 BOM DATABASE ACCESS', {
     source: 'Supabase',
     operation: 'getAllActiveBOMs',
     timestamp: new Date().toISOString(),
   });
 
+  // V5.7: Query only valid schema fields
   const { data, error } = await supabase
     .from('bom_records')
     .select('parent_part_number, revision, revision_order, ingestion_batch_id, artifact_url, updated_at')
@@ -65,7 +66,12 @@ export async function getAllActiveBOMs(): Promise<Array<{
     throw new Error(`Failed to retrieve active BOMs: ${error.message}`);
   }
 
-  // Group by part number to get summaries
+  console.log('🧠 V5.7 [BOM Service] Raw query results:', {
+    count: data?.length || 0,
+    sample: data?.[0]
+  });
+
+  // V5.7: Group by parent_part_number + revision combination
   const bomMap = new Map<string, {
     partNumber: string;
     revision: string;
@@ -78,10 +84,13 @@ export async function getAllActiveBOMs(): Promise<Array<{
 
   for (const record of (data || [])) {
     const partNumber = record.parent_part_number;
-    if (!bomMap.has(partNumber)) {
-      bomMap.set(partNumber, {
+    const revision = record.revision || 'A';
+    const key = `${partNumber}::${revision}`;
+    
+    if (!bomMap.has(key)) {
+      bomMap.set(key, {
         partNumber,
-        revision: record.revision || 'UNKNOWN',
+        revision,
         revisionOrder: record.revision_order || 0,
         recordCount: 1,
         ingestionBatchId: record.ingestion_batch_id || '',
@@ -89,13 +98,13 @@ export async function getAllActiveBOMs(): Promise<Array<{
         updatedAt: record.updated_at || new Date().toISOString()
       });
     } else {
-      const existing = bomMap.get(partNumber)!;
+      const existing = bomMap.get(key)!;
       existing.recordCount++;
     }
   }
 
   const summaries = Array.from(bomMap.values());
-  console.log(`🧠 [BOM Service] Retrieved ${summaries.length} active BOMs`);
+  console.log(`🧠 V5.7 [BOM Service] Retrieved ${summaries.length} active BOMs (grouped by part + revision)`);
   
   return summaries;
 }
