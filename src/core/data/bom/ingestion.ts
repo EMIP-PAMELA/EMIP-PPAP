@@ -368,43 +368,30 @@ export async function ingestBOMFromText(
     
     console.log(`🛡 V5.9.1 [HARD DEACTIVATION] Deactivated ${deactivatedCount} records for ${masterPartNumber}`);
     
-    // V5.9.1: STEP 2 - Apply Decision Logic for New Records
-    let shouldActivate = false;
+    // V6.0.4: STEP 2 - ALWAYS ACTIVATE NEW UPLOADS (Critical Fix)
+    // GUARANTEE: Every new upload becomes the active revision
+    // This ensures EXACTLY ONE active revision per SKU at all times
+    // Revision comparison is logged for audit but does NOT affect activation
+    const shouldActivate = true;
     
-    if (revisionDecision.action === 'ACTIVATE' || revisionDecision.action === 'REPLACE') {
-      // Incoming revision is newer or same → activate new records
-      shouldActivate = true;
-      
-      console.log(`🛡 V5.9.1 ACTIVE BOM CONTROL`, {
-        partNumber: masterPartNumber,
-        newBatchId: ingestionBatchId,
-        action: revisionDecision.action,
-        incomingRevision: incomingRevision.revision,
-        incomingOrder: incomingRevision.order,
-        previousActiveDeactivated: true,
-        deactivatedRecordCount: deactivatedCount,
-        newRecordsWillBeActive: true,
-        timestamp: new Date().toISOString(),
-      });
-    } else if (revisionDecision.action === 'ARCHIVE') {
-      // Incoming revision is older → insert as inactive (archived)
-      shouldActivate = false;
-      warnings.push(`Incoming revision (${incomingRevision.revision}) is older than existing (${existingRevision?.revision}). Storing as archived version (inactive).`);
-      
-      console.log(`🛡 V5.9.1 ACTIVE BOM CONTROL`, {
-        partNumber: masterPartNumber,
-        newBatchId: ingestionBatchId,
-        action: 'ARCHIVE',
-        incomingRevision: incomingRevision.revision,
-        incomingOrder: incomingRevision.order,
-        existingRevision: existingRevision?.revision,
-        existingOrder: existingRevision?.order,
-        previousActiveDeactivated: true,
-        deactivatedRecordCount: deactivatedCount,
-        newRecordsWillBeActive: false,
-        incomingStored: 'inactive',
-        timestamp: new Date().toISOString(),
-      });
+    console.log(`� V6.0.4 ACTIVE BOM GUARANTEE`, {
+      partNumber: masterPartNumber,
+      newBatchId: ingestionBatchId,
+      incomingRevision: incomingRevision.revision,
+      incomingOrder: incomingRevision.order,
+      existingRevision: existingRevision?.revision || 'none',
+      existingOrder: existingRevision?.order || 0,
+      revisionComparison: revisionDecision.action,
+      previousActiveDeactivated: true,
+      deactivatedRecordCount: deactivatedCount,
+      newRecordsWillBeActive: true,
+      policy: 'ALWAYS_ACTIVATE_NEW_UPLOAD',
+      timestamp: new Date().toISOString(),
+    });
+    
+    // V6.0.4: Log revision comparison for audit (informational only)
+    if (revisionDecision.action === 'ARCHIVE') {
+      console.warn(`⚠️ V6.0.4 REVISION NOTICE: Incoming revision (${incomingRevision.revision}) appears older than existing (${existingRevision?.revision}), but activating anyway per V6.0.4 policy.`);
     }
     
     // Step 2: Normalize with V5.2 batch ID
@@ -450,7 +437,7 @@ export async function ingestBOMFromText(
     
     console.log(`🧠 [BOM Ingestion] Stored BOM for ${masterPartNumber}`);
     
-    // V5.9.1: STEP 3 - Verify Single Active BOM (Data Integrity Check)
+    // V6.0.4: STEP 3 - Verify Single Active BOM (Strengthened Data Integrity Check)
     const { data: activeRecords, error: verifyError } = await supabase
       .from('bom_records')
       .select('id, revision, ingestion_batch_id')
@@ -458,33 +445,47 @@ export async function ingestBOMFromText(
       .eq('is_active', true);
     
     if (verifyError) {
-      console.error(`🚨 V5.9.1 VERIFICATION ERROR:`, verifyError);
-    } else {
-      const activeCount = activeRecords?.length || 0;
-      const uniqueBatches = new Set(activeRecords?.map(r => r.ingestion_batch_id) || []);
-      const uniqueRevisions = new Set(activeRecords?.map(r => r.revision) || []);
-      
-      console.log(`🛡 V5.9.1 ACTIVE STATE ENFORCED`, {
-        partNumber: masterPartNumber,
-        action: revisionDecision.action,
-        activeRecordsAfterInsert: activeCount,
-        expectedActiveRecords: shouldActivate ? normalizedRecords.length : 0,
-        uniqueBatches: uniqueBatches.size,
-        uniqueRevisions: Array.from(uniqueRevisions),
-        isValid: shouldActivate ? (activeCount === normalizedRecords.length && uniqueBatches.size === 1) : (activeCount === 0),
-        timestamp: new Date().toISOString(),
-      });
-      
-      // V5.9.1: Data integrity assertion
-      if (shouldActivate && uniqueBatches.size > 1) {
-        console.error(`🚨 V5.9.1 DATA INTEGRITY VIOLATION: Multiple active batches detected for ${masterPartNumber}`);
-        warnings.push(`Data integrity warning: Multiple active batches detected. This should not happen.`);
-      }
-      
-      if (shouldActivate && uniqueRevisions.size > 1) {
-        console.error(`🚨 V5.9.1 DATA INTEGRITY VIOLATION: Multiple active revisions detected for ${masterPartNumber}`);
-        warnings.push(`Data integrity warning: Multiple active revisions detected. This should not happen.`);
-      }
+      console.error(`🚨 V6.0.4 VERIFICATION ERROR:`, verifyError);
+      throw new Error(`Post-insert verification failed: ${verifyError.message}`);
+    }
+    
+    const activeCount = activeRecords?.length || 0;
+    const uniqueBatches = new Set(activeRecords?.map(r => r.ingestion_batch_id) || []);
+    const uniqueRevisions = new Set(activeRecords?.map(r => r.revision) || []);
+    
+    // V6.0.4: CRITICAL - Ensure at least one active record exists
+    if (activeCount === 0) {
+      console.error(`� V6.0.4 CRITICAL ERROR: NO ACTIVE RECORDS after insert for ${masterPartNumber}`);
+      throw new Error(`Data integrity violation: No active BOM records exist for ${masterPartNumber} after insert`);
+    }
+    
+    console.log(`🔥 V6.0.4 BOM INSERT CONFIRMED`, {
+      partNumber: masterPartNumber,
+      revision: incomingRevision.revision,
+      insertedCount: normalizedRecords.length,
+      activeRecordsAfterInsert: activeCount,
+      expectedActiveRecords: normalizedRecords.length,
+      uniqueBatches: uniqueBatches.size,
+      uniqueRevisions: Array.from(uniqueRevisions),
+      isActive: true,
+      isValid: activeCount === normalizedRecords.length && uniqueBatches.size === 1,
+      timestamp: new Date().toISOString(),
+    });
+    
+    // V6.0.4: Data integrity assertions
+    if (uniqueBatches.size > 1) {
+      console.error(`🚨 V6.0.4 DATA INTEGRITY VIOLATION: Multiple active batches detected for ${masterPartNumber}`);
+      throw new Error(`Data integrity violation: Multiple active batches exist for ${masterPartNumber}`);
+    }
+    
+    if (uniqueRevisions.size > 1) {
+      console.error(`🚨 V6.0.4 DATA INTEGRITY VIOLATION: Multiple active revisions detected for ${masterPartNumber}`);
+      throw new Error(`Data integrity violation: Multiple active revisions exist for ${masterPartNumber}`);
+    }
+    
+    if (activeCount !== normalizedRecords.length) {
+      console.error(`🚨 V6.0.4 DATA INTEGRITY WARNING: Active record count mismatch for ${masterPartNumber}`);
+      warnings.push(`Warning: Expected ${normalizedRecords.length} active records but found ${activeCount}`);
     }
     
     // Step 4: Return result with canonical persisted values

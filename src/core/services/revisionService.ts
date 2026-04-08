@@ -90,6 +90,36 @@ export function normalizeRevision(revisionRaw: string | null | undefined): Norma
     };
   }
   
+  // V6.0.4: Revision sanity validation - reject clearly invalid revisions
+  // Common extraction errors that should be caught:
+  // - "M" (leading M from master part number line)
+  // - Single digit like "7" or "2" (likely from part number, not revision)
+  // - Part number segments like "72" from "NH45-42522-72"
+  
+  // Reject single letter "M" (common parser error)
+  if (cleaned === 'M') {
+    console.warn(`⚠️ V6.0.4 INVALID REVISION DETECTED: "${cleaned}" (raw: "${raw}") - likely parser error, treating as UNKNOWN`);
+    return {
+      revision: 'UNKNOWN',
+      order: 0,
+      raw
+    };
+  }
+  
+  // Reject 2-digit numbers > 50 (likely part number segment, not revision)
+  // Valid revisions are typically 01-50, not 72
+  if (/^\d{2}$/.test(cleaned)) {
+    const numValue = parseInt(cleaned, 10);
+    if (numValue > 50) {
+      console.warn(`⚠️ V6.0.4 INVALID REVISION DETECTED: "${cleaned}" (raw: "${raw}") - likely part number segment, treating as UNKNOWN`);
+      return {
+        revision: 'UNKNOWN',
+        order: 0,
+        raw
+      };
+    }
+  }
+  
   // Determine order based on format
   const order = calculateRevisionOrder(cleaned);
   
