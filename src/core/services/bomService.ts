@@ -383,6 +383,14 @@ export async function storeBOM(partNumber: string, records: BOMRecord[]): Promis
     return;
   }
   
+  // V5.6.2: Log first record payload for schema verification
+  if (records.length > 0) {
+    console.log('🧪 V5.6.2 SAMPLE INSERT PAYLOAD', {
+      fields: Object.keys(records[0]),
+      sample: records[0]
+    });
+  }
+  
   // Validate required fields before insert
   const validRecords = records.filter(record => {
     const isValid = 
@@ -407,18 +415,55 @@ export async function storeBOM(partNumber: string, records: BOMRecord[]): Promis
     console.warn(`🧠 [BOM Service] Filtered out ${records.length - validRecords.length} invalid records`);
   }
   
+  // V5.6.2: Clean records to match exact schema
+  const cleanedRecords = validRecords.map(record => {
+    // Remove any undefined fields and ensure proper types
+    const cleaned: any = {
+      parent_part_number: record.parent_part_number,
+      child_part_number: record.child_part_number,
+      quantity: Number(record.quantity),
+      unit: record.unit || null,
+      description: record.description || null,
+      length: record.length ? Number(record.length) : null,
+      aci_code: record.aci_code || null,
+      operation_step: record.operation_step || null,
+      resource_id: record.resource_id || null,
+      metadata: record.metadata || null,
+      source_reference: record.source_reference,
+      source_type: record.source_type,
+      ingestion_timestamp: record.ingestion_timestamp,
+      parser_version: record.parser_version || null,
+      revision: record.revision || null,
+      is_active: record.is_active ?? true,
+      ingestion_batch_id: record.ingestion_batch_id || null,
+      revision_order: record.revision_order ?? 0,
+      artifact_url: record.artifact_url || null,
+      artifact_path: record.artifact_path || null,
+      created_at: record.created_at || new Date().toISOString(),
+      updated_at: record.updated_at || new Date().toISOString(),
+    };
+    
+    return cleaned;
+  });
+  
+  console.log('🧪 V5.6.2 CLEANED PAYLOAD FIELDS', {
+    count: cleanedRecords.length,
+    fields: Object.keys(cleanedRecords[0] || {})
+  });
+  
   // Bulk insert into database
   const { data, error } = await supabase
     .from('bom_records')
-    .insert(validRecords)
+    .insert(cleanedRecords)
     .select();
   
   if (error) {
     console.error('🧠 [BOM Service] Database insert error:', error);
+    console.error('🧠 [BOM Service] Failed payload sample:', cleanedRecords[0]);
     throw new Error(`Failed to store BOM records for ${partNumber}: ${error.message}`);
   }
   
-  console.log(`🧠 [BOM Service] Successfully stored ${data?.length || validRecords.length} records for ${partNumber}`);
+  console.log(`🧠 [BOM Service] Successfully stored ${data?.length || cleanedRecords.length} records for ${partNumber}`);
 }
 
 /**
