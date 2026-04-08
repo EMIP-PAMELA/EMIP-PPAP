@@ -136,12 +136,18 @@ function extractRevisionFromFilename(fileName: string): string {
 }
 
 /**
- * V6.0.1: Resolve part number from multiple trusted sources
+ * V6.0.2: Resolve part number from multiple trusted sources
  * 
- * Trust hierarchy:
- * 1. User-provided manual input (if explicitly set)
- * 2. Filename-derived part number (preferred for clean filenames)
- * 3. BOM text/header-derived part number (fallback for messy filenames)
+ * Trust hierarchy (UPDATED):
+ * 1. User-provided manual input (explicit override)
+ * 2. BOM text/header-derived part number (PRIMARY AUTOMATIC TRUTH)
+ * 3. Filename-derived part number (fallback only)
+ * 
+ * Design intent:
+ * - Engineering BOM content is more trustworthy than manually downloaded filenames
+ * - Filenames are user-managed and may be mislabeled
+ * - Parsed BOM header should determine SKU identity whenever available
+ * - Manual user entry remains highest priority (explicit human intent)
  * 
  * @param sources Part number sources
  * @returns Resolved part number and source, or null if all sources fail
@@ -151,7 +157,7 @@ function resolvePartNumber(sources: {
   filename?: string | null;
   parsedText?: string | null;
 }): { partNumber: string; source: 'user_input' | 'filename' | 'parsed_text' } | null {
-  // Source 1: User input (highest priority if explicitly provided)
+  // Source 1: User input (highest priority - explicit override)
   if (sources.userInput && sources.userInput.trim().length > 0 && sources.userInput !== 'UNKNOWN') {
     return {
       partNumber: sources.userInput.trim(),
@@ -159,19 +165,19 @@ function resolvePartNumber(sources: {
     };
   }
   
-  // Source 2: Filename (preferred for standard naming)
-  if (sources.filename && sources.filename.trim().length > 0 && sources.filename !== 'UNKNOWN') {
-    return {
-      partNumber: sources.filename.trim(),
-      source: 'filename'
-    };
-  }
-  
-  // Source 3: Parsed text (fallback for messy filenames)
+  // Source 2: Parsed text (PRIMARY AUTOMATIC TRUTH - BOM header is authoritative)
   if (sources.parsedText && sources.parsedText.trim().length > 0 && sources.parsedText !== 'UNKNOWN') {
     return {
       partNumber: sources.parsedText.trim(),
       source: 'parsed_text'
+    };
+  }
+  
+  // Source 3: Filename (fallback only - used when BOM header extraction fails)
+  if (sources.filename && sources.filename.trim().length > 0 && sources.filename !== 'UNKNOWN') {
+    return {
+      partNumber: sources.filename.trim(),
+      source: 'filename'
     };
   }
   
@@ -270,7 +276,7 @@ export async function uploadAndIngestBOM(
       }
     }
     
-    // V6.0.1: STEP 4 - Resolve part number using trust hierarchy
+    // V6.0.2: STEP 4 - Resolve part number using trust hierarchy
     const partNumberResolution = resolvePartNumber({
       userInput: metadata?.partNumber,
       filename: filenamePartNumber,
@@ -294,10 +300,29 @@ export async function uploadAndIngestBOM(
     const partNumberSource = partNumberResolution.source;
     const revision = metadata?.revision || filenameRevision;
     
-    console.log('🧠 V6.0.1 PART NUMBER RESOLUTION', {
+    // V6.0.2: STEP 5 - Conflict detection and warning
+    if (parsedTextPartNumber && 
+        filenamePartNumber && 
+        parsedTextPartNumber !== filenamePartNumber) {
+      console.warn('⚠️ V6.0.2 PART NUMBER MISMATCH', {
+        parsedTextPartNumber,
+        filenamePartNumber,
+        chosenSource: partNumberSource,
+        finalPartNumber: partNumber,
+        fileName: file.name,
+        timestamp: new Date().toISOString()
+      });
+      
+      warnings.push(
+        `Part number mismatch detected: Filename suggests "${filenamePartNumber}" but BOM header contains "${parsedTextPartNumber}". Using ${partNumberSource === 'parsed_text' ? 'BOM header' : partNumberSource} as source of truth.`
+      );
+    }
+    
+    // V6.0.2: STEP 6 - Enhanced source trace logging
+    console.log('🧠 V6.0.2 PART NUMBER RESOLUTION', {
       userInputPartNumber: metadata?.partNumber || 'NOT_PROVIDED',
-      filenamePartNumber: filenamePartNumber || 'NOT_FOUND',
       parsedTextPartNumber: parsedTextPartNumber || 'NOT_FOUND',
+      filenamePartNumber: filenamePartNumber || 'NOT_FOUND',
       finalPartNumber: partNumber,
       source: partNumberSource,
       revision,

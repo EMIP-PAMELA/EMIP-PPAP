@@ -303,11 +303,13 @@ export async function ingestBOMFromText(
     // Collect warnings from parser
     parseResult.warnings.forEach(warn => warnings.push(warn.message));
     
-    // V5.7.2: Step 1.5 - Canonicalize Part Number (prefer filename over parser)
+    // V6.0.2: Step 1.5 - Canonicalize Part Number
+    // metadata.partNumber contains the already-resolved canonical part number from bomIngestionService
+    // Trust hierarchy: user_input → parsed_text → filename (resolved upstream)
     const masterPartNumber = metadata.partNumber || rawData.masterPartNumber;
     
-    console.log('🧠 V5.7.2 PART NUMBER RESOLUTION', {
-      filenamePartNumber: metadata.partNumber,
+    console.log('🧠 V6.0.2 PART NUMBER CANONICALIZATION', {
+      resolvedPartNumber: metadata.partNumber,
       parserPartNumber: rawData.masterPartNumber,
       finalPartNumber: masterPartNumber
     });
