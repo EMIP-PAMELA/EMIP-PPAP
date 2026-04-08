@@ -29,6 +29,7 @@ import { parseBOMWithValidation } from '@/src/core/parser/parserService';
 import { normalizeRevision, NormalizedRevision, extractRevisionFromRecords, determineRevisionAction } from '@/src/core/services/revisionService';
 import { getBOM, storeBOM } from '@/src/core/services/bomService';
 import { normalizePartNumber } from '@/src/core/utils/normalizePartNumber';
+import { isValidPartNumberCandidate } from '@/src/core/utils/isValidPartNumberCandidate';
 import { PARSER_VERSION } from '@/src/core/parser/parserService';
 
 // ============================================================
@@ -313,21 +314,48 @@ export async function ingestBOMFromText(
     // metadata.partNumber contains the already-resolved canonical part number from bomIngestionService
     // Trust hierarchy: user_input → parsed_text → filename (resolved upstream)
     
-    // V6.0.9: STEP 0 - DUAL-FORMAT NORMALIZATION
-    // Normalize both metadata and parser values to canonical format
-    // Supports legacy format (45-xxxxx-xx) → canonical (NH45-xxxxx-xx)
-    const normalizedFromMetadata = normalizePartNumber(metadata.partNumber);
-    const normalizedFromParser = normalizePartNumber(rawData.masterPartNumber);
+    // V6.0.10: STEP 0A - VALIDITY GUARD
+    // Filter out invalid parser fragments like "45" BEFORE normalization
+    // Only process candidates that meet minimum part number requirements
+    const metadataCandidate = isValidPartNumberCandidate(metadata.partNumber)
+      ? normalizePartNumber(metadata.partNumber)
+      : null;
     
-    const masterPartNumber = normalizedFromMetadata || normalizedFromParser;
+    const parserCandidate = isValidPartNumberCandidate(rawData.masterPartNumber)
+      ? normalizePartNumber(rawData.masterPartNumber)
+      : null;
     
-    console.log('🧠 V6.0.9 PART NUMBER NORMALIZATION', {
-      metadataPart: metadata.partNumber,
-      parserPart: rawData.masterPartNumber,
-      normalizedMetadata: normalizedFromMetadata,
-      normalizedParser: normalizedFromParser,
-      final: masterPartNumber,
-      source: normalizedFromMetadata ? 'metadata' : 'parser'
+    // V6.0.10: STEP 0B - HEADER EXTRACTION OVERRIDE
+    // Extract part number directly from BOM header as fallback
+    // Prioritize header over parser to avoid invalid fragments
+    let headerCandidate: string | null = null;
+    if (text) {
+      const headerMatch = text.match(/NH\d{2}-\d{5,6}-\d{2,3}/);
+      if (headerMatch) {
+        headerCandidate = normalizePartNumber(headerMatch[0]);
+      }
+    }
+    
+    // V6.0.10: STEP 0C - SOURCE PRIORITY RESOLUTION
+    // Priority: metadata > header > parser
+    // Prevents invalid parser fragments from overriding valid sources
+    const masterPartNumber = metadataCandidate || headerCandidate || parserCandidate;
+    
+    const selectedSource = metadataCandidate ? 'metadata' :
+                          headerCandidate ? 'header' :
+                          parserCandidate ? 'parser' :
+                          'none';
+    
+    console.log('🧠 V6.0.10 PART NUMBER SOURCE RESOLUTION', {
+      metadata: metadata.partNumber,
+      metadataValid: isValidPartNumberCandidate(metadata.partNumber),
+      metadataCandidate,
+      header: headerCandidate,
+      parser: rawData.masterPartNumber,
+      parserValid: isValidPartNumberCandidate(rawData.masterPartNumber),
+      parserCandidate,
+      selected: masterPartNumber,
+      source: selectedSource
     });
     
     // V6.0.6: STEP 1 - LOCK CANONICAL PART NUMBER (Critical Data Integrity)
