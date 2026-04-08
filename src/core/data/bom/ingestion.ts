@@ -346,52 +346,74 @@ export async function ingestBOMFromText(
       timestamp: new Date().toISOString(),
     });
     
-    // V5.9.1: STEP 1 - FORCE HARD DEACTIVATION (Data Integrity Guarantee)
-    // ALWAYS deactivate ALL active records for this part number before insert
-    // This ensures ONLY ONE active BOM exists per SKU, regardless of revision logic
-    console.log(`🛡 V5.9.1 [HARD DEACTIVATION] Deactivating all active records for ${masterPartNumber}`);
+    // V6.0.5: STEP 1 - SMART REVISION ACTIVATION DECISION
+    // Determine whether to activate based on revision comparison
+    let shouldActivate = false;
+    let activationAction = '';
     
-    const { data: deactivatedRecords, error: deactivateError } = await supabase
-      .from('bom_records')
-      .update({ is_active: false })
-      .eq('parent_part_number', masterPartNumber)
-      .eq('is_active', true)
-      .select('id');
+    // Handle UNKNOWN revisions safely
+    const hasValidIncomingRevision = incomingRevision.order > 0;
+    const hasExistingActiveRevision = existingRevision && existingRevision.order > 0;
     
-    if (deactivateError) {
-      console.error(`🚨 V5.9.1 BOM INTEGRITY ERROR:`, deactivateError);
-      errors.push(`Failed to deactivate previous BOM: ${deactivateError.message}`);
-      throw new Error(`Active BOM deactivation failed: ${deactivateError.message}`);
+    if (!hasExistingActiveRevision) {
+      // CASE A: No existing active revision - activate first upload
+      shouldActivate = true;
+      activationAction = 'ACTIVATE_FIRST';
+    } else if (!hasValidIncomingRevision) {
+      // CASE: UNKNOWN incoming revision with valid active existing - archive to be safe
+      shouldActivate = false;
+      activationAction = 'ARCHIVE_UNKNOWN';
+      warnings.push(`Incoming revision (${incomingRevision.revision}) could not be validated. Storing as inactive archive while preserving active revision ${existingRevision.revision}.`);
+    } else if (incomingRevision.order > existingRevision.order) {
+      // CASE B: Incoming revision is newer - activate
+      shouldActivate = true;
+      activationAction = 'ACTIVATE_NEWER';
+    } else if (incomingRevision.order === existingRevision.order) {
+      // CASE C: Same revision - replace active batch
+      shouldActivate = true;
+      activationAction = 'REPLACE_SAME';
+    } else {
+      // CASE D: Incoming revision is older - archive as inactive history
+      shouldActivate = false;
+      activationAction = 'ARCHIVE_OLDER';
+      warnings.push(`Incoming revision (${incomingRevision.revision}) is older than active revision (${existingRevision.revision}). Storing as inactive historical archive.`);
     }
     
-    const deactivatedCount = deactivatedRecords?.length || 0;
-    
-    console.log(`🛡 V5.9.1 [HARD DEACTIVATION] Deactivated ${deactivatedCount} records for ${masterPartNumber}`);
-    
-    // V6.0.4: STEP 2 - ALWAYS ACTIVATE NEW UPLOADS (Critical Fix)
-    // GUARANTEE: Every new upload becomes the active revision
-    // This ensures EXACTLY ONE active revision per SKU at all times
-    // Revision comparison is logged for audit but does NOT affect activation
-    const shouldActivate = true;
-    
-    console.log(`� V6.0.4 ACTIVE BOM GUARANTEE`, {
+    console.log(`🧠 V6.0.5 REVISION ACTIVATION DECISION`, {
       partNumber: masterPartNumber,
-      newBatchId: ingestionBatchId,
       incomingRevision: incomingRevision.revision,
       incomingOrder: incomingRevision.order,
       existingRevision: existingRevision?.revision || 'none',
       existingOrder: existingRevision?.order || 0,
-      revisionComparison: revisionDecision.action,
-      previousActiveDeactivated: true,
-      deactivatedRecordCount: deactivatedCount,
-      newRecordsWillBeActive: true,
-      policy: 'ALWAYS_ACTIVATE_NEW_UPLOAD',
+      shouldActivate,
+      action: activationAction,
       timestamp: new Date().toISOString(),
     });
     
-    // V6.0.4: Log revision comparison for audit (informational only)
-    if (revisionDecision.action === 'ARCHIVE') {
-      console.warn(`⚠️ V6.0.4 REVISION NOTICE: Incoming revision (${incomingRevision.revision}) appears older than existing (${existingRevision?.revision}), but activating anyway per V6.0.4 policy.`);
+    // V6.0.5: STEP 2 - CONDITIONAL DEACTIVATION (Only when activating)
+    // Only deactivate existing active records if we're activating the new upload
+    let deactivatedCount = 0;
+    
+    if (shouldActivate) {
+      console.log(`🛡 V6.0.5 [CONDITIONAL DEACTIVATION] Deactivating previous active records for ${masterPartNumber}`);
+      
+      const { data: deactivatedRecords, error: deactivateError } = await supabase
+        .from('bom_records')
+        .update({ is_active: false })
+        .eq('parent_part_number', masterPartNumber)
+        .eq('is_active', true)
+        .select('id');
+      
+      if (deactivateError) {
+        console.error(`🚨 V6.0.5 DEACTIVATION ERROR:`, deactivateError);
+        errors.push(`Failed to deactivate previous BOM: ${deactivateError.message}`);
+        throw new Error(`Active BOM deactivation failed: ${deactivateError.message}`);
+      }
+      
+      deactivatedCount = deactivatedRecords?.length || 0;
+      console.log(`🛡 V6.0.5 [CONDITIONAL DEACTIVATION] Deactivated ${deactivatedCount} records`);
+    } else {
+      console.log(`📚 V6.0.5 [ARCHIVE MODE] Preserving existing active revision, storing incoming as inactive history`);
     }
     
     // Step 2: Normalize with V5.2 batch ID
@@ -437,7 +459,7 @@ export async function ingestBOMFromText(
     
     console.log(`🧠 [BOM Ingestion] Stored BOM for ${masterPartNumber}`);
     
-    // V6.0.4: STEP 3 - Verify Single Active BOM (Strengthened Data Integrity Check)
+    // V6.0.5: STEP 3 - Verify Active BOM State (Revision-Aware Validation)
     const { data: activeRecords, error: verifyError } = await supabase
       .from('bom_records')
       .select('id, revision, ingestion_batch_id')
@@ -445,7 +467,7 @@ export async function ingestBOMFromText(
       .eq('is_active', true);
     
     if (verifyError) {
-      console.error(`🚨 V6.0.4 VERIFICATION ERROR:`, verifyError);
+      console.error(`🚨 V6.0.5 VERIFICATION ERROR:`, verifyError);
       throw new Error(`Post-insert verification failed: ${verifyError.message}`);
     }
     
@@ -453,39 +475,54 @@ export async function ingestBOMFromText(
     const uniqueBatches = new Set(activeRecords?.map(r => r.ingestion_batch_id) || []);
     const uniqueRevisions = new Set(activeRecords?.map(r => r.revision) || []);
     
-    // V6.0.4: CRITICAL - Ensure at least one active record exists
-    if (activeCount === 0) {
-      console.error(`� V6.0.4 CRITICAL ERROR: NO ACTIVE RECORDS after insert for ${masterPartNumber}`);
-      throw new Error(`Data integrity violation: No active BOM records exist for ${masterPartNumber} after insert`);
-    }
-    
-    console.log(`🔥 V6.0.4 BOM INSERT CONFIRMED`, {
-      partNumber: masterPartNumber,
-      revision: incomingRevision.revision,
-      insertedCount: normalizedRecords.length,
-      activeRecordsAfterInsert: activeCount,
-      expectedActiveRecords: normalizedRecords.length,
-      uniqueBatches: uniqueBatches.size,
-      uniqueRevisions: Array.from(uniqueRevisions),
-      isActive: true,
-      isValid: activeCount === normalizedRecords.length && uniqueBatches.size === 1,
-      timestamp: new Date().toISOString(),
-    });
-    
-    // V6.0.4: Data integrity assertions
-    if (uniqueBatches.size > 1) {
-      console.error(`🚨 V6.0.4 DATA INTEGRITY VIOLATION: Multiple active batches detected for ${masterPartNumber}`);
-      throw new Error(`Data integrity violation: Multiple active batches exist for ${masterPartNumber}`);
-    }
-    
-    if (uniqueRevisions.size > 1) {
-      console.error(`🚨 V6.0.4 DATA INTEGRITY VIOLATION: Multiple active revisions detected for ${masterPartNumber}`);
-      throw new Error(`Data integrity violation: Multiple active revisions exist for ${masterPartNumber}`);
-    }
-    
-    if (activeCount !== normalizedRecords.length) {
-      console.error(`🚨 V6.0.4 DATA INTEGRITY WARNING: Active record count mismatch for ${masterPartNumber}`);
-      warnings.push(`Warning: Expected ${normalizedRecords.length} active records but found ${activeCount}`);
+    // V6.0.5: Validation rules depend on activation decision
+    if (shouldActivate) {
+      // When we activated: ensure exactly one active batch exists
+      if (activeCount === 0) {
+        console.error(`🚨 V6.0.5 CRITICAL ERROR: NO ACTIVE RECORDS after activating insert for ${masterPartNumber}`);
+        throw new Error(`Data integrity violation: No active BOM records exist after activation`);
+      }
+      
+      if (uniqueBatches.size > 1) {
+        console.error(`🚨 V6.0.5 DATA INTEGRITY VIOLATION: Multiple active batches for ${masterPartNumber}`);
+        throw new Error(`Data integrity violation: Multiple active batches exist`);
+      }
+      
+      if (uniqueRevisions.size > 1) {
+        console.error(`🚨 V6.0.5 DATA INTEGRITY VIOLATION: Multiple active revisions for ${masterPartNumber}`);
+        throw new Error(`Data integrity violation: Multiple active revisions exist`);
+      }
+      
+      console.log(`🔥 V6.0.5 BOM ACTIVATED`, {
+        partNumber: masterPartNumber,
+        revision: incomingRevision.revision,
+        insertedCount: normalizedRecords.length,
+        activeRecordsAfterInsert: activeCount,
+        expectedActiveRecords: normalizedRecords.length,
+        uniqueBatches: uniqueBatches.size,
+        uniqueRevisions: Array.from(uniqueRevisions),
+        action: activationAction,
+        isActive: true,
+        isValid: activeCount === normalizedRecords.length && uniqueBatches.size === 1,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      // When we archived: ensure previous active revision still exists
+      if (activeCount === 0 && hasExistingActiveRevision) {
+        console.error(`🚨 V6.0.5 CRITICAL ERROR: Previous active revision lost during archive operation for ${masterPartNumber}`);
+        throw new Error(`Data integrity violation: Previous active revision disappeared during archive`);
+      }
+      
+      console.log(`� V6.0.5 BOM ARCHIVED`, {
+        partNumber: masterPartNumber,
+        archivedRevision: incomingRevision.revision,
+        insertedCount: normalizedRecords.length,
+        activeRevisionPreserved: existingRevision?.revision || 'none',
+        activeRecordsRemaining: activeCount,
+        action: activationAction,
+        isActive: false,
+        timestamp: new Date().toISOString(),
+      });
     }
     
     // Step 4: Return result with canonical persisted values
