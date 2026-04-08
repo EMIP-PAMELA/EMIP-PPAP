@@ -344,6 +344,15 @@ export async function ingestBOMFromText(
       source: metadata.partNumber ? 'metadata' : 'parser'
     });
     
+    // V6.0.7: CONSISTENCY ASSERTION - Ensure metadata and canonical match
+    if (masterPartNumber !== metadata.partNumber && metadata.partNumber) {
+      console.warn('⚠️ V6.0.7 PART NUMBER MISMATCH DETECTED', {
+        canonical: masterPartNumber,
+        metadata: metadata.partNumber,
+        source: 'canonicalization_fallback_to_parser'
+      });
+    }
+    
     console.log('🧠 V6.0.2 PART NUMBER CANONICALIZATION', {
       resolvedPartNumber: metadata.partNumber,
       parserPartNumber: rawData.masterPartNumber,
@@ -365,6 +374,13 @@ export async function ingestBOMFromText(
     });
     
     // V5.2.5: Step 1.7 - Fetch Existing Active BOM to Check Revision
+    // V6.0.7: TRACE - Log part number used for revision lookup
+    console.log('🧠 V6.0.7 PART NUMBER USED FOR REVISION LOOKUP', {
+      masterPartNumber,
+      operation: 'getBOM',
+      purpose: 'fetch_existing_active_bom'
+    });
+    
     const existingActiveBOM = await getBOM(masterPartNumber);
     const existingRevision = extractRevisionFromRecords(existingActiveBOM);
     
@@ -432,6 +448,14 @@ export async function ingestBOMFromText(
     
     if (shouldActivate) {
       console.log(`🛡 V6.0.5 [CONDITIONAL DEACTIVATION] Deactivating previous active records for ${masterPartNumber}`);
+      
+      // V6.0.7: TRACE - Log part number used for deactivation query
+      console.log('🧠 V6.0.7 PART NUMBER USED FOR DEACTIVATION QUERY', {
+        masterPartNumber,
+        operation: 'supabase.update',
+        table: 'bom_records',
+        purpose: 'deactivate_previous_active'
+      });
       
       const { data: deactivatedRecords, error: deactivateError } = await supabase
         .from('bom_records')
@@ -517,6 +541,14 @@ export async function ingestBOMFromText(
     console.log(`🧠 [BOM Ingestion] Stored BOM for ${masterPartNumber}`);
     
     // V6.0.5: STEP 3 - Verify Active BOM State (Revision-Aware Validation)
+    // V6.0.7: TRACE - Log part number used for verification query
+    console.log('🧠 V6.0.7 PART NUMBER USED FOR VERIFICATION QUERY', {
+      masterPartNumber,
+      operation: 'supabase.select',
+      table: 'bom_records',
+      purpose: 'verify_active_state'
+    });
+    
     const { data: activeRecords, error: verifyError } = await supabase
       .from('bom_records')
       .select('id, revision, ingestion_batch_id')
@@ -581,6 +613,22 @@ export async function ingestBOMFromText(
         timestamp: new Date().toISOString(),
       });
     }
+    
+    // V6.0.7: FINAL ASSERTION - Verify canonical part number integrity
+    if (!masterPartNumber.includes('-')) {
+      console.error('🚨 V6.0.7 CRITICAL: Part number degraded at return point', {
+        masterPartNumber,
+        expectedFormat: 'NH##-#####-##'
+      });
+      throw new Error(`CRITICAL: Part number degraded at return: "${masterPartNumber}"`);
+    }
+    
+    console.log('✅ V6.0.7 INGESTION COMPLETE - CANONICAL PART NUMBER VERIFIED', {
+      masterPartNumber,
+      recordsCreated: normalizedRecords.length,
+      revision: incomingRevision.revision,
+      isActive: shouldActivate
+    });
     
     // Step 4: Return result with canonical persisted values
     return {
