@@ -52,11 +52,11 @@ export default function BOMDetailPage() {
         return;
       }
 
-      // Sort components by operation_step
+      // V5.8.1: Sort components by operation_step (numeric sort)
       const sortedComponents = [...records].sort((a, b) => {
-        const stepA = a.operation_step || '';
-        const stepB = b.operation_step || '';
-        return stepA.localeCompare(stepB);
+        const stepA = Number(a.operation_step ?? 0);
+        const stepB = Number(b.operation_step ?? 0);
+        return stepA - stepB;
       });
 
       const detail: BOMDetail = {
