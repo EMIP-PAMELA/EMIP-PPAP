@@ -149,6 +149,99 @@ export async function getBOMByPartNumber(partNumber: string): Promise<BOMRecord[
 }
 
 /**
+ * V6.0: Get BOM for a specific part number and revision
+ * 
+ * Used for revision comparison - retrieves records for ANY revision (not just active)
+ * 
+ * @param partNumber Parent part number
+ * @param revision Specific revision to retrieve
+ * @returns Array of BOM records for that part + revision
+ */
+export async function getBOMByPartAndRevision(partNumber: string, revision: string): Promise<BOMRecord[]> {
+  console.log(`🧠 V6.0 [BOM Service] Fetching BOM for ${partNumber} revision ${revision}`);
+  
+  const { data, error } = await supabase
+    .from('bom_records')
+    .select('*')
+    .eq('parent_part_number', partNumber)
+    .eq('revision', revision);
+  
+  if (error) {
+    console.error('🧠 V6.0 [BOM Service] Database error:', error);
+    throw new Error(`Failed to retrieve BOM for revision ${revision}: ${error.message}`);
+  }
+  
+  console.log(`🧠 V6.0 [BOM Service] Retrieved ${data?.length || 0} records for ${partNumber} rev ${revision}`);
+  
+  return (data || []) as BOMRecord[];
+}
+
+/**
+ * V6.0: Get available revisions for a part number
+ * 
+ * Returns list of all revisions with metadata, sorted by revision_order
+ * 
+ * @param partNumber Parent part number
+ * @returns Array of revision info objects
+ */
+export async function getAvailableRevisions(partNumber: string): Promise<Array<{
+  revision: string;
+  revisionOrder: number;
+  recordCount: number;
+  isActive: boolean;
+  ingestionBatchId: string;
+}>> {
+  console.log(`🧠 V6.0 [BOM Service] Fetching available revisions for ${partNumber}`);
+  
+  const { data, error } = await supabase
+    .from('bom_records')
+    .select('revision, revision_order, is_active, ingestion_batch_id')
+    .eq('parent_part_number', partNumber)
+    .order('revision_order', { ascending: true });
+  
+  if (error) {
+    console.error('🧠 V6.0 [BOM Service] Database error:', error);
+    throw new Error(`Failed to retrieve revisions: ${error.message}`);
+  }
+  
+  // Deduplicate by revision
+  const revisionMap = new Map<string, {
+    revision: string;
+    revisionOrder: number;
+    recordCount: number;
+    isActive: boolean;
+    ingestionBatchId: string;
+  }>();
+  
+  for (const record of (data || [])) {
+    const rev = record.revision || 'UNKNOWN';
+    
+    if (!revisionMap.has(rev)) {
+      revisionMap.set(rev, {
+        revision: rev,
+        revisionOrder: record.revision_order || 0,
+        recordCount: 1,
+        isActive: record.is_active || false,
+        ingestionBatchId: record.ingestion_batch_id || '',
+      });
+    } else {
+      const existing = revisionMap.get(rev)!;
+      existing.recordCount++;
+      // If any record is active, mark this revision as active
+      if (record.is_active) {
+        existing.isActive = true;
+      }
+    }
+  }
+  
+  const revisions = Array.from(revisionMap.values());
+  
+  console.log(`🧠 V6.0 [BOM Service] Found ${revisions.length} revisions for ${partNumber}`);
+  
+  return revisions;
+}
+
+/**
  * Get flattened BOM (multi-level explosion)
  * 
  * V5.1: Uses database queries for recursive expansion
