@@ -59,6 +59,7 @@ export interface IngestionMetadata {
 export interface IngestionResult {
   success: boolean;
   masterPartNumber: string;
+  revision?: string; // V5.7.1: Normalized revision from ingestion (canonical truth)
   recordsCreated: number;
   errors: string[];
   warnings: string[];
@@ -369,10 +370,11 @@ export async function ingestBOMFromText(
     
     console.log(`🧠 [BOM Ingestion] Stored BOM for ${rawData.masterPartNumber}`);
     
-    // Step 4: Return result
+    // Step 4: Return result with canonical persisted values
     return {
       success: true,
       masterPartNumber: rawData.masterPartNumber,
+      revision: incomingRevision.revision, // V5.7.1: Return normalized revision (canonical truth)
       recordsCreated: normalizedRecords.length,
       errors,
       warnings,

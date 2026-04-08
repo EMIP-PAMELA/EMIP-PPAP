@@ -294,8 +294,9 @@ export async function uploadAndIngestBOM(
 
     const ingestionResult = await ingestBOMFromText(textToIngest, ingestionMetadata);
 
-    console.log('💾 V5.5 DB INSERT COMPLETE', {
+    console.log('💾 V5.7.1 DB INSERT COMPLETE', {
       partNumber: ingestionResult.masterPartNumber,
+      revision: ingestionResult.revision,
       recordsCreated: ingestionResult.recordsCreated,
       timestamp: new Date().toISOString()
     });
@@ -304,10 +305,11 @@ export async function uploadAndIngestBOM(
     errors.push(...ingestionResult.errors);
     warnings.push(...ingestionResult.warnings);
 
+    // V5.7.1: Return canonical persisted values from ingestion result
     return {
       success: ingestionResult.success,
       partNumber: ingestionResult.masterPartNumber,
-      revision,
+      revision: ingestionResult.revision || revision, // Use persisted revision or fallback
       recordsCreated: ingestionResult.recordsCreated,
       artifactUrl: uploadResult.url,
       errors,
