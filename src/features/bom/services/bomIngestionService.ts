@@ -159,13 +159,17 @@ export async function uploadAndIngestBOM(
     const sourceReference = metadata?.sourceReference || file.name;
 
     if (partNumber === 'UNKNOWN') {
-      warnings.push('Could not extract part number from filename. Using UNKNOWN.');
+      warnings.push('⚠️ Could not extract part number from filename. Please verify part number manually or provide it in the form.');
     }
 
     console.log('📥 V5.5 [BOM Upload] Extracted metadata', {
       partNumber,
       revision,
-      sourceReference
+      sourceReference,
+      autoDetected: {
+        partNumber: partNumber !== (metadata?.partNumber || 'UNKNOWN'),
+        revision: revision !== (metadata?.revision || 'A')
+      }
     });
 
     // Step 2: Generate ingestion batch ID
@@ -182,7 +186,17 @@ export async function uploadAndIngestBOM(
     const uploadResult = await uploadEngineeringMaster(file, artifactMetadata);
 
     if (!uploadResult.success) {
-      errors.push(`Artifact upload failed: ${uploadResult.error || 'Unknown error'}`);
+      const errorMsg = `Artifact upload failed: ${uploadResult.error || 'Unknown error'}`;
+      errors.push(errorMsg);
+      
+      console.error('🚫 V5.5.1A INFRASTRUCTURE ERROR', {
+        type: 'artifact_upload_failure',
+        detail: uploadResult.error,
+        partNumber,
+        revision
+      });
+      
+      // V5.5.1A: Do NOT proceed with ingestion if artifact upload failed
       return {
         success: false,
         partNumber,
@@ -190,7 +204,7 @@ export async function uploadAndIngestBOM(
         recordsCreated: 0,
         artifactUrl: null,
         errors,
-        warnings
+        warnings: [...warnings, 'Ingestion stopped - artifact must be stored before BOM records can be created']
       };
     }
 

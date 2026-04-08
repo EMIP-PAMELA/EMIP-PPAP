@@ -28,7 +28,7 @@ interface NavigationItem {
 }
 
 const NAVIGATION_ITEMS: NavigationItem[] = [
-  { label: 'Dashboard', path: '/dashboard', icon: '📊' },
+  { label: 'Dashboard', path: '/emip-dashboard', icon: '📊' },
   { label: 'PPAP', path: '/ppap', icon: '📋' },
   { label: 'BOM Repository', path: '/bom', icon: '🗂️' },
   { label: 'Copper Index', path: '/copper', icon: '🔧' },
@@ -44,7 +44,7 @@ export default function EMIPLayout({ children }: EMIPLayoutProps) {
   const pathname = usePathname();
 
   const isActive = (path: string) => {
-    if (path === '/dashboard') {
+    if (path === '/emip-dashboard') {
       return pathname === path;
     }
     return pathname?.startsWith(path);

@@ -89,11 +89,11 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
       if (result.success) {
         setUploadResult({
           success: true,
-          message: `BOM uploaded successfully!`,
+          message: `✅ BOM uploaded successfully!`,
           details: `Part: ${result.partNumber}, Revision: ${result.revision}, Records: ${result.recordsCreated}`
         });
 
-        // Clear form
+        // Clear form on success
         setBomText('');
         setPartNumber('');
         setRevision('');
@@ -103,11 +103,19 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
           onUploadSuccess();
         }
       } else {
+        // V5.5.1A: Preserve form state on failure, show detailed errors
+        const errorDetails = [
+          ...result.errors,
+          ...(result.warnings.length > 0 ? ['Warnings: ' + result.warnings.join('; ')] : [])
+        ].join('\n\n');
+        
         setUploadResult({
           success: false,
-          message: 'Upload failed',
-          details: result.errors.join('; ')
+          message: '❌ Upload failed - please review errors below',
+          details: errorDetails
         });
+        
+        // Do NOT clear form - let user fix issues and retry
       }
     } catch (error) {
       setUploadResult({
@@ -226,11 +234,21 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
           }
         `}>
           <div className={`font-medium ${uploadResult.success ? 'text-green-900' : 'text-red-900'}`}>
-            {uploadResult.success ? '✅' : '❌'} {uploadResult.message}
+            {uploadResult.message}
           </div>
           {uploadResult.details && (
-            <div className={`text-sm mt-1 ${uploadResult.success ? 'text-green-700' : 'text-red-700'}`}>
+            <div className={`text-sm mt-2 ${uploadResult.success ? 'text-green-700' : 'text-red-700'} whitespace-pre-wrap`}>
               {uploadResult.details}
+            </div>
+          )}
+          {!uploadResult.success && (
+            <div className="mt-3 text-xs text-red-600 bg-red-100 rounded p-2">
+              <strong>💡 Troubleshooting:</strong>
+              <ul className="mt-1 ml-4 list-disc">
+                <li>Verify storage bucket exists (run migrations)</li>
+                <li>Check part number and revision fields</li>
+                <li>Ensure BOM text is provided if PDF extraction unavailable</li>
+              </ul>
             </div>
           )}
         </div>

@@ -73,6 +73,41 @@ export async function uploadEngineeringMaster(
   });
 
   try {
+    // V5.5.1A: Verify bucket exists
+    const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+    
+    if (bucketError) {
+      console.error('🚫 V5.5.1A [Artifact Service] Cannot verify storage bucket:', bucketError);
+      return {
+        success: false,
+        url: null,
+        path: null,
+        partNumber: metadata.partNumber,
+        revision: metadata.revision,
+        ingestion_batch_id: metadata.ingestion_batch_id,
+        error: `Storage system error: ${bucketError.message}. Please contact system administrator.`
+      };
+    }
+    
+    const bucketExists = buckets?.some(b => b.id === STORAGE_BUCKET);
+    if (!bucketExists) {
+      console.error('🚫 V5.5.1A [Artifact Service] Storage bucket missing:', STORAGE_BUCKET);
+      return {
+        success: false,
+        url: null,
+        path: null,
+        partNumber: metadata.partNumber,
+        revision: metadata.revision,
+        ingestion_batch_id: metadata.ingestion_batch_id,
+        error: `Storage bucket '${STORAGE_BUCKET}' not found. Please run database migrations to initialize storage.`
+      };
+    }
+    
+    console.log('📦 V5.5.1A STORAGE CHECK', {
+      bucket: STORAGE_BUCKET,
+      status: 'verified'
+    });
+
     // Generate storage path
     const storagePath = generateStoragePath(metadata);
     
