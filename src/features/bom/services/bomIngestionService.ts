@@ -40,56 +40,63 @@ export interface BOMUploadResult {
 // PDF TEXT EXTRACTION (Simplified)
 // ============================================================
 
-/**
- * Extract text from PDF file
- * 
- * V5.5: Simplified approach - expects user to provide text
- * For full PDF parsing, integrate pdf.js or similar library
- * 
- * @param file PDF file
- * @returns Extracted text
- */
-async function extractTextFromPDF(file: File): Promise<string> {
-  // TODO: Implement proper PDF text extraction using pdf.js
-  // For now, this is a placeholder that returns empty string
-  // The UI should allow users to paste BOM text directly
-  
-  console.log('📥 V5.5 [BOM Upload] PDF text extraction placeholder', {
-    fileName: file.name,
-    fileSize: file.size
-  });
-  
-  // Placeholder: Return empty string and rely on manual text input
-  return '';
-}
+// V5.6: Import real PDF extraction
+import { extractTextFromPDF } from '../extraction/pdfExtractor';
+import { parseBOMText } from '../extraction/bomParser';
 
 /**
  * Extract part number from filename
  * 
- * Attempts to extract part number from filename patterns like:
+ * V5.6: Enhanced extraction for multiple patterns
+ * 
+ * Patterns supported:
  * - NH123456789012_RevB.pdf
+ * - NH45-110858-01 BOM.pdf
  * - BOM_NH123456789012.pdf
+ * - 45-110858-01.pdf
  * 
  * @param fileName File name
- * @returns Extracted part number or 'UNKNOWN'
+ * @returns Extracted part number or null if not found
  */
-function extractPartNumberFromFilename(fileName: string): string {
-  // Remove .pdf extension
-  const nameWithoutExt = fileName.replace(/\.pdf$/i, '');
+function extractPartNumberFromFilename(fileName: string): string | null {
+  // Remove .pdf extension and common prefixes/suffixes
+  const nameWithoutExt = fileName
+    .replace(/\.pdf$/i, '')
+    .replace(/^BOM[_\s-]*/i, '')
+    .replace(/[_\s-]*BOM$/i, '')
+    .trim();
   
-  // Try to find NH followed by 12 digits
-  const nhMatch = nameWithoutExt.match(/NH\d{12}/);
+  // Pattern 1: NH followed by digits with optional dashes (NH45-110858-01)
+  const nhDashMatch = nameWithoutExt.match(/NH\d{2}-\d{6}-\d{2}/i);
+  if (nhDashMatch) {
+    return nhDashMatch[0];
+  }
+  
+  // Pattern 2: NH followed by 12 consecutive digits
+  const nhMatch = nameWithoutExt.match(/NH\d{12}/i);
   if (nhMatch) {
     return nhMatch[0];
   }
   
-  // Try to find 12+ digit number
+  // Pattern 3: XX-XXXXXX-XX format (common part number pattern)
+  const dashPatternMatch = nameWithoutExt.match(/\d{2}-\d{6}-\d{2}/);
+  if (dashPatternMatch) {
+    return dashPatternMatch[0];
+  }
+  
+  // Pattern 4: 12+ consecutive digits
   const digitMatch = nameWithoutExt.match(/\d{12,}/);
   if (digitMatch) {
     return digitMatch[0];
   }
   
-  return 'UNKNOWN';
+  // Pattern 5: First significant word/code in filename
+  const firstWordMatch = nameWithoutExt.match(/^([A-Z0-9][A-Z0-9-]{5,})/i);
+  if (firstWordMatch) {
+    return firstWordMatch[1];
+  }
+  
+  return null; // Return null instead of 'UNKNOWN'
 }
 
 /**
@@ -154,21 +161,32 @@ export async function uploadAndIngestBOM(
 
   try {
     // Step 1: Extract metadata from filename if not provided
-    const partNumber = metadata?.partNumber || extractPartNumberFromFilename(file.name);
+    const extractedPartNumber = extractPartNumberFromFilename(file.name);
+    const partNumber = metadata?.partNumber || extractedPartNumber;
     const revision = metadata?.revision || extractRevisionFromFilename(file.name);
     const sourceReference = metadata?.sourceReference || file.name;
 
-    if (partNumber === 'UNKNOWN') {
-      warnings.push('⚠️ Could not extract part number from filename. Please verify part number manually or provide it in the form.');
+    // V5.6: Require valid part number
+    if (!partNumber) {
+      errors.push('Could not extract part number from filename. Please provide the part number in the form.');
+      return {
+        success: false,
+        partNumber: 'UNKNOWN',
+        revision,
+        recordsCreated: 0,
+        artifactUrl: null,
+        errors,
+        warnings
+      };
     }
 
-    console.log('📥 V5.5 [BOM Upload] Extracted metadata', {
+    console.log('📥 V5.6 [BOM Upload] Extracted metadata', {
       partNumber,
       revision,
       sourceReference,
       autoDetected: {
-        partNumber: partNumber !== (metadata?.partNumber || 'UNKNOWN'),
-        revision: revision !== (metadata?.revision || 'A')
+        partNumber: extractedPartNumber !== null && !metadata?.partNumber,
+        revision: !metadata?.revision
       }
     });
 
@@ -217,11 +235,19 @@ export async function uploadAndIngestBOM(
     let textToIngest = bomText;
     
     if (!textToIngest || textToIngest.trim().length === 0) {
-      // Try to extract from PDF
-      textToIngest = await extractTextFromPDF(file);
+      // V5.6: Extract text from PDF
+      try {
+        textToIngest = await extractTextFromPDF(file);
+        console.log('📥 V5.6 [BOM Upload] Text extracted from PDF', {
+          length: textToIngest.length
+        });
+      } catch (extractError) {
+        const extractMsg = extractError instanceof Error ? extractError.message : 'Unknown extraction error';
+        warnings.push(`PDF text extraction failed: ${extractMsg}`);
+      }
       
       if (!textToIngest || textToIngest.trim().length === 0) {
-        errors.push('No BOM text provided and PDF text extraction not available. Please paste BOM text manually.');
+        errors.push('No BOM text extracted from PDF and no manual text provided. Please paste BOM text in the form.');
         return {
           success: false,
           partNumber,
@@ -232,6 +258,23 @@ export async function uploadAndIngestBOM(
           warnings
         };
       }
+    }
+    
+    // V5.6: Parse BOM text to validate structure
+    try {
+      const parsed = parseBOMText(textToIngest);
+      
+      if (parsed.components.length === 0) {
+        warnings.push('No components found in BOM text. Parser may need adjustment for this BOM format.');
+      }
+      
+      console.log('📥 V5.6 [BOM Upload] Parsed structure preview', {
+        totalComponents: parsed.components.length,
+        wires: parsed.components.filter(c => c.type === 'wire').length,
+        hasGaugeData: parsed.components.some(c => c.gauge)
+      });
+    } catch (parseError) {
+      warnings.push('BOM structure preview failed - proceeding with raw text ingestion');
     }
 
     // Step 5: Ingest BOM data
