@@ -44,6 +44,7 @@ export interface IngestionMetadata {
   sourceReference: string;
   sourceType: IngestionSourceType;
   revision?: string | null;
+  partNumber?: string; // V5.7.2: Filename-derived part number (canonical source)
   
   /** V5.3: Optional artifact URL and path (linked after PDF upload) */
   artifactUrl?: string | null;
@@ -250,6 +251,15 @@ export async function ingestBOMFromText(
     // Collect warnings from parser
     parseResult.warnings.forEach(warn => warnings.push(warn.message));
     
+    // V5.7.2: Step 1.5 - Canonicalize Part Number (prefer filename over parser)
+    const masterPartNumber = metadata.partNumber || rawData.masterPartNumber;
+    
+    console.log('🧠 V5.7.2 PART NUMBER RESOLUTION', {
+      filenamePartNumber: metadata.partNumber,
+      parserPartNumber: rawData.masterPartNumber,
+      finalPartNumber: masterPartNumber
+    });
+    
     // V5.2: Step 1.5 - Generate Ingestion Batch ID
     const ingestionBatchId = crypto.randomUUID();
     
@@ -265,14 +275,14 @@ export async function ingestBOMFromText(
     });
     
     // V5.2.5: Step 1.7 - Fetch Existing Active BOM to Check Revision
-    const existingActiveBOM = await getBOM(rawData.masterPartNumber);
+    const existingActiveBOM = await getBOM(masterPartNumber);
     const existingRevision = extractRevisionFromRecords(existingActiveBOM);
     
     // V5.2.5: Step 1.8 - Determine Revision Action (TRUTH-BASED)
     const revisionDecision = determineRevisionAction(incomingRevision, existingRevision);
     
     console.log(`🧠 V5.2.5 REVISION DECISION`, {
-      partNumber: rawData.masterPartNumber,
+      partNumber: masterPartNumber,
       incomingRevision: incomingRevision.revision,
       incomingOrder: incomingRevision.order,
       existingRevision: existingRevision?.revision || 'none',
@@ -291,7 +301,7 @@ export async function ingestBOMFromText(
       const { data: deactivatedRecords, error: deactivateError } = await supabase
         .from('bom_records')
         .update({ is_active: false })
-        .eq('parent_part_number', rawData.masterPartNumber)
+        .eq('parent_part_number', masterPartNumber)
         .eq('is_active', true)
         .select('id');
       
@@ -305,7 +315,7 @@ export async function ingestBOMFromText(
       shouldActivate = true;
       
       console.log(`🛡 V5.2.5 ACTIVE BOM CONTROL`, {
-        partNumber: rawData.masterPartNumber,
+        partNumber: masterPartNumber,
         newBatchId: ingestionBatchId,
         action: revisionDecision.action,
         previousActiveDeactivated: true,
@@ -318,7 +328,7 @@ export async function ingestBOMFromText(
       warnings.push(`Incoming revision (${incomingRevision.revision}) is older than existing (${existingRevision?.revision}). Storing as archived version (inactive).`);
       
       console.log(`🛡 V5.2.5 ACTIVE BOM CONTROL`, {
-        partNumber: rawData.masterPartNumber,
+        partNumber: masterPartNumber,
         newBatchId: ingestionBatchId,
         action: 'ARCHIVE',
         previousActivePreserved: true,
@@ -347,7 +357,7 @@ export async function ingestBOMFromText(
         const normalized = normalizeComponent(
           component,
           operation,
-          rawData.masterPartNumber,
+          masterPartNumber,
           metadata,
           ingestionBatchId, // V5.2: Pass batch ID
           incomingRevision, // V5.2.5: Pass normalized revision
@@ -366,14 +376,14 @@ export async function ingestBOMFromText(
     }
     
     // Step 3: Store
-    await storeBOM(rawData.masterPartNumber, normalizedRecords);
+    await storeBOM(masterPartNumber, normalizedRecords);
     
-    console.log(`🧠 [BOM Ingestion] Stored BOM for ${rawData.masterPartNumber}`);
+    console.log(`🧠 [BOM Ingestion] Stored BOM for ${masterPartNumber}`);
     
     // Step 4: Return result with canonical persisted values
     return {
       success: true,
-      masterPartNumber: rawData.masterPartNumber,
+      masterPartNumber: masterPartNumber,
       revision: incomingRevision.revision, // V5.7.1: Return normalized revision (canonical truth)
       recordsCreated: normalizedRecords.length,
       errors,

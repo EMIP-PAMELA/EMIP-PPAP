@@ -288,6 +288,7 @@ export async function uploadAndIngestBOM(
       sourceReference,
       sourceType: 'engineering_master',
       revision,
+      partNumber, // V5.7.2: Pass filename-derived part number as canonical source
       artifactUrl: uploadResult.url,
       artifactPath: uploadResult.path
     };
