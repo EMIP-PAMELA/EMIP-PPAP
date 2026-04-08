@@ -166,29 +166,24 @@ function extractWires(records: BOMRecord[]): WireProjection[] {
 
   for (const record of records) {
     // Check if this is a wire component
-    if (!isWire(record.child_part_number, record.description)) {
-      // Also check metadata
-      if (!record.metadata?.isWire) {
-        continue;
-      }
+    if (!isWire(record.component_part_number, record.description)) {
+      continue; // Skip non-wire components
     }
 
-    // Extract wire properties
-    const gaugeInput = record.description || 
-                       (record.metadata?.gauge as string | undefined) || 
-                       record.child_part_number;
+    // V5.6.4: Extract wire properties from new schema fields
+    const gaugeInput = record.gauge || record.description || record.component_part_number;
     const gauge = normalizeWireGauge(gaugeInput);
 
-    const colorInput = record.description || record.child_part_number;
+    const colorInput = record.color || record.description || record.component_part_number;
     const color = normalizeWireColor(colorInput);
 
-    // Get length (prioritize metadata, fallback to description parsing)
+    // Get length (use stored length or parse from description)
     let length = 0;
     let lengthUnit = 'ft';
 
-    if (record.length && record.metadata?.lengthUnit) {
-      // Use stored length from V5.0 wire detection
-      length = normalizeLengthToFeet(record.length, record.metadata.lengthUnit as string);
+    if (record.length) {
+      // V5.6.4: Use stored length directly (already in feet)
+      length = record.length;
       lengthUnit = 'ft';
     } else if (record.description) {
       // Parse from description
@@ -200,7 +195,7 @@ function extractWires(records: BOMRecord[]): WireProjection[] {
     }
 
     wires.push({
-      partNumber: record.child_part_number,
+      partNumber: record.component_part_number,
       gauge,
       color,
       length,
@@ -228,11 +223,11 @@ function extractConnectors(records: BOMRecord[]): ConnectorProjection[] {
 
   for (const record of records) {
     // Check if this is a connector component
-    if (!isConnector(record.child_part_number, record.description)) {
+    if (!isConnector(record.component_part_number, record.description)) {
       continue;
     }
 
-    const partNumber = record.child_part_number;
+    const partNumber = record.component_part_number;
 
     // Group by part number
     if (connectorMap.has(partNumber)) {

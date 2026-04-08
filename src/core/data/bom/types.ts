@@ -30,8 +30,8 @@ export interface BOMRecord {
   /** Parent part number (assembly) */
   parent_part_number: string;
   
-  /** Child part number (component) */
-  child_part_number: string;
+  /** V5.6.4: Component part number (renamed from child_part_number to match live DB) */
+  component_part_number: string;
   
   /** Quantity required */
   quantity: number;
@@ -45,35 +45,16 @@ export interface BOMRecord {
   /** Length for wire/cable (optional) */
   length?: number | null;
   
-  /** ACI code if applicable */
-  aci_code?: string | null;
+  /** V5.6.4: Wire gauge (e.g., "18", "20", "22") */
+  gauge?: string | null;
+  
+  /** V5.6.4: Wire color (e.g., "RED", "BLACK", "WHITE") */
+  color?: string | null;
   
   /** Operation/step number where component is used */
   operation_step?: string | null;
   
-  /** Resource ID (work center, machine, etc.) */
-  resource_id?: string | null;
-  
-  /** Extended metadata (process notes, special instructions, etc.) */
-  metadata?: Record<string, unknown>;
-  
-  // ============================================================
-  // TRACEABILITY FIELDS (V5.0 Requirement)
-  // ============================================================
-  
-  /** Source reference (file name, system ID, etc.) */
-  source_reference: string;
-  
-  /** Source type (visual_export, engineering_master, manual_entry, etc.) */
-  source_type: 'visual_export' | 'engineering_master' | 'manual_entry' | 'system_import';
-  
-  /** Ingestion timestamp */
-  ingestion_timestamp: string;
-  
-  /** Parser version used for extraction */
-  parser_version?: string;
-  
-  /** Revision number if available from source */
+  /** V5.6.4: Revision number if available from source */
   revision?: string | null;
   
   // ============================================================

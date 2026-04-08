@@ -176,8 +176,8 @@ export async function getFlattenedBOM(
       allComponents.push(child);
       
       // Recursively explode subassemblies
-      if (child.child_part_number) {
-        await explode(child.child_part_number, level + 1);
+      if (child.component_part_number) {
+        await explode(child.component_part_number, level + 1);
       }
     }
     
@@ -217,22 +217,21 @@ export async function getWireLines(partNumber: string): Promise<WireBOM> {
   const allRecords = await getBOM(partNumber);
   
   // Filter for wire components
-  // V5.1: Uses metadata.isWire flag + description-based fallback
-  // Future: Will use advanced wire detection service
+  // V5.6.4: Wire detection using gauge field and description
   const wires = allRecords.filter(record => {
-    // Check metadata flag first (set during ingestion)
-    if (record.metadata && typeof record.metadata === 'object' && 'isWire' in record.metadata) {
-      return record.metadata.isWire === true;
+    // Check if gauge field is populated (indicates wire)
+    if (record.gauge) {
+      return true;
     }
     
     // Fallback to description-based detection
     const desc = (record.description || '').toLowerCase();
-    const childPN = (record.child_part_number || '').toLowerCase();
+    const componentPN = (record.component_part_number || '').toLowerCase();
     return desc.includes('wire') || 
            desc.includes('cable') || 
            desc.includes('awg') || 
            desc.includes('gauge') ||
-           childPN.includes('wire');
+           componentPN.includes('wire');
   });
   
   // Calculate total wire length
@@ -310,13 +309,13 @@ export async function getBOMHistory(partNumber: string): Promise<{
       batchId,
       isActive: firstRecord.is_active || false,
       versionNumber: firstRecord.version_number || null,
-      ingestionTimestamp: firstRecord.ingestion_timestamp,
+      ingestionTimestamp: firstRecord.created_at || new Date().toISOString(), // V5.6.4: Use created_at
       recordCount: records.length,
       records
     };
   });
   
-  // Sort by ingestion timestamp (most recent first)
+  // Sort by creation timestamp (most recent first)
   versions.sort((a, b) => 
     new Date(b.ingestionTimestamp).getTime() - new Date(a.ingestionTimestamp).getTime()
   );
@@ -391,20 +390,18 @@ export async function storeBOM(partNumber: string, records: BOMRecord[]): Promis
     });
   }
   
-  // Validate required fields before insert
+  // V5.6.4: Validate required fields before insert
   const validRecords = records.filter(record => {
     const isValid = 
       record.parent_part_number &&
-      record.child_part_number &&
-      typeof record.quantity === 'number' &&
-      record.source_reference &&
-      record.ingestion_timestamp;
+      record.component_part_number && // V5.6.4: Updated field name
+      typeof record.quantity === 'number';
     
     if (!isValid) {
       console.error('🧠 [BOM Service] Invalid record detected:', {
         parent: record.parent_part_number,
-        child: record.child_part_number,
-        source: record.source_reference
+        component: record.component_part_number,
+        quantity: record.quantity
       });
     }
     
@@ -415,28 +412,23 @@ export async function storeBOM(partNumber: string, records: BOMRecord[]): Promis
     console.warn(`🧠 [BOM Service] Filtered out ${records.length - validRecords.length} invalid records`);
   }
   
-  // V5.6.2: Clean records to match exact schema
+  // V5.6.4: Clean records to match LIVE database schema
   const cleanedRecords = validRecords.map(record => {
     // Remove any undefined fields and ensure proper types
     const cleaned: any = {
       parent_part_number: record.parent_part_number,
-      child_part_number: record.child_part_number,
+      component_part_number: record.component_part_number, // V5.6.4: Renamed from child_part_number
       quantity: Number(record.quantity),
       unit: record.unit || null,
       description: record.description || null,
       length: record.length ? Number(record.length) : null,
-      aci_code: record.aci_code || null,
+      gauge: record.gauge || null, // V5.6.4: Wire gauge
+      color: record.color || null, // V5.6.4: Wire color
       operation_step: record.operation_step || null,
-      resource_id: record.resource_id || null,
-      metadata: record.metadata || null,
-      source_reference: record.source_reference,
-      source_type: record.source_type,
-      ingestion_timestamp: record.ingestion_timestamp,
-      parser_version: record.parser_version || null,
       revision: record.revision || null,
+      revision_order: record.revision_order ?? 0,
       is_active: record.is_active ?? true,
       ingestion_batch_id: record.ingestion_batch_id || null,
-      revision_order: record.revision_order ?? 0,
       artifact_url: record.artifact_url || null,
       artifact_path: record.artifact_path || null,
       created_at: record.created_at || new Date().toISOString(),
@@ -585,18 +577,14 @@ export async function parseAndStoreBOM(
       
       records.push({
         parent_part_number: rawData.masterPartNumber,
-        child_part_number: component.detectedPartId,
+        component_part_number: component.detectedPartId,
         quantity: component.detectedQty || 1,
         unit: component.detectedUom,
         description: null, // Can be enriched in future
-        aci_code: component.detectedAci,
         operation_step: operation.step,
-        resource_id: operation.resourceId,
-        metadata,
-        source_reference: sourceReference,
-        source_type: 'visual_export',
-        ingestion_timestamp: new Date().toISOString(),
-        parser_version: PARSER_VERSION,
+        gauge: null, // V5.6.4: Wire gauge (not extracted in legacy function)
+        color: null, // V5.6.4: Wire color (not extracted in legacy function)
+        revision: null, // V5.6.4: Revision (not provided in legacy function)
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });

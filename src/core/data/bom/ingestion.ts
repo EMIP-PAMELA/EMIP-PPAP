@@ -148,41 +148,29 @@ function normalizeComponent(
 ): BOMRecord {
   const wireDetection = detectWire(component);
   
+  // V5.6.4: Align with LIVE database schema
   const record: BOMRecord = {
     parent_part_number: masterPartNumber,
-    child_part_number: component.detectedPartId,
+    component_part_number: component.detectedPartId, // V5.6.4: Renamed from child_part_number
     quantity: component.detectedQty || 1,
     unit: component.detectedUom,
     description: null, // V5.0: Description extraction in V5.1
-    aci_code: component.detectedAci,
-    operation_step: operation.step,
-    resource_id: operation.resourceId,
     
-    // Wire-specific fields
+    // V5.6.4: Wire-specific fields promoted to top level
     length: wireDetection.isWire ? wireDetection.length : null,
+    gauge: wireDetection.gauge || null, // V5.6.4: Required by live schema
+    color: null, // V5.6.4: Required by live schema (not yet extracted)
     
-    // Metadata
-    metadata: {
-      rawLine: component.rawLine,
-      candidateIds: component.candidateIds,
-      isWire: wireDetection.isWire,
-      gauge: wireDetection.gauge,
-      lengthUnit: wireDetection.lengthUnit,
-    },
+    // V5.6.4: operation_step as string (DB will handle conversion)
+    operation_step: operation.step,
     
-    // Traceability
-    source_reference: metadata.sourceReference,
-    source_type: metadata.sourceType,
-    ingestion_timestamp: new Date().toISOString(),
-    parser_version: PARSER_VERSION,
-    revision: normalizedRevision.revision, // V5.2.5: Normalized revision
+    // V5.2.5: Revision Intelligence
+    revision: normalizedRevision.revision,
+    revision_order: normalizedRevision.order,
     
     // V5.2: Version Control
     ingestion_batch_id: ingestionBatchId,
-    is_active: isActive, // V5.2.5: Determined by revision logic
-    
-    // V5.2.5: Revision Intelligence
-    revision_order: normalizedRevision.order,
+    is_active: isActive,
     
     // V5.3: Artifact Storage
     artifact_url: metadata.artifactUrl || null,
