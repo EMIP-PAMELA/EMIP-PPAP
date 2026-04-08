@@ -400,9 +400,15 @@ export function parseBOMText(text: string): RawBOMData {
   
   console.log(`🧠 [EMIP Core Parser V${PARSER_VERSION}] Starting parse of ${lines.length} lines...`);
   
+  // V5.8.2: Track parsing statistics
+  let totalLinesProcessed = 0;
+  let linesSkipped = 0;
+  let componentsParsed = 0;
+  
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmedLine = line.trim();
+    totalLinesProcessed++;
     
     if (trimmedLine.includes('--- PAGE') || trimmedLine.match(/^-{3,}\s*PAGE\s*\d+/i)) {
       if (currentPage > 0 && pageHasText) {
@@ -431,7 +437,10 @@ export function parseBOMText(text: string): RawBOMData {
       pageHasText = true;
     }
     
-    if (!trimmedLine) continue;
+    if (!trimmedLine) {
+      linesSkipped++;
+      continue;
+    }
     
     if (isOperationLine(line)) {
       const stepInfo = detectStep(line);
@@ -457,12 +466,24 @@ export function parseBOMText(text: string): RawBOMData {
     }
     
     const dashCount = countLeadingDashes(line);
+    
+    // V5.8.2: Trace all lines with dashes
     if (dashCount >= 2) {
       if (currentOperation) {
         currentOperation.rawLines.push(line);
       }
       
-      if (dashCount >= 4) {
+      // V5.8.2: Log why lines are skipped
+      if (dashCount < 4) {
+        console.log(`🧠 V5.8.2 PARSE TRACE [Line ${i + 1}]`, {
+          line: line.substring(0, 80),
+          dashCount,
+          parsed: false,
+          reason: `Insufficient dashes (need >=4, got ${dashCount})`
+        });
+        linesSkipped++;
+      } else {
+        // dashCount >= 4: Attempt to parse as component
         try {
           const partInfo = parsePartLine(line);
           const candidateIds = extractAllPartIds(line);
@@ -483,16 +504,50 @@ export function parseBOMText(text: string): RawBOMData {
           
           if (currentOperation) {
             currentOperation.components.push(component);
+            componentsParsed++;
+            console.log(`🧠 V5.8.2 PARSE TRACE [Line ${i + 1}]`, {
+              line: line.substring(0, 80),
+              dashCount,
+              parsed: true,
+              partId,
+              operation: currentOperation.step
+            });
+          } else {
+            console.log(`🧠 V5.8.2 PARSE TRACE [Line ${i + 1}]`, {
+              line: line.substring(0, 80),
+              dashCount,
+              parsed: false,
+              reason: 'No active operation context'
+            });
+            linesSkipped++;
           }
           pageComponentCount++;
           console.log(`🧠 [EMIP Core Parser] Component: ${partId} | ACI: ${aciCode || "N/A"}`);
         } catch (e) {
           console.warn(`🧠 [EMIP Core Parser] Error parsing line ${i + 1}, continuing...`, e);
+          console.log(`🧠 V5.8.2 PARSE TRACE [Line ${i + 1}]`, {
+            line: line.substring(0, 80),
+            dashCount,
+            parsed: false,
+            reason: `Parse error: ${e instanceof Error ? e.message : 'unknown'}`
+          });
+          linesSkipped++;
           if (currentOperation) {
             currentOperation.rawLines.push(line);
           }
         }
       }
+    } else if (trimmedLine && !trimmedLine.includes('PAGE')) {
+      // V5.8.2: Log non-dash lines that might be components
+      if (trimmedLine.match(/\d{2,}[-\d]+/) || trimmedLine.match(/[A-Z]\d{5,}/)) {
+        console.log(`🧠 V5.8.2 PARSE TRACE [Line ${i + 1}]`, {
+          line: line.substring(0, 80),
+          dashCount,
+          parsed: false,
+          reason: 'Potential component but no leading dashes'
+        });
+      }
+      linesSkipped++;
     }
   }
   
@@ -525,6 +580,16 @@ export function parseBOMText(text: string): RawBOMData {
   if (revision_raw) {
     console.log(`🧠 [EMIP Core Parser V5.2.5] Extracted revision: ${revision_raw}`);
   }
+  
+  // V5.8.2: Summary statistics
+  console.log(`🧠 V5.8.2 PARSE SUMMARY`, {
+    totalLines: totalLinesProcessed,
+    linesSkipped,
+    componentsParsed,
+    operations: operations.length,
+    totalComponents,
+    parseRate: `${((componentsParsed / totalLinesProcessed) * 100).toFixed(2)}%`
+  });
   
   console.log(`🧠 [EMIP Core Parser] Complete: ${masterPN} - ${operations.length} operations, ${totalComponents} components`);
   
