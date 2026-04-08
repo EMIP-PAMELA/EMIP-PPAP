@@ -70,6 +70,67 @@ function normalizeColorLabel(rawColor: string | null | undefined): string {
 }
 
 /**
+ * V6.2: Normalized component with computed fields
+ */
+interface NormalizedComponent {
+  component_part_number: string;
+  description: string | null;
+  length: number;
+  quantity: number;
+  qtyPer: number;
+  gauge: string | null;
+  color: string | null;
+  colorNormalized: string;
+  isWire: boolean;
+  effectiveLength: number;
+  operation_step: string | null;
+}
+
+/**
+ * V6.2: True wire detection based on description and part number
+ * 
+ * A component is a wire if:
+ * - Description contains "WIRE", OR
+ * - Part number starts with "W"
+ */
+function isWireComponent(record: BOMRecord): boolean {
+  const desc = (record.description || '').toUpperCase();
+  const part = (record.component_part_number || '').toUpperCase();
+
+  return desc.includes('WIRE') || part.startsWith('W');
+}
+
+/**
+ * V6.2: Normalize component with computed fields
+ * 
+ * Adds:
+ * - colorNormalized: Standardized color label
+ * - isWire: True wire detection
+ * - qtyPer: Quantity per assembly (default 1)
+ * - effectiveLength: length * qtyPer (true material usage)
+ */
+function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent {
+  const length = Number(record.length) || 0;
+  const quantity = Number(record.quantity) || 0;
+  // V6.2: qty_per may not exist in all records, default to 1
+  const qtyPer = Number((record as any).qty_per) || 1;
+  
+  return {
+    component_part_number: record.component_part_number || '',
+    description: record.description || null,
+    length,
+    quantity,
+    qtyPer,
+    gauge: record.gauge || null,
+    color: record.color || null,
+    colorNormalized: normalizeColorLabel(record.color),
+    isWire: isWireComponent(record),
+    effectiveLength: length * qtyPer,
+    operation_step: record.operation_step || null
+  };
+}
+
+/**
  * V6.1: SKU Insights - Derived engineering intelligence from BOM data
  */
 export interface SKUInsights {
@@ -85,117 +146,109 @@ export interface SKUInsights {
 }
 
 /**
- * V6.1: Compute SKU-level intelligence from BOM records
+ * V6.2: Compute SKU-level intelligence from BOM records
  * 
- * Derives engineering-relevant metrics without modifying underlying data.
- * Provides actionable insights into material usage, wire characteristics,
- * and revision-level impact.
+ * MATERIAL-BASED ANALYTICS:
+ * - True wire detection (description + part number)
+ * - Qty Per support for accurate material usage
+ * - Length-weighted distributions (not count-based)
+ * - Accurate copper weight estimation
  * 
  * @param records BOM records for a single SKU
  * @returns Computed insights and metrics
  */
 export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
-  // Initialize metrics
-  let totalComponents = 0;
-  let totalQuantity = 0;
-  let wireCount = 0;
-  let totalWireLength = 0;
+  // V6.2: STEP 1 - Normalize all components with computed fields
+  const normalized = records.map(normalizeComponentForAnalytics);
   
-  const gaugeBreakdown: Record<string, number> = {};
+  // V6.2: STEP 2 - Filter to wire records only
+  const wireRecords = normalized.filter(r => r.isWire && r.length > 0);
+  
+  // V6.2: STEP 3 - Initialize metrics
+  const totalComponents = normalized.length;
+  const totalQuantity = normalized.reduce((sum, r) => sum + r.quantity, 0);
+  const wireCount = wireRecords.length;
+  
+  // V6.2: STEP 4 - Material-based wire length calculation
+  const totalWireLength = wireRecords.reduce(
+    (sum, r) => sum + r.effectiveLength,
+    0
+  );
+  
+  const avgWireLength = wireCount > 0 ? totalWireLength / wireCount : 0;
+  
+  // V6.2: STEP 5 - Length-weighted color distribution
   const colorBreakdown: Record<string, number> = {};
-  const operationStepDistribution: Record<string, number> = {};
+  wireRecords.forEach(r => {
+    const color = r.colorNormalized || 'UNKNOWN';
+    colorBreakdown[color] = (colorBreakdown[color] || 0) + r.effectiveLength;
+  });
   
-  // V6.1: Copper weight estimation factors (lbs per inch for common gauges)
-  const gaugeToWeightFactor: Record<string, number> = {
-    '18': 0.006385,
-    '20': 0.004016,
-    '22': 0.002525,
-    '24': 0.001588,
-    '26': 0.001,
-    '28': 0.00063
+  // V6.2: STEP 6 - Length-weighted gauge distribution
+  const gaugeBreakdown: Record<string, number> = {};
+  wireRecords.forEach(r => {
+    const gauge = r.gauge || 'UNKNOWN';
+    gaugeBreakdown[gauge] = (gaugeBreakdown[gauge] || 0) + r.effectiveLength;
+  });
+  
+  // V6.2: STEP 7 - Real copper weight calculation
+  // Updated weight factors (lbs per inch for common gauges)
+  const COPPER_WEIGHT_PER_INCH: Record<string, number> = {
+    '10': 0.00032,
+    '12': 0.00020,
+    '14': 0.00013,
+    '16': 0.00008,
+    '18': 0.000051,
+    '20': 0.000032,
+    '22': 0.000020,
+    '24': 0.000013,
+    '26': 0.000008,
+    '28': 0.000005
   };
   
   let estimatedCopperWeight = 0;
-  
-  // V6.1.1: Track true wire records for validation logging
-  const trueWireRecords: BOMRecord[] = [];
-  
-  // Process each record
-  for (const record of records) {
-    totalComponents++;
-    totalQuantity += record.quantity || 0;
-    
-    // V6.1.1: STRICT WIRE CLASSIFICATION
-    // A record is a TRUE WIRE only if:
-    // 1. It has a numeric length value
-    // 2. AND component_part_number starts with "W"
-    // This prevents terminals/crimps with gauge from being counted as wires
-    const hasLength = record.length !== null && 
-                     record.length !== undefined && 
-                     !Number.isNaN(Number(record.length));
-    
-    const isWirePart = typeof record.component_part_number === 'string' && 
-                      record.component_part_number.trim().toUpperCase().startsWith('W');
-    
-    const isTrueWire = hasLength && isWirePart;
-    
-    if (isTrueWire) {
-      wireCount++;
-      trueWireRecords.push(record);
-      
-      // V6.1.1: Wire length calculation (only for true wires)
-      // Type assertion safe: hasLength already validated length is not null/undefined
-      const wireLength = record.length! * (record.quantity || 1);
-      totalWireLength += wireLength;
-      
-      // Copper weight estimation (only for true wires)
-      if (record.gauge && gaugeToWeightFactor[record.gauge]) {
-        estimatedCopperWeight += wireLength * gaugeToWeightFactor[record.gauge];
-      }
-      
-      // V6.1.1: Gauge distribution (true wires only)
-      if (record.gauge) {
-        gaugeBreakdown[record.gauge] = (gaugeBreakdown[record.gauge] || 0) + 1;
-      }
-      
-      // V6.1.1: Color distribution with normalization (true wires only)
-      if (record.color) {
-        const normalizedColor = normalizeColorLabel(record.color);
-        colorBreakdown[normalizedColor] = (colorBreakdown[normalizedColor] || 0) + 1;
-      }
+  wireRecords.forEach(r => {
+    const factor = COPPER_WEIGHT_PER_INCH[r.gauge || ''];
+    if (factor) {
+      estimatedCopperWeight += r.effectiveLength * factor;
     }
-    
-    // Operation step distribution (all components)
-    if (record.operation_step) {
-      operationStepDistribution[record.operation_step] = 
-        (operationStepDistribution[record.operation_step] || 0) + 1;
+  });
+  
+  // V6.2: STEP 8 - Operation step distribution (count-based, this is correct)
+  const operationStepDistribution: Record<string, number> = {};
+  normalized.forEach(r => {
+    if (r.operation_step) {
+      operationStepDistribution[r.operation_step] = 
+        (operationStepDistribution[r.operation_step] || 0) + 1;
     }
-  }
+  });
   
-  // V6.1.1: Calculate average wire length from TRUE wire count
-  // Division by zero protection
-  const avgWireLength = wireCount > 0 ? totalWireLength / wireCount : 0;
-  
-  // V6.1.1: Validation logging for engineering accuracy
-  console.log('🧠 V6.1.1 SKU INTELLIGENCE VALIDATION', {
+  // V6.2: STEP 9 - Validation logging
+  console.log('🧠 V6.2 MATERIAL INTELLIGENCE', {
     totalComponents,
     wireCount,
     totalWireLength: Number(totalWireLength.toFixed(2)),
     avgWireLength: Number(avgWireLength.toFixed(2)),
-    gaugeBreakdown,
-    colorBreakdown,
-    estimatedCopperWeight: Number(estimatedCopperWeight.toFixed(4))
+    copperWeight: Number(estimatedCopperWeight.toFixed(4)),
+    colorDistribution: Object.fromEntries(
+      Object.entries(colorBreakdown).map(([k, v]) => [k, Number(v.toFixed(2))])
+    ),
+    gaugeDistribution: Object.fromEntries(
+      Object.entries(gaugeBreakdown).map(([k, v]) => [k, Number(v.toFixed(2))])
+    )
   });
   
-  // V6.1.1: Debug logging for true wire records
-  if (trueWireRecords.length > 0) {
-    console.log('🧠 V6.1.1 TRUE WIRE RECORDS', trueWireRecords.map(r => ({
+  // V6.2: Debug logging for wire records
+  if (wireRecords.length > 0) {
+    console.log('🧠 V6.2 WIRE RECORDS', wireRecords.slice(0, 5).map(r => ({
       part: r.component_part_number,
+      description: r.description,
       length: r.length,
-      quantity: r.quantity,
+      qtyPer: r.qtyPer,
+      effectiveLength: Number(r.effectiveLength.toFixed(2)),
       gauge: r.gauge,
       color: r.color,
-      normalizedColor: normalizeColorLabel(r.color)
+      colorNormalized: r.colorNormalized
     })));
   }
   
