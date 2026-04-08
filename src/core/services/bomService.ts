@@ -164,10 +164,20 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   // V6.2: STEP 2 - Filter to wire records only
   const wireRecords = normalized.filter(r => r.isWire && r.length > 0);
   
+  // V6.2.1: Calculate physical wire count (sum of qtyPer)
+  const physicalWireCount = wireRecords.reduce(
+    (sum, r) => sum + r.qtyPer,
+    0
+  );
+  
+  const componentWireCount = wireRecords.length;
+  
   // V6.2: STEP 3 - Initialize metrics
   const totalComponents = normalized.length;
   const totalQuantity = normalized.reduce((sum, r) => sum + r.quantity, 0);
-  const wireCount = wireRecords.length;
+  
+  // V6.2.1: Use physical wire count (backward compatible via wireCount variable)
+  const wireCount = physicalWireCount;
   
   // V6.2: STEP 4 - Material-based wire length calculation
   const totalWireLength = wireRecords.reduce(
@@ -175,7 +185,8 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     0
   );
   
-  const avgWireLength = wireCount > 0 ? totalWireLength / wireCount : 0;
+  // V6.2.1: Fix average - use physical wire count, not component count
+  const avgWireLength = physicalWireCount > 0 ? totalWireLength / physicalWireCount : 0;
   
   // V6.2: STEP 5 - Length-weighted color distribution
   const colorBreakdown: Record<string, number> = {};
@@ -223,10 +234,10 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     }
   });
   
-  // V6.2: STEP 9 - Validation logging
-  console.log('🧠 V6.2 MATERIAL INTELLIGENCE', {
-    totalComponents,
-    wireCount,
+  // V6.2.1: STEP 9 - Validation logging with material correction
+  console.log('🧠 V6.2.1 MATERIAL CORRECTION', {
+    componentWireCount,
+    physicalWireCount,
     totalWireLength: Number(totalWireLength.toFixed(2)),
     avgWireLength: Number(avgWireLength.toFixed(2)),
     copperWeight: Number(estimatedCopperWeight.toFixed(4)),
