@@ -94,8 +94,9 @@ function extractRevision(text: string): string | null {
   
   // V5.7.5: STEP 1 - Find header line with part number
   for (const line of lines) {
-    // Header line contains part number pattern (NH or numeric format)
-    if (/NH\d{2}-\d{6}-\d{2}|\d{12}/.test(line)) {
+    // V5.7.5B: Header line contains part number pattern (NH or numeric format)
+    // Support 5-6 digit middle segment: NH45-42522-72 or NH45-425227-72
+    if (/NH\d{2}-\d{5,6}-\d{2}|\d{10,12}/.test(line)) {
       // V5.7.5A: STEP 2 - Log raw header line
       console.log("🧠 RAW HEADER LINE", line);
       console.log('🧠 V5.7.5 REVISION EXTRACTION - Header line found:', line);
