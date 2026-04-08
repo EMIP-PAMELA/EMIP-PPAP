@@ -80,8 +80,10 @@ export interface IngestionResult {
 /**
  * Detect if a component is a wire/cable
  * 
- * V5.0: Simple pattern matching
- * V5.1: Will use advanced wire detection service
+ * V5.9.1: Use parser-extracted wire metadata from V5.9 type-aware parsing
+ * 
+ * Parser now handles wire detection and metadata extraction.
+ * This function consolidates parser output for normalization.
  * 
  * @param component Raw component data
  * @returns Wire detection result with length/gauge if found
@@ -92,32 +94,59 @@ function detectWire(component: RawComponent): {
   length?: number;
   lengthUnit?: string;
 } {
-  const line = component.rawLine.toLowerCase();
-  
-  // Check for wire indicators
-  const isWire = line.includes('wire') || 
-                 line.includes('cable') || 
-                 line.includes('awg') || 
-                 line.includes('gauge');
+  // V5.9.1: Check if parser detected wire (W-prefix part number)
+  const partId = component.detectedPartId || '';
+  const isWire = /^W\d+/.test(partId);
   
   if (!isWire) {
-    return { isWire: false };
+    // Fallback: text-based detection for non-W-prefix wires
+    const line = component.rawLine.toLowerCase();
+    const hasWireKeyword = line.includes('wire') || 
+                           line.includes('cable') || 
+                           line.includes('awg') || 
+                           line.includes('gauge');
+    
+    if (!hasWireKeyword) {
+      return { isWire: false };
+    }
+    
+    // Extract gauge from text
+    const gaugeMatch = line.match(/(\d{1,2})\s*(?:awg|ga|gauge)/i);
+    const gauge = gaugeMatch ? gaugeMatch[1] : undefined;
+    
+    // Extract length from text
+    const lengthMatch = line.match(/(\d+(?:\.\d+)?)\s*(in|inch|inches|ft|feet|foot)/i);
+    const length = lengthMatch ? parseFloat(lengthMatch[1]) : undefined;
+    const lengthUnit = lengthMatch ? lengthMatch[2].toUpperCase() : undefined;
+    
+    return {
+      isWire: true,
+      gauge,
+      length,
+      lengthUnit
+    };
   }
   
-  // Extract gauge (e.g., "18 AWG", "22AWG", "18GA")
-  const gaugeMatch = line.match(/(\d{1,2})\s*(?:awg|ga|gauge)/i);
+  // V5.9.1: Extract gauge from W-prefix part number (e.g., W8BK1028 → gauge 8)
+  const gaugeMatch = partId.match(/^W(\d+)/);
   const gauge = gaugeMatch ? gaugeMatch[1] : undefined;
   
-  // Extract length (e.g., "12 IN", "24 INCH", "2 FT")
-  const lengthMatch = line.match(/(\d+(?:\.\d+)?)\s*(in|inch|inches|ft|feet|foot)/i);
+  // V5.9.1: Extract color from W-prefix part number (e.g., W8BK1028 → BK)
+  const colorMatch = partId.match(/^W\d+([A-Z]{2})/);
+  const colorCode = colorMatch ? colorMatch[1] : undefined;
+  
+  // V5.9.1: CRITICAL FIX - Use parser-extracted length from numeric value at line end
+  // Parser V5.9 already extracted this and stored it in detectedQty for wires
+  // For wires, the numeric value is LENGTH, not quantity
+  const line = component.rawLine;
+  const lengthMatch = line.match(/(\d+\.?\d*)\s*$/);
   const length = lengthMatch ? parseFloat(lengthMatch[1]) : undefined;
-  const lengthUnit = lengthMatch ? lengthMatch[2].toUpperCase() : undefined;
   
   return {
     isWire: true,
     gauge,
     length,
-    lengthUnit
+    lengthUnit: undefined // V5.9.1: Unit not yet extracted from line
   };
 }
 
@@ -150,6 +179,29 @@ function normalizeComponent(
 ): BOMRecord {
   const wireDetection = detectWire(component);
   
+  // V5.9.1: Extract color from wire part number
+  let wireColor: string | null = null;
+  if (wireDetection.isWire) {
+    const partId = component.detectedPartId || '';
+    const colorMatch = partId.match(/^W\d+([A-Z]{2})/);
+    if (colorMatch) {
+      const colorCode = colorMatch[1];
+      const colorMap: Record<string, string> = {
+        'BK': 'BLACK',
+        'RD': 'RED',
+        'BL': 'BLUE',
+        'YE': 'YELLOW',
+        'GN': 'GREEN',
+        'WH': 'WHITE',
+        'OR': 'ORANGE',
+        'BR': 'BROWN',
+        'GY': 'GRAY',
+        'VT': 'VIOLET'
+      };
+      wireColor = colorMap[colorCode] || colorCode;
+    }
+  }
+  
   // V5.6.4: Align with LIVE database schema
   const record: BOMRecord = {
     parent_part_number: masterPartNumber,
@@ -158,10 +210,10 @@ function normalizeComponent(
     unit: component.detectedUom,
     description: null, // V5.0: Description extraction in V5.1
     
-    // V5.6.4: Wire-specific fields promoted to top level
+    // V5.9.1: Wire-specific fields with parser-extracted values
     length: wireDetection.isWire ? wireDetection.length : null,
     gauge: wireDetection.gauge || null, // V5.6.4: Required by live schema
-    color: null, // V5.6.4: Required by live schema (not yet extracted)
+    color: wireColor, // V5.9.1: Extracted from wire part number
     
     // V5.6.4: operation_step as string (DB will handle conversion)
     operation_step: operation.step,

@@ -425,6 +425,11 @@ export async function storeBOM(partNumber: string, records: BOMRecord[]): Promis
   
   // V5.6.4: Clean records to match LIVE database schema
   const cleanedRecords = validRecords.map(record => {
+    // V5.9.1: Explicit length handling - preserve null vs 0 distinction
+    const lengthValue = record.length !== null && record.length !== undefined 
+      ? Number(record.length) 
+      : null;
+    
     // Remove any undefined fields and ensure proper types
     const cleaned: any = {
       parent_part_number: record.parent_part_number,
@@ -432,7 +437,7 @@ export async function storeBOM(partNumber: string, records: BOMRecord[]): Promis
       quantity: Number(record.quantity),
       unit: record.unit || null,
       description: record.description || null,
-      length: record.length ? Number(record.length) : null,
+      length: lengthValue, // V5.9.1: Explicit length handling
       gauge: record.gauge || null, // V5.6.4: Wire gauge
       color: record.color || null, // V5.6.4: Wire color
       operation_step: record.operation_step || null,
@@ -445,6 +450,17 @@ export async function storeBOM(partNumber: string, records: BOMRecord[]): Promis
       created_at: record.created_at || new Date().toISOString(),
       updated_at: record.updated_at || new Date().toISOString(),
     };
+    
+    // V5.9.1: Debug log wire records before insert
+    if (lengthValue !== null) {
+      console.log('🧪 V5.9.1 WIRE RECORD BEFORE INSERT', {
+        part: cleaned.component_part_number,
+        length: cleaned.length,
+        gauge: cleaned.gauge,
+        color: cleaned.color,
+        quantity: cleaned.quantity
+      });
+    }
     
     return cleaned;
   });
