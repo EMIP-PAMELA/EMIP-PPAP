@@ -112,38 +112,40 @@ export async function getAllActiveBOMs(): Promise<Array<{
 /**
  * Get BOM for a specific part number
  * 
- * V5.2: Returns ONLY active BOM version
- * 
  * Returns all child components for the given parent part (active version only).
  * 
  * @param partNumber Parent part number
  * @returns Array of BOM records (active version)
  */
 export async function getBOM(partNumber: string): Promise<BOMRecord[]> {
-  console.log('🧠 V5.2 BOM DATABASE ACCESS', {
-    partNumber,
-    source: 'Supabase',
-    operation: 'getBOM (active only)',
-    timestamp: new Date().toISOString(),
-  });
+  console.log(`🧠 [BOM Service] Fetching BOM for ${partNumber}`);
   
   const { data, error } = await supabase
     .from('bom_records')
     .select('*')
     .eq('parent_part_number', partNumber)
-    .eq('is_active', true) // V5.2: Filter for active version only
-    .order('operation_step', { ascending: true });
+    .eq('is_active', true);
   
   if (error) {
     console.error('🧠 [BOM Service] Database error:', error);
-    throw new Error(`Failed to retrieve BOM for ${partNumber}: ${error.message}`);
+    throw new Error(`Failed to retrieve BOM: ${error.message}`);
   }
   
-  const records = data || [];
+  console.log(`🧠 [BOM Service] Retrieved ${data?.length || 0} records for ${partNumber}`);
   
-  console.log(`🧠 [BOM Service] Retrieved ${records.length} active records for ${partNumber}`);
-  
-  return records as BOMRecord[];
+  return (data || []) as BOMRecord[];
+}
+
+/**
+ * V5.8: Get BOM by part number for detail view
+ * 
+ * Alias for getBOM - returns active BOM records for a specific part number
+ * 
+ * @param partNumber Parent part number
+ * @returns Array of BOM records
+ */
+export async function getBOMByPartNumber(partNumber: string): Promise<BOMRecord[]> {
+  return getBOM(partNumber);
 }
 
 /**

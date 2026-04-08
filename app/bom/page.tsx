@@ -140,9 +140,12 @@ export default function BOMPage() {
                 {boms.map((bom) => (
                   <tr key={bom.partNumber} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-blue-600">
+                      <Link 
+                        href={`/bom/${encodeURIComponent(bom.partNumber)}`}
+                        className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                      >
                         {bom.partNumber}
-                      </div>
+                      </Link>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="px-2 py-1 bg-gray-100 rounded text-sm font-medium">
