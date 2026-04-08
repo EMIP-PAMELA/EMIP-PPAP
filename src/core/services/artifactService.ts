@@ -73,43 +73,16 @@ export async function uploadEngineeringMaster(
   });
 
   try {
-    // V5.5.1A: Verify bucket exists
-    const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
-    
-    if (bucketError) {
-      console.error('🚫 V5.5.1A [Artifact Service] Cannot verify storage bucket:', bucketError);
-      return {
-        success: false,
-        url: null,
-        path: null,
-        partNumber: metadata.partNumber,
-        revision: metadata.revision,
-        ingestion_batch_id: metadata.ingestion_batch_id,
-        error: `Storage system error: ${bucketError.message}. Please contact system administrator.`
-      };
-    }
-    
-    const bucketExists = buckets?.some(b => b.id === STORAGE_BUCKET);
-    if (!bucketExists) {
-      console.error('🚫 V5.5.1A [Artifact Service] Storage bucket missing:', STORAGE_BUCKET);
-      return {
-        success: false,
-        url: null,
-        path: null,
-        partNumber: metadata.partNumber,
-        revision: metadata.revision,
-        ingestion_batch_id: metadata.ingestion_batch_id,
-        error: `Storage bucket '${STORAGE_BUCKET}' not found. Please run database migrations to initialize storage.`
-      };
-    }
-    
-    console.log('📦 V5.5.1A STORAGE CHECK', {
-      bucket: STORAGE_BUCKET,
-      status: 'verified'
-    });
-
     // Generate storage path
     const storagePath = generateStoragePath(metadata);
+    
+    // V5.5.1B: Use upload attempt as source of truth for bucket availability
+    console.log('� V5.5.1B STORAGE UPLOAD ATTEMPT', {
+      bucket: STORAGE_BUCKET,
+      path: storagePath,
+      partNumber: metadata.partNumber,
+      revision: metadata.revision
+    });
     
     // Upload to Supabase Storage
     const { data, error } = await supabase.storage
@@ -120,7 +93,21 @@ export async function uploadEngineeringMaster(
       });
 
     if (error) {
-      console.error('🧠 [Artifact Service] Upload failed:', error);
+      console.error('🚫 V5.5.1B STORAGE FAILURE', {
+        error: error.message,
+        path: storagePath,
+        bucket: STORAGE_BUCKET
+      });
+      
+      // Provide specific error messages based on error type
+      let errorMessage = `Artifact upload failed: ${error.message}`;
+      
+      if (error.message.includes('Bucket not found') || error.message.includes('bucket')) {
+        errorMessage = `Storage bucket '${STORAGE_BUCKET}' not found. Please run database migrations to initialize storage.`;
+      } else if (error.message.includes('permission') || error.message.includes('policy')) {
+        errorMessage = `Storage permission error: ${error.message}. Please contact system administrator.`;
+      }
+      
       return {
         success: false,
         url: null,
@@ -128,9 +115,15 @@ export async function uploadEngineeringMaster(
         partNumber: metadata.partNumber,
         revision: metadata.revision,
         ingestion_batch_id: metadata.ingestion_batch_id,
-        error: error.message
+        error: errorMessage
       };
     }
+    
+    console.log('✅ V5.5.1B STORAGE SUCCESS', {
+      path: storagePath,
+      partNumber: metadata.partNumber,
+      revision: metadata.revision
+    });
 
     // Get public URL
     const { data: urlData } = supabase.storage
