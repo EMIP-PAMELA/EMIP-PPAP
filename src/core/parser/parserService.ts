@@ -72,13 +72,14 @@ function extractMasterPN(text: string): string {
 /**
  * Extract revision from BOM header
  * 
- * V5.7.3: Canonical revision extraction from header end
+ * V5.7.5: Last-token strategy for revision extraction
  * 
  * CableQuest BOM format:
  * - Leading "M" is NOT the revision
- * - Revision is at END of header line
- * - Formats: "( 01", "(01", "01"
+ * - Revision is the LAST valid 2-digit token on header line
+ * - Formats: "( 01", "(01)", "01"
  * - Always 2 digits
+ * - Must NOT be part of a decimal (e.g., "1.00")
  * 
  * @param text Raw BOM text
  * @returns Raw revision string or null if not found
@@ -88,33 +89,48 @@ function extractRevision(text: string): string | null {
   const header = text.substring(0, 500);
   const lines = header.split(/\r?\n/).slice(0, 10);
   
-  // V5.7.3: STEP 1 - Find header line with part number
+  // V5.7.5: STEP 1 - Find header line with part number
   for (const line of lines) {
     // Header line contains part number pattern (NH or numeric format)
     if (/NH\d{2}-\d{6}-\d{2}|\d{12}/.test(line)) {
-      console.log('🧠 V5.7.3 REVISION EXTRACTION - Header line found:', line);
+      console.log('🧠 V5.7.5 REVISION EXTRACTION - Header line found:', line);
       
-      // V5.7.3: STEP 2 - Extract revision from END of line
-      // Match optional parenthesis + 2 digits at end, avoiding decimals
-      // Negative lookbehind to avoid matching "00" from "1.00"
-      const revisionMatch = line.match(/(?<!\d\.)\(?\s*(\d{2})\s*$/);
+      // V5.7.5: STEP 2 - Extract ALL 2-digit tokens from line
+      const allMatches = [...line.matchAll(/\b\d{2}\b/g)];
       
-      if (revisionMatch) {
-        const extractedRevision = revisionMatch[1];
-        
-        // V5.7.3: STEP 3 - Validate: ensure NOT part of decimal
-        if (/\d+\.\d{2}\s*$/.test(line)) {
-          console.log('🧠 V5.7.3 REVISION EXTRACTION - Skipping decimal match:', extractedRevision);
-          continue;
+      // V5.7.5: STEP 3 - Filter out tokens that are part of decimals
+      const validTokens = allMatches.filter(match => {
+        const index = match.index!;
+        // Check if preceded by decimal point (e.g., "1.00")
+        if (index > 0 && line[index - 1] === '.') {
+          return false;
         }
+        // Check if followed by decimal point (e.g., "00.5")
+        if (index + 2 < line.length && line[index + 2] === '.') {
+          return false;
+        }
+        return true;
+      });
+      
+      // V5.7.5: STEP 5 - Debug log all tokens
+      console.log('🧠 V5.7.5 REVISION TOKENS', {
+        allMatches: allMatches.map(m => m[0]),
+        validTokens: validTokens.map(m => m[0]),
+        line: line.substring(0, 100)
+      });
+      
+      // V5.7.5: STEP 4 - Select LAST valid token as revision
+      if (validTokens.length > 0) {
+        const revision = validTokens[validTokens.length - 1][0];
         
-        console.log('🧠 V5.7.3 REVISION EXTRACTION', {
+        console.log('🧠 V5.7.5 REVISION EXTRACTION', {
           headerLine: line.substring(0, 100),
-          extractedRevision: extractedRevision,
-          source: 'header_end'
+          extractedRevision: revision,
+          source: 'last_valid_token',
+          totalTokens: validTokens.length
         });
         
-        return extractedRevision;
+        return revision;
       }
     }
   }
