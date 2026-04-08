@@ -43,6 +43,8 @@ export interface BOMUploadResult {
 // V5.6: Import real PDF extraction
 import { extractTextFromPDF } from '../extraction/pdfExtractor';
 import { parseBOMText } from '../extraction/bomParser';
+// V6.0.1: Import core parser for part number extraction
+import { parseBOMWithValidation } from '@/src/core/parser/parserService';
 
 /**
  * Extract part number from filename
@@ -133,6 +135,50 @@ function extractRevisionFromFilename(fileName: string): string {
   return 'A'; // Default to Rev A
 }
 
+/**
+ * V6.0.1: Resolve part number from multiple trusted sources
+ * 
+ * Trust hierarchy:
+ * 1. User-provided manual input (if explicitly set)
+ * 2. Filename-derived part number (preferred for clean filenames)
+ * 3. BOM text/header-derived part number (fallback for messy filenames)
+ * 
+ * @param sources Part number sources
+ * @returns Resolved part number and source, or null if all sources fail
+ */
+function resolvePartNumber(sources: {
+  userInput?: string | null;
+  filename?: string | null;
+  parsedText?: string | null;
+}): { partNumber: string; source: 'user_input' | 'filename' | 'parsed_text' } | null {
+  // Source 1: User input (highest priority if explicitly provided)
+  if (sources.userInput && sources.userInput.trim().length > 0 && sources.userInput !== 'UNKNOWN') {
+    return {
+      partNumber: sources.userInput.trim(),
+      source: 'user_input'
+    };
+  }
+  
+  // Source 2: Filename (preferred for standard naming)
+  if (sources.filename && sources.filename.trim().length > 0 && sources.filename !== 'UNKNOWN') {
+    return {
+      partNumber: sources.filename.trim(),
+      source: 'filename'
+    };
+  }
+  
+  // Source 3: Parsed text (fallback for messy filenames)
+  if (sources.parsedText && sources.parsedText.trim().length > 0 && sources.parsedText !== 'UNKNOWN') {
+    return {
+      partNumber: sources.parsedText.trim(),
+      source: 'parsed_text'
+    };
+  }
+  
+  // All sources failed
+  return null;
+}
+
 // ============================================================
 // MAIN INGESTION PIPELINE
 // ============================================================
@@ -166,40 +212,102 @@ export async function uploadAndIngestBOM(
   const warnings: string[] = [];
 
   try {
-    // Step 1: Extract metadata from filename if not provided
-    const extractedPartNumber = extractPartNumberFromFilename(file.name);
-    const partNumber = metadata?.partNumber || extractedPartNumber;
-    const revision = metadata?.revision || extractRevisionFromFilename(file.name);
+    // V6.0.1: STEP 1 - Extract metadata from filename (but don't fail yet)
+    const filenamePartNumber = extractPartNumberFromFilename(file.name);
+    const filenameRevision = extractRevisionFromFilename(file.name);
     const sourceReference = metadata?.sourceReference || file.name;
 
-    // V5.6: Require valid part number
-    if (!partNumber) {
-      errors.push('Could not extract part number from filename. Please provide the part number in the form.');
+    console.log('📥 V6.0.1 [BOM Upload] Filename extraction attempt', {
+      filenamePartNumber: filenamePartNumber || 'NOT_FOUND',
+      filenameRevision,
+      sourceReference
+    });
+
+    // V6.0.1: STEP 2 - Extract text from PDF BEFORE validating part number
+    // This allows us to use parsed text as fallback source
+    let textToIngest = bomText;
+    
+    if (!textToIngest || textToIngest.trim().length === 0) {
+      try {
+        textToIngest = await extractTextFromPDF(file);
+        console.log('📥 V6.0.1 [BOM Upload] Text extracted from PDF', {
+          length: textToIngest.length
+        });
+      } catch (extractError) {
+        const extractMsg = extractError instanceof Error ? extractError.message : 'Unknown extraction error';
+        warnings.push(`PDF text extraction failed: ${extractMsg}`);
+      }
+    }
+    
+    // V6.0.1: STEP 3 - Parse BOM text to extract part number from content
+    let parsedTextPartNumber: string | null = null;
+    
+    if (textToIngest && textToIngest.trim().length > 0) {
+      try {
+        // Use core parser to extract part number from BOM header
+        const parseResult = parseBOMWithValidation(textToIngest);
+        
+        if (parseResult.success && parseResult.data) {
+          parsedTextPartNumber = parseResult.data.masterPartNumber;
+          
+          console.log('📥 V6.0.1 [BOM Upload] Parsed text part number', {
+            parsedPartNumber: parsedTextPartNumber || 'NOT_FOUND',
+            operationCount: parseResult.data.operations.length
+          });
+        }
+        
+        // Also try simple bomParser for component count preview
+        try {
+          const simpleParseResult = parseBOMText(textToIngest);
+          if (simpleParseResult.components.length === 0) {
+            warnings.push('No components found in BOM text. Parser may need adjustment for this BOM format.');
+          }
+        } catch {
+          // Ignore simple parser errors
+        }
+      } catch (parseError) {
+        warnings.push('BOM structure preview failed - will attempt ingestion with available metadata');
+      }
+    }
+    
+    // V6.0.1: STEP 4 - Resolve part number using trust hierarchy
+    const partNumberResolution = resolvePartNumber({
+      userInput: metadata?.partNumber,
+      filename: filenamePartNumber,
+      parsedText: parsedTextPartNumber
+    });
+    
+    if (!partNumberResolution) {
+      errors.push('Could not determine part number from filename, BOM content, or manual entry. Please provide a valid part number.');
       return {
         success: false,
         partNumber: 'UNKNOWN',
-        revision,
+        revision: metadata?.revision || filenameRevision,
         recordsCreated: 0,
         artifactUrl: null,
         errors,
         warnings
       };
     }
-
-    console.log('📥 V5.6 [BOM Upload] Extracted metadata', {
-      partNumber,
+    
+    const partNumber = partNumberResolution.partNumber;
+    const partNumberSource = partNumberResolution.source;
+    const revision = metadata?.revision || filenameRevision;
+    
+    console.log('🧠 V6.0.1 PART NUMBER RESOLUTION', {
+      userInputPartNumber: metadata?.partNumber || 'NOT_PROVIDED',
+      filenamePartNumber: filenamePartNumber || 'NOT_FOUND',
+      parsedTextPartNumber: parsedTextPartNumber || 'NOT_FOUND',
+      finalPartNumber: partNumber,
+      source: partNumberSource,
       revision,
-      sourceReference,
-      autoDetected: {
-        partNumber: extractedPartNumber !== null && !metadata?.partNumber,
-        revision: !metadata?.revision
-      }
+      timestamp: new Date().toISOString()
     });
 
-    // Step 2: Generate ingestion batch ID
+    // V6.0.1: STEP 5 - Generate ingestion batch ID
     const ingestionBatchId = crypto.randomUUID();
 
-    // Step 3: Upload artifact to storage
+    // V6.0.1: STEP 6 - Upload artifact to storage
     const artifactMetadata: ArtifactMetadata = {
       partNumber,
       revision,
@@ -232,58 +340,26 @@ export async function uploadAndIngestBOM(
       };
     }
 
-    console.log('📥 V5.5 [BOM Upload] Artifact uploaded', {
+    console.log('📥 V6.0.1 [BOM Upload] Artifact uploaded', {
       url: uploadResult.url,
       path: uploadResult.path
     });
-
-    // Step 4: Extract text from PDF or use provided text
-    let textToIngest = bomText;
     
+    // V6.0.1: STEP 7 - Validate we have text to ingest
     if (!textToIngest || textToIngest.trim().length === 0) {
-      // V5.6: Extract text from PDF
-      try {
-        textToIngest = await extractTextFromPDF(file);
-        console.log('📥 V5.6 [BOM Upload] Text extracted from PDF', {
-          length: textToIngest.length
-        });
-      } catch (extractError) {
-        const extractMsg = extractError instanceof Error ? extractError.message : 'Unknown extraction error';
-        warnings.push(`PDF text extraction failed: ${extractMsg}`);
-      }
-      
-      if (!textToIngest || textToIngest.trim().length === 0) {
-        errors.push('No BOM text extracted from PDF and no manual text provided. Please paste BOM text in the form.');
-        return {
-          success: false,
-          partNumber,
-          revision,
-          recordsCreated: 0,
-          artifactUrl: uploadResult.url,
-          errors,
-          warnings
-        };
-      }
-    }
-    
-    // V5.6: Parse BOM text to validate structure
-    try {
-      const parsed = parseBOMText(textToIngest);
-      
-      if (parsed.components.length === 0) {
-        warnings.push('No components found in BOM text. Parser may need adjustment for this BOM format.');
-      }
-      
-      console.log('📥 V5.6 [BOM Upload] Parsed structure preview', {
-        totalComponents: parsed.components.length,
-        wires: parsed.components.filter(c => c.type === 'wire').length,
-        hasGaugeData: parsed.components.some(c => c.gauge)
-      });
-    } catch (parseError) {
-      warnings.push('BOM structure preview failed - proceeding with raw text ingestion');
+      errors.push('No BOM text extracted from PDF and no manual text provided. Please paste BOM text in the form.');
+      return {
+        success: false,
+        partNumber,
+        revision,
+        recordsCreated: 0,
+        artifactUrl: uploadResult.url,
+        errors,
+        warnings
+      };
     }
 
-    // Step 5: Ingest BOM data
+    // V6.0.1: STEP 8 - Ingest BOM data
     const ingestionMetadata: IngestionMetadata = {
       sourceReference,
       sourceType: 'engineering_master',
