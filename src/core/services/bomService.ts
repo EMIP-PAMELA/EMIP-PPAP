@@ -28,6 +28,115 @@ import { parseBOMText, parseBOMWithValidation, PARSER_VERSION } from '../parser/
 import { supabase } from '@/src/lib/supabaseClient';
 
 // ============================================================
+// V6.1: SKU INTELLIGENCE LAYER
+// ============================================================
+
+/**
+ * V6.1: SKU Insights - Derived engineering intelligence from BOM data
+ */
+export interface SKUInsights {
+  totalComponents: number;
+  totalQuantity: number;
+  wireCount: number;
+  totalWireLength: number;
+  avgWireLength: number;
+  gaugeBreakdown: Record<string, number>;
+  colorBreakdown: Record<string, number>;
+  operationStepDistribution: Record<string, number>;
+  estimatedCopperWeight: number;
+}
+
+/**
+ * V6.1: Compute SKU-level intelligence from BOM records
+ * 
+ * Derives engineering-relevant metrics without modifying underlying data.
+ * Provides actionable insights into material usage, wire characteristics,
+ * and revision-level impact.
+ * 
+ * @param records BOM records for a single SKU
+ * @returns Computed insights and metrics
+ */
+export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
+  // Initialize metrics
+  let totalComponents = 0;
+  let totalQuantity = 0;
+  let wireCount = 0;
+  let totalWireLength = 0;
+  
+  const gaugeBreakdown: Record<string, number> = {};
+  const colorBreakdown: Record<string, number> = {};
+  const operationStepDistribution: Record<string, number> = {};
+  
+  // V6.1: Copper weight estimation factors (lbs per inch for common gauges)
+  const gaugeToWeightFactor: Record<string, number> = {
+    '18': 0.006385,
+    '20': 0.004016,
+    '22': 0.002525,
+    '24': 0.001588,
+    '26': 0.001,
+    '28': 0.00063
+  };
+  
+  let estimatedCopperWeight = 0;
+  
+  // Process each record
+  for (const record of records) {
+    totalComponents++;
+    totalQuantity += record.quantity || 0;
+    
+    // V6.1: Wire classification - a record is a wire if it has length or gauge
+    const isWire = (record.length !== null && record.length !== undefined) || 
+                   (record.gauge !== null && record.gauge !== undefined);
+    
+    if (isWire) {
+      wireCount++;
+      
+      // Wire length calculation
+      if (record.length !== null && record.length !== undefined) {
+        const wireLength = record.length * (record.quantity || 0);
+        totalWireLength += wireLength;
+        
+        // Copper weight estimation
+        if (record.gauge && gaugeToWeightFactor[record.gauge]) {
+          estimatedCopperWeight += wireLength * gaugeToWeightFactor[record.gauge];
+        }
+      }
+      
+      // Gauge distribution
+      if (record.gauge) {
+        gaugeBreakdown[record.gauge] = (gaugeBreakdown[record.gauge] || 0) + 1;
+      }
+      
+      // Color distribution
+      if (record.color) {
+        colorBreakdown[record.color] = (colorBreakdown[record.color] || 0) + 1;
+      }
+    }
+    
+    // Operation step distribution
+    if (record.operation_step) {
+      operationStepDistribution[record.operation_step] = 
+        (operationStepDistribution[record.operation_step] || 0) + 1;
+    }
+  }
+  
+  // Calculate average wire length (with division by zero protection)
+  const avgWireLength = wireCount > 0 ? totalWireLength / wireCount : 0;
+  
+  return {
+    totalComponents,
+    totalQuantity,
+    wireCount,
+    totalWireLength,
+    avgWireLength,
+    gaugeBreakdown,
+    colorBreakdown,
+    operationStepDistribution,
+    estimatedCopperWeight
+  };
+}
+
+// ============================================================
 // BOM ACCESS METHODS
 // ============================================================
 

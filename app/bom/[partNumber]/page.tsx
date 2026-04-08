@@ -15,7 +15,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import EMIPLayout from '@/app/layout/EMIPLayout';
-import { getBOMByPartNumber, getAvailableRevisions, getBOMByPartAndRevision } from '@/src/core/services/bomService';
+import { getBOMByPartNumber, getAvailableRevisions, getBOMByPartAndRevision, computeSKUInsights, SKUInsights } from '@/src/core/services/bomService';
 import { BOMRecord } from '@/src/core/data/bom/types';
 import { compareBOMRevisions, RevisionDiff } from '@/src/core/services/revisionComparisonService';
 
@@ -50,6 +50,9 @@ export default function BOMDetailPage() {
   const [diffResult, setDiffResult] = useState<RevisionDiff | null>(null);
   const [comparing, setComparing] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
+  
+  // V6.1: SKU Intelligence state
+  const [skuInsights, setSKUInsights] = useState<SKUInsights | null>(null);
 
   useEffect(() => {
     loadBOMDetail();
@@ -84,6 +87,18 @@ export default function BOMDetailPage() {
         componentCount: records.length,
         components: sortedComponents
       };
+
+      // V6.1: Compute SKU Intelligence
+      const insights = computeSKUInsights(records);
+      setSKUInsights(insights);
+      
+      console.log('🧠 V6.1 SKU INTELLIGENCE', {
+        partNumber: detail.partNumber,
+        totalComponents: insights.totalComponents,
+        wireCount: insights.wireCount,
+        totalWireLength: insights.totalWireLength,
+        estimatedCopperWeight: insights.estimatedCopperWeight
+      });
 
       setBOMDetail(detail);
       setLoading(false);
@@ -434,6 +449,131 @@ export default function BOMDetailPage() {
         {availableRevisions.length === 1 && (
           <div className="bg-gray-50 p-4 rounded border border-gray-200 text-sm text-gray-600">
             Only one revision available. Upload another revision to enable comparison.
+          </div>
+        )}
+
+        {/* V6.1: SKU Intelligence Section */}
+        {skuInsights && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">SKU Intelligence</h2>
+            
+            {/* Summary Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+              <div className="bg-gray-50 p-4 rounded">
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Components</div>
+                <div className="text-2xl font-bold text-gray-900">{skuInsights.totalComponents}</div>
+              </div>
+              
+              <div className="bg-gray-50 p-4 rounded">
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Quantity</div>
+                <div className="text-2xl font-bold text-gray-900">{skuInsights.totalQuantity}</div>
+              </div>
+              
+              <div className="bg-blue-50 p-4 rounded">
+                <div className="text-xs text-blue-600 uppercase tracking-wide mb-1">Wire Count</div>
+                <div className="text-2xl font-bold text-blue-900">{skuInsights.wireCount}</div>
+              </div>
+              
+              <div className="bg-blue-50 p-4 rounded">
+                <div className="text-xs text-blue-600 uppercase tracking-wide mb-1">Total Wire Length</div>
+                <div className="text-2xl font-bold text-blue-900">{skuInsights.totalWireLength.toFixed(1)}"</div>
+              </div>
+              
+              <div className="bg-blue-50 p-4 rounded">
+                <div className="text-xs text-blue-600 uppercase tracking-wide mb-1">Avg Wire Length</div>
+                <div className="text-2xl font-bold text-blue-900">{skuInsights.avgWireLength.toFixed(1)}"</div>
+              </div>
+              
+              <div className="bg-amber-50 p-4 rounded">
+                <div className="text-xs text-amber-600 uppercase tracking-wide mb-1">Est. Copper Weight</div>
+                <div className="text-2xl font-bold text-amber-900">{skuInsights.estimatedCopperWeight.toFixed(2)} lbs</div>
+              </div>
+            </div>
+            
+            {/* Distributions */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Gauge Distribution */}
+              {Object.keys(skuInsights.gaugeBreakdown).length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Gauge Distribution</h3>
+                  <div className="space-y-2">
+                    {Object.entries(skuInsights.gaugeBreakdown)
+                      .sort(([a], [b]) => parseInt(a) - parseInt(b))
+                      .map(([gauge, count]) => (
+                        <div key={gauge} className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">AWG {gauge}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 bg-gray-200 rounded-full h-2">
+                              <div 
+                                className="bg-blue-600 h-2 rounded-full" 
+                                style={{ width: `${(count / skuInsights.wireCount) * 100}%` }}
+                              />
+                            </div>
+                            <span className="text-sm font-medium text-gray-900 w-8 text-right">{count}</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Color Distribution */}
+              {Object.keys(skuInsights.colorBreakdown).length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Color Distribution</h3>
+                  <div className="space-y-2">
+                    {Object.entries(skuInsights.colorBreakdown)
+                      .sort(([, a], [, b]) => b - a)
+                      .map(([color, count]) => (
+                        <div key={color} className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">{color}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 bg-gray-200 rounded-full h-2">
+                              <div 
+                                className="bg-green-600 h-2 rounded-full" 
+                                style={{ width: `${(count / skuInsights.wireCount) * 100}%` }}
+                              />
+                            </div>
+                            <span className="text-sm font-medium text-gray-900 w-8 text-right">{count}</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Operation Step Distribution */}
+              {Object.keys(skuInsights.operationStepDistribution).length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Operation Distribution</h3>
+                  <div className="space-y-2">
+                    {Object.entries(skuInsights.operationStepDistribution)
+                      .sort(([a], [b]) => parseInt(a) - parseInt(b))
+                      .map(([step, count]) => (
+                        <div key={step} className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Step {step}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 bg-gray-200 rounded-full h-2">
+                              <div 
+                                className="bg-purple-600 h-2 rounded-full" 
+                                style={{ width: `${(count / skuInsights.totalComponents) * 100}%` }}
+                              />
+                            </div>
+                            <span className="text-sm font-medium text-gray-900 w-8 text-right">{count}</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* No wire data message */}
+            {skuInsights.wireCount === 0 && (
+              <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600">
+                No wire components detected in this BOM.
+              </div>
+            )}
           </div>
         )}
 
