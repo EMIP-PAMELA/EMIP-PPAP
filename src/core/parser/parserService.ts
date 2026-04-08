@@ -488,9 +488,59 @@ export function parseBOMText(text: string): RawBOMData {
           continue;
         }
         
-        // V5.8.4: STEP 4 - Extract quantity from end of line
-        const qtyMatch = line.match(/(\d+\.?\d*)\s*$/);
-        const quantity = qtyMatch ? parseFloat(qtyMatch[1]) : 1;
+        // V5.9: STEP 1 - Detect wire vs component
+        const isWire = /^W\d+/.test(partId);
+        
+        // V5.9: STEP 2 - Extract numeric value from end of line
+        const valueMatch = line.match(/(\d+\.?\d*)\s*$/);
+        const numericValue = valueMatch ? parseFloat(valueMatch[1]) : 1;
+        
+        // V5.9: STEP 3 - Type-based interpretation
+        let quantity: number;
+        let length: number | null = null;
+        let itemType: string;
+        
+        if (isWire) {
+          // Wire: numeric value is LENGTH
+          itemType = 'wire';
+          length = numericValue;
+          quantity = 1; // Wires default to quantity 1
+        } else {
+          // Component: numeric value is QUANTITY
+          itemType = 'component';
+          quantity = numericValue;
+          length = null;
+        }
+        
+        // V5.9: STEP 4 - Extract gauge from wire part number
+        let gauge: string | null = null;
+        if (isWire) {
+          const gaugeMatch = partId.match(/^W(\d+)/);
+          gauge = gaugeMatch ? gaugeMatch[1] : null;
+        }
+        
+        // V5.9: STEP 5 - Extract color from wire part number
+        let color: string | null = null;
+        if (isWire) {
+          const colorMatch = partId.match(/^W\d+([A-Z]{2})/);
+          if (colorMatch) {
+            const colorCode = colorMatch[1];
+            // Map common color codes
+            const colorMap: Record<string, string> = {
+              'BK': 'BLACK',
+              'RD': 'RED',
+              'BL': 'BLUE',
+              'YE': 'YELLOW',
+              'GN': 'GREEN',
+              'WH': 'WHITE',
+              'OR': 'ORANGE',
+              'BR': 'BROWN',
+              'GY': 'GRAY',
+              'VT': 'VIOLET'
+            };
+            color = colorMap[colorCode] || colorCode;
+          }
+        }
         
         // Extract additional metadata
         const partInfo = parsePartLine(line);
@@ -498,7 +548,7 @@ export function parseBOMText(text: string): RawBOMData {
         const aciMatch = line.match(ACI_PATTERN);
         const aciCode = partInfo?.aciCode || (aciMatch ? aciMatch[1].replace(/-/g, '').toUpperCase() : null);
         
-        // V5.8.4: STEP 5 - Create component object
+        // V5.9: Create component object with type-aware fields
         const component: RawComponent = {
           rawLine: line,
           candidateIds: candidateIds.length > 0 ? candidateIds : [partId],
@@ -513,11 +563,14 @@ export function parseBOMText(text: string): RawBOMData {
           componentsParsed++;
           pageComponentCount++;
           
-          // V5.8.4: STEP 6 - Debug log
-          console.log(`🧠 V5.8.4 COMPONENT PARSED [Line ${i + 1}]`, {
-            line: line.substring(0, 80),
+          // V5.9: STEP 6 - Debug log with type classification
+          console.log(`🧠 V5.9 PARSED ITEM [Line ${i + 1}]`, {
+            type: itemType,
             part: partId,
-            quantity,
+            quantity: itemType === 'component' ? quantity : null,
+            length: itemType === 'wire' ? length : null,
+            gauge,
+            color,
             operation: currentOperation.step
           });
         } else {
