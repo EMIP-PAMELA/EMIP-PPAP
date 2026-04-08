@@ -85,6 +85,9 @@ function extractMasterPN(text: string): string {
  * @returns Raw revision string or null if not found
  */
 function extractRevision(text: string): string | null {
+  // V5.7.5A: STEP 1 - Runtime verification log
+  console.log("🔥 V5.7.5 REVISION LOGIC ACTIVE 🔥");
+  
   // Take first 500 characters for header search (don't scan entire BOM)
   const header = text.substring(0, 500);
   const lines = header.split(/\r?\n/).slice(0, 10);
@@ -93,6 +96,8 @@ function extractRevision(text: string): string | null {
   for (const line of lines) {
     // Header line contains part number pattern (NH or numeric format)
     if (/NH\d{2}-\d{6}-\d{2}|\d{12}/.test(line)) {
+      // V5.7.5A: STEP 2 - Log raw header line
+      console.log("🧠 RAW HEADER LINE", line);
       console.log('🧠 V5.7.5 REVISION EXTRACTION - Header line found:', line);
       
       // V5.7.5: STEP 2 - Extract ALL 2-digit tokens from line
