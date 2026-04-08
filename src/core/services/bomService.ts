@@ -217,6 +217,36 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
 // ============================================================
 
 /**
+ * V6.1.3: Extract family number from part number
+ * 
+ * Supports both harness (NH) and wire formats.
+ * Family number is the middle segment of the part number.
+ * 
+ * Examples:
+ * - NH45-42522-214 → 42522
+ * - 45-42522-214 → 42522
+ * - NH02-123456-78 → 123456
+ * 
+ * @param partNumber Full part number
+ * @returns Family number or null if not extractable
+ */
+function extractFamilyNumber(partNumber: string): string | null {
+  if (!partNumber) return null;
+
+  const normalized = partNumber.trim().toUpperCase();
+
+  // NH format: NH##-#####-##
+  const nhMatch = normalized.match(/^NH\d{2}-(\d{5,6})-\d+/);
+  if (nhMatch) return nhMatch[1];
+
+  // Numeric/wire format: ##-#####-##
+  const wireMatch = normalized.match(/^\d{2}-(\d{5,6})-/);
+  if (wireMatch) return wireMatch[1];
+
+  return null;
+}
+
+/**
  * V6.1: Get all active BOMs (summary view for UI listing)
  * 
  * Returns summary information for all active BOMs in the system.
@@ -232,6 +262,7 @@ export async function getAllActiveBOMs(): Promise<Array<{
   ingestionBatchId: string;
   hasArtifact: boolean;
   updatedAt: string;
+  family: string | null;
 }>> {
   console.log('🧠 V5.7 BOM DATABASE ACCESS', {
     source: 'Supabase',
@@ -289,9 +320,20 @@ export async function getAllActiveBOMs(): Promise<Array<{
   }
 
   const summaries = Array.from(bomMap.values());
-  console.log(`🧠 V5.7 [BOM Service] Retrieved ${summaries.length} active BOMs (grouped by part + revision)`);
   
-  return summaries;
+  // V6.1.3: Enrich with family data
+  const enriched = summaries.map(bom => ({
+    ...bom,
+    family: extractFamilyNumber(bom.partNumber)
+  }));
+  
+  console.log('🧠 V6.1.3 BOM RETRIEVAL', {
+    totalBOMs: enriched.length,
+    uniqueFamilies: new Set(enriched.map(b => b.family).filter(Boolean)).size,
+    timestamp: new Date().toISOString()
+  });
+  
+  return enriched;
 }
 
 /**
