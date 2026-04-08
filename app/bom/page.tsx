@@ -21,6 +21,7 @@ import React, { useEffect, useState } from 'react';
 import EMIPLayout from '../layout/EMIPLayout';
 import Link from 'next/link';
 import { getAllActiveBOMs } from '@/src/core/services/bomService';
+import BOMUpload from './components/BOMUpload';
 
 interface BOMListItem {
   partNumber: string;
@@ -90,6 +91,11 @@ export default function BOMPage() {
     );
   }
 
+  const handleUploadSuccess = () => {
+    console.log('📥 V5.5 [BOM Page] Upload successful, refreshing list');
+    loadBOMs(); // Refresh the BOM list
+  };
+
   return (
     <EMIPLayout>
       <div className="space-y-6">
@@ -103,6 +109,9 @@ export default function BOMPage() {
             {boms.length} Active BOMs
           </div>
         </div>
+
+        {/* Upload Component */}
+        <BOMUpload onUploadSuccess={handleUploadSuccess} />
 
         {/* BOM List */}
         {boms.length > 0 ? (
