@@ -465,87 +465,97 @@ export function parseBOMText(text: string): RawBOMData {
       }
     }
     
-    const dashCount = countLeadingDashes(line);
+    // V5.8.4: STEP 2 - Detect CableQuest component lines (----) 
+    const isComponentLine = /^----/.test(line);
     
-    // V5.8.2: Trace all lines with dashes
-    if (dashCount >= 2) {
+    if (isComponentLine) {
       if (currentOperation) {
         currentOperation.rawLines.push(line);
       }
       
-      // V5.8.2: Log why lines are skipped
-      if (dashCount < 4) {
-        console.log(`🧠 V5.8.2 PARSE TRACE [Line ${i + 1}]`, {
-          line: line.substring(0, 80),
-          dashCount,
-          parsed: false,
-          reason: `Insufficient dashes (need >=4, got ${dashCount})`
-        });
-        linesSkipped++;
-      } else {
-        // dashCount >= 4: Attempt to parse as component
-        try {
-          const partInfo = parsePartLine(line);
-          const candidateIds = extractAllPartIds(line);
-          
-          const partId = partInfo?.partId || candidateIds[0] || `LINE_${i + 1}`;
-          
-          const aciMatch = line.match(ACI_PATTERN);
-          const aciCode = partInfo?.aciCode || (aciMatch ? aciMatch[1].replace(/-/g, '').toUpperCase() : null);
-          
-          const component: RawComponent = {
-            rawLine: line,
-            candidateIds,
-            detectedPartId: partId,
-            detectedAci: aciCode,
-            detectedQty: partInfo?.qty || 1,
-            detectedUom: partInfo?.uom || null
-          };
-          
-          if (currentOperation) {
-            currentOperation.components.push(component);
-            componentsParsed++;
-            console.log(`🧠 V5.8.2 PARSE TRACE [Line ${i + 1}]`, {
-              line: line.substring(0, 80),
-              dashCount,
-              parsed: true,
-              partId,
-              operation: currentOperation.step
-            });
-          } else {
-            console.log(`🧠 V5.8.2 PARSE TRACE [Line ${i + 1}]`, {
-              line: line.substring(0, 80),
-              dashCount,
-              parsed: false,
-              reason: 'No active operation context'
-            });
-            linesSkipped++;
-          }
-          pageComponentCount++;
-          console.log(`🧠 [EMIP Core Parser] Component: ${partId} | ACI: ${aciCode || "N/A"}`);
-        } catch (e) {
-          console.warn(`🧠 [EMIP Core Parser] Error parsing line ${i + 1}, continuing...`, e);
-          console.log(`🧠 V5.8.2 PARSE TRACE [Line ${i + 1}]`, {
+      try {
+        // V5.8.4: STEP 3 - Extract part number after ----
+        const partMatch = line.match(/^----\s*([A-Z0-9\-\/]+)/);
+        const partId = partMatch ? partMatch[1].trim() : null;
+        
+        if (!partId) {
+          console.log(`🧠 V5.8.4 COMPONENT PARSE [Line ${i + 1}]`, {
             line: line.substring(0, 80),
-            dashCount,
             parsed: false,
-            reason: `Parse error: ${e instanceof Error ? e.message : 'unknown'}`
+            reason: 'No part number found after ----'
           });
           linesSkipped++;
-          if (currentOperation) {
-            currentOperation.rawLines.push(line);
-          }
+          continue;
+        }
+        
+        // V5.8.4: STEP 4 - Extract quantity from end of line
+        const qtyMatch = line.match(/(\d+\.?\d*)\s*$/);
+        const quantity = qtyMatch ? parseFloat(qtyMatch[1]) : 1;
+        
+        // Extract additional metadata
+        const partInfo = parsePartLine(line);
+        const candidateIds = extractAllPartIds(line);
+        const aciMatch = line.match(ACI_PATTERN);
+        const aciCode = partInfo?.aciCode || (aciMatch ? aciMatch[1].replace(/-/g, '').toUpperCase() : null);
+        
+        // V5.8.4: STEP 5 - Create component object
+        const component: RawComponent = {
+          rawLine: line,
+          candidateIds: candidateIds.length > 0 ? candidateIds : [partId],
+          detectedPartId: partId,
+          detectedAci: aciCode,
+          detectedQty: quantity,
+          detectedUom: partInfo?.uom || null
+        };
+        
+        if (currentOperation) {
+          currentOperation.components.push(component);
+          componentsParsed++;
+          pageComponentCount++;
+          
+          // V5.8.4: STEP 6 - Debug log
+          console.log(`🧠 V5.8.4 COMPONENT PARSED [Line ${i + 1}]`, {
+            line: line.substring(0, 80),
+            part: partId,
+            quantity,
+            operation: currentOperation.step
+          });
+        } else {
+          console.log(`🧠 V5.8.4 COMPONENT PARSE [Line ${i + 1}]`, {
+            line: line.substring(0, 80),
+            parsed: false,
+            reason: 'No active operation context'
+          });
+          linesSkipped++;
+        }
+      } catch (e) {
+        console.warn(`🧠 V5.8.4 COMPONENT PARSE ERROR [Line ${i + 1}]:`, e);
+        console.log(`🧠 V5.8.4 COMPONENT PARSE [Line ${i + 1}]`, {
+          line: line.substring(0, 80),
+          parsed: false,
+          reason: `Parse error: ${e instanceof Error ? e.message : 'unknown'}`
+        });
+        linesSkipped++;
+        if (currentOperation) {
+          currentOperation.rawLines.push(line);
         }
       }
-    } else if (trimmedLine && !trimmedLine.includes('PAGE')) {
-      // V5.8.2: Log non-dash lines that might be components
-      if (trimmedLine.match(/\d{2,}[-\d]+/) || trimmedLine.match(/[A-Z]\d{5,}/)) {
-        console.log(`🧠 V5.8.2 PARSE TRACE [Line ${i + 1}]`, {
-          line: line.substring(0, 80),
-          dashCount,
-          parsed: false,
-          reason: 'Potential component but no leading dashes'
-        });
+    } else {
+      // Not a component line - check if it's operation metadata
+      const dashCount = countLeadingDashes(line);
+      if (dashCount >= 2 && currentOperation) {
+        currentOperation.rawLines.push(line);
+      }
+      
+      // Log potential missed components
+      if (trimmedLine && !trimmedLine.includes('PAGE') && !isOperationLine(line)) {
+        if (trimmedLine.match(/\d{2,}[-\d]+/) || trimmedLine.match(/[A-Z]\d{5,}/)) {
+          console.log(`🧠 V5.8.4 PARSE TRACE [Line ${i + 1}]`, {
+            line: line.substring(0, 80),
+            parsed: false,
+            reason: 'Potential component but missing ---- marker'
+          });
+        }
       }
       linesSkipped++;
     }
