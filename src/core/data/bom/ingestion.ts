@@ -24,15 +24,12 @@
  */
 
 import { BOMRecord, RawBOMData, ParseResult, RawComponent, RawOperation } from './types';
-import { parseBOMText, parseBOMWithValidation, PARSER_VERSION } from '../../parser/parserService';
-import { storeBOM, getBOM } from '../../services/bomService';
 import { supabase } from '@/src/lib/supabaseClient';
-import { 
-  normalizeRevision, 
-  determineRevisionAction, 
-  extractRevisionFromRecords,
-  type NormalizedRevision 
-} from '../../services/revisionService';
+import { parseBOMWithValidation } from '@/src/core/parser/parserService';
+import { normalizeRevision, NormalizedRevision, extractRevisionFromRecords, determineRevisionAction } from '@/src/core/services/revisionService';
+import { getBOM, storeBOM } from '@/src/core/services/bomService';
+import { normalizePartNumber } from '@/src/core/utils/normalizePartNumber';
+import { PARSER_VERSION } from '@/src/core/parser/parserService';
 
 // ============================================================
 // INGESTION SOURCE TYPES
@@ -315,7 +312,23 @@ export async function ingestBOMFromText(
     // V6.0.2: Step 1.5 - Canonicalize Part Number
     // metadata.partNumber contains the already-resolved canonical part number from bomIngestionService
     // Trust hierarchy: user_input → parsed_text → filename (resolved upstream)
-    const masterPartNumber = metadata.partNumber || rawData.masterPartNumber;
+    
+    // V6.0.9: STEP 0 - DUAL-FORMAT NORMALIZATION
+    // Normalize both metadata and parser values to canonical format
+    // Supports legacy format (45-xxxxx-xx) → canonical (NH45-xxxxx-xx)
+    const normalizedFromMetadata = normalizePartNumber(metadata.partNumber);
+    const normalizedFromParser = normalizePartNumber(rawData.masterPartNumber);
+    
+    const masterPartNumber = normalizedFromMetadata || normalizedFromParser;
+    
+    console.log('🧠 V6.0.9 PART NUMBER NORMALIZATION', {
+      metadataPart: metadata.partNumber,
+      parserPart: rawData.masterPartNumber,
+      normalizedMetadata: normalizedFromMetadata,
+      normalizedParser: normalizedFromParser,
+      final: masterPartNumber,
+      source: normalizedFromMetadata ? 'metadata' : 'parser'
+    });
     
     // V6.0.6: STEP 1 - LOCK CANONICAL PART NUMBER (Critical Data Integrity)
     // Once resolved, the canonical part number must NEVER be degraded or replaced
