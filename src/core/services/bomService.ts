@@ -588,6 +588,17 @@ export async function getBOMBySource(sourceReference: string): Promise<BOMRecord
  * @param records BOM records to store
  */
 export async function storeBOM(partNumber: string, records: BOMRecord[]): Promise<void> {
+  // V6.0.6: CRITICAL - Validate part number at storage entry point
+  // This is the final defense against part number degradation
+  if (!partNumber || !partNumber.includes('-')) {
+    console.error('🚨 V6.0.6 CRITICAL: Invalid part number passed to storeBOM', {
+      partNumber,
+      recordCount: records.length,
+      expectedFormat: 'NH##-#####-##'
+    });
+    throw new Error(`CRITICAL: Invalid part number passed to storeBOM: "${partNumber}" (expected format with hyphens)`);
+  }
+  
   console.log(`🧠 V5.1 [BOM Service] Storing ${records.length} records for ${partNumber} to database`);
   
   if (records.length === 0) {

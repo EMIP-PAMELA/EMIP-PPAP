@@ -202,6 +202,15 @@ function normalizeComponent(
     }
   }
   
+  // V6.0.6: Validate canonical part number before record creation
+  if (!masterPartNumber || !masterPartNumber.includes('-')) {
+    console.error('🚨 V6.0.6 CRITICAL: Invalid part number in normalizeComponent', {
+      masterPartNumber,
+      componentPartId: component.detectedPartId
+    });
+    throw new Error(`CRITICAL: Invalid parent part number in normalizeComponent: "${masterPartNumber}"`);
+  }
+  
   // V5.6.4: Align with LIVE database schema
   const record: BOMRecord = {
     parent_part_number: masterPartNumber,
@@ -307,6 +316,33 @@ export async function ingestBOMFromText(
     // metadata.partNumber contains the already-resolved canonical part number from bomIngestionService
     // Trust hierarchy: user_input → parsed_text → filename (resolved upstream)
     const masterPartNumber = metadata.partNumber || rawData.masterPartNumber;
+    
+    // V6.0.6: STEP 1 - LOCK CANONICAL PART NUMBER (Critical Data Integrity)
+    // Once resolved, the canonical part number must NEVER be degraded or replaced
+    if (!masterPartNumber || masterPartNumber.length < 8) {
+      console.error('🚨 V6.0.6 CRITICAL: Invalid canonical part number resolved', {
+        masterPartNumber,
+        metadataPartNumber: metadata.partNumber,
+        rawDataPartNumber: rawData.masterPartNumber
+      });
+      throw new Error(`CRITICAL: Invalid canonical part number resolved: "${masterPartNumber}"`);
+    }
+    
+    // V6.0.6: Validate part number format (must contain hyphen for proper SKU format)
+    if (!masterPartNumber.includes('-')) {
+      console.error('🚨 V6.0.6 CRITICAL: Part number missing hyphen (likely degraded)', {
+        masterPartNumber,
+        expectedFormat: 'NH##-#####-##'
+      });
+      throw new Error(`CRITICAL: Part number format invalid: "${masterPartNumber}" (expected format with hyphens)`);
+    }
+    
+    console.log('🔒 V6.0.6 CANONICAL PART NUMBER LOCKED', {
+      masterPartNumber,
+      length: masterPartNumber.length,
+      format: 'validated',
+      source: metadata.partNumber ? 'metadata' : 'parser'
+    });
     
     console.log('🧠 V6.0.2 PART NUMBER CANONICALIZATION', {
       resolvedPartNumber: metadata.partNumber,
@@ -453,6 +489,27 @@ export async function ingestBOMFromText(
       errors.push('No valid records to store after normalization');
       throw new Error('Ingestion failed: no valid records');
     }
+    
+    // V6.0.6: STEP 2 - HARD FAIL ON PART NUMBER DEGRADATION
+    // Final check before storage to ensure canonical part number integrity
+    if (!masterPartNumber.includes('-')) {
+      console.error('❌ V6.0.6 PART NUMBER DEGRADATION DETECTED', {
+        masterPartNumber,
+        expectedFormat: 'NH##-#####-##',
+        actualValue: masterPartNumber,
+        recordCount: normalizedRecords.length
+      });
+      throw new Error(`CRITICAL: Part number degraded before storage: "${masterPartNumber}"`);
+    }
+    
+    // V6.0.6: STEP 3 - FINAL STORAGE TRACE
+    console.log('💾 V6.0.6 FINAL STORAGE TARGET', {
+      partNumber: masterPartNumber,
+      recordCount: normalizedRecords.length,
+      revision: incomingRevision.revision,
+      isActive: shouldActivate,
+      batchId: ingestionBatchId
+    });
     
     // Step 3: Store
     await storeBOM(masterPartNumber, normalizedRecords);
