@@ -101,39 +101,48 @@ function extractRevision(text: string): string | null {
       console.log("🧠 RAW HEADER LINE", line);
       console.log('🧠 V5.7.5 REVISION EXTRACTION - Header line found:', line);
       
-      // V5.7.5: STEP 2 - Extract ALL 2-digit tokens from line
-      const allMatches = [...line.matchAll(/\b\d{2}\b/g)];
+      // V5.7.6: STEP 1 - Find LAST part number in header
+      const partNumberMatches = [...line.matchAll(/NH\d{2}-\d{5,6}-\d{2}|\d{2}-\d{5,6}-\d{2}/g)];
+      const lastPartMatch = partNumberMatches.length > 0 
+        ? partNumberMatches[partNumberMatches.length - 1] 
+        : null;
       
-      // V5.7.5: STEP 3 - Filter out tokens that are part of decimals
+      // V5.7.6: STEP 2 - Slice header AFTER final part number
+      let postPartText = line;
+      if (lastPartMatch) {
+        const endIndex = lastPartMatch.index! + lastPartMatch[0].length;
+        postPartText = line.substring(endIndex);
+      }
+      
+      console.log("🧠 POST PART TEXT", postPartText);
+      
+      // V5.7.6: STEP 3 - Extract ALL 2-digit tokens from POST-PART text only
+      const allMatches = [...postPartText.matchAll(/\b\d{2}\b/g)];
+      
+      // V5.7.6: STEP 4 - Filter out tokens that are part of decimals
       const validTokens = allMatches.filter(match => {
         const index = match.index!;
         // Check if preceded by decimal point (e.g., "1.00")
-        if (index > 0 && line[index - 1] === '.') {
+        if (index > 0 && postPartText[index - 1] === '.') {
           return false;
         }
         // Check if followed by decimal point (e.g., "00.5")
-        if (index + 2 < line.length && line[index + 2] === '.') {
+        if (index + 2 < postPartText.length && postPartText[index + 2] === '.') {
           return false;
         }
         return true;
       });
       
-      // V5.7.5: STEP 5 - Debug log all tokens
-      console.log('🧠 V5.7.5 REVISION TOKENS', {
-        allMatches: allMatches.map(m => m[0]),
-        validTokens: validTokens.map(m => m[0]),
-        line: line.substring(0, 100)
-      });
-      
-      // V5.7.5: STEP 4 - Select LAST valid token as revision
+      // V5.7.6: STEP 5 - Select LAST token from post-part text
       if (validTokens.length > 0) {
         const revision = validTokens[validTokens.length - 1][0];
         
-        console.log('🧠 V5.7.5 REVISION EXTRACTION', {
-          headerLine: line.substring(0, 100),
+        console.log('🧠 V5.7.6 REVISION EXTRACTION', {
+          postPartText,
+          allMatches: allMatches.map(m => m[0]),
+          validTokens: validTokens.map(m => m[0]),
           extractedRevision: revision,
-          source: 'last_valid_token',
-          totalTokens: validTokens.length
+          source: 'post_part_number_last_token'
         });
         
         return revision;
