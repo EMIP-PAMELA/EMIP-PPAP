@@ -32,6 +32,75 @@ import { supabase } from '@/src/lib/supabaseClient';
 // ============================================================
 
 /**
+ * V6.1: Get all active BOMs (summary view for UI listing)
+ * 
+ * Returns summary information for all active BOMs in the system.
+ * Used by BOM repository page for listing.
+ * 
+ * @returns Array of active BOM summaries
+ */
+export async function getAllActiveBOMs(): Promise<Array<{
+  partNumber: string;
+  revision: string;
+  revisionOrder: number;
+  recordCount: number;
+  ingestionBatchId: string;
+  hasArtifact: boolean;
+  updatedAt: string;
+}>> {
+  console.log('🧠 V6.1 BOM DATABASE ACCESS', {
+    source: 'Supabase',
+    operation: 'getAllActiveBOMs',
+    timestamp: new Date().toISOString(),
+  });
+
+  const { data, error } = await supabase
+    .from('bom_records')
+    .select('parent_part_number, revision, revision_order, ingestion_batch_id, artifact_url, updated_at')
+    .eq('is_active', true)
+    .order('parent_part_number', { ascending: true });
+
+  if (error) {
+    console.error('🧠 [BOM Service] Database error:', error);
+    throw new Error(`Failed to retrieve active BOMs: ${error.message}`);
+  }
+
+  // Group by part number to get summaries
+  const bomMap = new Map<string, {
+    partNumber: string;
+    revision: string;
+    revisionOrder: number;
+    recordCount: number;
+    ingestionBatchId: string;
+    hasArtifact: boolean;
+    updatedAt: string;
+  }>();
+
+  for (const record of (data || [])) {
+    const partNumber = record.parent_part_number;
+    if (!bomMap.has(partNumber)) {
+      bomMap.set(partNumber, {
+        partNumber,
+        revision: record.revision || 'UNKNOWN',
+        revisionOrder: record.revision_order || 0,
+        recordCount: 1,
+        ingestionBatchId: record.ingestion_batch_id || '',
+        hasArtifact: !!record.artifact_url,
+        updatedAt: record.updated_at || new Date().toISOString()
+      });
+    } else {
+      const existing = bomMap.get(partNumber)!;
+      existing.recordCount++;
+    }
+  }
+
+  const summaries = Array.from(bomMap.values());
+  console.log(`🧠 [BOM Service] Retrieved ${summaries.length} active BOMs`);
+  
+  return summaries;
+}
+
+/**
  * Get BOM for a specific part number
  * 
  * V5.2: Returns ONLY active BOM version
