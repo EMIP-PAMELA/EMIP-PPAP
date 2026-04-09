@@ -31,6 +31,7 @@ import { getBOM, storeBOM, compareRevision } from '@/src/core/services/bomServic
 import { normalizePartNumber } from '@/src/core/utils/normalizePartNumber';
 import { isValidPartNumberCandidate } from '@/src/core/utils/isValidPartNumberCandidate';
 import { PARSER_VERSION } from '@/src/core/parser/parserService';
+import { normalizeWireColor, classifyComponent } from '@/src/core/projections/normalizers';
 
 // ============================================================
 // INGESTION SOURCE TYPES
@@ -209,6 +210,11 @@ function normalizeComponent(
     throw new Error(`CRITICAL: Invalid canonical part number in normalizeComponent: "${masterPartNumber}"`);
   }
   
+  // Phase 3H.14.1: Apply classification and normalization
+  const category = classifyComponent(component.detectedPartId, null);
+  const rawColor = wireColor; // Store original color
+  const normalizedColor = normalizeWireColor(wireColor); // Apply normalization
+  
   // V5.6.4: Align with LIVE database schema
   const record: BOMRecord = {
     parent_part_number: masterPartNumber,
@@ -221,6 +227,11 @@ function normalizeComponent(
     length: wireDetection.isWire ? wireDetection.length : null,
     gauge: wireDetection.gauge || null, // V5.6.4: Required by live schema
     color: wireColor, // V5.9.1: Extracted from wire part number
+    
+    // Phase 3H.14.1: Structured classification and normalization
+    category: category,
+    rawColor: rawColor,
+    normalizedColor: normalizedColor,
     
     // V5.6.4: operation_step as string (DB will handle conversion)
     operation_step: operation.step,
@@ -501,19 +512,34 @@ export async function ingestBOMFromText(
       }
     }
     
-    // V6.7: STEP 4 - Handle Same Revision Conflict (Skip)
+    // Phase 3H.14.1: Handle Same Revision Conflict (Return status instead of throwing)
     if (hasConflict) {
-      const errorMsg = `Revision ${incomingRev} already exists for ${masterPartNumber}. Skipping duplicate.`;
-      errors.push(errorMsg);
+      const warningMsg = `Revision ${incomingRev} already exists for ${masterPartNumber}. Already processed.`;
+      warnings.push(warningMsg);
       
-      console.log('🧠 V6.7 REVISION DECISION: SKIP_DUPLICATE', {
+      console.log('🧠 Phase 3H.14.1 REVISION DECISION: ALREADY_PROCESSED', {
         partNumber: masterPartNumber,
         incomingRevision: incomingRev,
         existingRevisions: uniqueRevisions,
-        decision: 'SKIP_DUPLICATE'
+        decision: 'ALREADY_PROCESSED'
       });
       
-      throw new Error(errorMsg);
+      // Return success with ALREADY_PROCESSED status (do not throw)
+      return {
+        success: true,
+        masterPartNumber,
+        revision: incomingRev,
+        recordsCreated: 0,
+        errors: [],
+        warnings: [warningMsg],
+        metadata: {
+          sourceReference: metadata.sourceReference || 'unknown',
+          parserVersion: PARSER_VERSION,
+          ingestionTimestamp: new Date().toISOString(),
+          totalOperations: 0,
+          totalComponents: 0
+        }
+      };
     }
     
     // V6.7: STEP 5 - Handle Older Revision (Skip in Strict Mode)

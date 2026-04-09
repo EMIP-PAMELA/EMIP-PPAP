@@ -74,10 +74,12 @@ const COLOR_MAP: Record<string, string> = {
   'WHT': 'white',
   'YEL': 'yellow',
   'YLW': 'yellow',
+  'YL': 'yellow',   // Phase 3H.14.1: Short code mapping
   'GLD': 'gold',
   'SLV': 'silver',
   'TAN': 'tan',
-  'VIO': 'violet'
+  'VIO': 'violet',
+  'VI': 'violet'    // Phase 3H.14.1: Short code mapping
 };
 
 /**
@@ -263,4 +265,52 @@ export function isWire(
   ];
   
   return wireKeywords.some(keyword => searchText.includes(keyword));
+}
+
+// ============================================================
+// COMPONENT CLASSIFICATION (Phase 3H.14.1)
+// ============================================================
+
+/**
+ * Classify component into structured category
+ * 
+ * Phase 3H.14.1: Wrapper around existing detection functions
+ * Returns structured category string for BOM display
+ * 
+ * @param partNumber Part number
+ * @param description Description
+ * @returns Category string: WIRE | CONNECTOR | TERMINAL | HOUSING | SEAL | UNKNOWN
+ */
+export function classifyComponent(
+  partNumber: string | null | undefined,
+  description: string | null | undefined
+): string {
+  if (!partNumber && !description) return 'UNKNOWN';
+  
+  const searchText = `${partNumber || ''} ${description || ''}`.toUpperCase();
+  
+  // Check wire first (most common)
+  if (isWire(partNumber, description)) {
+    return 'WIRE';
+  }
+  
+  // Check connector (uses existing isConnector logic)
+  if (isConnector(partNumber, description)) {
+    return 'CONNECTOR';
+  }
+  
+  // Additional classifications not in isConnector
+  if (searchText.includes('TERMINAL')) {
+    return 'TERMINAL';
+  }
+  
+  if (searchText.includes('HOUSING')) {
+    return 'HOUSING';
+  }
+  
+  if (searchText.includes('SEAL')) {
+    return 'SEAL';
+  }
+  
+  return 'UNKNOWN';
 }

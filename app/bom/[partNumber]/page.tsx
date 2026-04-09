@@ -621,6 +621,9 @@ export default function BOMDetailPage() {
                     Component Part Number
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Category
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Quantity
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -653,6 +656,11 @@ export default function BOMDetailPage() {
                         </div>
                       )}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800">
+                        {component.category || 'UNKNOWN'}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {component.quantity}
                     </td>
@@ -663,7 +671,13 @@ export default function BOMDetailPage() {
                       {component.gauge || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {component.color || '-'}
+                      {component.normalizedColor ? (
+                        <span title={`Raw: ${component.rawColor || component.color || 'N/A'}`} className="cursor-help">
+                          {component.normalizedColor}
+                        </span>
+                      ) : (
+                        component.color || '-'
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {component.unit || '-'}

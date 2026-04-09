@@ -51,6 +51,19 @@ export interface BOMRecord {
   /** V5.6.4: Wire color (e.g., "RED", "BLACK", "WHITE") */
   color?: string | null;
   
+  // ============================================================
+  // Phase 3H.14.1: Structured Classification & Normalization
+  // ============================================================
+  
+  /** Phase 3H.14.1: Component category (WIRE, CONNECTOR, TERMINAL, etc.) */
+  category?: string | null;
+  
+  /** Phase 3H.14.1: Original raw color value before normalization */
+  rawColor?: string | null;
+  
+  /** Phase 3H.14.1: Normalized color (e.g., "yellow", "violet") */
+  normalizedColor?: string | null;
+  
   /** Operation/step number where component is used */
   operation_step?: string | null;
   
