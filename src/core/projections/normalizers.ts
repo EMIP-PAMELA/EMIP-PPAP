@@ -339,13 +339,13 @@ export function classifyComponent(
     return 'UNKNOWN';
   }
   
-  // Phase 3H.17.2: Normalize inputs for robust matching
+  // Phase 3H.17.3: Normalize inputs for robust matching
   const pnUpper = (partNumber || '').toUpperCase().trim();
   const descLower = (description || '').toLowerCase().trim();
   const searchText = `${partNumber || ''} ${description || ''}`.toUpperCase();
   
-  // Phase 3H.17.2: Enhanced classification with robust normalization
-  // Priority order: WIRE > TERMINAL > CONNECTOR > SEAL > UNKNOWN
+  // Phase 3H.17.3: Enhanced classification with precision rules and expanded categories
+  // Priority order: WIRE → TERMINAL → CONNECTOR → SEAL → HARDWARE → LABEL → SLEEVING → UNKNOWN
   
   // A. WIRE (highest priority)
   // Wire detection: starts with W followed by digits (e.g., W18GR1015)
@@ -353,25 +353,25 @@ export function classifyComponent(
     return 'WIRE';
   }
   
-  // B. TERMINAL
-  // Part number patterns OR expanded description keywords
+  // B. TERMINAL (with false positive protection)
+  // Only classify as terminal if explicitly terminal OR pin/contact without housing
   if (
     pnUpper.includes('T-') ||
     pnUpper.includes('TERM') ||
     pnUpper.includes('SVH') ||
     pnUpper.includes('SPH') ||
     descLower.includes('terminal') ||
-    descLower.includes('contact') ||
-    descLower.includes('pin') ||
+    (
+      (descLower.includes('pin') || descLower.includes('contact') || descLower.includes('crimp')) &&
+      !descLower.includes('housing')
+    ) ||
     descLower.includes('socket') ||
-    descLower.includes('crimp') ||
     descLower.includes('blade')
   ) {
     return 'TERMINAL';
   }
   
-  // C. CONNECTOR
-  // Part number patterns OR expanded description keywords
+  // C. CONNECTOR (assembly removed - too broad)
   if (
     pnUpper.includes('JST') ||
     pnUpper.includes('VHR') ||
@@ -379,14 +379,12 @@ export function classifyComponent(
     descLower.includes('housing') ||
     descLower.includes('receptacle') ||
     descLower.includes('plug') ||
-    descLower.includes('header') ||
-    descLower.includes('assembly')
+    descLower.includes('header')
   ) {
     return 'CONNECTOR';
   }
   
   // D. SEAL
-  // Description keywords only
   if (
     descLower.includes('seal') ||
     descLower.includes('grommet')
@@ -394,7 +392,36 @@ export function classifyComponent(
     return 'SEAL';
   }
   
-  // E. FALLBACK: Keyword arrays for classification (legacy support)
+  // E. HARDWARE (NEW CATEGORY)
+  if (
+    descLower.includes('clip') ||
+    descLower.includes('tie') ||
+    descLower.includes('screw') ||
+    descLower.includes('bolt') ||
+    descLower.includes('fastener')
+  ) {
+    return 'HARDWARE';
+  }
+  
+  // F. LABEL (NEW CATEGORY)
+  if (
+    descLower.includes('label') ||
+    descLower.includes('sticker') ||
+    descLower.includes('tag')
+  ) {
+    return 'LABEL';
+  }
+  
+  // G. SLEEVING (NEW CATEGORY)
+  if (
+    descLower.includes('sleeve') ||
+    descLower.includes('heat shrink') ||
+    descLower.includes('shrink')
+  ) {
+    return 'SLEEVING';
+  }
+  
+  // H. FALLBACK: Keyword arrays for classification (legacy support)
   const WIRE_KEYWORDS = ['WIRE', 'CABLE', 'LEAD', 'AWG', 'GAUGE'];
   const CONNECTOR_KEYWORDS = ['CONNECTOR', 'CONN', 'PLUG', 'SOCKET', 'RECEPTACLE', 'HOUSING'];
   const TERMINAL_KEYWORDS = ['TERMINAL', 'TERM', 'CONTACT'];
@@ -419,7 +446,7 @@ export function classifyComponent(
     return 'SEAL';
   }
   
-  // Phase 3H.17.2: Log UNKNOWN classifications for debugging
+  // Phase 3H.17.3: Log UNKNOWN classifications for debugging
   console.warn('⚠️ UNKNOWN COMPONENT TYPE', {
     partNumber,
     description: description ? description.substring(0, 50) : null
