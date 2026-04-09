@@ -130,23 +130,6 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
   };
 }
 
-/**
- * V6.2.2: Unit detection heuristic
- * 
- * Detects whether BOM lengths are in feet or inches based on sample values.
- * Heuristic: Values < 10 strongly indicate feet (e.g., 1.93, 2.02, etc.)
- */
-function detectUnit(records: NormalizedComponent[]): 'feet' | 'inches' {
-  const sample = records
-    .filter(r => r.length && r.length > 0)
-    .slice(0, 5);
-
-  if (sample.length === 0) return 'inches';
-
-  const avg = sample.reduce((sum, r) => sum + r.length, 0) / sample.length;
-
-  return avg < 10 ? 'feet' : 'inches';
-}
 
 /**
  * V6.1: SKU Insights - Derived engineering intelligence from BOM data
@@ -161,7 +144,8 @@ export interface SKUInsights {
   colorBreakdown: Record<string, number>;
   operationStepDistribution: Record<string, number>;
   estimatedCopperWeight: number;
-  lengthUnit: 'feet' | 'inches';  // V6.2.2: Detected source unit
+  lengthUnit: 'feet' | 'inches';  // V6.2.4: Source unit (deterministic)
+  unitSource: 'engineering_master';  // V6.2.4: Unit source metadata
 }
 
 /**
@@ -180,14 +164,14 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   // V6.2: STEP 1 - Normalize all components with computed fields
   const normalized = records.map(normalizeComponentForAnalytics);
   
-  // V6.2.2: STEP 2A - Detect source unit (feet vs inches)
-  const detectedUnit = detectUnit(normalized);
-  const unitFactor = detectedUnit === 'feet' ? 12 : 1;
+  // V6.2.4: STEP 2A - Enforce deterministic source unit (Engineering Masters = feet)
+  const sourceUnit: 'feet' | 'inches' = 'feet';
+  const unitFactor = 12;  // feet → inches conversion
   
-  // V6.2.2: STEP 2B - Normalize all lengths to canonical inches
+  // V6.2.4: STEP 2B - Normalize all lengths to canonical inches
   const normalizedWithUnits = normalized.map(r => ({
     ...r,
-    normalizedLength: r.length * unitFactor,
+    normalizedLength: r.length * unitFactor,  // feet → inches
     effectiveLength: r.length * unitFactor * r.qtyPer
   }));
   
@@ -266,21 +250,19 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     }
   });
   
-  // V6.2.2: STEP 9 - Validation logging with unit normalization
-  console.log('🧠 V6.2.2 UNIT NORMALIZATION', {
-    detectedUnit,
+  // V6.2.4: STEP 9 - Validation logging with deterministic unit enforcement
+  console.log('🧠 V6.2.4 UNIT SOURCE LOCKED', {
+    unit: 'feet',
+    source: 'engineering_master',
+    behavior: 'deterministic_no_detection',
     unitFactor,
     sampleLengths: normalized.slice(0, 3).map(r => r.length),
     componentWireCount,
     physicalWireCount,
     totalWireLength: Number(totalWireLength.toFixed(2)),
-    totalWireLengthDisplay: detectedUnit === 'feet' 
-      ? `${(totalWireLength / 12).toFixed(1)} ft`
-      : `${totalWireLength.toFixed(1)} in`,
+    totalWireLengthDisplay: `${(totalWireLength / 12).toFixed(1)} ft`,
     avgWireLength: Number(avgWireLength.toFixed(2)),
-    avgWireLengthDisplay: detectedUnit === 'feet'
-      ? `${(avgWireLength / 12).toFixed(1)} ft`
-      : `${avgWireLength.toFixed(1)} in`,
+    avgWireLengthDisplay: `${(avgWireLength / 12).toFixed(1)} ft`,
     copperWeight: Number(estimatedCopperWeight.toFixed(4)),
     colorDistribution: Object.fromEntries(
       Object.entries(colorBreakdown).map(([k, v]) => [k, Number(v.toFixed(2))])
@@ -314,7 +296,8 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     colorBreakdown,
     operationStepDistribution,
     estimatedCopperWeight,
-    lengthUnit: detectedUnit  // V6.2.2: Return detected unit for UI display
+    lengthUnit: sourceUnit,  // V6.2.4: Deterministic source unit
+    unitSource: 'engineering_master'  // V6.2.4: Unit source metadata
   };
 }
 
