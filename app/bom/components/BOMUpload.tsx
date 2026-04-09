@@ -24,7 +24,7 @@
  * - Emits events on success for parent refresh
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { uploadAndIngestBOM } from '@/src/features/bom/services/bomIngestionService';
 import { supabase } from '@/src/lib/supabaseClient';
 
@@ -85,9 +85,11 @@ interface BOMUploadProps {
 }
 
 export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
-  // V6.9.2: Version marker for cache busting
-  const BUILD_ID = "v6.9.2-" + Date.now();
-  console.log("🔥 V6.9.2 UI ACTIVE - BUILD ID:", BUILD_ID);
+  // V6.9.3: Version marker (useRef to prevent spam)
+  const buildIdRef = useRef("v6.9.3-" + Date.now());
+  useEffect(() => {
+    console.log("🔥 V6.9.3 UI ACTIVE - BUILD ID:", buildIdRef.current);
+  }, []);
   
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -269,7 +271,11 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
       }
       
       const item = queuedItems[i];
+      console.log('🧪 V6.9.3 SET CURRENT INDEX', { index: i, fileName: item.fileName });
       setCurrentIndex(i);
+      
+      // V6.9.3: Yield to React for rendering
+      await new Promise(resolve => setTimeout(resolve, 0));
       
       // Process single item with retry logic
       await processQueueItem(item, i, runId);
@@ -321,8 +327,9 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     }
   };
   
-  // V6.8: Update item helper for real-time status updates
+  // V6.9.3: Update item helper for real-time status updates (with debug logging)
   const updateItem = (index: number, updates: Partial<BOMQueueItem>) => {
+    console.log('🧪 V6.9.3 UPDATE ITEM', { index, updates });
     setQueueItems(prev =>
       prev.map((item, i) =>
         i === index ? { ...item, ...updates } : item
@@ -396,16 +403,11 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     }
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      item.attempts = attempt;
-      
-      // Update status
-      if (attempt === 1) {
-        item.status = 'processing';
-      } else {
-        item.status = 'retrying';
-      }
-      
-      setQueueItems([...queueItems]);
+      // V6.9.3: Use updateItem instead of direct mutation
+      updateItem(index, {
+        attempts: attempt,
+        status: attempt === 1 ? 'processing' : 'retrying'
+      });
       
       console.log('🧠 V6.6 PROCESSING ITEM', {
         index,
@@ -415,20 +417,26 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
         runId
       });
       
-      // V6.9: Validation step
+      // V6.9.3: Yield to React for rendering
+      await new Promise(resolve => setTimeout(resolve, 0));
+      
+      // V6.9.3: Validation step
       updateItem(index, {
         status: 'processing',
         step: 'Validating part number and revision'
       });
       
-      // Brief validation delay for visibility
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // V6.9.3: Yield to React for rendering
+      await new Promise(resolve => setTimeout(resolve, 50));
       
-      // V6.8: Update status to parsing
+      // V6.9.3: Update status to parsing
       updateItem(index, {
         status: 'parsing',
         step: 'Extracting and parsing PDF'
       });
+      
+      // V6.9.3: Yield to React for rendering
+      await new Promise(resolve => setTimeout(resolve, 0));
       
       try {
         const result = await uploadAndIngestBOM(item.file, bomText, {
@@ -436,12 +444,15 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
           revision: revision || undefined,
         });
         
-        // V6.8: Update status to inserting
+        // V6.9.3: Update status to inserting
         if (result.success) {
           updateItem(index, {
             status: 'inserting',
             step: 'Saving to database'
           });
+          
+          // V6.9.3: Yield to React for rendering
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
         
         if (result.success) {
@@ -458,12 +469,15 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
               .limit(1);
             
             if (existing && existing.length > 0) {
-              // Duplicate detected
-              item.status = 'skipped';
-              item.error = `Duplicate: ${detectedPartNumber} Rev ${detectedRevision} already exists`;
+              // V6.9.3: Duplicate detected - use updateItem
+              const errorMsg = `Duplicate: ${detectedPartNumber} Rev ${detectedRevision} already exists`;
+              updateItem(index, {
+                status: 'skipped',
+                error: errorMsg,
+                step: 'Skipped (duplicate)'
+              });
               
               setCompletedCount(prev => prev + 1);
-              setQueueItems([...queueItems]);
               
               console.log('🧠 V6.6 DUPLICATE DETECTED', {
                 fileName: item.fileName,
@@ -477,7 +491,7 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
                   part_number: detectedPartNumber,
                   revision: detectedRevision,
                   status: 'skipped',
-                  error: item.error,
+                  error: errorMsg,
                   attempts: attempt
                 }).eq('run_id', runId).eq('file_name', item.fileName);
               }
@@ -529,27 +543,30 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
         }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-        item.error = errorMsg;
         
-        // V6.6: Classify error type
+        // V6.9.3: Classify error type
         const retryable = isRetryableError(errorMsg);
-        item.errorType = retryable ? 'transient' : 'permanent';
+        const errorType = retryable ? 'transient' : 'permanent';
         
         console.log('🧠 V6.6 ITEM FAILED', {
           fileName: item.fileName,
           attempt,
           error: errorMsg,
-          errorType: item.errorType,
+          errorType: errorType,
           willRetry: retryable && attempt < maxRetries
         });
         
-        // V6.6: Intelligent retry - skip retries for permanent errors
+        // V6.9.3: Intelligent retry - skip retries for permanent errors
         if (!retryable) {
           console.log('⚠️ V6.6 PERMANENT ERROR - Skipping retries');
-          item.status = 'failed';
+          updateItem(index, {
+            status: 'failed',
+            error: errorMsg,
+            errorType: 'permanent',
+            step: 'Failed (permanent error)'
+          });
           setFailureCount(prev => prev + 1);
           setCompletedCount(prev => prev + 1);
-          setQueueItems([...queueItems]);
           
           // V6.6: Log permanent failure
           if (runId) {
@@ -565,16 +582,27 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
         }
         
         if (attempt < maxRetries) {
+          // V6.9.3: Update UI to show retrying state
+          updateItem(index, {
+            error: errorMsg,
+            errorType: 'transient',
+            step: `Retrying (attempt ${attempt}/${maxRetries})...`
+          });
+          
           // Retry with exponential backoff (transient errors only)
           const backoffMs = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
           console.log(`⏳ V6.6 Retrying transient error in ${backoffMs}ms...`);
           await new Promise(resolve => setTimeout(resolve, backoffMs));
         } else {
-          // Final failure after retries
-          item.status = 'failed';
+          // V6.9.3: Final failure after retries
+          updateItem(index, {
+            status: 'failed',
+            error: errorMsg,
+            errorType: 'transient',
+            step: 'Failed (max retries exceeded)'
+          });
           setFailureCount(prev => prev + 1);
           setCompletedCount(prev => prev + 1);
-          setQueueItems([...queueItems]);
           
           // V6.6: Log final failure
           if (runId) {
