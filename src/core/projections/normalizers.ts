@@ -325,11 +325,26 @@ export function isWire(
  * 
  * Phase 3H.14.1: Wrapper around existing detection functions
  * Phase 3H.14.2: Enhanced with keyword arrays for improved accuracy
+ * Phase 3H.17.3: Added HARDWARE, LABEL, SLEEVING categories with precision rules
  * Returns structured category string for BOM display
  * 
  * @param partNumber Part number
  * @param description Description
- * @returns Category string: WIRE | CONNECTOR | TERMINAL | HOUSING | SEAL | UNKNOWN
+ * @returns Category string: WIRE | CONNECTOR | TERMINAL | SEAL | HARDWARE | LABEL | SLEEVING | UNKNOWN
+ * 
+ * Phase 3H.17.4: Test Cases - Actual Behavior:
+ * - "W18GR1015" (part number) → WIRE (W\d+ pattern)
+ * - "SVH-21T-P1.1" (part number) → TERMINAL (SVH pattern)
+ * - "VHR-5N" (part number) → CONNECTOR (VHR pattern)
+ * - "Wire Assembly" (description) → WIRE (WIRE_KEYWORDS fallback)
+ * - "Pin Contact Housing" (description) → CONNECTOR (housing keyword, terminal excluded)
+ * - "Cable Tie Clip" (description) → HARDWARE (clip keyword)
+ * - "Wire Label Sticker" (description) → WIRE (WIRE_KEYWORDS before LABEL)
+ * - "Heat Shrink Sleeve" (description) → SLEEVING (sleeve keyword)
+ * - "Connector Housing" (description) → CONNECTOR (connector keyword)
+ * - "Terminal Contact" (description) → TERMINAL (terminal keyword)
+ * - "Cavities Plug Housing" (description) → CONNECTOR (plug + housing)
+ * - "Unknown Part" (description) → UNKNOWN (no matches)
  */
 export function classifyComponent(
   partNumber: string | null | undefined,
