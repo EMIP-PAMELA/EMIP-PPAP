@@ -48,13 +48,14 @@ function isRetryableError(error: string): boolean {
 }
 
 /**
- * V6.6: Queue item model for bulk upload management (enhanced with error type)
+ * V6.8: Queue item model for bulk upload management (enhanced with granular status)
  */
 type BOMQueueItem = {
   id: string;
   file: File;
   fileName: string;
-  status: 'queued' | 'processing' | 'success' | 'failed' | 'retrying' | 'skipped';
+  status: 'queued' | 'processing' | 'parsing' | 'inserting' | 'complete' | 'failed' | 'retrying' | 'skipped';
+  step?: string; // V6.8: Current operation step for live progress
   attempts: number;
   maxAttempts: number;
   error?: string;
@@ -275,7 +276,7 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     setIsProcessingBatch(false);
     setCurrentIndex(-1);
     
-    const finalSuccess = queueItems.filter(i => i.status === 'success').length;
+    const finalSuccess = queueItems.filter(i => i.status === 'complete').length;
     const finalFailure = queueItems.filter(i => i.status === 'failed').length;
     const finalSkipped = queueItems.filter(i => i.status === 'skipped').length;
     
@@ -311,6 +312,15 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     if (finalSuccess > 0 && onUploadSuccess) {
       onUploadSuccess();
     }
+  };
+  
+  // V6.8: Update item helper for real-time status updates
+  const updateItem = (index: number, updates: Partial<BOMQueueItem>) => {
+    setQueueItems(prev =>
+      prev.map((item, i) =>
+        i === index ? { ...item, ...updates } : item
+      )
+    );
   };
   
   // V6.6: Process single queue item with smart duplicate detection and intelligent retry
@@ -350,11 +360,25 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
         runId
       });
       
+      // V6.8: Update status to parsing
+      updateItem(index, {
+        status: 'parsing',
+        step: 'Extracting and parsing PDF'
+      });
+      
       try {
         const result = await uploadAndIngestBOM(item.file, bomText, {
           partNumber: partNumber || undefined,
           revision: revision || undefined,
         });
+        
+        // V6.8: Update status to inserting
+        if (result.success) {
+          updateItem(index, {
+            status: 'inserting',
+            step: 'Saving to database'
+          });
+        }
         
         if (result.success) {
           // V6.6: Smart duplicate detection (partNumber + revision)
@@ -398,17 +422,19 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
             }
           }
           
-          // Success (not duplicate)
-          item.status = 'success';
-          item.result = {
-            partNumber: result.partNumber,
-            revision: result.revision,
-            recordsCreated: result.recordsCreated
-          };
+          // V6.8: Success (not duplicate) - update via helper
+          updateItem(index, {
+            status: 'complete',
+            step: 'Completed',
+            result: {
+              partNumber: result.partNumber,
+              revision: result.revision,
+              recordsCreated: result.recordsCreated
+            }
+          });
           
           setSuccessCount(prev => prev + 1);
           setCompletedCount(prev => prev + 1);
-          setQueueItems([...queueItems]);
           
           console.log('🧠 V6.6 ITEM SUCCESS', {
             fileName: item.fileName,
@@ -422,7 +448,7 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
             await supabase.from('ingestion_items').update({
               part_number: result.partNumber,
               revision: result.revision,
-              status: 'success',
+              status: 'complete',
               attempts: attempt
             }).eq('run_id', runId).eq('file_name', item.fileName);
           }
@@ -496,28 +522,7 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     }
   };
   
-  // V6.6: Retry only failed items
-  const retryFailed = () => {
-    const failedItems = queueItems.filter(i => i.status === 'failed');
-    
-    if (failedItems.length === 0) return;
-    
-    // Reset failed items
-    failedItems.forEach(item => {
-      item.status = 'queued';
-      item.attempts = 0;
-      item.error = undefined;
-      item.errorType = undefined;
-    });
-    
-    setQueueItems([...queueItems]);
-    
-    console.log('🧠 V6.6 RETRY FAILED', { count: failedItems.length });
-    
-    processQueue(failedItems);
-  };
-  
-  // V6.6: Pause current batch
+  // V6.6: Pause batch processing
   const pauseBatch = () => {
     setIsPaused(true);
     console.log('⏸️ V6.6 PAUSE REQUESTED');
@@ -533,10 +538,24 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     }
   };
   
+  // V6.6: Retry failed items
+  const retryFailed = () => {
+    const itemsToRetry = queueItems.filter(i => i.status === 'failed');
+    const updatedItems = queueItems.map(item =>
+      item.status === 'failed'
+        ? { ...item, status: 'queued' as const, attempts: 0, error: undefined, errorType: undefined }
+        : item
+    );
+    setQueueItems(updatedItems);
+    
+    // Auto-restart processing
+    setTimeout(() => processQueue(updatedItems), 100);
+  };
+  
   // V6.6: Clear completed items
   const clearCompleted = () => {
     console.log('🧠 V6.6 CLEAR COMPLETED');
-    setQueueItems(queueItems.filter(i => i.status !== 'success'));
+    setQueueItems(queueItems.filter(i => i.status !== 'complete'));
   };
   
   // V6.6: Clear all items
@@ -749,7 +768,7 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
                   Retry Failed ({queueItems.filter(i => i.status === 'failed').length})
                 </button>
               )}
-              {queueItems.filter(i => i.status === 'success').length > 0 && !isProcessingBatch && (
+              {queueItems.filter(i => i.status === 'complete').length > 0 && !isProcessingBatch && (
                 <button
                   onClick={clearCompleted}
                   className="px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-700"
@@ -783,8 +802,8 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
               <div className="text-xl font-bold text-yellow-900">{queueItems.filter(i => i.status === 'processing' || i.status === 'retrying').length}</div>
             </div>
             <div className="bg-green-50 rounded p-3 text-center">
-              <div className="text-sm text-green-600">Success</div>
-              <div className="text-xl font-bold text-green-900">{queueItems.filter(i => i.status === 'success').length}</div>
+              <div className="text-sm text-green-600">Complete</div>
+              <div className="text-xl font-bold text-green-900">{queueItems.filter(i => i.status === 'complete').length}</div>
             </div>
             <div className="bg-red-50 rounded p-3 text-center">
               <div className="text-sm text-red-600">Failed</div>
@@ -821,8 +840,10 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
               <div
                 key={item.id}
                 className={`p-3 rounded border ${
-                  item.status === 'success' ? 'bg-green-50 border-green-200' :
+                  item.status === 'complete' ? 'bg-green-50 border-green-200' :
                   item.status === 'failed' ? 'bg-red-50 border-red-200' :
+                  item.status === 'parsing' ? 'bg-purple-50 border-purple-200' :
+                  item.status === 'inserting' ? 'bg-indigo-50 border-indigo-200' :
                   item.status === 'processing' || item.status === 'retrying' ? 'bg-blue-50 border-blue-200' :
                   item.status === 'skipped' ? 'bg-gray-50 border-gray-200' :
                   'bg-gray-50 border-gray-300'
@@ -833,8 +854,10 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">{item.fileName}</span>
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        item.status === 'success' ? 'bg-green-100 text-green-700' :
+                        item.status === 'complete' ? 'bg-green-100 text-green-700' :
                         item.status === 'failed' ? 'bg-red-100 text-red-700' :
+                        item.status === 'parsing' ? 'bg-purple-100 text-purple-700' :
+                        item.status === 'inserting' ? 'bg-indigo-100 text-indigo-700' :
                         item.status === 'processing' ? 'bg-blue-100 text-blue-700' :
                         item.status === 'retrying' ? 'bg-yellow-100 text-yellow-700' :
                         item.status === 'skipped' ? 'bg-gray-100 text-gray-700' :
@@ -844,7 +867,14 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
                       </span>
                     </div>
                     
-                    {item.status === 'success' && item.result && (
+                    {/* V6.8: Show current step for active processing */}
+                    {item.step && (item.status === 'processing' || item.status === 'parsing' || item.status === 'inserting') && (
+                      <div className="text-xs text-blue-700 mt-1 flex items-center gap-1">
+                        <span className="animate-pulse">🔄</span> {item.step}
+                      </div>
+                    )}
+                    
+                    {item.status === 'complete' && item.result && (
                       <div className="text-xs text-green-700 mt-1">
                         ✅ Part: {item.result.partNumber}, Rev: {item.result.revision}, Records: {item.result.recordsCreated}
                       </div>
