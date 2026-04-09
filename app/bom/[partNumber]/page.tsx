@@ -53,6 +53,10 @@ export default function BOMDetailPage() {
   
   // V6.1: SKU Intelligence state
   const [skuInsights, setSKUInsights] = useState<SKUInsights | null>(null);
+  
+  // Phase 3H.15: Validation view mode
+  const [viewMode, setViewMode] = useState<'standard' | 'validation'>('standard');
+  const [sourceArtifactUrl, setSourceArtifactUrl] = useState<string | null>(null);
 
   useEffect(() => {
     loadBOMDetail();
@@ -91,6 +95,10 @@ export default function BOMDetailPage() {
       // V6.1: Compute SKU Intelligence
       const insights = computeSKUInsights(records);
       setSKUInsights(insights);
+      
+      // Phase 3H.15: Extract source artifact URL from first record
+      const artifactUrl = records[0]?.artifact_url || null;
+      setSourceArtifactUrl(artifactUrl);
       
       console.log('🧠 V6.1 SKU INTELLIGENCE', {
         partNumber: detail.partNumber,
@@ -211,6 +219,40 @@ export default function BOMDetailPage() {
   return (
     <EMIPLayout>
       <div className="space-y-6">
+        {/* Phase 3H.15: View Mode Toggle */}
+        <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-medium text-gray-700">View Mode:</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setViewMode('standard')}
+                className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                  viewMode === 'standard'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Standard
+              </button>
+              <button
+                onClick={() => setViewMode('validation')}
+                className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                  viewMode === 'validation'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Validation
+              </button>
+            </div>
+            {viewMode === 'validation' && (
+              <span className="ml-auto text-xs text-gray-500 italic">
+                Use this view to compare the original engineering master against extracted BOM data for verification.
+              </span>
+            )}
+          </div>
+        </div>
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -234,8 +276,11 @@ export default function BOMDetailPage() {
           </div>
         </div>
 
-        {/* V6.0: Revision Comparison Section */}
-        {availableRevisions.length > 1 && (
+        {/* Phase 3H.15: Conditional rendering based on view mode */}
+        {viewMode === 'standard' && (
+          <>
+            {/* V6.0: Revision Comparison Section */}
+            {availableRevisions.length > 1 && (
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Revision Comparison</h2>
             
@@ -605,8 +650,8 @@ export default function BOMDetailPage() {
           </div>
         )}
 
-        {/* Components Table */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+            {/* Components Table */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900">Bill of Materials</h2>
           </div>
@@ -692,8 +737,158 @@ export default function BOMDetailPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
-        </div>
+          </>
+        )}
+
+        {/* Phase 3H.15: Validation View Mode */}
+        {viewMode === 'validation' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* LEFT PANEL: Source Document */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Source Document {bomDetail.revision && `— Revision ${bomDetail.revision}`}
+                </h2>
+              </div>
+              <div className="p-6">
+                {sourceArtifactUrl ? (
+                  <div className="space-y-4">
+                    <div className="aspect-[8.5/11] bg-gray-100 rounded border border-gray-300 overflow-hidden">
+                      <iframe
+                        src={sourceArtifactUrl}
+                        className="w-full h-full"
+                        title="Source BOM Document"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <a
+                        href={sourceArtifactUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
+                      >
+                        Open in New Tab
+                      </a>
+                      <a
+                        href={sourceArtifactUrl}
+                        download
+                        className="px-4 py-2 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300 transition-colors"
+                      >
+                        Download
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <div className="text-gray-400 mb-2">
+                      <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <p className="text-gray-600 font-medium">Source document not available for this BOM.</p>
+                    <p className="text-gray-500 text-sm mt-1">The engineering master may not have been uploaded or linked.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT PANEL: Extracted Data */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">Extracted Data</h2>
+              </div>
+              <div className="overflow-y-auto" style={{ maxHeight: '800px' }}>
+                {/* Extracted Metadata Summary */}
+                <div className="p-6 border-b border-gray-200 bg-blue-50">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-xs text-gray-600 uppercase tracking-wide mb-1">Part Number</div>
+                      <div className="text-sm font-semibold text-gray-900">{bomDetail.partNumber}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600 uppercase tracking-wide mb-1">Revision</div>
+                      <div className="text-sm font-semibold text-gray-900">{bomDetail.revision}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600 uppercase tracking-wide mb-1">Parsed Components</div>
+                      <div className="text-sm font-semibold text-gray-900">{bomDetail.componentCount}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600 uppercase tracking-wide mb-1">Wires</div>
+                      <div className="text-sm font-semibold text-gray-900">{skuInsights?.wireCount || 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600 uppercase tracking-wide mb-1">Connectors</div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {bomDetail.components.filter(c => c.category === 'CONNECTOR').length}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600 uppercase tracking-wide mb-1">Unknowns</div>
+                      <div className="text-sm font-semibold text-yellow-700">
+                        {bomDetail.components.filter(c => c.category === 'UNKNOWN' || !c.category).length}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Extracted BOM Table */}
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Step</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Part Number</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Length</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Gauge</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Color</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {bomDetail.components.map((component, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 text-sm text-gray-500 whitespace-nowrap">
+                            {component.operation_step || '-'}
+                          </td>
+                          <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                            {component.component_part_number}
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap">
+                            {component.category === 'UNKNOWN' || !component.category ? (
+                              <span className="px-2 py-1 text-xs font-medium rounded bg-yellow-100 text-yellow-800">
+                                UNKNOWN
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800">
+                                {component.category}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-900 whitespace-nowrap">
+                            {component.quantity}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-500 whitespace-nowrap">
+                            {component.length || '-'}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-500 whitespace-nowrap">
+                            {component.gauge || '-'}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-500 whitespace-nowrap">
+                            {component.normalizedColor || component.color || '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </EMIPLayout>
   );
