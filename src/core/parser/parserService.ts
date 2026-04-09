@@ -59,13 +59,26 @@ function isComponentLine(line: string): boolean {
   return dashCount >= 4;
 }
 
+/**
+ * V6.9.5: Extract master part number from BOM text
+ * 
+ * CRITICAL: Must return FULL part number format (NH##-######-##)
+ * NOT just digits - prevents substring extraction like "45"
+ * 
+ * @param text Raw BOM text
+ * @returns Full part number or "UNKNOWN"
+ */
 function extractMasterPN(text: string): string {
-  const nhMatch = text.match(/(?:M\s+)?(?:NH)?(\d{12})/);
-  if (nhMatch) return nhMatch[1];
+  // V6.9.5: Strict pattern - capture full part number with dashes
+  // NH45-425227-214 or 45-425227-214 (normalized downstream)
+  const fullMatch = text.match(/\b(NH?\d{2}-\d{5,6}-\d{2,3})\b/i);
+  if (fullMatch) {
+    console.log('✅ V6.9.5 FULL PART NUMBER EXTRACTED', { match: fullMatch[1] });
+    return fullMatch[1].toUpperCase();
+  }
   
-  const masterMatch = text.match(/^M\s+(NH?\d+)/m);
-  if (masterMatch) return masterMatch[1].replace(/^NH/, "");
-  
+  // V6.9.5: Reject partial/numeric-only matches
+  console.warn('⚠️ V6.9.5 NO VALID PART NUMBER FOUND IN TEXT');
   return "UNKNOWN";
 }
 

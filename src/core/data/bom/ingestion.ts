@@ -206,7 +206,7 @@ function normalizeComponent(
       masterPartNumber,
       componentPartId: component.detectedPartId
     });
-    throw new Error(`CRITICAL: Invalid parent part number in normalizeComponent: "${masterPartNumber}"`);
+    throw new Error(`CRITICAL: Invalid canonical part number in normalizeComponent: "${masterPartNumber}"`);
   }
   
   // V5.6.4: Align with LIVE database schema
@@ -342,9 +342,18 @@ export async function ingestBOMFromText(
       }
     }
     
-    // V6.0.10: STEP 0C - SOURCE PRIORITY RESOLUTION
+    // V6.9.5: STEP 0C - SOURCE PRIORITY RESOLUTION
     // Priority: metadata > header > parser
-    // Prevents invalid parser fragments from overriding valid sources
+    // STRICT: Throw error if NO valid candidate found (no weak fallbacks)
+    
+    // V6.9.5: Debug log all candidates BEFORE selection
+    console.log('🧪 V6.9.5 FINAL PART NUMBER CANDIDATES', {
+      metadata: metadataCandidate,
+      header: headerCandidate,
+      parser: parserCandidate,
+      allCandidates: [metadataCandidate, headerCandidate, parserCandidate].filter(Boolean)
+    });
+    
     const masterPartNumber = metadataCandidate || headerCandidate || parserCandidate;
     
     const selectedSource = metadataCandidate ? 'metadata' :
@@ -352,7 +361,7 @@ export async function ingestBOMFromText(
                           parserCandidate ? 'parser' :
                           'none';
     
-    console.log('🧠 V6.0.10 PART NUMBER SOURCE RESOLUTION', {
+    console.log('🧠 V6.9.5 PART NUMBER SOURCE RESOLUTION', {
       metadata: metadata.partNumber,
       metadataValid: isValidPartNumberCandidate(metadata.partNumber),
       metadataCandidate,
@@ -364,9 +373,15 @@ export async function ingestBOMFromText(
       source: selectedSource
     });
     
-    // V6.0.6: STEP 1 - LOCK CANONICAL PART NUMBER (Critical Data Integrity)
-    // Once resolved, the canonical part number must NEVER be degraded or replaced
+    // V6.9.5: STEP 1 - STRICT VALIDATION (No weak fallbacks allowed)
+    // Throw error if no valid part number found - better to fail than accept "45"
     if (!masterPartNumber || masterPartNumber.length < 8) {
+      console.error('❌ V6.9.5 NO VALID PART NUMBER FOUND', {
+        metadata: metadata.partNumber,
+        header: headerCandidate,
+        parser: rawData.masterPartNumber,
+        reason: 'strict_pattern_enforcement'
+      });
       console.error('🚨 V6.0.6 CRITICAL: Invalid canonical part number resolved', {
         masterPartNumber,
         metadataPartNumber: metadata.partNumber,
