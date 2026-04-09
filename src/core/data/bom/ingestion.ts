@@ -261,10 +261,16 @@ function normalizeComponent(
  * @returns Ingestion result with success status and stats
  */
 export async function ingestBOMFromText(
-  text: string,
+  bomText: string,
   metadata: IngestionMetadata
 ): Promise<IngestionResult> {
-  console.log(`🧠 [BOM Ingestion] Starting ingestion from ${metadata.sourceType}: ${metadata.sourceReference}`);
+  console.log('🚀 V6.7.1 INGEST START', {
+    sourceReference: metadata.sourceReference,
+    sourceType: metadata.sourceType,
+    providedPartNumber: metadata.partNumber,
+    providedRevision: metadata.revision,
+    timestamp: new Date().toISOString()
+  });
   
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -284,7 +290,7 @@ export async function ingestBOMFromText(
     }
     
     // Step 1: Parse
-    const parseResult: ParseResult = parseBOMWithValidation(text);
+    const parseResult: ParseResult = parseBOMWithValidation(bomText);
     
     if (!parseResult.success || !parseResult.data) {
       parseResult.errors.forEach(err => errors.push(err.message));
@@ -329,8 +335,8 @@ export async function ingestBOMFromText(
     // Extract part number directly from BOM header as fallback
     // Prioritize header over parser to avoid invalid fragments
     let headerCandidate: string | null = null;
-    if (text) {
-      const headerMatch = text.match(/NH\d{2}-\d{5,6}-\d{2,3}/);
+    if (bomText) {
+      const headerMatch = bomText.match(/NH\d{2}-\d{5,6}-\d{2,3}/);
       if (headerMatch) {
         headerCandidate = normalizePartNumber(headerMatch[0]);
       }
@@ -414,6 +420,13 @@ export async function ingestBOMFromText(
       order: incomingRevision.order
     });
     
+    // V6.7.1: BEFORE REVISION CHECK
+    console.log('📦 V6.7.1 BEFORE REVISION CHECK', {
+      masterPartNumber,
+      revision: incomingRevision.revision,
+      revisionOrder: incomingRevision.order
+    });
+    
     // V6.7: STEP 1 - REVISION INTELLIGENCE: Fetch All Existing Revisions
     console.log('🧠 V6.7 REVISION INTELLIGENCE START', {
       masterPartNumber,
@@ -431,6 +444,12 @@ export async function ingestBOMFromText(
       errors.push(`Failed to check existing revisions: ${revisionFetchError.message}`);
       throw new Error(`Revision check failed: ${revisionFetchError.message}`);
     }
+    
+    // V6.7.1: Log raw existing revisions
+    console.log('📊 V6.7.1 EXISTING REVISIONS RAW', {
+      count: existingRevisions?.length || 0,
+      revisions: existingRevisions
+    });
     
     // V6.7: STEP 2 - Get unique revisions from database
     const uniqueRevisions = Array.from(
@@ -599,18 +618,47 @@ export async function ingestBOMFromText(
       throw new Error(`CRITICAL: Part number degraded before storage: "${masterPartNumber}"`);
     }
     
+    // V6.7.1: Validate payload before insert
+    if (!masterPartNumber || !incomingRevision.revision) {
+      console.error('❌ V6.7.1 INVALID PAYLOAD', {
+        partNumber: masterPartNumber,
+        revision: incomingRevision.revision
+      });
+      throw new Error('Missing part number or revision before insert');
+    }
+    
     // V6.7: STEP 8 - Final Storage with Active Status
-    console.log('💾 V6.7 STORING NEW REVISION', {
+    console.log('💾 V6.7.1 ABOUT TO INSERT', {
       partNumber: masterPartNumber,
       revision: incomingRevision.revision,
       recordCount: normalizedRecords.length,
       isActive: shouldActivate,
       batchId: ingestionBatchId,
-      action: activationAction
+      action: activationAction,
+      firstRecordSample: normalizedRecords[0] ? {
+        parent_part_number: normalizedRecords[0].parent_part_number,
+        component_part_number: normalizedRecords[0].component_part_number,
+        revision: normalizedRecords[0].revision,
+        is_active: normalizedRecords[0].is_active
+      } : null
     });
     
     // Step 3: Store (records already have is_active set from normalization)
-    await storeBOM(masterPartNumber, normalizedRecords);
+    try {
+      await storeBOM(masterPartNumber, normalizedRecords);
+      console.log('✅ V6.7.1 INSERT SUCCESS', {
+        partNumber: masterPartNumber,
+        revision: incomingRevision.revision,
+        recordCount: normalizedRecords.length
+      });
+    } catch (insertError) {
+      console.error('❌ V6.7.1 INSERT FAILED', {
+        partNumber: masterPartNumber,
+        revision: incomingRevision.revision,
+        error: insertError
+      });
+      throw insertError;
+    }
     
     console.log(`🧠 [BOM Ingestion] Stored BOM for ${masterPartNumber}`);
     
@@ -655,7 +703,7 @@ export async function ingestBOMFromText(
       throw new Error('Data integrity violation: Multiple active batches exist');
     }
     
-    console.log('🔥 V6.7 REVISION ACTIVATED', {
+    console.log('🔥 V6.7.1 REVISION ACTIVATED', {
       partNumber: masterPartNumber,
       revision: incomingRevision.revision,
       recordsInserted: normalizedRecords.length,
@@ -666,6 +714,14 @@ export async function ingestBOMFromText(
       action: activationAction,
       isValid: activeCount === normalizedRecords.length && activeRevisions.size === 1,
       timestamp: new Date().toISOString()
+    });
+    
+    // V6.7.1: Final success confirmation
+    console.log('🎯 V6.7.1 INGEST COMPLETE', {
+      partNumber: masterPartNumber,
+      revision: incomingRevision.revision,
+      recordsCreated: normalizedRecords.length,
+      isActive: shouldActivate
     });
     
     // V6.0.7: FINAL ASSERTION - Verify canonical part number integrity

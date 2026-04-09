@@ -1308,19 +1308,73 @@ export async function storeBOM(partNumber: string, records: BOMRecord[]): Promis
     fields: Object.keys(cleanedRecords[0] || {})
   });
   
-  // Bulk insert into database
-  const { data, error } = await supabase
-    .from('bom_records')
-    .insert(cleanedRecords)
-    .select();
+  // V6.7.1: Pre-insert validation log
+  console.log('💾 V6.7.1 ABOUT TO INSERT TO DB', {
+    partNumber,
+    recordCount: cleanedRecords.length,
+    firstRecordFields: cleanedRecords[0] ? Object.keys(cleanedRecords[0]) : [],
+    sampleRecord: cleanedRecords[0] ? {
+      parent_part_number: cleanedRecords[0].parent_part_number,
+      component_part_number: cleanedRecords[0].component_part_number,
+      revision: cleanedRecords[0].revision,
+      is_active: cleanedRecords[0].is_active
+    } : null
+  });
   
-  if (error) {
-    console.error('🧠 [BOM Service] Database insert error:', error);
-    console.error('🧠 [BOM Service] Failed payload sample:', cleanedRecords[0]);
-    throw new Error(`Failed to store BOM records for ${partNumber}: ${error.message}`);
+  // Bulk insert into database
+  let insertResult;
+  
+  try {
+    insertResult = await supabase
+      .from('bom_records')
+      .insert(cleanedRecords)
+      .select();
+    
+    console.log('✅ V6.7.1 INSERT RESULT', {
+      hasData: !!insertResult.data,
+      hasError: !!insertResult.error,
+      dataCount: insertResult.data?.length,
+      status: insertResult.status,
+      statusText: insertResult.statusText
+    });
+  } catch (catchError) {
+    console.error('❌ V6.7.1 INSERT FAILED (CATCH)', {
+      partNumber,
+      error: catchError,
+      errorType: typeof catchError,
+      errorMessage: catchError instanceof Error ? catchError.message : 'Unknown'
+    });
+    throw catchError;
   }
   
-  console.log(`🧠 [BOM Service] Successfully stored ${data?.length || cleanedRecords.length} records for ${partNumber}`);
+  if (insertResult.error) {
+    console.error('❌ V6.7.1 INSERT ERROR (SUPABASE)', {
+      partNumber,
+      error: insertResult.error,
+      code: insertResult.error.code,
+      message: insertResult.error.message,
+      details: insertResult.error.details,
+      hint: insertResult.error.hint,
+      failedPayloadSample: cleanedRecords[0]
+    });
+    throw new Error(`Failed to store BOM records for ${partNumber}: ${insertResult.error.message}`);
+  }
+  
+  const insertedCount = insertResult.data?.length || 0;
+  
+  console.log('✅ V6.7.1 INSERT SUCCESS', {
+    partNumber,
+    recordsInserted: insertedCount,
+    expectedCount: cleanedRecords.length,
+    match: insertedCount === cleanedRecords.length
+  });
+  
+  if (insertedCount === 0) {
+    console.error('⚠️ V6.7.1 WARNING: Zero records inserted', {
+      partNumber,
+      expectedCount: cleanedRecords.length
+    });
+  }
 }
 
 /**
