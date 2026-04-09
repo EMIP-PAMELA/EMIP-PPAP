@@ -323,22 +323,44 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   let estimatedInsulationWeight = 0;
   let estimatedGrossWeight = 0;
   
-  // V6.4.3: Synchronous calibration lookup (use cache)
+  // V6.4.4: Calibration-first calculation with derived insulation
   wireRecords.forEach(r => {
-    const calibration = CALIBRATION_CACHE[r.gauge || ''];
+    const gauge = r.gauge || '';
     const lengthFeet = r.length * r.qtyPer;
+    const calibration = CALIBRATION_CACHE[gauge];
     
     if (calibration) {
-      // V6.4.3: Use calibration data (10 ft sample method)
-      estimatedCopperWeight += lengthFeet * calibration.copperLbsPerFt;
-      estimatedInsulationWeight += lengthFeet * calibration.insulationLbsPerFt;
-      estimatedGrossWeight += lengthFeet * calibration.grossLbsPerFt;
+      // V6.4.4: Use calibration data ONLY (10 ft sample method)
+      const copper = lengthFeet * calibration.copperLbsPerFt;
+      const gross = lengthFeet * calibration.grossLbsPerFt;
+      const insulation = gross - copper;  // Always derive from gross - copper
+      
+      estimatedCopperWeight += copper;
+      estimatedInsulationWeight += insulation;
+      estimatedGrossWeight += gross;
+      
+      // V6.4.4: Debug calibration usage
+      if (lengthFeet > 0) {
+        console.log('🧠 V6.4.4 CALIBRATION ACTIVE', {
+          gauge,
+          lengthFeet: lengthFeet.toFixed(2),
+          copperPerFt: calibration.copperLbsPerFt.toFixed(4),
+          grossPerFt: calibration.grossLbsPerFt.toFixed(4),
+          insulationPerFt: (calibration.grossLbsPerFt - calibration.copperLbsPerFt).toFixed(4),
+          totalCopper: copper.toFixed(4),
+          totalInsulation: insulation.toFixed(4),
+          totalGross: gross.toFixed(4)
+        });
+      }
     } else {
-      // V6.4.3: Fallback to AWG lookup table
-      const factor = getCopperFactor(r.gauge || '');
+      // V6.4.4: Fallback to AWG lookup table (copper-only)
+      const factor = getCopperFactor(gauge);
       if (factor && r.length) {
-        estimatedCopperWeight += lengthFeet * factor;
-        estimatedGrossWeight += lengthFeet * factor;  // Assume copper-only for fallback
+        const copper = lengthFeet * factor;
+        
+        estimatedCopperWeight += copper;
+        estimatedGrossWeight += copper;  // Assume copper-only for fallback
+        // IMPORTANT: estimatedInsulationWeight remains 0 in fallback path
       }
     }
   });
@@ -478,8 +500,8 @@ export function computeFamilyCopperIndex(
     };
   });
   
-  // V6.4.3: Log family copper index
-  console.log('🧠 V6.4.3 FAMILY COPPER INDEX', {
+  // V6.4.4: Log family copper index
+  console.log('🧠 V6.4.4 FAMILY COPPER INDEX', {
     familyCount: Object.keys(result).length,
     calibrationActive: Object.keys(CALIBRATION_CACHE).length > 0,
     families: Object.entries(result).map(([family, data]) => ({
