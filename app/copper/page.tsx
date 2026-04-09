@@ -21,7 +21,7 @@
 import React, { useEffect, useState } from 'react';
 import EMIPLayout from '../layout/EMIPLayout';
 import Link from 'next/link';
-import { getAllActiveBOMs, getBOM, computeFamilyCopperIndex, computeSKUInsights, filterSelectedSKUs, type FamilyCopperIndex } from '@/src/core/services/bomService';
+import { getAllActiveBOMs, getBOM, computeFamilyCopperIndex, computeSKUInsights, filterSelectedSKUs, loadCalibrationFromDB, getActiveCalibrations, type FamilyCopperIndex } from '@/src/core/services/bomService';
 
 interface SKUData {
   partNumber: string;
@@ -42,10 +42,18 @@ export default function CopperPage() {
   const [familySKUs, setFamilySKUs] = useState<Record<string, SKUData[]>>({});
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null);
   const [selectedSKUs, setSelectedSKUs] = useState<string[]>([]);
+  
+  // V6.4.3: Calibration state
   const [calibrationActive, setCalibrationActive] = useState(false);
+  const [activeCalibrations, setActiveCalibrations] = useState<any[]>([]);
+  const [calGauge, setCalGauge] = useState('');
+  const [calCopper, setCalCopper] = useState('');
+  const [calGross, setCalGross] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadCopperData();
+    loadCalibrations();
   }, []);
   
   // V6.4.2: Dynamic recomputation when selection changes
@@ -99,6 +107,74 @@ export default function CopperPage() {
   
   const toggleFamily = (family: string) => {
     setExpandedFamily(expandedFamily === family ? null : family);
+  };
+  
+  // V6.4.3: Load calibration data from API
+  const loadCalibrations = async () => {
+    try {
+      await loadCalibrationFromDB();
+      const calibrations = getActiveCalibrations();
+      const calibrationArray = Object.values(calibrations);
+      setActiveCalibrations(calibrationArray);
+      setCalibrationActive(calibrationArray.length > 0);
+    } catch (err) {
+      console.error('Error loading calibrations:', err);
+    }
+  };
+  
+  // V6.4.3: Save calibration to database
+  const saveCalibration = async () => {
+    if (!calGauge || !calCopper || !calGross) {
+      alert('Please enter gauge, copper, and gross weight values');
+      return;
+    }
+    
+    const copperNum = parseFloat(calCopper);
+    const grossNum = parseFloat(calGross);
+    
+    if (isNaN(copperNum) || isNaN(grossNum)) {
+      alert('Copper and gross weights must be valid numbers');
+      return;
+    }
+    
+    if (copperNum > grossNum) {
+      alert('Copper weight cannot exceed gross weight');
+      return;
+    }
+    
+    setSaving(true);
+    
+    try {
+      const response = await fetch('/api/calibration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gauge: calGauge,
+          copper: copperNum,
+          gross: grossNum
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to save calibration');
+      }
+      
+      // Clear inputs
+      setCalGauge('');
+      setCalCopper('');
+      setCalGross('');
+      
+      // Reload calibrations and data
+      await loadCalibrations();
+      await loadCopperData();
+      
+      alert(`Calibration saved for AWG ${calGauge}!`);
+    } catch (err) {
+      console.error('Error saving calibration:', err);
+      alert('Failed to save calibration. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const loadCopperData = async () => {
@@ -455,24 +531,15 @@ export default function CopperPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Gauge (AWG)</label>
               <input
                 type="text"
                 placeholder="e.g., 18"
+                value={calGauge}
+                onChange={(e) => setCalGauge(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Gross (lbs/ft)</label>
-              <input
-                type="number"
-                step="0.0001"
-                placeholder="0.0185"
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled
               />
             </div>
             <div>
@@ -481,39 +548,68 @@ export default function CopperPage() {
                 type="number"
                 step="0.0001"
                 placeholder="0.0160"
+                value={calCopper}
+                onChange={(e) => setCalCopper(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Insulation (lbs/ft)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Gross (lbs/ft)</label>
               <input
                 type="number"
                 step="0.0001"
-                placeholder="0.0025"
+                placeholder="0.0185"
+                value={calGross}
+                onChange={(e) => setCalGross(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled
               />
             </div>
           </div>
+          
+          {calCopper && calGross && (
+            <div className="mt-2 text-sm text-gray-600">
+              <span className="font-medium">Auto-calculated Insulation:</span>{' '}
+              {(parseFloat(calGross) - parseFloat(calCopper)).toFixed(4)} lbs/ft
+            </div>
+          )}
 
           <div className="mt-4 flex items-center gap-4">
             <button
-              className="px-4 py-2 bg-gray-400 text-white rounded cursor-not-allowed"
-              disabled
+              onClick={saveCalibration}
+              disabled={saving || !calGauge || !calCopper || !calGross}
+              className={`px-4 py-2 rounded font-medium ${
+                saving || !calGauge || !calCopper || !calGross
+                  ? 'bg-gray-400 text-white cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
             >
-              Save Calibration
+              {saving ? 'Saving...' : 'Save Calibration'}
             </button>
-            <span className="text-sm text-amber-600">
-              ⚠️ Calibration UI is view-only. Backend calibration table must be updated manually in code.
+            <span className="text-sm text-green-600">
+              ✅ Calibration will be saved to database and applied immediately
             </span>
           </div>
 
           <div className="mt-6 p-4 bg-gray-50 rounded">
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Current Calibrations</h3>
-            <p className="text-sm text-gray-600">
-              No custom calibrations active. Using AWG standard values.
-            </p>
+            {activeCalibrations.length > 0 ? (
+              <div className="space-y-2">
+                {activeCalibrations.map((cal) => (
+                  <div key={cal.gauge} className="flex items-center justify-between p-2 bg-white rounded border border-gray-200">
+                    <span className="font-medium text-gray-900">AWG {cal.gauge}</span>
+                    <div className="flex gap-6 text-sm text-gray-600">
+                      <span>Copper: <span className="font-medium text-orange-600">{cal.copperLbsPerFt.toFixed(4)}</span> lbs/ft</span>
+                      <span>Insulation: <span className="font-medium text-green-600">{cal.insulationLbsPerFt.toFixed(4)}</span> lbs/ft</span>
+                      <span>Gross: <span className="font-medium text-purple-600">{cal.grossLbsPerFt.toFixed(4)}</span> lbs/ft</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600">
+                No custom calibrations active. Using AWG standard values.
+              </p>
+            )}
           </div>
         </div>
       </div>

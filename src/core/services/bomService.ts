@@ -146,15 +146,63 @@ interface WireCalibration {
 }
 
 /**
- * V6.4: Calibration table (empty by default, populated manually)
+ * V6.4.3: Calibration cache (loaded from database)
  */
-const CALIBRATION_TABLE: Record<string, WireCalibration> = {};
+let CALIBRATION_CACHE: Record<string, WireCalibration> = {};
+let CALIBRATION_LAST_LOADED: number = 0;
+const CALIBRATION_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
- * V6.4: Get calibration data for a specific gauge
+ * V6.4.3: Load calibration data from database
  */
-function getCalibration(gauge: string): WireCalibration | null {
-  return CALIBRATION_TABLE[gauge] || null;
+export async function loadCalibrationFromDB(): Promise<void> {
+  try {
+    const response = await fetch('/api/calibration');
+    if (!response.ok) {
+      console.warn('⚠️ [BOM Service] Failed to load calibration from API');
+      return;
+    }
+    
+    const { data } = await response.json();
+    
+    CALIBRATION_CACHE = {};
+    data.forEach((cal: any) => {
+      CALIBRATION_CACHE[cal.gauge] = {
+        gauge: cal.gauge,
+        copperLbsPerFt: parseFloat(cal.copper_lbs_per_ft),
+        grossLbsPerFt: parseFloat(cal.gross_lbs_per_ft),
+        insulationLbsPerFt: parseFloat(cal.insulation_lbs_per_ft)
+      };
+    });
+    
+    CALIBRATION_LAST_LOADED = Date.now();
+    
+    console.log('✅ V6.4.3 CALIBRATION LOADED', {
+      count: Object.keys(CALIBRATION_CACHE).length,
+      gauges: Object.keys(CALIBRATION_CACHE)
+    });
+  } catch (err) {
+    console.error('❌ [BOM Service] Error loading calibration:', err);
+  }
+}
+
+/**
+ * V6.4.3: Get calibration data for a specific gauge (with auto-refresh)
+ */
+async function getCalibration(gauge: string): Promise<WireCalibration | null> {
+  // Auto-refresh cache if expired
+  if (Date.now() - CALIBRATION_LAST_LOADED > CALIBRATION_CACHE_TTL) {
+    await loadCalibrationFromDB();
+  }
+  
+  return CALIBRATION_CACHE[gauge] || null;
+}
+
+/**
+ * V6.4.3: Get all active calibrations (for UI display)
+ */
+export function getActiveCalibrations(): Record<string, WireCalibration> {
+  return { ...CALIBRATION_CACHE };
 }
 
 /**
@@ -275,17 +323,18 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   let estimatedInsulationWeight = 0;
   let estimatedGrossWeight = 0;
   
+  // V6.4.3: Synchronous calibration lookup (use cache)
   wireRecords.forEach(r => {
-    const calibration = getCalibration(r.gauge || '');
+    const calibration = CALIBRATION_CACHE[r.gauge || ''];
     const lengthFeet = r.length * r.qtyPer;
     
     if (calibration) {
-      // V6.4: Use calibration data (10 ft sample method)
+      // V6.4.3: Use calibration data (10 ft sample method)
       estimatedCopperWeight += lengthFeet * calibration.copperLbsPerFt;
       estimatedInsulationWeight += lengthFeet * calibration.insulationLbsPerFt;
       estimatedGrossWeight += lengthFeet * calibration.grossLbsPerFt;
     } else {
-      // V6.4: Fallback to AWG lookup table
+      // V6.4.3: Fallback to AWG lookup table
       const factor = getCopperFactor(r.gauge || '');
       if (factor && r.length) {
         estimatedCopperWeight += lengthFeet * factor;
@@ -429,10 +478,10 @@ export function computeFamilyCopperIndex(
     };
   });
   
-  // V6.4: Log family copper index
-  console.log('🧠 V6.4 FAMILY COPPER INDEX', {
+  // V6.4.3: Log family copper index
+  console.log('🧠 V6.4.3 FAMILY COPPER INDEX', {
     familyCount: Object.keys(result).length,
-    calibrationActive: Object.keys(CALIBRATION_TABLE).length > 0,
+    calibrationActive: Object.keys(CALIBRATION_CACHE).length > 0,
     families: Object.entries(result).map(([family, data]) => ({
       family,
       skuCount: data.skuCount,
