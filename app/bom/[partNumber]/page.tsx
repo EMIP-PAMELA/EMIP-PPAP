@@ -779,13 +779,14 @@ export default function BOMDetailPage() {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {component.category === 'UNKNOWN' ? (
+                      {/* Phase 3H.15.6: Use category from DB directly - no fallback */}
+                      {component.category === 'UNKNOWN' || !component.category ? (
                         <span className="px-2 py-1 text-xs font-medium rounded bg-yellow-100 text-yellow-800">
-                          UNKNOWN
+                          {component.category || 'UNKNOWN'}
                         </span>
                       ) : (
                         <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800">
-                          {component.category || 'UNKNOWN'}
+                          {component.category}
                         </span>
                       )}
                     </td>
@@ -799,12 +800,13 @@ export default function BOMDetailPage() {
                       {component.gauge || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {component.normalizedColor ? (
+                      {/* Phase 3H.15.6: Use normalizedColor from DB as single source of truth */}
+                      {(component.normalizedColor || component.color) ? (
                         <span title={`Raw: ${component.rawColor || component.color || 'N/A'}`} className="cursor-help">
-                          {component.normalizedColor}
+                          {(component.normalizedColor || component.color)?.toUpperCase()}
                         </span>
                       ) : (
-                        component.color || '-'
+                        '-'
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

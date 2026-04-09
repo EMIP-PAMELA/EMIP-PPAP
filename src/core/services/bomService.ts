@@ -165,6 +165,8 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
   // V6.2: qty_per may not exist in all records, default to 1
   const qtyPer = Number((record as any).qty_per) || 1;
   
+  // Phase 3H.15.6: Use normalizedColor from DB as single source of truth
+  // NO runtime normalization - DB is authoritative
   return {
     component_part_number: record.component_part_number,
     description: record.description || null,
@@ -173,7 +175,7 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
     qtyPer,
     gauge: record.gauge || null,
     color: record.color || null,
-    colorNormalized: normalizeColorLabel(record.color),
+    colorNormalized: record.normalizedColor || record.color || 'UNKNOWN',
     isWire: isWireComponent(record),
     effectiveLength: length * qtyPer,
     operation_step: record.operation_step || null
