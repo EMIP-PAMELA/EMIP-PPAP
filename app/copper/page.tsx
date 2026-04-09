@@ -1,26 +1,32 @@
 'use client';
 
 /**
- * V6.4.1 EMIP System Shell - Copper Index Page (Family Aggregation)
+ * V6.4.2 EMIP System Shell - Copper Index Page (Interactive Drilldown + Calibration)
  * 
- * UI LAYER - Family Copper Index Display
+ * UI LAYER - Interactive Family Copper Index
  * 
  * Responsibilities:
  * - Display family-level copper aggregation
+ * - Enable clickable family drilldown to SKUs
+ * - Allow SKU selection and dynamic recomputation
+ * - Provide calibration input UI
  * - Show calibration metrics (gross/copper/insulation)
- * - Enable family-based analysis
- * - Display SKU counts per family
  * 
  * Architecture:
  * - Consumes computeFamilyCopperIndex from bomService
- * - Pure display component
- * - No calculation logic
+ * - Interactive component with selection state
+ * - Dynamic recalculation based on filters
  */
 
 import React, { useEffect, useState } from 'react';
 import EMIPLayout from '../layout/EMIPLayout';
 import Link from 'next/link';
-import { getAllActiveBOMs, getBOM, computeFamilyCopperIndex, type FamilyCopperIndex } from '@/src/core/services/bomService';
+import { getAllActiveBOMs, getBOM, computeFamilyCopperIndex, computeSKUInsights, filterSelectedSKUs, type FamilyCopperIndex } from '@/src/core/services/bomService';
+
+interface SKUData {
+  partNumber: string;
+  records: any[];
+}
 
 export default function CopperPage() {
   const [familyIndex, setFamilyIndex] = useState<Record<string, FamilyCopperIndex>>({});
@@ -30,10 +36,70 @@ export default function CopperPage() {
   const [totalGross, setTotalGross] = useState(0);
   const [totalInsulation, setTotalInsulation] = useState(0);
   const [totalSKUs, setTotalSKUs] = useState(0);
+  
+  // V6.4.2: Interactive state
+  const [allRecords, setAllRecords] = useState<any[]>([]);
+  const [familySKUs, setFamilySKUs] = useState<Record<string, SKUData[]>>({});
+  const [expandedFamily, setExpandedFamily] = useState<string | null>(null);
+  const [selectedSKUs, setSelectedSKUs] = useState<string[]>([]);
+  const [calibrationActive, setCalibrationActive] = useState(false);
 
   useEffect(() => {
     loadCopperData();
   }, []);
+  
+  // V6.4.2: Dynamic recomputation when selection changes
+  useEffect(() => {
+    if (allRecords.length === 0) return;
+    
+    const filteredRecords = selectedSKUs.length > 0
+      ? filterSelectedSKUs(allRecords, selectedSKUs)
+      : allRecords;
+    
+    const index = computeFamilyCopperIndex(filteredRecords);
+    
+    let copper = 0;
+    let gross = 0;
+    let insulation = 0;
+    let skus = 0;
+    
+    Object.values(index).forEach(family => {
+      copper += family.totalCopper;
+      gross += family.totalGross;
+      insulation += family.totalInsulation;
+      skus += family.skuCount;
+    });
+    
+    setFamilyIndex(index);
+    setTotalCopper(copper);
+    setTotalGross(gross);
+    setTotalInsulation(insulation);
+    setTotalSKUs(skus);
+  }, [selectedSKUs, allRecords]);
+  
+  // V6.4.2: Interaction handlers
+  const toggleSKU = (partNumber: string) => {
+    setSelectedSKUs(prev =>
+      prev.includes(partNumber)
+        ? prev.filter(p => p !== partNumber)
+        : [...prev, partNumber]
+    );
+  };
+  
+  const selectAllSKUs = () => {
+    const allPartNumbers = Object.values(familySKUs)
+      .flat()
+      .map(sku => sku.partNumber);
+    setSelectedSKUs(allPartNumbers);
+  };
+  
+  const clearSelection = () => {
+    setSelectedSKUs([]);
+  };
+  
+  const toggleFamily = (family: string) => {
+    setExpandedFamily(expandedFamily === family ? null : family);
+  };
 
   const loadCopperData = async () => {
     try {
@@ -72,16 +138,39 @@ export default function CopperPage() {
         skus += family.skuCount;
       });
       
+      // V6.4.2: Store all records for filtering
+      setAllRecords(allRecords);
+      
+      // V6.4.2: Group SKUs by family
+      const skuGroups: Record<string, SKUData[]> = {};
+      const partNumberMap: Record<string, any[]> = {};
+      
+      allRecords.forEach(record => {
+        const pn = record.parent_part_number || 'UNKNOWN';
+        if (!partNumberMap[pn]) partNumberMap[pn] = [];
+        partNumberMap[pn].push(record);
+      });
+      
+      Object.entries(partNumberMap).forEach(([partNumber, records]) => {
+        const familyMatch = partNumber.match(/^\w*45-(\d+)-/);
+        const family = familyMatch ? familyMatch[1] : 'UNKNOWN';
+        
+        if (!skuGroups[family]) skuGroups[family] = [];
+        skuGroups[family].push({ partNumber, records });
+      });
+      
+      setFamilySKUs(skuGroups);
       setFamilyIndex(index);
       setTotalCopper(copper);
       setTotalGross(gross);
       setTotalInsulation(insulation);
       setTotalSKUs(skus);
       
-      console.log('🧠 V6.4.1 UI LOADED', {
+      console.log('🧠 V6.4.2 UI LOADED', {
         familyCount: Object.keys(index).length,
         totalCopper: copper.toFixed(4),
-        totalGross: gross.toFixed(4)
+        totalGross: gross.toFixed(4),
+        skuGroupCount: Object.keys(skuGroups).length
       });
       
       setLoading(false);
@@ -140,6 +229,37 @@ export default function CopperPage() {
           </div>
         </div>
 
+        {/* V6.4.2: Selection Controls */}
+        {Object.keys(familyIndex).length > 0 && (
+          <div className="flex items-center gap-4 mb-4">
+            <button
+              onClick={selectAllSKUs}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
+            >
+              Select All SKUs
+            </button>
+            <button
+              onClick={clearSelection}
+              className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm font-medium"
+            >
+              Clear Selection
+            </button>
+            {selectedSKUs.length > 0 && (
+              <span className="text-sm text-gray-600">
+                {selectedSKUs.length} SKU{selectedSKUs.length !== 1 ? 's' : ''} selected
+              </span>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-sm text-gray-600">Calibration:</span>
+              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                calibrationActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+              }`}>
+                {calibrationActive ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* V6.4.1: Enhanced Summary Cards */}
         {Object.keys(familyIndex).length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -196,38 +316,107 @@ export default function CopperPage() {
                 {Object.values(familyIndex)
                   .sort((a, b) => a.family.localeCompare(b.family))
                   .map((family) => (
-                    <tr key={family.family} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-blue-600">
-                          {family.family}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 py-1 bg-gray-100 rounded text-sm font-medium">
-                          {family.skuCount}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-blue-600 font-semibold">
-                          {family.totalLength.toFixed(1)} ft
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-orange-600 font-semibold">
-                          {family.totalCopper.toFixed(3)} lbs
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-green-600 font-semibold">
-                          {family.totalInsulation.toFixed(3)} lbs
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-purple-600 font-semibold">
-                          {family.totalGross.toFixed(3)} lbs
-                        </span>
-                      </td>
-                    </tr>
+                    <React.Fragment key={family.family}>
+                      <tr 
+                        className="hover:bg-gray-50 cursor-pointer"
+                        onClick={() => toggleFamily(family.family)}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-400">
+                              {expandedFamily === family.family ? '▼' : '▶'}
+                            </span>
+                            <div className="text-sm font-medium text-blue-600">
+                              {family.family}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="px-2 py-1 bg-gray-100 rounded text-sm font-medium">
+                            {family.skuCount}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-blue-600 font-semibold">
+                            {family.totalLength.toFixed(1)} ft
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-orange-600 font-semibold">
+                            {family.totalCopper.toFixed(3)} lbs
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-green-600 font-semibold">
+                            {family.totalInsulation.toFixed(3)} lbs
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-purple-600 font-semibold">
+                            {family.totalGross.toFixed(3)} lbs
+                          </span>
+                        </td>
+                      </tr>
+                      
+                      {/* V6.4.2: Expanded SKU View */}
+                      {expandedFamily === family.family && familySKUs[family.family] && (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-4 bg-gray-50">
+                            <div className="space-y-2">
+                              <div className="text-sm font-semibold text-gray-700 mb-3">
+                                SKUs in Family {family.family}
+                              </div>
+                              {familySKUs[family.family].map((sku) => {
+                                const insights = computeSKUInsights(sku.records);
+                                const isSelected = selectedSKUs.includes(sku.partNumber);
+                                
+                                return (
+                                  <div
+                                    key={sku.partNumber}
+                                    className="flex items-center gap-4 p-3 bg-white rounded border border-gray-200 hover:border-blue-300"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleSKU(sku.partNumber);
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => toggleSKU(sku.partNumber)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-4 h-4 text-blue-600 rounded"
+                                    />
+                                    <div className="flex-1 grid grid-cols-5 gap-4 text-sm">
+                                      <div>
+                                        <Link
+                                          href={`/bom/${sku.partNumber}`}
+                                          className="font-medium text-blue-600 hover:underline"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          {sku.partNumber}
+                                        </Link>
+                                      </div>
+                                      <div className="text-gray-600">
+                                        <span className="font-medium">Length:</span> {insights.totalWireLength.toFixed(1)} ft
+                                      </div>
+                                      <div className="text-orange-600">
+                                        <span className="font-medium">Copper:</span> {insights.estimatedCopperWeight.toFixed(3)} lbs
+                                      </div>
+                                      <div className="text-green-600">
+                                        <span className="font-medium">Insulation:</span> {insights.estimatedInsulationWeight.toFixed(3)} lbs
+                                      </div>
+                                      <div className="text-purple-600">
+                                        <span className="font-medium">Gross:</span> {insights.estimatedGrossWeight.toFixed(3)} lbs
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
               </tbody>
             </table>
@@ -239,6 +428,94 @@ export default function CopperPage() {
             <p className="text-gray-500">Upload BOMs to see family copper index</p>
           </div>
         )}
+
+        {/* V6.4.2: Calibration Input Panel */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="border-b border-gray-200 pb-4 mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Wire Calibration (10 ft Sample Method)</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Enter measured weights from a 10-foot wire sample to override AWG defaults
+            </p>
+          </div>
+          
+          <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+            <div className="flex items-start gap-2">
+              <span className="text-blue-600 text-xl">ℹ️</span>
+              <div className="text-sm text-blue-800">
+                <p className="font-medium mb-1">How to calibrate:</p>
+                <ol className="list-decimal ml-4 space-y-1">
+                  <li>Cut exactly 10 feet of wire</li>
+                  <li>Weigh the entire sample (gross weight)</li>
+                  <li>Strip the insulation and weigh copper only</li>
+                  <li>Calculate insulation weight (gross - copper)</li>
+                  <li>Divide all weights by 10 to get lbs/ft</li>
+                  <li>Enter values below and save</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Gauge (AWG)</label>
+              <input
+                type="text"
+                placeholder="e.g., 18"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Gross (lbs/ft)</label>
+              <input
+                type="number"
+                step="0.0001"
+                placeholder="0.0185"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Copper (lbs/ft)</label>
+              <input
+                type="number"
+                step="0.0001"
+                placeholder="0.0160"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Insulation (lbs/ft)</label>
+              <input
+                type="number"
+                step="0.0001"
+                placeholder="0.0025"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-center gap-4">
+            <button
+              className="px-4 py-2 bg-gray-400 text-white rounded cursor-not-allowed"
+              disabled
+            >
+              Save Calibration
+            </button>
+            <span className="text-sm text-amber-600">
+              ⚠️ Calibration UI is view-only. Backend calibration table must be updated manually in code.
+            </span>
+          </div>
+
+          <div className="mt-6 p-4 bg-gray-50 rounded">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Current Calibrations</h3>
+            <p className="text-sm text-gray-600">
+              No custom calibrations active. Using AWG standard values.
+            </p>
+          </div>
+        </div>
       </div>
     </EMIPLayout>
   );
