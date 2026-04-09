@@ -28,6 +28,45 @@ import { parseBOMText, parseBOMWithValidation, PARSER_VERSION } from '../parser/
 import { supabase } from '@/src/lib/supabaseClient';
 
 // ============================================================
+// V6.7: REVISION INTELLIGENCE LAYER
+// ============================================================
+
+/**
+ * V6.7: Compare two revision strings to determine which is newer
+ * 
+ * Returns:
+ *  > 0 if revision 'a' is newer than 'b'
+ *  < 0 if revision 'a' is older than 'b'
+ *  = 0 if revisions are equal
+ * 
+ * Examples:
+ *  compareRevision('08', '07') = 1  (08 is newer)
+ *  compareRevision('07', '08') = -1 (07 is older)
+ *  compareRevision('E', 'D') = 1   (E is newer)
+ */
+export function compareRevision(a: string, b: string): number {
+  // Normalize inputs
+  const revA = (a || '').trim();
+  const revB = (b || '').trim();
+  
+  // Handle empty cases
+  if (!revA && !revB) return 0;
+  if (!revA) return -1; // No revision is oldest
+  if (!revB) return 1;
+  
+  // Try numeric comparison first (e.g., '07', '08')
+  const numA = Number(revA);
+  const numB = Number(revB);
+  
+  if (!isNaN(numA) && !isNaN(numB)) {
+    return numA - numB;
+  }
+  
+  // Fallback to string comparison (e.g., 'A', 'B', 'E')
+  return revA.localeCompare(revB);
+}
+
+// ============================================================
 // V6.1: SKU INTELLIGENCE LAYER
 // ============================================================
 
