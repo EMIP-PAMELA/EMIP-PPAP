@@ -56,13 +56,13 @@ export interface BOMRecord {
   // ============================================================
   
   /** Phase 3H.14.1: Component category (WIRE, CONNECTOR, TERMINAL, etc.) */
-  category?: string | null;
+  category?: string;
   
-  /** Phase 3H.14.1: Original raw color value before normalization */
+  /** Phase 3H.15.2: Original color before normalization */
   rawColor?: string | null;
   
-  /** Phase 3H.14.1: Normalized color (e.g., "yellow", "violet") */
-  normalizedColor?: string | null;
+  /** Phase 3H.16.5: Standardized color name (lowercase to match DB) */
+  normalizedcolor?: string | null;
   
   /** Operation/step number where component is used */
   operation_step?: string | null;

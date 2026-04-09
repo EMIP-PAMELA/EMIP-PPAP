@@ -236,7 +236,7 @@ function normalizeComponent(
     // Phase 3H.14.1: Structured classification and normalization
     category: category,
     rawColor: rawColor,
-    normalizedColor: normalizedColor,
+    normalizedcolor: normalizedColor,  // Phase 3H.16.5: lowercase to match DB schema
     
     // V5.6.4: operation_step as string (DB will handle conversion)
     operation_step: operation.step,

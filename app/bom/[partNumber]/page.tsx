@@ -800,10 +800,10 @@ export default function BOMDetailPage() {
                       {component.gauge || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {/* Phase 3H.15.6: Use normalizedColor from DB as single source of truth */}
-                      {(component.normalizedColor || component.color) ? (
+                      {/* Phase 3H.16.5: Use normalizedcolor from DB as single source of truth */}
+                      {(component.normalizedcolor || component.color) ? (
                         <span title={`Raw: ${component.rawColor || component.color || 'N/A'}`} className="cursor-help">
-                          {(component.normalizedColor || component.color)?.toUpperCase()}
+                          {(component.normalizedcolor || component.color)?.toUpperCase()}
                         </span>
                       ) : (
                         '-'
@@ -962,7 +962,7 @@ export default function BOMDetailPage() {
                             {component.gauge || '-'}
                           </td>
                           <td className="px-4 py-2 text-sm text-gray-500 whitespace-nowrap">
-                            {component.normalizedColor || component.color || '-'}
+                            {component.normalizedcolor || component.color || '-'}
                           </td>
                         </tr>
                       );

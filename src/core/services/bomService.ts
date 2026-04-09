@@ -177,8 +177,9 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
     console.log(`📦 BOM RECORD CATEGORY: ${record.component_part_number} → ${record.category}`);
   }
   
-  // Phase 3H.15.6: Use normalizedColor from DB as single source of truth
+  // Phase 3H.15.6: Use normalizedcolor from DB as single source of truth
   // Phase 3H.16.3: Use category from DB as single source of truth
+  // Phase 3H.16.5: Use normalizedcolor (lowercase) to match DB schema
   // NO runtime normalization - DB is authoritative
   return {
     component_part_number: record.component_part_number,
@@ -188,7 +189,7 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
     qtyPer,
     gauge: record.gauge || null,
     color: record.color || null,
-    colorNormalized: record.normalizedColor || record.color || 'UNKNOWN',
+    colorNormalized: record.normalizedcolor || record.color || 'UNKNOWN',
     category: record.category || null,  // Phase 3H.16.3: Pass category from DB
     isWire: isWireComponent(record),
     effectiveLength: length * qtyPer,
