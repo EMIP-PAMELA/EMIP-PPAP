@@ -928,8 +928,13 @@ export default function BOMDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {bomDetail.components.map((component, index) => (
-                        <tr key={index} className="hover:bg-gray-50">
+                    {bomDetail.components.map((component, idx) => {
+                      // Phase 3H.16.3: Debug log category flow from API to UI
+                      if (idx === 0 || component.category) {
+                        console.log(` UI CATEGORY: ${component.component_part_number} → ${component.category || 'NULL'}`);
+                      }
+                      return (
+                        <tr key={idx} className="hover:bg-gray-50">
                           <td className="px-4 py-2 text-sm text-gray-500 whitespace-nowrap">
                             {component.operation_step || '-'}
                           </td>
@@ -960,8 +965,9 @@ export default function BOMDetailPage() {
                             {component.normalizedColor || component.color || '-'}
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
+                      );
+                    })}
+                  </tbody>
                   </table>
                 </div>
               </div>

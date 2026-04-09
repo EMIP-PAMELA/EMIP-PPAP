@@ -133,12 +133,13 @@ interface NormalizedComponent {
   description: string | null;
   length: number;
   quantity: number;
-  qtyPer: number;
+  qtyPer: number;  // V6.2: Quantity per assembly
   gauge: string | null;
   color: string | null;
   colorNormalized: string;
+  category: string | null;  // Phase 3H.16.3: Component category from DB
   isWire: boolean;
-  effectiveLength: number;
+  effectiveLength: number;  // V6.2: length * qtyPer
   operation_step: string | null;
 }
 
@@ -171,7 +172,13 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
   // V6.2: qty_per may not exist in all records, default to 1
   const qtyPer = Number((record as any).qty_per) || 1;
   
+  // Phase 3H.16.3: Log category from DB for debugging
+  if (record.category) {
+    console.log(`📦 BOM RECORD CATEGORY: ${record.component_part_number} → ${record.category}`);
+  }
+  
   // Phase 3H.15.6: Use normalizedColor from DB as single source of truth
+  // Phase 3H.16.3: Use category from DB as single source of truth
   // NO runtime normalization - DB is authoritative
   return {
     component_part_number: record.component_part_number,
@@ -182,6 +189,7 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
     gauge: record.gauge || null,
     color: record.color || null,
     colorNormalized: record.normalizedColor || record.color || 'UNKNOWN',
+    category: record.category || null,  // Phase 3H.16.3: Pass category from DB
     isWire: isWireComponent(record),
     effectiveLength: length * qtyPer,
     operation_step: record.operation_step || null
