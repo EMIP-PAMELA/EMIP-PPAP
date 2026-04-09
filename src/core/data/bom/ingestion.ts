@@ -58,6 +58,7 @@ export interface IngestionMetadata {
 
 export interface IngestionResult {
   success: boolean;
+  status?: string; // Phase 3H.14.2: CREATED | ALREADY_PROCESSED
   masterPartNumber: string;
   revision?: string; // V5.7.1: Normalized revision from ingestion (canonical truth)
   recordsCreated: number;
@@ -180,11 +181,13 @@ function normalizeComponent(
   
   // V5.9.1: Extract color from wire part number
   let wireColor: string | null = null;
+  let wireColorRaw: string | null = null; // Phase 3H.14.2: Preserve true raw color
   if (wireDetection.isWire) {
     const partId = component.detectedPartId || '';
     const colorMatch = partId.match(/^W\d+([A-Z]{2})/);
     if (colorMatch) {
       const colorCode = colorMatch[1];
+      wireColorRaw = colorCode; // Phase 3H.14.2: Store original abbreviation
       const colorMap: Record<string, string> = {
         'BK': 'BLACK',
         'RD': 'RED',
@@ -211,8 +214,10 @@ function normalizeComponent(
   }
   
   // Phase 3H.14.1: Apply classification and normalization
-  const category = classifyComponent(component.detectedPartId, null);
-  const rawColor = wireColor; // Store original color
+  // Phase 3H.14.2: Pass description to classifier for improved accuracy
+  const category = classifyComponent(component.detectedPartId, component.rawLine);
+  // Phase 3H.14.2: Preserve true raw color (pre-transformation)
+  const rawColor = wireColorRaw || wireColor; // Use original abbreviation if available
   const normalizedColor = normalizeWireColor(wireColor); // Apply normalization
   
   // V5.6.4: Align with LIVE database schema
@@ -527,6 +532,7 @@ export async function ingestBOMFromText(
       // Return success with ALREADY_PROCESSED status (do not throw)
       return {
         success: true,
+        status: 'ALREADY_PROCESSED', // Phase 3H.14.2: Explicit duplicate signal
         masterPartNumber,
         revision: incomingRev,
         recordsCreated: 0,
@@ -784,6 +790,7 @@ export async function ingestBOMFromText(
     // Step 4: Return result with canonical persisted values
     return {
       success: true,
+      status: 'CREATED', // Phase 3H.14.2: Explicit new ingestion signal
       masterPartNumber: masterPartNumber,
       revision: incomingRevision.revision, // V5.7.1: Return normalized revision (canonical truth)
       recordsCreated: normalizedRecords.length,

@@ -657,9 +657,15 @@ export default function BOMDetailPage() {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800">
-                        {component.category || 'UNKNOWN'}
-                      </span>
+                      {component.category === 'UNKNOWN' ? (
+                        <span className="px-2 py-1 text-xs font-medium rounded bg-yellow-100 text-yellow-800">
+                          UNKNOWN
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800">
+                          {component.category || 'UNKNOWN'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {component.quantity}

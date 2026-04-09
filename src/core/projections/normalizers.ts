@@ -275,6 +275,7 @@ export function isWire(
  * Classify component into structured category
  * 
  * Phase 3H.14.1: Wrapper around existing detection functions
+ * Phase 3H.14.2: Enhanced with keyword arrays for improved accuracy
  * Returns structured category string for BOM display
  * 
  * @param partNumber Part number
@@ -285,32 +286,60 @@ export function classifyComponent(
   partNumber: string | null | undefined,
   description: string | null | undefined
 ): string {
-  if (!partNumber && !description) return 'UNKNOWN';
+  if (!partNumber && !description) {
+    console.warn('⚠️ UNKNOWN COMPONENT TYPE', {
+      partNumber,
+      description,
+      reason: 'both_null'
+    });
+    return 'UNKNOWN';
+  }
   
   const searchText = `${partNumber || ''} ${description || ''}`.toUpperCase();
   
-  // Check wire first (most common)
+  // Phase 3H.14.2: Enhanced keyword arrays
+  const WIRE_KEYWORDS = ['WIRE', 'CABLE', 'LEAD', 'AWG', 'GAUGE'];
+  const CONNECTOR_KEYWORDS = ['CONNECTOR', 'CONN', 'PLUG', 'SOCKET', 'RECEPTACLE'];
+  const TERMINAL_KEYWORDS = ['TERMINAL', 'TERM', 'CONTACT'];
+  const HOUSING_KEYWORDS = ['HOUSING'];
+  const SEAL_KEYWORDS = ['SEAL', 'GROMMET'];
+  
+  // Check wire first (most common) - use existing function then fallback
   if (isWire(partNumber, description)) {
     return 'WIRE';
   }
+  if (WIRE_KEYWORDS.some(keyword => searchText.includes(keyword))) {
+    return 'WIRE';
+  }
   
-  // Check connector (uses existing isConnector logic)
+  // Check connector - use existing function then fallback
   if (isConnector(partNumber, description)) {
     return 'CONNECTOR';
   }
+  if (CONNECTOR_KEYWORDS.some(keyword => searchText.includes(keyword))) {
+    return 'CONNECTOR';
+  }
   
-  // Additional classifications not in isConnector
-  if (searchText.includes('TERMINAL')) {
+  // Terminal detection with enhanced keywords
+  if (TERMINAL_KEYWORDS.some(keyword => searchText.includes(keyword))) {
     return 'TERMINAL';
   }
   
-  if (searchText.includes('HOUSING')) {
+  // Housing detection
+  if (HOUSING_KEYWORDS.some(keyword => searchText.includes(keyword))) {
     return 'HOUSING';
   }
   
-  if (searchText.includes('SEAL')) {
+  // Seal detection with enhanced keywords
+  if (SEAL_KEYWORDS.some(keyword => searchText.includes(keyword))) {
     return 'SEAL';
   }
+  
+  // Phase 3H.14.2: Log UNKNOWN classifications for debugging
+  console.warn('⚠️ UNKNOWN COMPONENT TYPE', {
+    partNumber,
+    description: description ? description.substring(0, 50) : null
+  });
   
   return 'UNKNOWN';
 }
