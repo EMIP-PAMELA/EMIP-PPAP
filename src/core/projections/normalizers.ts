@@ -336,51 +336,50 @@ export function classifyComponent(
   description: string | null | undefined
 ): string {
   if (!partNumber && !description) {
-    console.warn('⚠️ UNKNOWN COMPONENT TYPE', {
-      partNumber,
-      description,
-      reason: 'both_null'
-    });
     return 'UNKNOWN';
   }
   
+  const pn = (partNumber || '').toUpperCase().trim();
   const searchText = `${partNumber || ''} ${description || ''}`.toUpperCase();
   
-  // Phase 3H.14.2: Enhanced keyword arrays
-  const WIRE_KEYWORDS = ['WIRE', 'CABLE', 'LEAD', 'AWG', 'GAUGE'];
-  const CONNECTOR_KEYWORDS = ['CONNECTOR', 'CONN', 'PLUG', 'SOCKET', 'RECEPTACLE'];
-  const TERMINAL_KEYWORDS = ['TERMINAL', 'TERM', 'CONTACT'];
-  const HOUSING_KEYWORDS = ['HOUSING'];
-  const SEAL_KEYWORDS = ['SEAL', 'GROMMET'];
-  
-  // Check wire first (most common) - use existing function then fallback
-  if (isWire(partNumber, description)) {
-    return 'WIRE';
-  }
-  if (WIRE_KEYWORDS.some(keyword => searchText.includes(keyword))) {
+  // Phase 3H.16: Part number pattern matching (highest priority)
+  // Wire detection: starts with W followed by digits (e.g., W18GR1015)
+  if (pn.match(/^W\d+/)) {
     return 'WIRE';
   }
   
-  // Check connector - use existing function then fallback
-  if (isConnector(partNumber, description)) {
-    return 'CONNECTOR';
-  }
-  if (CONNECTOR_KEYWORDS.some(keyword => searchText.includes(keyword))) {
-    return 'CONNECTOR';
-  }
-  
-  // Terminal detection with enhanced keywords
-  if (TERMINAL_KEYWORDS.some(keyword => searchText.includes(keyword))) {
+  // Terminal detection: SVH, SPH, or contains -T-
+  if (pn.includes('SVH') || pn.includes('SPH') || pn.includes('-T-')) {
     return 'TERMINAL';
   }
   
-  // Housing detection
-  if (HOUSING_KEYWORDS.some(keyword => searchText.includes(keyword))) {
-    return 'HOUSING';
+  // Connector/Housing detection: VHR, JST
+  if (pn.includes('VHR') || pn.includes('JST')) {
+    return 'CONNECTOR';
   }
   
-  // Seal detection with enhanced keywords
-  if (SEAL_KEYWORDS.some(keyword => searchText.includes(keyword))) {
+  // Keyword arrays for classification (fallback)
+  const WIRE_KEYWORDS = ['WIRE', 'CABLE', 'LEAD', 'AWG', 'GAUGE'];
+  const CONNECTOR_KEYWORDS = ['CONNECTOR', 'CONN', 'PLUG', 'SOCKET', 'RECEPTACLE', 'HOUSING'];
+  const TERMINAL_KEYWORDS = ['TERMINAL', 'TERM', 'CONTACT'];
+  const SEAL_KEYWORDS = ['SEAL', 'GROMMET'];
+  
+  // Check using existing detection functions
+  if (isWire(partNumber, description) || WIRE_KEYWORDS.some(k => searchText.includes(k))) {
+    return 'WIRE';
+  }
+  
+  if (isConnector(partNumber, description) || CONNECTOR_KEYWORDS.some(k => searchText.includes(k))) {
+    return 'CONNECTOR';
+  }
+  
+  // Check for terminals
+  if (TERMINAL_KEYWORDS.some(k => searchText.includes(k))) {
+    return 'TERMINAL';
+  }
+  
+  // Check for seals
+  if (SEAL_KEYWORDS.some(k => searchText.includes(k))) {
     return 'SEAL';
   }
   

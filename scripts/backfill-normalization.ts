@@ -27,7 +27,7 @@ interface BOMRecord {
 }
 
 async function backfillNormalization() {
-  console.log('🔄 Phase 3H.15.6: Starting normalization backfill...\n');
+  console.log('🔄 Phase 3H.16: Starting normalization and classification backfill...\n');
 
   // Fetch all BOM records
   const { data: records, error } = await supabase
@@ -55,7 +55,8 @@ async function backfillNormalization() {
     try {
       // Determine if update is needed
       const needsColorUpdate = record.color && !record.normalizedColor;
-      const needsCategoryUpdate = !record.category;
+      // Phase 3H.16: Re-classify UNKNOWN records with enhanced logic
+      const needsCategoryUpdate = !record.category || record.category === 'UNKNOWN';
 
       if (!needsColorUpdate && !needsCategoryUpdate) {
         skippedCount++;
