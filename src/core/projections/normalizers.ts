@@ -340,25 +340,54 @@ export function classifyComponent(
   }
   
   const pn = (partNumber || '').toUpperCase().trim();
+  const desc = (description || '').toLowerCase().trim();
   const searchText = `${partNumber || ''} ${description || ''}`.toUpperCase();
   
-  // Phase 3H.16: Part number pattern matching (highest priority)
+  // Phase 3H.17.1: Enhanced classification with part number patterns + description keywords
+  // Priority order: WIRE > TERMINAL > CONNECTOR > SEAL > UNKNOWN
+  
+  // A. WIRE (highest priority)
   // Wire detection: starts with W followed by digits (e.g., W18GR1015)
   if (pn.match(/^W\d+/)) {
     return 'WIRE';
   }
   
-  // Terminal detection: SVH, SPH, or contains -T-
-  if (pn.includes('SVH') || pn.includes('SPH') || pn.includes('-T-')) {
+  // B. TERMINAL
+  // Part number patterns OR description keywords
+  if (
+    pn.includes('T-') ||
+    pn.includes('TERM') ||
+    pn.includes('SVH') ||
+    pn.includes('SPH') ||
+    desc.includes('terminal') ||
+    desc.includes('contact')
+  ) {
     return 'TERMINAL';
   }
   
-  // Connector/Housing detection: VHR, JST
-  if (pn.includes('VHR') || pn.includes('JST')) {
+  // C. CONNECTOR
+  // Part number patterns OR description keywords
+  if (
+    pn.includes('JST') ||
+    pn.includes('VHR') ||
+    desc.includes('connector') ||
+    desc.includes('housing') ||
+    desc.includes('receptacle') ||
+    desc.includes('plug')
+  ) {
     return 'CONNECTOR';
   }
   
-  // Keyword arrays for classification (fallback)
+  // D. SEAL
+  // Description keywords only
+  if (
+    desc.includes('seal') ||
+    desc.includes('grommet')
+  ) {
+    return 'SEAL';
+  }
+  
+  // E. FALLBACK: Keyword arrays for classification (legacy support)
   const WIRE_KEYWORDS = ['WIRE', 'CABLE', 'LEAD', 'AWG', 'GAUGE'];
   const CONNECTOR_KEYWORDS = ['CONNECTOR', 'CONN', 'PLUG', 'SOCKET', 'RECEPTACLE', 'HOUSING'];
   const TERMINAL_KEYWORDS = ['TERMINAL', 'TERM', 'CONTACT'];
@@ -383,7 +412,7 @@ export function classifyComponent(
     return 'SEAL';
   }
   
-  // Phase 3H.14.2: Log UNKNOWN classifications for debugging
+  // Phase 3H.17.1: Log UNKNOWN classifications for debugging
   console.warn('⚠️ UNKNOWN COMPONENT TYPE', {
     partNumber,
     description: description ? description.substring(0, 50) : null
