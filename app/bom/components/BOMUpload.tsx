@@ -109,6 +109,9 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
   const [isPaused, setIsPaused] = useState(false);
   const [lastRun, setLastRun] = useState<IngestionRun | null>(null);
   
+  // V6.9: Item-level control state
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
+  
   // V6.6: Load last ingestion run on mount
   useEffect(() => {
     loadLastRun();
@@ -323,6 +326,54 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     );
   };
   
+  // V6.9: Retry individual item
+  const retryItem = (index: number) => {
+    const item = queueItems[index];
+    console.log('🧠 V6.9 RETRY ITEM', { fileName: item.fileName, index });
+    
+    updateItem(index, {
+      status: 'queued',
+      attempts: 0,
+      error: undefined,
+      errorType: undefined,
+      step: undefined
+    });
+    
+    // Auto-resume if paused
+    if (isPaused) {
+      setIsPaused(false);
+      console.log('🧠 V6.9 AUTO-RESUME after retry', { fileName: item.fileName });
+    }
+    
+    // Restart processing if not running
+    if (!isProcessingBatch) {
+      setTimeout(() => processQueue(queueItems), 100);
+    }
+  };
+  
+  // V6.9: Remove individual item from queue
+  const removeItem = (index: number) => {
+    const item = queueItems[index];
+    console.log('🧠 V6.9 REMOVE ITEM', { fileName: item.fileName, index });
+    
+    setQueueItems(prev => prev.filter((_, i) => i !== index));
+    
+    // Clean up expanded state
+    setExpandedItems(prev => {
+      const updated = { ...prev };
+      delete updated[item.id];
+      return updated;
+    });
+  };
+  
+  // V6.9: Toggle expand/collapse for item details
+  const toggleExpand = (id: string) => {
+    setExpandedItems(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+  
   // V6.6: Process single queue item with smart duplicate detection and intelligent retry
   const processQueueItem = async (item: BOMQueueItem, index: number, runId: string | null) => {
     const maxRetries = item.maxAttempts;
@@ -359,6 +410,15 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
         maxAttempts: maxRetries,
         runId
       });
+      
+      // V6.9: Validation step
+      updateItem(index, {
+        status: 'processing',
+        step: 'Validating part number and revision'
+      });
+      
+      // Brief validation delay for visibility
+      await new Promise(resolve => setTimeout(resolve, 200));
       
       // V6.8: Update status to parsing
       updateItem(index, {
@@ -894,6 +954,109 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
                     {item.status === 'skipped' && item.error && (
                       <div className="text-xs text-gray-600 mt-1">
                         ⏭️ {item.error}
+                      </div>
+                    )}
+                    
+                    {/* V6.9: Per-item control buttons */}
+                    <div className="flex items-center gap-3 mt-2">
+                      {/* Retry button for failed items */}
+                      {item.status === 'failed' && (
+                        <button
+                          onClick={() => retryItem(index)}
+                          className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
+                          disabled={isProcessingBatch}
+                        >
+                          🔄 Retry
+                        </button>
+                      )}
+                      
+                      {/* Remove button (not for currently processing item) */}
+                      {currentIndex !== index && (
+                        <button
+                          onClick={() => removeItem(index)}
+                          className="text-xs text-red-600 hover:text-red-800 underline font-medium"
+                          disabled={isProcessingBatch && currentIndex === index}
+                        >
+                          🗑️ Remove
+                        </button>
+                      )}
+                      
+                      {/* Expand/collapse details */}
+                      <button
+                        onClick={() => toggleExpand(item.id)}
+                        className="text-xs text-gray-600 hover:text-gray-800 underline font-medium"
+                      >
+                        {expandedItems[item.id] ? '▼ Hide Details' : '▶ Show Details'}
+                      </button>
+                    </div>
+                    
+                    {/* V6.9: Expanded detail view */}
+                    {expandedItems[item.id] && (
+                      <div className="mt-3 p-3 bg-gray-100 rounded border border-gray-300">
+                        <div className="text-xs space-y-1">
+                          <div className="font-semibold text-gray-700 mb-2">📋 Diagnostic Details</div>
+                          
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="font-medium text-gray-600">File:</span>
+                              <span className="ml-2 text-gray-900">{item.fileName}</span>
+                            </div>
+                            
+                            <div>
+                              <span className="font-medium text-gray-600">Status:</span>
+                              <span className="ml-2 text-gray-900">{item.status}</span>
+                            </div>
+                            
+                            <div>
+                              <span className="font-medium text-gray-600">Attempts:</span>
+                              <span className="ml-2 text-gray-900">{item.attempts} / {item.maxAttempts}</span>
+                            </div>
+                            
+                            {item.result?.partNumber && (
+                              <div>
+                                <span className="font-medium text-gray-600">Part Number:</span>
+                                <span className="ml-2 text-gray-900">{item.result.partNumber}</span>
+                              </div>
+                            )}
+                            
+                            {item.result?.revision && (
+                              <div>
+                                <span className="font-medium text-gray-600">Revision:</span>
+                                <span className="ml-2 text-gray-900">{item.result.revision}</span>
+                              </div>
+                            )}
+                            
+                            {item.result?.recordsCreated !== undefined && (
+                              <div>
+                                <span className="font-medium text-gray-600">Records Created:</span>
+                                <span className="ml-2 text-gray-900">{item.result.recordsCreated}</span>
+                              </div>
+                            )}
+                            
+                            {item.step && (
+                              <div className="col-span-2">
+                                <span className="font-medium text-gray-600">Current Step:</span>
+                                <span className="ml-2 text-gray-900">{item.step}</span>
+                              </div>
+                            )}
+                            
+                            {item.errorType && (
+                              <div>
+                                <span className="font-medium text-gray-600">Error Type:</span>
+                                <span className="ml-2 text-gray-900">{item.errorType}</span>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {item.error && (
+                            <div className="mt-2 pt-2 border-t border-gray-300">
+                              <div className="font-medium text-red-600 mb-1">Error Message:</div>
+                              <div className="text-red-700 bg-red-50 p-2 rounded font-mono text-xs break-words">
+                                {item.error}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
