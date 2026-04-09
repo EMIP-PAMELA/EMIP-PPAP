@@ -216,28 +216,37 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     gaugeBreakdown[gauge] = (gaugeBreakdown[gauge] || 0) + r.effectiveLength;
   });
   
-  // V6.2.2: STEP 7 - Real copper weight calculation (MUST USE FEET)
-  // Copper weight factors are lbs per FOOT for common gauges
-  const COPPER_WEIGHT_PER_FOOT: Record<string, number> = {
-    '10': 0.00384,   // 0.00032 * 12
-    '12': 0.00240,   // 0.00020 * 12
-    '14': 0.00156,   // 0.00013 * 12
-    '16': 0.00096,   // 0.00008 * 12
-    '18': 0.000612,  // 0.000051 * 12
-    '20': 0.000384,  // 0.000032 * 12
-    '22': 0.000240,  // 0.000020 * 12
-    '24': 0.000156,  // 0.000013 * 12
-    '26': 0.000096,  // 0.000008 * 12
-    '28': 0.000060   // 0.000005 * 12
+  // V6.3: STEP 7 - Accurate copper weight calculation using AWG lookup table
+  // Industry-standard copper weight (lbs per foot) for solid copper wire
+  const COPPER_LBS_PER_FOOT: Record<string, number> = {
+    '2': 0.641,
+    '4': 0.404,
+    '6': 0.255,
+    '8': 0.160,
+    '10': 0.101,
+    '12': 0.0641,
+    '14': 0.0408,
+    '16': 0.0257,
+    '18': 0.0160,
+    '20': 0.0101,
+    '22': 0.0064
+  };
+  
+  // V6.3: Optional calibration overrides (empty by default)
+  const CALIBRATED_OVERRIDES: Record<string, number> = {};
+  
+  // V6.3: Get copper factor with calibration override support
+  const getCopperFactor = (gauge: string): number | null => {
+    return CALIBRATED_OVERRIDES[gauge] || COPPER_LBS_PER_FOOT[gauge] || null;
   };
   
   let estimatedCopperWeight = 0;
   wireRecords.forEach(r => {
-    const factor = COPPER_WEIGHT_PER_FOOT[r.gauge || ''];
-    if (factor) {
-      // V6.2.2: Convert normalized inches to feet for copper calculation
-      const lengthInFeet = r.normalizedLength / 12;
-      estimatedCopperWeight += lengthInFeet * r.qtyPer * factor;
+    const factor = getCopperFactor(r.gauge || '');
+    if (factor && r.length) {
+      // V6.3: Length already in feet (V6.2.4 deterministic)
+      const lengthFeet = r.length;
+      estimatedCopperWeight += lengthFeet * r.qtyPer * factor;
     }
   });
   
@@ -299,6 +308,137 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     lengthUnit: sourceUnit,  // V6.2.4: Deterministic source unit
     unitSource: 'engineering_master'  // V6.2.4: Unit source metadata
   };
+}
+
+// ============================================================
+// V6.3: MATERIAL DELTA ENGINE
+// ============================================================
+
+/**
+ * V6.3: Material Delta - Revision comparison result
+ */
+export interface MaterialDelta {
+  partNumber: string;
+  fromRevision: string;
+  toRevision: string;
+  wireLengthDelta: number;
+  copperDelta: number;
+  wireCountDelta: number;
+  gaugeDelta: Record<string, number>;
+  colorDelta: Record<string, number>;
+}
+
+/**
+ * V6.3: Group BOM records by revision
+ */
+function groupByRevision(records: BOMRecord[]): Record<string, BOMRecord[]> {
+  return records.reduce((acc, r) => {
+    const rev = r.revision || 'UNKNOWN';
+    if (!acc[rev]) acc[rev] = [];
+    acc[rev].push(r);
+    return acc;
+  }, {} as Record<string, BOMRecord[]>);
+}
+
+/**
+ * V6.3: Calculate distribution delta (current - previous)
+ */
+function diffDistribution(
+  curr: Record<string, number>,
+  prev: Record<string, number>
+): Record<string, number> {
+  const keys = new Set([
+    ...Object.keys(curr),
+    ...Object.keys(prev)
+  ]);
+
+  const result: Record<string, number> = {};
+
+  keys.forEach(k => {
+    result[k] = (curr[k] || 0) - (prev[k] || 0);
+  });
+
+  return result;
+}
+
+/**
+ * V6.3: Compute material delta between two revisions
+ * 
+ * Compares current vs previous revision and calculates:
+ * - Wire length delta
+ * - Copper weight delta
+ * - Wire count delta
+ * - Gauge distribution changes
+ * - Color distribution changes
+ * 
+ * @param partNumber Part number to compare
+ * @param records All BOM records for this part number
+ * @returns Material delta or null if insufficient revisions
+ */
+export function computeMaterialDelta(
+  partNumber: string,
+  records: BOMRecord[]
+): MaterialDelta | null {
+  // V6.3: Group records by revision
+  const revisions = groupByRevision(records);
+  
+  // V6.3: Sort revisions (assumes lexicographic ordering)
+  const sortedRevs = Object.keys(revisions).sort();
+  
+  if (sortedRevs.length < 2) {
+    console.log('🧠 V6.3 MATERIAL DELTA - Insufficient revisions', {
+      partNumber,
+      revisionCount: sortedRevs.length
+    });
+    return null;
+  }
+  
+  // V6.3: Select previous and current revisions
+  const previousRev = sortedRevs[sortedRevs.length - 2];
+  const currentRev = sortedRevs[sortedRevs.length - 1];
+  
+  const previousRecords = revisions[previousRev];
+  const currentRecords = revisions[currentRev];
+  
+  // V6.3: Compute insights for both revisions
+  const prevInsights = computeSKUInsights(previousRecords);
+  const currInsights = computeSKUInsights(currentRecords);
+  
+  // V6.3: Calculate deltas
+  const materialDelta: MaterialDelta = {
+    partNumber,
+    fromRevision: previousRev,
+    toRevision: currentRev,
+    wireLengthDelta: currInsights.totalWireLength - prevInsights.totalWireLength,
+    copperDelta: currInsights.estimatedCopperWeight - prevInsights.estimatedCopperWeight,
+    wireCountDelta: currInsights.wireCount - prevInsights.wireCount,
+    gaugeDelta: diffDistribution(
+      currInsights.gaugeBreakdown,
+      prevInsights.gaugeBreakdown
+    ),
+    colorDelta: diffDistribution(
+      currInsights.colorBreakdown,
+      prevInsights.colorBreakdown
+    )
+  };
+  
+  // V6.3: Log material delta
+  console.log('🧠 V6.3 MATERIAL DELTA', {
+    partNumber,
+    fromRevision: previousRev,
+    toRevision: currentRev,
+    wireLengthDelta: Number(materialDelta.wireLengthDelta.toFixed(2)),
+    copperDelta: Number(materialDelta.copperDelta.toFixed(4)),
+    wireCountDelta: materialDelta.wireCountDelta,
+    gaugeDelta: Object.fromEntries(
+      Object.entries(materialDelta.gaugeDelta).map(([k, v]) => [k, Number(v.toFixed(2))])
+    ),
+    colorDelta: Object.fromEntries(
+      Object.entries(materialDelta.colorDelta).map(([k, v]) => [k, Number(v.toFixed(2))])
+    )
+  });
+  
+  return materialDelta;
 }
 
 // ============================================================
