@@ -1,16 +1,18 @@
 /**
- * V5.0 EMIP Core - Canonical BOM Data Model
+ * V5.1 EMIP Core - BOM Data Types
  * 
- * FOUNDATION LAYER - Engineering Data Backbone
+ * Defines TypeScript interfaces for BOM data structures
+ * aligned with Supabase database schema.
  * 
- * This is the SINGLE SOURCE OF TRUTH for BOM data structures.
- * All feature modules (PPAP, Copper Index, etc.) consume these types.
+ * Phase 3H.16.7: SCHEMA GOVERNANCE
+ * - Single source of truth: src/core/schema/bomSchema.ts
+ * - This file maintained for backward compatibility
+ * - All new code should import from bomSchema.ts
  * 
- * Principles:
- * - Normalized structure
- * - Versioning and traceability
- * - Source tracking
- * - Extensible metadata
+ * V5.1 Changes:
+ * - Updated to match live Supabase schema (snake_case fields)
+ * - Added version control fields (is_active, ingestion_batch_id)
+ * - Preserved backward compatibility with V5.0
  */
 
 // ============================================================
