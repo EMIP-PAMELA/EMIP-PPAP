@@ -34,6 +34,13 @@ interface RevisionInfo {
   ingestionBatchId: string;
 }
 
+// Phase 3H.15.1: Number formatting helper for clean display
+function formatNumber(value: number): string {
+  return Number.isInteger(value)
+    ? value.toString()
+    : value.toFixed(2);
+}
+
 export default function BOMDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -566,77 +573,107 @@ export default function BOMDetailPage() {
             {/* Distributions */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Gauge Distribution */}
-              {Object.keys(skuInsights.gaugeBreakdown).length > 0 && (
+              {Object.keys(skuInsights.gaugeBreakdown).length > 0 ? (
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">Gauge Distribution</h3>
                   <div className="space-y-2">
                     {Object.entries(skuInsights.gaugeBreakdown)
                       .sort(([a], [b]) => parseInt(a) - parseInt(b))
-                      .map(([gauge, count]) => (
-                        <div key={gauge} className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">AWG {gauge}</span>
-                          <div className="flex items-center gap-2">
-                            <div className="w-24 bg-gray-200 rounded-full h-2">
-                              <div 
-                                className="bg-blue-600 h-2 rounded-full" 
-                                style={{ width: `${(count / skuInsights.wireCount) * 100}%` }}
+                      .map(([gauge, count]) => {
+                        const percentage = (count / skuInsights.wireCount) * 100;
+                        return (
+                          <div key={gauge} className="grid grid-cols-[120px_1fr_80px] items-center gap-3 py-1">
+                            <div className="text-sm font-medium text-gray-700">
+                              AWG {gauge}
+                            </div>
+                            <div className="w-full bg-gray-200 rounded h-3 overflow-hidden">
+                              <div
+                                className="bg-blue-500 h-3 rounded"
+                                style={{ width: `${percentage}%` }}
                               />
                             </div>
-                            <span className="text-sm font-medium text-gray-900 w-8 text-right">{count}</span>
+                            <div className="text-sm text-gray-800 text-right tabular-nums">
+                              {formatNumber(count)}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
+                </div>
+              ) : (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Gauge Distribution</h3>
+                  <div className="text-sm text-gray-500">No data available.</div>
                 </div>
               )}
               
               {/* Color Distribution */}
-              {Object.keys(skuInsights.colorBreakdown).length > 0 && (
+              {Object.keys(skuInsights.colorBreakdown).length > 0 ? (
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">Color Distribution</h3>
                   <div className="space-y-2">
                     {Object.entries(skuInsights.colorBreakdown)
                       .sort(([, a], [, b]) => b - a)
-                      .map(([color, count]) => (
-                        <div key={color} className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">{color}</span>
-                          <div className="flex items-center gap-2">
-                            <div className="w-24 bg-gray-200 rounded-full h-2">
-                              <div 
-                                className="bg-green-600 h-2 rounded-full" 
-                                style={{ width: `${(count / skuInsights.wireCount) * 100}%` }}
+                      .map(([color, count]) => {
+                        const percentage = (count / skuInsights.wireCount) * 100;
+                        return (
+                          <div key={color} className="grid grid-cols-[120px_1fr_80px] items-center gap-3 py-1">
+                            <div className="text-sm font-medium text-gray-700">
+                              {color}
+                            </div>
+                            <div className="w-full bg-gray-200 rounded h-3 overflow-hidden">
+                              <div
+                                className="bg-green-500 h-3 rounded"
+                                style={{ width: `${percentage}%` }}
                               />
                             </div>
-                            <span className="text-sm font-medium text-gray-900 w-8 text-right">{count}</span>
+                            <div className="text-sm text-gray-800 text-right tabular-nums">
+                              {formatNumber(count)}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
+                </div>
+              ) : (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Color Distribution</h3>
+                  <div className="text-sm text-gray-500">No data available.</div>
                 </div>
               )}
               
               {/* Operation Step Distribution */}
-              {Object.keys(skuInsights.operationStepDistribution).length > 0 && (
+              {Object.keys(skuInsights.operationStepDistribution).length > 0 ? (
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">Operation Distribution</h3>
                   <div className="space-y-2">
                     {Object.entries(skuInsights.operationStepDistribution)
                       .sort(([a], [b]) => parseInt(a) - parseInt(b))
-                      .map(([step, count]) => (
-                        <div key={step} className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">Step {step}</span>
-                          <div className="flex items-center gap-2">
-                            <div className="w-24 bg-gray-200 rounded-full h-2">
-                              <div 
-                                className="bg-purple-600 h-2 rounded-full" 
-                                style={{ width: `${(count / skuInsights.totalComponents) * 100}%` }}
+                      .map(([step, count]) => {
+                        const percentage = (count / skuInsights.totalComponents) * 100;
+                        return (
+                          <div key={step} className="grid grid-cols-[120px_1fr_80px] items-center gap-3 py-1">
+                            <div className="text-sm font-medium text-gray-700">
+                              Step {step}
+                            </div>
+                            <div className="w-full bg-gray-200 rounded h-3 overflow-hidden">
+                              <div
+                                className="bg-purple-500 h-3 rounded"
+                                style={{ width: `${percentage}%` }}
                               />
                             </div>
-                            <span className="text-sm font-medium text-gray-900 w-8 text-right">{count}</span>
+                            <div className="text-sm text-gray-800 text-right tabular-nums">
+                              {formatNumber(count)}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
+                </div>
+              ) : (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Operation Distribution</h3>
+                  <div className="text-sm text-gray-500">No data available.</div>
                 </div>
               )}
             </div>
