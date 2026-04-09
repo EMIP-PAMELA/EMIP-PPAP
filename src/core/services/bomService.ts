@@ -131,6 +131,24 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
 }
 
 /**
+ * V6.2.2: Unit detection heuristic
+ * 
+ * Detects whether BOM lengths are in feet or inches based on sample values.
+ * Heuristic: Values < 10 strongly indicate feet (e.g., 1.93, 2.02, etc.)
+ */
+function detectUnit(records: NormalizedComponent[]): 'feet' | 'inches' {
+  const sample = records
+    .filter(r => r.length && r.length > 0)
+    .slice(0, 5);
+
+  if (sample.length === 0) return 'inches';
+
+  const avg = sample.reduce((sum, r) => sum + r.length, 0) / sample.length;
+
+  return avg < 10 ? 'feet' : 'inches';
+}
+
+/**
  * V6.1: SKU Insights - Derived engineering intelligence from BOM data
  */
 export interface SKUInsights {
@@ -143,6 +161,7 @@ export interface SKUInsights {
   colorBreakdown: Record<string, number>;
   operationStepDistribution: Record<string, number>;
   estimatedCopperWeight: number;
+  lengthUnit: 'feet' | 'inches';  // V6.2.2: Detected source unit
 }
 
 /**
@@ -161,8 +180,19 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   // V6.2: STEP 1 - Normalize all components with computed fields
   const normalized = records.map(normalizeComponentForAnalytics);
   
+  // V6.2.2: STEP 2A - Detect source unit (feet vs inches)
+  const detectedUnit = detectUnit(normalized);
+  const unitFactor = detectedUnit === 'feet' ? 12 : 1;
+  
+  // V6.2.2: STEP 2B - Normalize all lengths to canonical inches
+  const normalizedWithUnits = normalized.map(r => ({
+    ...r,
+    normalizedLength: r.length * unitFactor,
+    effectiveLength: r.length * unitFactor * r.qtyPer
+  }));
+  
   // V6.2: STEP 2 - Filter to wire records only
-  const wireRecords = normalized.filter(r => r.isWire && r.length > 0);
+  const wireRecords = normalizedWithUnits.filter(r => r.isWire && r.length > 0);
   
   // V6.2.1: Calculate physical wire count (sum of qtyPer)
   const physicalWireCount = wireRecords.reduce(
@@ -202,26 +232,28 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     gaugeBreakdown[gauge] = (gaugeBreakdown[gauge] || 0) + r.effectiveLength;
   });
   
-  // V6.2: STEP 7 - Real copper weight calculation
-  // Updated weight factors (lbs per inch for common gauges)
-  const COPPER_WEIGHT_PER_INCH: Record<string, number> = {
-    '10': 0.00032,
-    '12': 0.00020,
-    '14': 0.00013,
-    '16': 0.00008,
-    '18': 0.000051,
-    '20': 0.000032,
-    '22': 0.000020,
-    '24': 0.000013,
-    '26': 0.000008,
-    '28': 0.000005
+  // V6.2.2: STEP 7 - Real copper weight calculation (MUST USE FEET)
+  // Copper weight factors are lbs per FOOT for common gauges
+  const COPPER_WEIGHT_PER_FOOT: Record<string, number> = {
+    '10': 0.00384,   // 0.00032 * 12
+    '12': 0.00240,   // 0.00020 * 12
+    '14': 0.00156,   // 0.00013 * 12
+    '16': 0.00096,   // 0.00008 * 12
+    '18': 0.000612,  // 0.000051 * 12
+    '20': 0.000384,  // 0.000032 * 12
+    '22': 0.000240,  // 0.000020 * 12
+    '24': 0.000156,  // 0.000013 * 12
+    '26': 0.000096,  // 0.000008 * 12
+    '28': 0.000060   // 0.000005 * 12
   };
   
   let estimatedCopperWeight = 0;
   wireRecords.forEach(r => {
-    const factor = COPPER_WEIGHT_PER_INCH[r.gauge || ''];
+    const factor = COPPER_WEIGHT_PER_FOOT[r.gauge || ''];
     if (factor) {
-      estimatedCopperWeight += r.effectiveLength * factor;
+      // V6.2.2: Convert normalized inches to feet for copper calculation
+      const lengthInFeet = r.normalizedLength / 12;
+      estimatedCopperWeight += lengthInFeet * r.qtyPer * factor;
     }
   });
   
@@ -234,12 +266,21 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     }
   });
   
-  // V6.2.1: STEP 9 - Validation logging with material correction
-  console.log('🧠 V6.2.1 MATERIAL CORRECTION', {
+  // V6.2.2: STEP 9 - Validation logging with unit normalization
+  console.log('🧠 V6.2.2 UNIT NORMALIZATION', {
+    detectedUnit,
+    unitFactor,
+    sampleLengths: normalized.slice(0, 3).map(r => r.length),
     componentWireCount,
     physicalWireCount,
     totalWireLength: Number(totalWireLength.toFixed(2)),
+    totalWireLengthDisplay: detectedUnit === 'feet' 
+      ? `${(totalWireLength / 12).toFixed(1)} ft`
+      : `${totalWireLength.toFixed(1)} in`,
     avgWireLength: Number(avgWireLength.toFixed(2)),
+    avgWireLengthDisplay: detectedUnit === 'feet'
+      ? `${(avgWireLength / 12).toFixed(1)} ft`
+      : `${avgWireLength.toFixed(1)} in`,
     copperWeight: Number(estimatedCopperWeight.toFixed(4)),
     colorDistribution: Object.fromEntries(
       Object.entries(colorBreakdown).map(([k, v]) => [k, Number(v.toFixed(2))])
@@ -272,7 +313,8 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     gaugeBreakdown,
     colorBreakdown,
     operationStepDistribution,
-    estimatedCopperWeight
+    estimatedCopperWeight,
+    lengthUnit: detectedUnit  // V6.2.2: Return detected unit for UI display
   };
 }
 
