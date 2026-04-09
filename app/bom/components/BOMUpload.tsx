@@ -1,15 +1,18 @@
 'use client';
 
 /**
- * V6.5 EMIP - BOM Upload Component (Bulk Queue Support)
+ * V6.6 EMIP - BOM Upload Component (Ingestion History + Smart Duplicates + Intelligent Retry)
  * 
- * UI COMPONENT - File Upload with Bulk Queue Processing
+ * UI COMPONENT - File Upload with Advanced Queue Management
  * 
  * Responsibilities:
  * - Accept single or multiple PDF file uploads
  * - Drag-and-drop support for bulk files
  * - Sequential queue processing (NOT parallel)
- * - Retry failed uploads with exponential backoff
+ * - Intelligent retry with error classification
+ * - Smart duplicate detection (partNumber+revision)
+ * - Ingestion history audit trail
+ * - Pause/resume controls
  * - Show batch progress and per-file status
  * - Failure isolation (continue after errors)
  * 
@@ -17,14 +20,35 @@
  * - Pure UI component with queue management
  * - Calls bomIngestionService for each file
  * - Sequential processing with throttling
+ * - Supabase integration for history tracking
  * - Emits events on success for parent refresh
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { uploadAndIngestBOM } from '@/src/features/bom/services/bomIngestionService';
+import { supabase } from '@/src/lib/supabaseClient';
 
 /**
- * V6.5: Queue item model for bulk upload management
+ * V6.6: Intelligent retry error classification
+ * Determines if an error is transient (retryable) or permanent
+ */
+function isRetryableError(error: string): boolean {
+  const lowerError = error.toLowerCase();
+  return (
+    lowerError.includes('timeout') ||
+    lowerError.includes('network') ||
+    lowerError.includes('fetch') ||
+    lowerError.includes('temporary') ||
+    lowerError.includes('ECONNRESET') ||
+    lowerError.includes('ETIMEDOUT') ||
+    lowerError.includes('503') ||
+    lowerError.includes('502') ||
+    lowerError.includes('504')
+  );
+}
+
+/**
+ * V6.6: Queue item model for bulk upload management (enhanced with error type)
  */
 type BOMQueueItem = {
   id: string;
@@ -34,11 +58,25 @@ type BOMQueueItem = {
   attempts: number;
   maxAttempts: number;
   error?: string;
+  errorType?: 'transient' | 'permanent';
   result?: {
     partNumber?: string;
     revision?: string;
     recordsCreated?: number;
   };
+};
+
+/**
+ * V6.6: Ingestion run metadata
+ */
+type IngestionRun = {
+  id: string;
+  started_at: string;
+  completed_at?: string;
+  total_files: number;
+  success_count: number;
+  failure_count: number;
+  skipped_count: number;
 };
 
 interface BOMUploadProps {
@@ -64,6 +102,33 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
   const [completedCount, setCompletedCount] = useState(0);
   const [successCount, setSuccessCount] = useState(0);
   const [failureCount, setFailureCount] = useState(0);
+  
+  // V6.6: Ingestion history state
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [lastRun, setLastRun] = useState<IngestionRun | null>(null);
+  
+  // V6.6: Load last ingestion run on mount
+  useEffect(() => {
+    loadLastRun();
+  }, []);
+  
+  const loadLastRun = async () => {
+    try {
+      const { data } = await supabase
+        .from('ingestion_runs')
+        .select('*')
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (data) {
+        setLastRun(data);
+      }
+    } catch (error) {
+      // No previous runs or error - ignore
+    }
+  };
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -101,61 +166,52 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     }
   }, []);
   
-  // V6.5: Create queue from multiple files
+  // V6.6: Create queue from multiple files (filename warning only)
   const handleMultipleFiles = (files: File[]) => {
-    // Check for duplicates within the batch
+    // V6.6: Filename check is now secondary warning only
     const fileNames = new Set<string>();
-    const duplicates: string[] = [];
+    const filenameDuplicates: string[] = [];
     
     const newQueueItems: BOMQueueItem[] = [];
     
     files.forEach(file => {
       if (fileNames.has(file.name)) {
-        duplicates.push(file.name);
-        // Skip duplicate - create skipped item
-        newQueueItems.push({
-          id: `${Date.now()}-${Math.random()}`,
-          file,
-          fileName: file.name,
-          status: 'skipped',
-          attempts: 0,
-          maxAttempts: 3,
-          error: 'Duplicate file in batch'
-        });
-      } else {
-        fileNames.add(file.name);
-        newQueueItems.push({
-          id: `${Date.now()}-${Math.random()}`,
-          file,
-          fileName: file.name,
-          status: 'queued',
-          attempts: 0,
-          maxAttempts: 3
-        });
+        filenameDuplicates.push(file.name);
       }
+      fileNames.add(file.name);
+      
+      // V6.6: Always queue - smart duplicate detection happens during processing
+      newQueueItems.push({
+        id: `${Date.now()}-${Math.random()}`,
+        file,
+        fileName: file.name,
+        status: 'queued',
+        attempts: 0,
+        maxAttempts: 3
+      });
     });
     
-    if (duplicates.length > 0) {
-      console.warn('⚠️ V6.5 DUPLICATE FILES DETECTED', { duplicates });
+    if (filenameDuplicates.length > 0) {
+      console.warn('⚠️ V6.6 DUPLICATE FILENAMES (will check partNumber+revision)', { filenameDuplicates });
     }
     
     setQueueItems(newQueueItems);
     setUploadResult(null);
+    setIsPaused(false);
     
-    console.log('🧠 V6.5 BULK QUEUE CREATED', {
+    console.log('🧠 V6.6 BULK QUEUE CREATED', {
       totalFiles: files.length,
-      uniqueFiles: newQueueItems.filter(i => i.status === 'queued').length,
-      duplicates: duplicates.length
+      filenameDuplicates: filenameDuplicates.length
     });
     
     // Auto-start processing
     setTimeout(() => processQueue(newQueueItems), 100);
   };
   
-  // V6.5: Sequential queue processor with retry logic
+  // V6.6: Sequential queue processor with history tracking
   const processQueue = async (items: BOMQueueItem[]) => {
     if (isProcessingBatch) {
-      console.warn('⚠️ V6.5 Batch already processing, ignoring new batch');
+      console.warn('⚠️ V6.6 Batch already processing, ignoring new batch');
       return;
     }
     
@@ -164,22 +220,53 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     setCompletedCount(0);
     setSuccessCount(0);
     setFailureCount(0);
+    setIsPaused(false);
     
     const queuedItems = items.filter(i => i.status === 'queued' || i.status === 'retrying');
     
-    console.log('🧠 V6.5 BULK QUEUE START', {
-      totalFiles: queuedItems.length,
-      timestamp: new Date().toISOString()
-    });
+    // V6.6: Create ingestion run
+    let runId: string | null = null;
+    try {
+      const { data: run, error } = await supabase
+        .from('ingestion_runs')
+        .insert({
+          total_files: queuedItems.length,
+          success_count: 0,
+          failure_count: 0,
+          skipped_count: 0
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      runId = run.id;
+      setCurrentRunId(runId);
+      
+      console.log('🧠 V6.6 INGESTION RUN START', {
+        runId,
+        totalFiles: queuedItems.length,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('❌ V6.6 Failed to create ingestion run', error);
+      // Continue without history tracking
+    }
     
     for (let i = 0; i < queuedItems.length; i++) {
+      // V6.6: Check pause state
+      if (isPaused) {
+        console.log('⏸️ V6.6 BATCH PAUSED', { atIndex: i });
+        setIsProcessingBatch(false);
+        return;
+      }
+      
       const item = queuedItems[i];
       setCurrentIndex(i);
       
       // Process single item with retry logic
-      await processQueueItem(item, i);
+      await processQueueItem(item, i, runId);
       
-      // V6.5: Throttle between files (breathing room)
+      // V6.6: Throttle between files (breathing room)
       if (i < queuedItems.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 750));
       }
@@ -190,11 +277,34 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     
     const finalSuccess = queueItems.filter(i => i.status === 'success').length;
     const finalFailure = queueItems.filter(i => i.status === 'failed').length;
+    const finalSkipped = queueItems.filter(i => i.status === 'skipped').length;
     
-    console.log('🧠 V6.5 BATCH COMPLETE', {
+    // V6.6: Finalize ingestion run
+    if (runId) {
+      try {
+        await supabase
+          .from('ingestion_runs')
+          .update({
+            completed_at: new Date().toISOString(),
+            success_count: finalSuccess,
+            failure_count: finalFailure,
+            skipped_count: finalSkipped
+          })
+          .eq('id', runId);
+        
+        // Reload last run
+        await loadLastRun();
+      } catch (error) {
+        console.error('❌ V6.6 Failed to finalize run', error);
+      }
+    }
+    
+    console.log('🧠 V6.6 BATCH COMPLETE', {
+      runId,
       totalFiles: queuedItems.length,
       successCount: finalSuccess,
-      failureCount: finalFailure
+      failureCount: finalFailure,
+      skippedCount: finalSkipped
     });
     
     // Notify parent on any success
@@ -203,9 +313,22 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     }
   };
   
-  // V6.5: Process single queue item with retry logic
-  const processQueueItem = async (item: BOMQueueItem, index: number) => {
+  // V6.6: Process single queue item with smart duplicate detection and intelligent retry
+  const processQueueItem = async (item: BOMQueueItem, index: number, runId: string | null) => {
     const maxRetries = item.maxAttempts;
+    
+    // V6.6: Log to ingestion_items (initial)
+    if (runId) {
+      try {
+        await supabase.from('ingestion_items').insert({
+          run_id: runId,
+          file_name: item.fileName,
+          status: 'queued'
+        });
+      } catch (error) {
+        console.error('❌ V6.6 Failed to log item', error);
+      }
+    }
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       item.attempts = attempt;
@@ -219,11 +342,12 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
       
       setQueueItems([...queueItems]);
       
-      console.log('🧠 V6.5 PROCESSING ITEM', {
+      console.log('🧠 V6.6 PROCESSING ITEM', {
         index,
         fileName: item.fileName,
         attempt,
-        maxAttempts: maxRetries
+        maxAttempts: maxRetries,
+        runId
       });
       
       try {
@@ -233,7 +357,48 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
         });
         
         if (result.success) {
-          // Success
+          // V6.6: Smart duplicate detection (partNumber + revision)
+          const detectedPartNumber = result.partNumber;
+          const detectedRevision = result.revision;
+          
+          if (detectedPartNumber && detectedRevision) {
+            const { data: existing } = await supabase
+              .from('bom_records')
+              .select('id')
+              .eq('parent_part_number', detectedPartNumber)
+              .eq('revision', detectedRevision)
+              .limit(1);
+            
+            if (existing && existing.length > 0) {
+              // Duplicate detected
+              item.status = 'skipped';
+              item.error = `Duplicate: ${detectedPartNumber} Rev ${detectedRevision} already exists`;
+              
+              setCompletedCount(prev => prev + 1);
+              setQueueItems([...queueItems]);
+              
+              console.log('🧠 V6.6 DUPLICATE DETECTED', {
+                fileName: item.fileName,
+                partNumber: detectedPartNumber,
+                revision: detectedRevision
+              });
+              
+              // V6.6: Log as skipped
+              if (runId) {
+                await supabase.from('ingestion_items').update({
+                  part_number: detectedPartNumber,
+                  revision: detectedRevision,
+                  status: 'skipped',
+                  error: item.error,
+                  attempts: attempt
+                }).eq('run_id', runId).eq('file_name', item.fileName);
+              }
+              
+              return; // Skip this item
+            }
+          }
+          
+          // Success (not duplicate)
           item.status = 'success';
           item.result = {
             partNumber: result.partNumber,
@@ -245,12 +410,22 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
           setCompletedCount(prev => prev + 1);
           setQueueItems([...queueItems]);
           
-          console.log('🧠 V6.5 ITEM SUCCESS', {
+          console.log('🧠 V6.6 ITEM SUCCESS', {
             fileName: item.fileName,
             partNumber: result.partNumber,
             revision: result.revision,
             recordsCreated: result.recordsCreated
           });
+          
+          // V6.6: Log success
+          if (runId) {
+            await supabase.from('ingestion_items').update({
+              part_number: result.partNumber,
+              revision: result.revision,
+              status: 'success',
+              attempts: attempt
+            }).eq('run_id', runId).eq('file_name', item.fileName);
+          }
           
           return; // Exit retry loop
         } else {
@@ -262,29 +437,66 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         item.error = errorMsg;
         
-        console.log('🧠 V6.5 ITEM FAILED', {
+        // V6.6: Classify error type
+        const retryable = isRetryableError(errorMsg);
+        item.errorType = retryable ? 'transient' : 'permanent';
+        
+        console.log('🧠 V6.6 ITEM FAILED', {
           fileName: item.fileName,
           attempt,
-          error: errorMsg
+          error: errorMsg,
+          errorType: item.errorType,
+          willRetry: retryable && attempt < maxRetries
         });
         
-        if (attempt < maxRetries) {
-          // Retry with exponential backoff
-          const backoffMs = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
-          console.log(`⏳ V6.5 Retrying in ${backoffMs}ms...`);
-          await new Promise(resolve => setTimeout(resolve, backoffMs));
-        } else {
-          // Final failure
+        // V6.6: Intelligent retry - skip retries for permanent errors
+        if (!retryable) {
+          console.log('⚠️ V6.6 PERMANENT ERROR - Skipping retries');
           item.status = 'failed';
           setFailureCount(prev => prev + 1);
           setCompletedCount(prev => prev + 1);
           setQueueItems([...queueItems]);
+          
+          // V6.6: Log permanent failure
+          if (runId) {
+            await supabase.from('ingestion_items').update({
+              status: 'failed',
+              error: errorMsg,
+              error_type: 'permanent',
+              attempts: attempt
+            }).eq('run_id', runId).eq('file_name', item.fileName);
+          }
+          
+          return; // Don't retry permanent errors
+        }
+        
+        if (attempt < maxRetries) {
+          // Retry with exponential backoff (transient errors only)
+          const backoffMs = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
+          console.log(`⏳ V6.6 Retrying transient error in ${backoffMs}ms...`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+        } else {
+          // Final failure after retries
+          item.status = 'failed';
+          setFailureCount(prev => prev + 1);
+          setCompletedCount(prev => prev + 1);
+          setQueueItems([...queueItems]);
+          
+          // V6.6: Log final failure
+          if (runId) {
+            await supabase.from('ingestion_items').update({
+              status: 'failed',
+              error: errorMsg,
+              error_type: 'transient',
+              attempts: attempt
+            }).eq('run_id', runId).eq('file_name', item.fileName);
+          }
         }
       }
     }
   };
   
-  // V6.5: Retry only failed items
+  // V6.6: Retry only failed items
   const retryFailed = () => {
     const failedItems = queueItems.filter(i => i.status === 'failed');
     
@@ -295,24 +507,44 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
       item.status = 'queued';
       item.attempts = 0;
       item.error = undefined;
+      item.errorType = undefined;
     });
     
     setQueueItems([...queueItems]);
     
-    console.log('🧠 V6.5 RETRY FAILED', { count: failedItems.length });
+    console.log('🧠 V6.6 RETRY FAILED', { count: failedItems.length });
     
     processQueue(failedItems);
   };
   
-  // V6.5: Clear completed items
+  // V6.6: Pause current batch
+  const pauseBatch = () => {
+    setIsPaused(true);
+    console.log('⏸️ V6.6 PAUSE REQUESTED');
+  };
+  
+  // V6.6: Resume paused batch
+  const resumeBatch = () => {
+    setIsPaused(false);
+    const remainingItems = queueItems.filter(i => i.status === 'queued' || i.status === 'processing');
+    if (remainingItems.length > 0) {
+      console.log('▶️ V6.6 RESUME REQUESTED', { remainingItems: remainingItems.length });
+      processQueue(queueItems);
+    }
+  };
+  
+  // V6.6: Clear completed items
   const clearCompleted = () => {
+    console.log('🧠 V6.6 CLEAR COMPLETED');
     setQueueItems(queueItems.filter(i => i.status !== 'success'));
   };
   
-  // V6.5: Clear all items
+  // V6.6: Clear all items
   const clearAll = () => {
+    console.log('🧠 V6.6 CLEAR ALL');
     setQueueItems([]);
     setUploadResult(null);
+    setCurrentRunId(null);
   };
 
   const handleFileUpload = async (file: File) => {
@@ -456,12 +688,59 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
         />
       </div>
       
-      {/* V6.5: Batch Queue Status UI */}
+      {/* V6.6: Ingestion History Panel */}
+      {lastRun && !isProcessingBatch && queueItems.length === 0 && (
+        <div className="mt-6 border-t pt-6">
+          <h3 className="text-lg font-semibold mb-3">Last Ingestion Run</h3>
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <div className="grid grid-cols-4 gap-4 text-sm">
+              <div>
+                <div className="text-gray-600">Started</div>
+                <div className="font-medium text-gray-900">
+                  {new Date(lastRun.started_at).toLocaleString()}
+                </div>
+              </div>
+              <div>
+                <div className="text-green-600">✅ Success</div>
+                <div className="text-xl font-bold text-green-900">{lastRun.success_count}</div>
+              </div>
+              <div>
+                <div className="text-red-600">❌ Failed</div>
+                <div className="text-xl font-bold text-red-900">{lastRun.failure_count}</div>
+              </div>
+              <div>
+                <div className="text-gray-600">⏭️ Skipped</div>
+                <div className="text-xl font-bold text-gray-900">{lastRun.skipped_count}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* V6.6: Batch Queue Status UI */}
       {queueItems.length > 0 && (
         <div className="mt-6 border-t pt-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">Batch Upload Queue</h3>
             <div className="flex items-center gap-2">
+              {/* V6.6: Pause/Resume controls */}
+              {isProcessingBatch && !isPaused && (
+                <button
+                  onClick={pauseBatch}
+                  className="px-3 py-1 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700 flex items-center gap-1"
+                >
+                  ⏸️ Pause
+                </button>
+              )}
+              {isPaused && (
+                <button
+                  onClick={resumeBatch}
+                  className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 flex items-center gap-1"
+                >
+                  ▶️ Resume
+                </button>
+              )}
+              
               {queueItems.filter(i => i.status === 'failed').length > 0 && !isProcessingBatch && (
                 <button
                   onClick={retryFailed}
@@ -515,13 +794,24 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
           
           {/* Current File Progress */}
           {isProcessingBatch && currentIndex >= 0 && (
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
-              <div className="text-sm font-medium text-blue-900">
-                Processing {currentIndex + 1} of {queueItems.filter(i => i.status !== 'skipped').length}
+            <div className={`mb-4 p-3 border rounded ${
+              isPaused ? 'bg-yellow-50 border-yellow-200' : 'bg-blue-50 border-blue-200'
+            }`}>
+              <div className={`text-sm font-medium ${
+                isPaused ? 'text-yellow-900' : 'text-blue-900'
+              }`}>
+                {isPaused ? '⏸️ PAUSED - ' : ''}Processing {currentIndex + 1} of {queueItems.filter(i => i.status !== 'skipped').length}
               </div>
-              <div className="text-xs text-blue-700 mt-1">
+              <div className={`text-xs mt-1 ${
+                isPaused ? 'text-yellow-700' : 'text-blue-700'
+              }`}>
                 {queueItems[currentIndex]?.fileName}
               </div>
+              {currentRunId && (
+                <div className="text-xs text-gray-500 mt-1">
+                  Run ID: {currentRunId.substring(0, 8)}...
+                </div>
+              )}
             </div>
           )}
           
@@ -563,6 +853,11 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
                     {item.status === 'failed' && item.error && (
                       <div className="text-xs text-red-700 mt-1">
                         ❌ {item.error}
+                        {item.errorType && (
+                          <span className="ml-2 px-1 py-0.5 bg-red-100 rounded text-xs">
+                            {item.errorType}
+                          </span>
+                        )}
                       </div>
                     )}
                     
