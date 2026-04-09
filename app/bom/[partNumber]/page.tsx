@@ -18,6 +18,7 @@ import EMIPLayout from '@/app/layout/EMIPLayout';
 import { getBOMByPartNumber, getAvailableRevisions, getBOMByPartAndRevision, computeSKUInsights, SKUInsights } from '@/src/core/services/bomService';
 import { BOMRecord } from '@/src/core/data/bom/types';
 import { compareBOMRevisions, RevisionDiff } from '@/src/core/services/revisionComparisonService';
+import { normalizeWireColor } from '@/src/core/projections/normalizers';
 
 interface BOMDetail {
   partNumber: string;
@@ -40,6 +41,27 @@ function formatNumber(value: number): string {
     ? value.toString()
     : value.toFixed(2);
 }
+
+// Phase 3H.15.2: Color-to-UI mapping for visual color coding
+const COLOR_UI_MAP: Record<string, string> = {
+  red: 'bg-red-500',
+  blue: 'bg-blue-500',
+  yellow: 'bg-yellow-400',
+  green: 'bg-green-500',
+  black: 'bg-gray-800',
+  white: 'bg-gray-200 border border-gray-400',
+  orange: 'bg-orange-500',
+  violet: 'bg-purple-500',
+  purple: 'bg-purple-500',
+  brown: 'bg-amber-700',
+  gray: 'bg-gray-400',
+  grey: 'bg-gray-400',
+  pink: 'bg-pink-500',
+  tan: 'bg-amber-600',
+  gold: 'bg-yellow-600',
+  silver: 'bg-gray-300',
+  unknown: 'bg-gray-300'
+};
 
 export default function BOMDetailPage() {
   const params = useParams();
@@ -612,18 +634,35 @@ export default function BOMDetailPage() {
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">Color Distribution</h3>
                   <div className="space-y-2">
-                    {Object.entries(skuInsights.colorBreakdown)
-                      .sort(([, a], [, b]) => b - a)
-                      .map(([color, count]) => {
-                        const percentage = (count / skuInsights.wireCount) * 100;
+                    {(() => {
+                      // Phase 3H.15.2: Calculate max value for proportional scaling
+                      const colorEntries = Object.entries(skuInsights.colorBreakdown);
+                      const maxValue = Math.max(...colorEntries.map(([, count]) => count));
+                      
+                      // Sort by count descending, but keep UNKNOWN last
+                      const sortedEntries = colorEntries.sort(([colorA, countA], [colorB, countB]) => {
+                        const isUnknownA = colorA.toLowerCase().includes('unknown');
+                        const isUnknownB = colorB.toLowerCase().includes('unknown');
+                        if (isUnknownA && !isUnknownB) return 1;
+                        if (!isUnknownA && isUnknownB) return -1;
+                        return countB - countA;
+                      });
+                      
+                      return sortedEntries.map(([rawColor, count]) => {
+                        // Phase 3H.15.2: Normalize color for display and styling
+                        const normalizedColor = normalizeWireColor(rawColor) || 'unknown';
+                        const displayLabel = normalizedColor.toUpperCase();
+                        const percentage = (count / maxValue) * 100;
+                        const colorClass = COLOR_UI_MAP[normalizedColor.toLowerCase()] || COLOR_UI_MAP.unknown;
+                        
                         return (
-                          <div key={color} className="grid grid-cols-[120px_1fr_80px] items-center gap-3 py-1">
+                          <div key={rawColor} className="grid grid-cols-[120px_1fr_80px] items-center gap-3 py-1">
                             <div className="text-sm font-medium text-gray-700">
-                              {color}
+                              {displayLabel}
                             </div>
                             <div className="w-full bg-gray-200 rounded h-3 overflow-hidden">
                               <div
-                                className="bg-green-500 h-3 rounded"
+                                className={`h-3 rounded ${colorClass}`}
                                 style={{ width: `${percentage}%` }}
                               />
                             </div>
@@ -632,7 +671,8 @@ export default function BOMDetailPage() {
                             </div>
                           </div>
                         );
-                      })}
+                      });
+                    })()}
                   </div>
                 </div>
               ) : (
