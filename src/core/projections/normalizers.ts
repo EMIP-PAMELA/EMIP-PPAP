@@ -339,41 +339,48 @@ export function classifyComponent(
     return 'UNKNOWN';
   }
   
-  const pn = (partNumber || '').toUpperCase().trim();
-  const desc = (description || '').toLowerCase().trim();
+  // Phase 3H.17.2: Normalize inputs for robust matching
+  const pnUpper = (partNumber || '').toUpperCase().trim();
+  const descLower = (description || '').toLowerCase().trim();
   const searchText = `${partNumber || ''} ${description || ''}`.toUpperCase();
   
-  // Phase 3H.17.1: Enhanced classification with part number patterns + description keywords
+  // Phase 3H.17.2: Enhanced classification with robust normalization
   // Priority order: WIRE > TERMINAL > CONNECTOR > SEAL > UNKNOWN
   
   // A. WIRE (highest priority)
   // Wire detection: starts with W followed by digits (e.g., W18GR1015)
-  if (pn.match(/^W\d+/)) {
+  if (pnUpper.match(/^W\d+/)) {
     return 'WIRE';
   }
   
   // B. TERMINAL
-  // Part number patterns OR description keywords
+  // Part number patterns OR expanded description keywords
   if (
-    pn.includes('T-') ||
-    pn.includes('TERM') ||
-    pn.includes('SVH') ||
-    pn.includes('SPH') ||
-    desc.includes('terminal') ||
-    desc.includes('contact')
+    pnUpper.includes('T-') ||
+    pnUpper.includes('TERM') ||
+    pnUpper.includes('SVH') ||
+    pnUpper.includes('SPH') ||
+    descLower.includes('terminal') ||
+    descLower.includes('contact') ||
+    descLower.includes('pin') ||
+    descLower.includes('socket') ||
+    descLower.includes('crimp') ||
+    descLower.includes('blade')
   ) {
     return 'TERMINAL';
   }
   
   // C. CONNECTOR
-  // Part number patterns OR description keywords
+  // Part number patterns OR expanded description keywords
   if (
-    pn.includes('JST') ||
-    pn.includes('VHR') ||
-    desc.includes('connector') ||
-    desc.includes('housing') ||
-    desc.includes('receptacle') ||
-    desc.includes('plug')
+    pnUpper.includes('JST') ||
+    pnUpper.includes('VHR') ||
+    descLower.includes('connector') ||
+    descLower.includes('housing') ||
+    descLower.includes('receptacle') ||
+    descLower.includes('plug') ||
+    descLower.includes('header') ||
+    descLower.includes('assembly')
   ) {
     return 'CONNECTOR';
   }
@@ -381,8 +388,8 @@ export function classifyComponent(
   // D. SEAL
   // Description keywords only
   if (
-    desc.includes('seal') ||
-    desc.includes('grommet')
+    descLower.includes('seal') ||
+    descLower.includes('grommet')
   ) {
     return 'SEAL';
   }
@@ -412,7 +419,7 @@ export function classifyComponent(
     return 'SEAL';
   }
   
-  // Phase 3H.17.1: Log UNKNOWN classifications for debugging
+  // Phase 3H.17.2: Log UNKNOWN classifications for debugging
   console.warn('⚠️ UNKNOWN COMPONENT TYPE', {
     partNumber,
     description: description ? description.substring(0, 50) : null
