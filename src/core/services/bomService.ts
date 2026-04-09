@@ -71,9 +71,11 @@ export function compareRevision(a: string, b: string): number {
 // ============================================================
 
 /**
- * V6.1.1: Normalize color labels for consistent display
+ * V6.2: Normalize color label for display
+ * Phase 3H.15.3: Enhanced compound color handling
  * 
  * Maps raw color codes to standardized display names.
+ * Handles compound colors (WH/BK) by returning primary color.
  * Does NOT modify stored BOM data - display/projection only.
  */
 function normalizeColorLabel(rawColor: string | null | undefined): string {
@@ -81,31 +83,40 @@ function normalizeColorLabel(rawColor: string | null | undefined): string {
   
   const normalized = rawColor.trim().toUpperCase();
   
-  // Color normalization mapping
+  // Phase 3H.15.3: Handle compound colors (WH/BK → white)
+  if (normalized.includes('/')) {
+    const primaryColor = normalized.split('/')[0].trim();
+    return normalizeColorLabel(primaryColor); // Recursive call for primary
+  }
+  
+  // Standard color mappings
   const colorMap: Record<string, string> = {
-    'YL': 'YELLOW',
-    'YEL': 'YELLOW',
-    'RD': 'RED',
-    'RED': 'RED',
-    'OR': 'ORANGE',
-    'ORA': 'ORANGE',
-    'BR': 'BROWN',
-    'BRN': 'BROWN',
-    'BK': 'BLACK',
-    'BLA': 'BLACK',
-    'BLK': 'BLACK',
-    'GY': 'GRAY',
-    'GRA': 'GRAY',
-    'GRY': 'GRAY',
-    'BL': 'BLUE',
-    'BLU': 'BLUE',
-    'VI': 'VIOLET',
-    'VIO': 'VIOLET',
-    'WH': 'WHITE',
-    'WHT': 'WHITE'
+    'BLK': 'black',
+    'BK': 'black',    // Phase 3H.15.3: Short code
+    'BLU': 'blue',
+    'BRN': 'brown',
+    'BR': 'brown',    // Phase 3H.15.3: Short code
+    'GRN': 'green',
+    'GR': 'green',    // Phase 3H.15.3: Short code
+    'GRY': 'gray',
+    'ORG': 'orange',
+    'PNK': 'pink',
+    'PUR': 'purple',
+    'RED': 'red',
+    'RD': 'red',      // Phase 3H.15.3: Short code
+    'WHT': 'white',
+    'WH': 'white',    // Phase 3H.15.3: Short code
+    'YEL': 'yellow',
+    'YLW': 'yellow',
+    'YL': 'yellow',
+    'GLD': 'gold',
+    'SLV': 'silver',
+    'TAN': 'tan',
+    'VIO': 'violet',
+    'VI': 'violet'
   };
   
-  return colorMap[normalized] || normalized;
+  return colorMap[normalized] || normalized.toLowerCase();
 }
 
 /**

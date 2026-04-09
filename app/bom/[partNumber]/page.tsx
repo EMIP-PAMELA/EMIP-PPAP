@@ -43,13 +43,14 @@ function formatNumber(value: number): string {
 }
 
 // Phase 3H.15.2: Color-to-UI mapping for visual color coding
+// Phase 3H.15.3: Enhanced white visibility with border
 const COLOR_UI_MAP: Record<string, string> = {
   red: 'bg-red-500',
   blue: 'bg-blue-500',
   yellow: 'bg-yellow-400',
   green: 'bg-green-500',
-  black: 'bg-gray-800',
-  white: 'bg-gray-200 border border-gray-400',
+  black: 'bg-gray-900',
+  white: 'bg-white border-2 border-gray-600',  // Phase 3H.15.3: Critical fix for visibility
   orange: 'bg-orange-500',
   violet: 'bg-purple-500',
   purple: 'bg-purple-500',
@@ -60,7 +61,7 @@ const COLOR_UI_MAP: Record<string, string> = {
   tan: 'bg-amber-600',
   gold: 'bg-yellow-600',
   silver: 'bg-gray-300',
-  unknown: 'bg-gray-300'
+  unknown: 'bg-gray-400'
 };
 
 export default function BOMDetailPage() {

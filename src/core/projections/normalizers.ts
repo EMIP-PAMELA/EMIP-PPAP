@@ -63,15 +63,20 @@ export function normalizeWireGauge(input: string | null | undefined): string | n
 
 const COLOR_MAP: Record<string, string> = {
   'BLK': 'black',
+  'BK': 'black',    // Phase 3H.15.3: Short code mapping
   'BLU': 'blue',
   'BRN': 'brown',
+  'BR': 'brown',    // Phase 3H.15.3: Short code mapping
   'GRN': 'green',
+  'GR': 'green',    // Phase 3H.15.3: Short code mapping
   'GRY': 'gray',
   'ORG': 'orange',
   'PNK': 'pink',
   'PUR': 'purple',
   'RED': 'red',
+  'RD': 'red',      // Phase 3H.15.3: Short code mapping
   'WHT': 'white',
+  'WH': 'white',    // Phase 3H.15.3: Short code mapping
   'YEL': 'yellow',
   'YLW': 'yellow',
   'YL': 'yellow',   // Phase 3H.14.1: Short code mapping
