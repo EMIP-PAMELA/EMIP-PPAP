@@ -18,7 +18,6 @@ import EMIPLayout from '@/app/layout/EMIPLayout';
 import { getBOMByPartNumber, getAvailableRevisions, getBOMByPartAndRevision, computeSKUInsights, SKUInsights } from '@/src/core/services/bomService';
 import { BOMRecord } from '@/src/core/data/bom/types';
 import { compareBOMRevisions, RevisionDiff } from '@/src/core/services/revisionComparisonService';
-import { normalizeWireColor } from '@/src/core/projections/normalizers';
 
 interface BOMDetail {
   partNumber: string;
@@ -649,15 +648,15 @@ export default function BOMDetailPage() {
                         return countB - countA;
                       });
                       
-                      return sortedEntries.map(([rawColor, count]) => {
-                        // Phase 3H.15.2: Normalize color for display and styling
-                        const normalizedColor = normalizeWireColor(rawColor) || 'unknown';
-                        const displayLabel = normalizedColor.toUpperCase();
+                      return sortedEntries.map(([colorKey, count]) => {
+                        // Phase 3H.15.4: colorKey is ALREADY normalized from colorBreakdown (uses colorNormalized)
+                        // No need to call normalizeWireColor again - data is already normalized!
+                        const displayLabel = colorKey.toUpperCase();
                         const percentage = (count / maxValue) * 100;
-                        const colorClass = COLOR_UI_MAP[normalizedColor.toLowerCase()] || COLOR_UI_MAP.unknown;
+                        const colorClass = COLOR_UI_MAP[colorKey.toLowerCase()] || COLOR_UI_MAP.unknown;
                         
                         return (
-                          <div key={rawColor} className="grid grid-cols-[120px_1fr_80px] items-center gap-3 py-1">
+                          <div key={colorKey} className="grid grid-cols-[120px_1fr_80px] items-center gap-3 py-1">
                             <div className="text-sm font-medium text-gray-700">
                               {displayLabel}
                             </div>

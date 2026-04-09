@@ -166,7 +166,7 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
   const qtyPer = Number((record as any).qty_per) || 1;
   
   return {
-    component_part_number: record.component_part_number || '',
+    component_part_number: record.component_part_number,
     description: record.description || null,
     length,
     quantity,
