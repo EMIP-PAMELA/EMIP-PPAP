@@ -48,13 +48,13 @@ function isRetryableError(error: string): boolean {
 }
 
 /**
- * V6.8: Queue item model for bulk upload management (enhanced with granular status)
+ * V6.9.2: Queue item model for bulk upload management (status aligned with DB constraint)
  */
 type BOMQueueItem = {
   id: string;
   file: File;
   fileName: string;
-  status: 'queued' | 'processing' | 'parsing' | 'inserting' | 'complete' | 'failed' | 'retrying' | 'skipped';
+  status: 'queued' | 'processing' | 'parsing' | 'inserting' | 'success' | 'failed' | 'retrying' | 'skipped';
   step?: string; // V6.8: Current operation step for live progress
   attempts: number;
   maxAttempts: number;
@@ -85,6 +85,10 @@ interface BOMUploadProps {
 }
 
 export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
+  // V6.9.2: Version marker for cache busting
+  const BUILD_ID = "v6.9.2-" + Date.now();
+  console.log("🔥 V6.9.2 UI ACTIVE - BUILD ID:", BUILD_ID);
+  
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{
@@ -279,7 +283,7 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     setIsProcessingBatch(false);
     setCurrentIndex(-1);
     
-    const finalSuccess = queueItems.filter(i => i.status === 'complete').length;
+    const finalSuccess = queueItems.filter(i => i.status === 'success').length;
     const finalFailure = queueItems.filter(i => i.status === 'failed').length;
     const finalSkipped = queueItems.filter(i => i.status === 'skipped').length;
     
@@ -482,9 +486,9 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
             }
           }
           
-          // V6.8: Success (not duplicate) - update via helper
+          // V6.9.2: Success (not duplicate) - update via helper (aligned with DB)
           updateItem(index, {
-            status: 'complete',
+            status: 'success',
             step: 'Completed',
             result: {
               partNumber: result.partNumber,
@@ -503,14 +507,18 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
             recordsCreated: result.recordsCreated
           });
           
-          // V6.6: Log success
+          // V6.9.2: Log success (DB constraint aligned)
           if (runId) {
-            await supabase.from('ingestion_items').update({
+            const { error: updateError } = await supabase.from('ingestion_items').update({
               part_number: result.partNumber,
               revision: result.revision,
-              status: 'complete',
+              status: 'success',
               attempts: attempt
             }).eq('run_id', runId).eq('file_name', item.fileName);
+            
+            if (updateError) {
+              console.error('❌ V6.9.2 ingestion_items UPDATE FAILED', updateError);
+            }
           }
           
           return; // Exit retry loop
@@ -615,7 +623,7 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
   // V6.6: Clear completed items
   const clearCompleted = () => {
     console.log('🧠 V6.6 CLEAR COMPLETED');
-    setQueueItems(queueItems.filter(i => i.status !== 'complete'));
+    setQueueItems(queueItems.filter(i => i.status !== 'success'));
   };
   
   // V6.6: Clear all items
@@ -712,6 +720,7 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
           htmlFor="bom-file-input"
           className="cursor-pointer"
         >
+          <div className="text-xs text-gray-400 mb-1">EMIP Upload System — V6.9.2</div>
           <div className="text-4xl mb-4">📄</div>
           <p className="text-lg font-medium text-gray-900 mb-2">
             Drop BOM PDF(s) here or click to upload
@@ -828,7 +837,7 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
                   Retry Failed ({queueItems.filter(i => i.status === 'failed').length})
                 </button>
               )}
-              {queueItems.filter(i => i.status === 'complete').length > 0 && !isProcessingBatch && (
+              {queueItems.filter(i => i.status === 'success').length > 0 && !isProcessingBatch && (
                 <button
                   onClick={clearCompleted}
                   className="px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-700"
@@ -862,8 +871,8 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
               <div className="text-xl font-bold text-yellow-900">{queueItems.filter(i => i.status === 'processing' || i.status === 'retrying').length}</div>
             </div>
             <div className="bg-green-50 rounded p-3 text-center">
-              <div className="text-sm text-green-600">Complete</div>
-              <div className="text-xl font-bold text-green-900">{queueItems.filter(i => i.status === 'complete').length}</div>
+              <div className="text-sm text-green-600">Success</div>
+              <div className="text-xl font-bold text-green-900">{queueItems.filter(i => i.status === 'success').length}</div>
             </div>
             <div className="bg-red-50 rounded p-3 text-center">
               <div className="text-sm text-red-600">Failed</div>
@@ -900,7 +909,8 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
               <div
                 key={item.id}
                 className={`p-3 rounded border ${
-                  item.status === 'complete' ? 'bg-green-50 border-green-200' :
+                  index === currentIndex ? 'bg-blue-100 border-blue-500' :
+                  item.status === 'success' ? 'bg-green-50 border-green-200' :
                   item.status === 'failed' ? 'bg-red-50 border-red-200' :
                   item.status === 'parsing' ? 'bg-purple-50 border-purple-200' :
                   item.status === 'inserting' ? 'bg-indigo-50 border-indigo-200' :
@@ -914,7 +924,7 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">{item.fileName}</span>
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        item.status === 'complete' ? 'bg-green-100 text-green-700' :
+                        item.status === 'success' ? 'bg-green-100 text-green-700' :
                         item.status === 'failed' ? 'bg-red-100 text-red-700' :
                         item.status === 'parsing' ? 'bg-purple-100 text-purple-700' :
                         item.status === 'inserting' ? 'bg-indigo-100 text-indigo-700' :
@@ -934,7 +944,7 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
                       </div>
                     )}
                     
-                    {item.status === 'complete' && item.result && (
+                    {item.status === 'success' && item.result && (
                       <div className="text-xs text-green-700 mt-1">
                         ✅ Part: {item.result.partNumber}, Rev: {item.result.revision}, Records: {item.result.recordsCreated}
                       </div>
