@@ -470,7 +470,7 @@ export default function BOMDetailPage() {
               </div>
               
               <div className="bg-blue-50 p-4 rounded">
-                <div className="text-xs text-blue-600 uppercase tracking-wide mb-1">Wire Count</div>
+                <div className="text-xs text-blue-600 uppercase tracking-wide mb-1">Wire Types</div>
                 <div className="text-2xl font-bold text-blue-900">{skuInsights.wireCount}</div>
               </div>
               
@@ -485,8 +485,36 @@ export default function BOMDetailPage() {
               </div>
               
               <div className="bg-amber-50 p-4 rounded">
-                <div className="text-xs text-amber-600 uppercase tracking-wide mb-1">Est. Copper Weight</div>
-                <div className="text-2xl font-bold text-amber-900">{skuInsights.estimatedCopperWeight.toFixed(2)} lbs</div>
+                <div className="text-xs text-amber-600 uppercase tracking-wide mb-1">Copper Weight</div>
+                <div className="text-2xl font-bold text-amber-900">{skuInsights.estimatedCopperWeight.toFixed(3)} lbs</div>
+              </div>
+            </div>
+            
+            {/* V6.4.1: Calibration Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+              <div className="bg-green-50 p-4 rounded">
+                <div className="text-xs text-green-600 uppercase tracking-wide mb-1">Insulation Weight</div>
+                <div className="text-2xl font-bold text-green-900">{skuInsights.estimatedInsulationWeight.toFixed(3)} lbs</div>
+              </div>
+              
+              <div className="bg-purple-50 p-4 rounded">
+                <div className="text-xs text-purple-600 uppercase tracking-wide mb-1">Gross Weight</div>
+                <div className="text-2xl font-bold text-purple-900">{skuInsights.estimatedGrossWeight.toFixed(3)} lbs</div>
+              </div>
+              
+              <div className="bg-amber-50 p-4 rounded">
+                <div className="text-xs text-amber-600 uppercase tracking-wide mb-1">Copper %</div>
+                <div className="text-2xl font-bold text-amber-900">{(skuInsights.copperPercent * 100).toFixed(1)}%</div>
+              </div>
+              
+              <div className="bg-green-50 p-4 rounded">
+                <div className="text-xs text-green-600 uppercase tracking-wide mb-1">Insulation %</div>
+                <div className="text-2xl font-bold text-green-900">{(skuInsights.insulationPercent * 100).toFixed(1)}%</div>
+              </div>
+              
+              <div className="bg-gray-50 p-4 rounded">
+                <div className="text-xs text-gray-600 uppercase tracking-wide mb-1">Unit Source</div>
+                <div className="text-sm font-bold text-gray-900">{skuInsights.lengthUnit}</div>
               </div>
             </div>
             

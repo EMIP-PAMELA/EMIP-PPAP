@@ -1,18 +1,18 @@
 'use client';
 
 /**
- * V6.1 EMIP System Shell - Copper Index Page (Real Service Integration)
+ * V6.4.1 EMIP System Shell - Copper Index Page (Family Aggregation)
  * 
- * UI LAYER - Copper Analysis Results
+ * UI LAYER - Family Copper Index Display
  * 
  * Responsibilities:
- * - Display copper calculation results from copperService
- * - Show wire breakdown by gauge and color
- * - Enable multi-SKU comparisons
- * - Link to detailed analysis
+ * - Display family-level copper aggregation
+ * - Show calibration metrics (gross/copper/insulation)
+ * - Enable family-based analysis
+ * - Display SKU counts per family
  * 
  * Architecture:
- * - Consumes copperService and bomService for real data
+ * - Consumes computeFamilyCopperIndex from bomService
  * - Pure display component
  * - No calculation logic
  */
@@ -20,74 +20,70 @@
 import React, { useEffect, useState } from 'react';
 import EMIPLayout from '../layout/EMIPLayout';
 import Link from 'next/link';
-import { getAllActiveBOMs } from '@/src/core/services/bomService';
-import { getCopperForPart } from '@/src/features/copper-index/services/copperService';
-
-interface CopperResultItem {
-  partNumber: string;
-  revision: string;
-  totalCopperWeight: number;
-  wireCount: number;
-  topGauge: string;
-  topColor: string;
-}
+import { getAllActiveBOMs, getBOM, computeFamilyCopperIndex, type FamilyCopperIndex } from '@/src/core/services/bomService';
 
 export default function CopperPage() {
-  const [results, setResults] = useState<CopperResultItem[]>([]);
+  const [familyIndex, setFamilyIndex] = useState<Record<string, FamilyCopperIndex>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [totalCopper, setTotalCopper] = useState(0);
+  const [totalGross, setTotalGross] = useState(0);
+  const [totalInsulation, setTotalInsulation] = useState(0);
+  const [totalSKUs, setTotalSKUs] = useState(0);
 
   useEffect(() => {
     loadCopperData();
   }, []);
 
   const loadCopperData = async () => {
-    console.log('🧭 V6.1 [Copper Page] Loading copper data', {
-      timestamp: new Date().toISOString()
-    });
-
     try {
-      // Get all active BOMs
-      const boms = await getAllActiveBOMs();
+      // V6.4.1: Get all active BOMs first
+      const activeBOMs = await getAllActiveBOMs();
       
-      if (boms.length === 0) {
+      if (activeBOMs.length === 0) {
         setLoading(false);
         return;
       }
 
-      // Calculate copper for each BOM
-      const copperResults: CopperResultItem[] = [];
-      let total = 0;
-
-      for (const bom of boms) {
+      // V6.4.1: Fetch BOM records for each active part number
+      const allRecords = [];
+      for (const bom of activeBOMs) {
         try {
-          const copperCalc = await getCopperForPart(bom.partNumber);
-          
-          if (copperCalc && copperCalc.wireBreakdown.length > 0) {
-            // Find top gauge and color by weight
-            const sortedByWeight = [...copperCalc.wireBreakdown].sort((a, b) => b.weight - a.weight);
-            const topWire = sortedByWeight[0];
-
-            copperResults.push({
-              partNumber: bom.partNumber,
-              revision: bom.revision,
-              totalCopperWeight: copperCalc.totalCopperWeight,
-              wireCount: copperCalc.wireBreakdown.length,
-              topGauge: topWire.gauge || 'N/A',
-              topColor: topWire.color || 'N/A'
-            });
-
-            total += copperCalc.totalCopperWeight;
-          }
-        } catch (copperError) {
-          console.warn(`🧭 [Copper Page] Skipping ${bom.partNumber}:`, copperError);
-          // Continue with other parts
+          const records = await getBOM(bom.partNumber);
+          allRecords.push(...records);
+        } catch (err) {
+          console.warn(`Skipping ${bom.partNumber}:`, err);
         }
       }
 
-      setResults(copperResults);
-      setTotalCopper(total);
+      // V6.4.1: Compute family copper index
+      const index = computeFamilyCopperIndex(allRecords);
+      
+      // V6.4.1: Calculate totals
+      let copper = 0;
+      let gross = 0;
+      let insulation = 0;
+      let skus = 0;
+      
+      Object.values(index).forEach(family => {
+        copper += family.totalCopper;
+        gross += family.totalGross;
+        insulation += family.totalInsulation;
+        skus += family.skuCount;
+      });
+      
+      setFamilyIndex(index);
+      setTotalCopper(copper);
+      setTotalGross(gross);
+      setTotalInsulation(insulation);
+      setTotalSKUs(skus);
+      
+      console.log('🧠 V6.4.1 UI LOADED', {
+        familyCount: Object.keys(index).length,
+        totalCopper: copper.toFixed(4),
+        totalGross: gross.toFixed(4)
+      });
+      
       setLoading(false);
     } catch (err) {
       console.error('🧭 [Copper Page] Error loading data:', err);
@@ -144,95 +140,103 @@ export default function CopperPage() {
           </div>
         </div>
 
-        {/* Quick Stats */}
-        {results.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* V6.4.1: Enhanced Summary Cards */}
+        {Object.keys(familyIndex).length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="bg-white rounded-lg shadow p-6">
-              <div className="text-sm text-gray-600">Analyzed SKUs</div>
-              <div className="text-2xl font-bold text-gray-900">{results.length}</div>
+              <div className="text-sm text-gray-600">Total Families</div>
+              <div className="text-2xl font-bold text-gray-900">{Object.keys(familyIndex).length}</div>
             </div>
             <div className="bg-white rounded-lg shadow p-6">
-              <div className="text-sm text-gray-600">Average Copper/SKU</div>
-              <div className="text-2xl font-bold text-gray-900">
-                {(totalCopper / results.length).toFixed(2)} lbs
-              </div>
+              <div className="text-sm text-gray-600">Total SKUs</div>
+              <div className="text-2xl font-bold text-gray-900">{totalSKUs}</div>
             </div>
             <div className="bg-white rounded-lg shadow p-6">
-              <div className="text-sm text-gray-600">Total Wire Types</div>
-              <div className="text-2xl font-bold text-gray-900">
-                {results.reduce((sum, r) => sum + r.wireCount, 0)}
-              </div>
+              <div className="text-sm text-gray-600">Total Gross Weight</div>
+              <div className="text-2xl font-bold text-gray-900">{totalGross.toFixed(3)} lbs</div>
+            </div>
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="text-sm text-gray-600">Total Insulation</div>
+              <div className="text-2xl font-bold text-gray-900">{totalInsulation.toFixed(3)} lbs</div>
             </div>
           </div>
         )}
 
-        {/* Results Table */}
-        {results.length > 0 ? (
+        {/* V6.4.1: Family Index Table */}
+        {Object.keys(familyIndex).length > 0 ? (
           <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900">Family Copper Index</h2>
+              <p className="text-sm text-gray-600 mt-1">Aggregated wire weight metrics by family</p>
+            </div>
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Part Number
+                    Family
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Revision
+                    SKU Count
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Total Length
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Copper Weight
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Wire Count
+                    Insulation Weight
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Top Gauge
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Top Color
+                    Gross Weight
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {results.map((result) => (
-                  <tr key={result.partNumber} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-blue-600">
-                        {result.partNumber}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 bg-gray-100 rounded text-sm font-medium">
-                        {result.revision}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-orange-600 font-semibold">
-                        {result.totalCopperWeight.toFixed(2)} lbs
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {result.wireCount}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium">
-                        {result.topGauge} AWG
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 bg-gray-100 rounded text-xs font-medium capitalize">
-                        {result.topColor}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {Object.values(familyIndex)
+                  .sort((a, b) => a.family.localeCompare(b.family))
+                  .map((family) => (
+                    <tr key={family.family} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-blue-600">
+                          {family.family}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="px-2 py-1 bg-gray-100 rounded text-sm font-medium">
+                          {family.skuCount}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="text-blue-600 font-semibold">
+                          {family.totalLength.toFixed(1)} ft
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="text-orange-600 font-semibold">
+                          {family.totalCopper.toFixed(3)} lbs
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="text-green-600 font-semibold">
+                          {family.totalInsulation.toFixed(3)} lbs
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="text-purple-600 font-semibold">
+                          {family.totalGross.toFixed(3)} lbs
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
         ) : (
           <div className="bg-white rounded-lg shadow p-12 text-center">
             <div className="text-4xl mb-4">🔧</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Copper Analysis Available</h3>
-            <p className="text-gray-500">Upload BOMs with wire data to see copper calculations</p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No BOM Data Available</h3>
+            <p className="text-gray-500">Upload BOMs to see family copper index</p>
           </div>
         )}
       </div>
