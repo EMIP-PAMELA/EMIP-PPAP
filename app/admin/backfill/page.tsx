@@ -23,34 +23,57 @@ export default function BackfillPage() {
   const [result, setResult] = useState<BackfillResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Phase 3H.16.2: Manual trigger function for console testing
+  React.useEffect(() => {
+    (window as any).runBackfill = async () => {
+      console.log('🔄 Manual backfill triggered from console');
+      const res = await fetch('/api/admin/backfill', { method: 'POST' });
+      const data = await res.json();
+      console.log('📊 Backfill result:', data);
+      return data;
+    };
+    console.log('💡 Manual trigger available: window.runBackfill()');
+    return () => {
+      delete (window as any).runBackfill;
+    };
+  }, []);
+
   const handleBackfill = async () => {
     if (!confirm('Are you sure you want to run the classification backfill? This will update all BOM records with missing or UNKNOWN categories.')) {
       return;
     }
 
+    console.log('🔄 Starting backfill execution...');
     setIsRunning(true);
     setError(null);
     setResult(null);
 
     try {
+      console.log('📡 Sending POST to /api/admin/backfill...');
       const response = await fetch('/api/admin/backfill', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         }
       });
+      
+      console.log('📥 Response status:', response.status);
 
       const data = await response.json();
+      console.log('📊 Response data:', data);
 
       if (!response.ok) {
         throw new Error(data.error || 'Backfill failed');
       }
 
+      console.log('✅ Backfill completed successfully');
       setResult(data);
     } catch (err) {
+      console.error('❌ Backfill error:', err);
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setIsRunning(false);
+      console.log('🏁 Backfill execution finished');
     }
   };
 

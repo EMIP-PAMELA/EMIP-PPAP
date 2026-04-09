@@ -41,6 +41,7 @@ interface BOMRecord {
  * @returns BackfillResult with statistics
  */
 export async function runClassificationBackfill(): Promise<BackfillResult> {
+  console.log('🔄 BACKFILL STARTED');
   const startTime = Date.now();
   const errors: string[] = [];
   let updatedCount = 0;
@@ -49,15 +50,18 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
 
   try {
     // Create Supabase client
+    console.log('📡 Creating Supabase client...');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Fetch all BOM records
+    console.log('📊 Fetching BOM records...');
     const { data: records, error: fetchError } = await supabase
       .from('bom_records')
       .select('id, component_part_number, description, color, rawColor, normalizedColor, category')
       .order('id');
 
     if (fetchError) {
+      console.error('❌ Fetch error:', fetchError);
       errors.push(`Fetch error: ${fetchError.message}`);
       return {
         success: false,
@@ -70,6 +74,7 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
     }
 
     if (!records || records.length === 0) {
+      console.log('ℹ️ No records found');
       return {
         success: true,
         updatedCount: 0,
@@ -81,6 +86,7 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
     }
 
     // Process each record
+    console.log(`📝 Processing ${records.length} records...`);
     for (const record of records) {
       try {
         // Determine if update is needed
@@ -111,6 +117,7 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
             record.description
           );
           updates.category = category;
+          console.log(`  ↳ Record ${record.id} (${record.component_part_number}): ${record.category || 'NULL'} → ${category}`);
         }
 
         // Apply update
@@ -120,10 +127,14 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
           .eq('id', record.id);
 
         if (updateError) {
+          console.error(`❌ Update failed for record ${record.id}:`, updateError);
           errors.push(`Record ${record.id}: ${updateError.message}`);
           errorCount++;
         } else {
           updatedCount++;
+          if (updatedCount % 50 === 0) {
+            console.log(`  ✓ Updated ${updatedCount} records so far...`);
+          }
         }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
@@ -133,6 +144,13 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
     }
 
     const duration = Date.now() - startTime;
+    
+    console.log('✅ BACKFILL COMPLETE:', {
+      updated: updatedCount,
+      skipped: skippedCount,
+      errors: errorCount,
+      duration: `${duration}ms`
+    });
 
     return {
       success: errorCount === 0,

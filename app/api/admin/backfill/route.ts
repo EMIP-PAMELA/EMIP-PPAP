@@ -9,11 +9,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runClassificationBackfill } from '@/src/core/services/backfillService';
 
+/**
+ * Phase 3H.16.2: GET health check
+ */
+export async function GET() {
+  return NextResponse.json({ 
+    status: 'OK',
+    endpoint: '/api/admin/backfill',
+    methods: ['GET', 'POST']
+  });
+}
+
+/**
+ * Phase 3H.16.2: POST backfill execution
+ */
 export async function POST(request: NextRequest) {
   try {
-    // Phase 3H.16.1: Safety check - only allow in development
-    // TODO: Replace with proper admin authentication in production
-    if (process.env.NODE_ENV === 'production') {
+    // Phase 3H.16.2: Environment check with override
+    const isDev = process.env.NODE_ENV !== 'production';
+    const adminEnabled = process.env.ENABLE_ADMIN === 'true';
+    
+    if (!isDev && !adminEnabled) {
+      console.warn('⚠️ Backfill blocked: Not in development and ENABLE_ADMIN not set');
       return NextResponse.json(
         { error: 'Backfill not allowed in production without admin authentication' },
         { status: 403 }
