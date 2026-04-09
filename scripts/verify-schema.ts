@@ -7,6 +7,13 @@
  * Run with: npx ts-node scripts/verify-schema.ts
  */
 
+// Phase 3H.16.9: Load environment variables from .env.local
+import { config } from 'dotenv';
+import { resolve } from 'path';
+
+// Load .env.local from project root
+config({ path: resolve(process.cwd(), '.env.local') });
+
 import { createClient } from '@supabase/supabase-js';
 
 // Environment variables should be set before running this script
