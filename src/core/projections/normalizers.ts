@@ -61,30 +61,74 @@ export function normalizeWireGauge(input: string | null | undefined): string | n
 // WIRE COLOR NORMALIZATION
 // ============================================================
 
+// Phase 3H.15.7: Complete color abbreviation mapping
 const COLOR_MAP: Record<string, string> = {
+  // Black variants
   'BLK': 'black',
-  'BK': 'black',    // Phase 3H.15.3: Short code mapping
+  'BK': 'black',
+  'BLACK': 'black',
+  
+  // Blue variants
   'BLU': 'blue',
+  'BL': 'blue',
+  'BLUE': 'blue',
+  
+  // Brown variants
   'BRN': 'brown',
-  'BR': 'brown',    // Phase 3H.15.3: Short code mapping
+  'BR': 'brown',
+  'BROWN': 'brown',
+  
+  // Green variants
   'GRN': 'green',
-  'GR': 'green',    // Phase 3H.15.3: Short code mapping
+  'GR': 'green',
+  'GREEN': 'green',
+  
+  // Gray variants
   'GRY': 'gray',
+  'GRA': 'gray',
+  'GRAY': 'gray',
+  'GREY': 'grey',
+  
+  // Orange variants
   'ORG': 'orange',
+  'OR': 'orange',
+  'ORANGE': 'orange',
+  
+  // Pink variants
   'PNK': 'pink',
+  'PINK': 'pink',
+  
+  // Purple variants
   'PUR': 'purple',
+  'PURPLE': 'purple',
+  
+  // Red variants
   'RED': 'red',
-  'RD': 'red',      // Phase 3H.15.3: Short code mapping
+  'RD': 'red',
+  
+  // White variants
   'WHT': 'white',
-  'WH': 'white',    // Phase 3H.15.3: Short code mapping
+  'WH': 'white',
+  'WHITE': 'white',
+  
+  // Yellow variants
   'YEL': 'yellow',
   'YLW': 'yellow',
-  'YL': 'yellow',   // Phase 3H.14.1: Short code mapping
-  'GLD': 'gold',
-  'SLV': 'silver',
-  'TAN': 'tan',
+  'YL': 'yellow',
+  'YE': 'yellow',
+  'YELLOW': 'yellow',
+  
+  // Violet variants
   'VIO': 'violet',
-  'VI': 'violet'    // Phase 3H.14.1: Short code mapping
+  'VI': 'violet',
+  'VIOLET': 'violet',
+  
+  // Metallic variants
+  'GLD': 'gold',
+  'GOLD': 'gold',
+  'SLV': 'silver',
+  'SILVER': 'silver',
+  'TAN': 'tan'
 };
 
 /**
@@ -108,7 +152,7 @@ export function normalizeWireColor(input: string | null | undefined): string | n
     return COLOR_MAP[cleaned];
   }
   
-  // Check for compound colors (e.g., "BLK/WHT")
+  // Phase 3H.15.7: Handle compound colors (e.g., "BLK/WHT" or "WH/BK")
   if (cleaned.includes('/')) {
     const parts = cleaned.split('/').map(part => {
       const trimmed = part.trim();
@@ -125,7 +169,7 @@ export function normalizeWireColor(input: string | null | undefined): string | n
     }
   }
   
-  // Return as lowercase if not found in map
+  // Phase 3H.15.7: Safe fallback - return lowercase if not found
   return cleaned.toLowerCase();
 }
 

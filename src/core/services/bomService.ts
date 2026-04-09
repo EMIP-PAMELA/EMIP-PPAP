@@ -89,33 +89,39 @@ function normalizeColorLabel(rawColor: string | null | undefined): string {
     return normalizeColorLabel(primaryColor); // Recursive call for primary
   }
   
-  // Standard color mappings
+  // Phase 3H.15.7: Complete color abbreviation mapping
   const colorMap: Record<string, string> = {
-    'BLK': 'black',
-    'BK': 'black',    // Phase 3H.15.3: Short code
-    'BLU': 'blue',
-    'BRN': 'brown',
-    'BR': 'brown',    // Phase 3H.15.3: Short code
-    'GRN': 'green',
-    'GR': 'green',    // Phase 3H.15.3: Short code
-    'GRY': 'gray',
-    'ORG': 'orange',
-    'PNK': 'pink',
-    'PUR': 'purple',
-    'RED': 'red',
-    'RD': 'red',      // Phase 3H.15.3: Short code
-    'WHT': 'white',
-    'WH': 'white',    // Phase 3H.15.3: Short code
-    'YEL': 'yellow',
-    'YLW': 'yellow',
-    'YL': 'yellow',
-    'GLD': 'gold',
-    'SLV': 'silver',
-    'TAN': 'tan',
-    'VIO': 'violet',
-    'VI': 'violet'
+    // Black variants
+    'BLK': 'black', 'BK': 'black', 'BLACK': 'black',
+    // Blue variants
+    'BLU': 'blue', 'BL': 'blue', 'BLUE': 'blue',
+    // Brown variants
+    'BRN': 'brown', 'BR': 'brown', 'BROWN': 'brown',
+    // Green variants
+    'GRN': 'green', 'GR': 'green', 'GREEN': 'green',
+    // Gray variants
+    'GRY': 'gray', 'GRA': 'gray', 'GRAY': 'gray', 'GREY': 'grey',
+    // Orange variants
+    'ORG': 'orange', 'OR': 'orange', 'ORANGE': 'orange',
+    // Pink variants
+    'PNK': 'pink', 'PINK': 'pink',
+    // Purple variants
+    'PUR': 'purple', 'PURPLE': 'purple',
+    // Red variants
+    'RED': 'red', 'RD': 'red',
+    // White variants
+    'WHT': 'white', 'WH': 'white', 'WHITE': 'white',
+    // Yellow variants
+    'YEL': 'yellow', 'YLW': 'yellow', 'YL': 'yellow', 'YE': 'yellow', 'YELLOW': 'yellow',
+    // Violet variants
+    'VIO': 'violet', 'VI': 'violet', 'VIOLET': 'violet',
+    // Metallic variants
+    'GLD': 'gold', 'GOLD': 'gold',
+    'SLV': 'silver', 'SILVER': 'silver',
+    'TAN': 'tan'
   };
   
+  // Phase 3H.15.7: Safe fallback - return lowercase if not found
   return colorMap[normalized] || normalized.toLowerCase();
 }
 
