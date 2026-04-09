@@ -61,6 +61,16 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
 
     if (fetchError) {
       console.error('❌ Fetch error:', fetchError);
+      console.error('💡 Error details:', JSON.stringify(fetchError, null, 2));
+      
+      // Phase 3H.16.8: Enhanced error diagnosis
+      if (fetchError.message?.includes('column') && fetchError.message?.includes('does not exist')) {
+        console.error('⚠️  SCHEMA MISMATCH DETECTED!');
+        console.error('⚠️  One or more columns in the query do not exist in the database.');
+        console.error('⚠️  Expected columns: id, component_part_number, description, color, normalizedcolor, category');
+        console.error('⚠️  Run: npx ts-node scripts/verify-schema.ts');
+      }
+      
       errors.push(`Fetch error: ${fetchError.message}`);
       return {
         success: false,
@@ -80,6 +90,40 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
         skippedCount: 0,
         errorCount: 0,
         errors: [],
+        duration: Date.now() - startTime
+      };
+    }
+
+    // Phase 3H.16.8: Log sample record for schema verification
+    console.log('🔍 SCHEMA VERIFICATION - Sample Record:');
+    console.log(JSON.stringify(records[0], null, 2));
+    console.log('');
+    
+    // Verify critical fields exist
+    const sampleRecord = records[0];
+    const hasCategoryField = 'category' in sampleRecord;
+    const hasNormalizedcolorField = 'normalizedcolor' in sampleRecord;
+    
+    console.log('🔍 Critical Fields Check:');
+    console.log(`  category:        ${hasCategoryField ? '✅ EXISTS' : '❌ MISSING'}`);
+    console.log(`  normalizedcolor: ${hasNormalizedcolorField ? '✅ EXISTS' : '❌ MISSING'}`);
+    console.log('');
+    
+    if (!hasCategoryField || !hasNormalizedcolorField) {
+      const missingFields = [];
+      if (!hasCategoryField) missingFields.push('category');
+      if (!hasNormalizedcolorField) missingFields.push('normalizedcolor');
+      
+      console.error('❌ CRITICAL SCHEMA ERROR: Missing required fields:', missingFields.join(', '));
+      console.error('⚠️  Run: npx ts-node scripts/verify-schema.ts');
+      
+      errors.push(`Missing critical database columns: ${missingFields.join(', ')}`);
+      return {
+        success: false,
+        updatedCount: 0,
+        skippedCount: 0,
+        errorCount: 1,
+        errors,
         duration: Date.now() - startTime
       };
     }
