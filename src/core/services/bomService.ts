@@ -131,6 +131,32 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
 }
 
 
+// ============================================================
+// V6.4: CALIBRATION ENGINE
+// ============================================================
+
+/**
+ * V6.4: Wire calibration data (10 ft sample method)
+ */
+interface WireCalibration {
+  gauge: string;
+  grossLbsPerFt: number;
+  copperLbsPerFt: number;
+  insulationLbsPerFt: number;
+}
+
+/**
+ * V6.4: Calibration table (empty by default, populated manually)
+ */
+const CALIBRATION_TABLE: Record<string, WireCalibration> = {};
+
+/**
+ * V6.4: Get calibration data for a specific gauge
+ */
+function getCalibration(gauge: string): WireCalibration | null {
+  return CALIBRATION_TABLE[gauge] || null;
+}
+
 /**
  * V6.1: SKU Insights - Derived engineering intelligence from BOM data
  */
@@ -144,6 +170,10 @@ export interface SKUInsights {
   colorBreakdown: Record<string, number>;
   operationStepDistribution: Record<string, number>;
   estimatedCopperWeight: number;
+  estimatedInsulationWeight: number;  // V6.4: Insulation weight (from calibration)
+  estimatedGrossWeight: number;  // V6.4: Total wire weight (copper + insulation)
+  copperPercent: number;  // V6.4: Copper percentage of gross weight
+  insulationPercent: number;  // V6.4: Insulation percentage of gross weight
   lengthUnit: 'feet' | 'inches';  // V6.2.4: Source unit (deterministic)
   unitSource: 'engineering_master';  // V6.2.4: Unit source metadata
 }
@@ -240,15 +270,33 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     return CALIBRATED_OVERRIDES[gauge] || COPPER_LBS_PER_FOOT[gauge] || null;
   };
   
+  // V6.4: Weight calculations with calibration support
   let estimatedCopperWeight = 0;
+  let estimatedInsulationWeight = 0;
+  let estimatedGrossWeight = 0;
+  
   wireRecords.forEach(r => {
-    const factor = getCopperFactor(r.gauge || '');
-    if (factor && r.length) {
-      // V6.3: Length already in feet (V6.2.4 deterministic)
-      const lengthFeet = r.length;
-      estimatedCopperWeight += lengthFeet * r.qtyPer * factor;
+    const calibration = getCalibration(r.gauge || '');
+    const lengthFeet = r.length * r.qtyPer;
+    
+    if (calibration) {
+      // V6.4: Use calibration data (10 ft sample method)
+      estimatedCopperWeight += lengthFeet * calibration.copperLbsPerFt;
+      estimatedInsulationWeight += lengthFeet * calibration.insulationLbsPerFt;
+      estimatedGrossWeight += lengthFeet * calibration.grossLbsPerFt;
+    } else {
+      // V6.4: Fallback to AWG lookup table
+      const factor = getCopperFactor(r.gauge || '');
+      if (factor && r.length) {
+        estimatedCopperWeight += lengthFeet * factor;
+        estimatedGrossWeight += lengthFeet * factor;  // Assume copper-only for fallback
+      }
     }
   });
+  
+  // V6.4: Calculate percentage metrics
+  const copperPercent = estimatedGrossWeight > 0 ? estimatedCopperWeight / estimatedGrossWeight : 0;
+  const insulationPercent = estimatedGrossWeight > 0 ? estimatedInsulationWeight / estimatedGrossWeight : 0;
   
   // V6.2: STEP 8 - Operation step distribution (count-based, this is correct)
   const operationStepDistribution: Record<string, number> = {};
@@ -305,9 +353,129 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     colorBreakdown,
     operationStepDistribution,
     estimatedCopperWeight,
+    estimatedInsulationWeight,  // V6.4: Insulation weight
+    estimatedGrossWeight,  // V6.4: Gross weight
+    copperPercent,  // V6.4: Copper percentage
+    insulationPercent,  // V6.4: Insulation percentage
     lengthUnit: sourceUnit,  // V6.2.4: Deterministic source unit
     unitSource: 'engineering_master'  // V6.2.4: Unit source metadata
   };
+}
+
+// ============================================================
+// V6.4: FAMILY COPPER INDEX
+// ============================================================
+
+/**
+ * V6.4: Family copper index result
+ */
+export interface FamilyCopperIndex {
+  family: string;
+  totalCopper: number;
+  totalInsulation: number;
+  totalGross: number;
+  totalLength: number;
+  totalWireCount: number;
+  skuCount: number;
+}
+
+/**
+ * V6.4: Group BOM records by family number
+ */
+function groupByFamily(records: BOMRecord[]): Record<string, BOMRecord[]> {
+  return records.reduce((acc, r) => {
+    const family = extractFamilyNumber(r.parent_part_number || '') || 'UNKNOWN';
+    if (!acc[family]) acc[family] = [];
+    acc[family].push(r);
+    return acc;
+  }, {} as Record<string, BOMRecord[]>);
+}
+
+/**
+ * V6.4: Compute family-level copper index
+ * 
+ * Aggregates SKU insights by family number and calculates:
+ * - Total copper weight per family
+ * - Total insulation weight per family
+ * - Total gross weight per family
+ * - Total wire length per family
+ * - Total wire count per family
+ * - SKU count per family
+ * 
+ * @param records All BOM records to aggregate
+ * @returns Map of family number to aggregated metrics
+ */
+export function computeFamilyCopperIndex(
+  records: BOMRecord[]
+): Record<string, FamilyCopperIndex> {
+  const families = groupByFamily(records);
+  const result: Record<string, FamilyCopperIndex> = {};
+  
+  Object.entries(families).forEach(([family, familyRecords]) => {
+    // Get unique SKUs in this family
+    const uniqueSKUs = new Set(familyRecords.map(r => r.parent_part_number));
+    
+    // Compute insights for all records in this family
+    const insights = computeSKUInsights(familyRecords);
+    
+    result[family] = {
+      family,
+      totalCopper: insights.estimatedCopperWeight,
+      totalInsulation: insights.estimatedInsulationWeight,
+      totalGross: insights.estimatedGrossWeight,
+      totalLength: insights.totalWireLength,
+      totalWireCount: insights.wireCount,
+      skuCount: uniqueSKUs.size
+    };
+  });
+  
+  // V6.4: Log family copper index
+  console.log('🧠 V6.4 FAMILY COPPER INDEX', {
+    familyCount: Object.keys(result).length,
+    calibrationActive: Object.keys(CALIBRATION_TABLE).length > 0,
+    families: Object.entries(result).map(([family, data]) => ({
+      family,
+      skuCount: data.skuCount,
+      totalCopper: Number(data.totalCopper.toFixed(4)),
+      totalGross: Number(data.totalGross.toFixed(4))
+    }))
+  });
+  
+  return result;
+}
+
+// ============================================================
+// V6.4: SKU SELECTION LAYER
+// ============================================================
+
+/**
+ * V6.4: Filter BOM records to include only selected SKUs
+ * 
+ * @param records All BOM records
+ * @param selectedPartNumbers Part numbers to include
+ * @returns Filtered records
+ */
+export function filterSelectedSKUs(
+  records: BOMRecord[],
+  selectedPartNumbers: string[]
+): BOMRecord[] {
+  return records.filter(r =>
+    selectedPartNumbers.includes(r.parent_part_number || '')
+  );
+}
+
+/**
+ * V6.4: Get all part numbers except excluded ones
+ * 
+ * @param allPartNumbers All available part numbers
+ * @param excluded Part numbers to exclude
+ * @returns Filtered part numbers
+ */
+export function excludeSKUs(
+  allPartNumbers: string[],
+  excluded: string[]
+): string[] {
+  return allPartNumbers.filter(p => !excluded.includes(p));
 }
 
 // ============================================================
