@@ -27,7 +27,6 @@ interface BOMRecord {
   component_part_number: string;
   description: string | null;
   color: string | null;
-  rawColor: string | null;
   normalizedColor: string | null;
   category: string | null;
 }
@@ -57,7 +56,7 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
     console.log('📊 Fetching BOM records...');
     const { data: records, error: fetchError } = await supabase
       .from('bom_records')
-      .select('id, component_part_number, description, color, rawColor, normalizedColor, category')
+      .select('id, component_part_number, description, color, normalizedColor, category')
       .order('id');
 
     if (fetchError) {
@@ -102,12 +101,8 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
 
         // Backfill normalizedColor
         if (needsColorUpdate) {
-          const rawColor = record.rawColor || record.color;
-          const normalizedColor = normalizeWireColor(rawColor);
+          const normalizedColor = normalizeWireColor(record.color);
           updates.normalizedColor = normalizedColor;
-          if (!record.rawColor) {
-            updates.rawColor = rawColor; // Preserve raw color
-          }
         }
 
         // Backfill category
