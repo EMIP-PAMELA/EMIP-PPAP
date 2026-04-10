@@ -33,6 +33,13 @@ export const EndTerminalSchema = z.strictObject({
   seal_part_number: z.string().nullable(),
 });
 
+const CutLengthSourceSchema = z.enum([
+  'REQUIRES_DRAWING',
+  'DRAWING_SPEC',
+  'MANUAL_ENTRY',
+  'UNKNOWN',
+]);
+
 // ---------------------------------------------------------------------------
 // Wire Instance — individual wire run (core data unit)
 // ---------------------------------------------------------------------------
@@ -42,7 +49,8 @@ export const WireInstanceSchema = z.strictObject({
   aci_wire_part_number: z.string().min(1),
   gauge: z.union([z.string(), z.number()]),
   color: z.string().min(1),
-  cut_length: z.number().positive(),
+  cut_length: z.number().positive().nullable().optional().default(null),
+  cut_length_source: CutLengthSourceSchema.optional().default('UNKNOWN'),
   strip_end_a: z.number().nullable(),
   strip_end_b: z.number().nullable(),
   end_a: EndTerminalSchema,

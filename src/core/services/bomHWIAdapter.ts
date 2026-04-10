@@ -310,7 +310,6 @@ async function normalizeFromModels(
       const fromDesc = parseWireToken(comp.description + ' ' + comp.raw_first_line);
       const gauge    = fromPart.gauge !== 'UNKNOWN' ? fromPart.gauge : fromDesc.gauge;
       const color    = fromPart.color !== 'UNKNOWN' ? fromPart.color : fromDesc.color;
-      const cutLen   = comp.quantity > 0 ? comp.quantity : 1.0;
       const aciPN    = comp.aci ?? comp.part_number;
 
       wireMap.set(comp.part_number, {
@@ -318,12 +317,18 @@ async function normalizeFromModels(
         aci_wire_part_number: aciPN,
         gauge,
         color,
-        cut_length:  cutLen,
+        cut_length:  null,
+        cut_length_source: 'REQUIRES_DRAWING',
         strip_end_a: null,
         strip_end_b: null,
         end_a: nullEndTerminal(),
         end_b: nullEndTerminal(),
         provenance: bomProvenance('Wire candidate: part-number heuristic or KOMAX operation'),
+      });
+
+      console.log('[HWI LENGTH SOURCE]', {
+        wire: comp.part_number,
+        source: 'DRAWING_REQUIRED',
       });
     }
   }
@@ -528,13 +533,19 @@ async function normalizeFromModels(
     ));
   }
 
+  if (wire_instances.length > 0) {
+    engineering_flags.push(flag(
+      'review_required',
+      'Cut lengths not available from BOM — drawing required',
+      'wire_instances',
+    ));
+  }
+
   for (const wire of wire_instances) {
     if (wire.gauge === 'UNKNOWN')
       engineering_flags.push(flag('warning', `Gauge not detected for ${wire.aci_wire_part_number}`, `wire_instances.${wire.wire_id}.gauge`));
     if (wire.color === 'UNKNOWN')
       engineering_flags.push(flag('info', `Color not detected for ${wire.aci_wire_part_number}`, `wire_instances.${wire.wire_id}.color`));
-    if (wire.cut_length === 1.0)
-      engineering_flags.push(flag('warning', `Cut length defaulted to 1.0 for ${wire.aci_wire_part_number} — verify against print`, `wire_instances.${wire.wire_id}.cut_length`));
   }
 
   // ── PHASE E: Review questions ──────────────────────────────────────────────

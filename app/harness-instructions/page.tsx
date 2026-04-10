@@ -87,7 +87,13 @@ export default function HarnessInstructionsPage() {
     setJob(prev => {
       if (!prev) return prev;
       const wires = [...prev.wire_instances];
-      wires[index] = { ...wires[index], [field]: value };
+      const updated = { ...wires[index], [field]: value };
+      if (field === 'cut_length') {
+        updated.cut_length_source = typeof value === 'number'
+          ? 'MANUAL_ENTRY'
+          : 'REQUIRES_DRAWING';
+      }
+      wires[index] = updated;
       return { ...prev, wire_instances: wires };
     });
 

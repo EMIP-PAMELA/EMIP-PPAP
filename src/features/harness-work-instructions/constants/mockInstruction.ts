@@ -30,6 +30,7 @@ export const MOCK_VALID_INSTRUCTION: HarnessInstructionJob = {
       gauge: '18',
       color: 'RED',
       cut_length: 12.5,
+      cut_length_source: 'DRAWING_SPEC',
       strip_end_a: 0.25,
       strip_end_b: 0.25,
       end_a: {
@@ -56,6 +57,7 @@ export const MOCK_VALID_INSTRUCTION: HarnessInstructionJob = {
       gauge: '18',
       color: 'BLACK',
       cut_length: 8.0,
+      cut_length_source: 'DRAWING_SPEC',
       strip_end_a: 0.25,
       strip_end_b: null,
       end_a: {

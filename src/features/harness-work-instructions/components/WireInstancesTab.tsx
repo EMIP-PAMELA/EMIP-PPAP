@@ -155,17 +155,35 @@ export default function WireInstancesTab({ wireInstances, flags, onUpdate, isLoc
                   isLocked={isLocked}
                 />
 
-                <InputCell
-                  value={String(wire.cut_length)}
-                  type="number"
-                  flags={flags}
-                  path={p('cut_length')}
-                  onChange={v => {
-                    const n = parseFloat(v);
-                    onUpdate(index, 'cut_length', isNaN(n) ? 0 : n);
-                  }}
-                  isLocked={isLocked}
-                />
+                <Cell flags={flags} path={p('cut_length')}>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={wire.cut_length == null ? '' : String(wire.cut_length)}
+                      readOnly={isLocked}
+                      onChange={isLocked ? undefined : e => {
+                        const val = e.target.value;
+                        if (val === '') {
+                          onUpdate(index, 'cut_length', null);
+                          return;
+                        }
+                        const next = parseFloat(val);
+                        onUpdate(index, 'cut_length', Number.isFinite(next) ? next : null);
+                      }}
+                      className={`w-full bg-transparent px-2 py-1.5 text-xs border-0 focus:outline-none min-w-0 ${
+                        isLocked ? 'cursor-default text-gray-600' : 'focus:bg-blue-50'
+                      } ${
+                        wire.cut_length == null ? 'text-gray-600' : 'text-gray-800'
+                      }`}
+                      style={{ minWidth: '60px' }}
+                    />
+                    {wire.cut_length == null && (
+                      <span className="absolute inset-y-0 left-2 flex items-center text-[11px] text-gray-400 pointer-events-none">
+                        — (from drawing)
+                      </span>
+                    )}
+                  </div>
+                </Cell>
 
                 <InputCell
                   value={wire.strip_end_a != null ? String(wire.strip_end_a) : ''}
