@@ -8,6 +8,7 @@
  */
 
 import type { HarnessInstructionJob, WireInstance } from '../types/harnessInstruction.schema';
+import type { ProcessInstructionBundle } from '../types/processInstructions';
 
 // ---------------------------------------------------------------------------
 // Display types (flat, formatted, renderer-friendly)
@@ -31,6 +32,10 @@ export interface TemplateKomaxRow {
   stripA: string;
   stripB: string;
   programNumber: string;
+  terminalA: string;           // from process instructions / end_a
+  terminalB: string;           // from process instructions / end_b
+  applicator: string;          // from process instructions tooling extraction
+  terminationLocation: string; // KOMAX | PRESS | UNKNOWN
 }
 
 export interface TemplatePressRow {
@@ -68,6 +73,13 @@ export interface TemplateFlagItem {
   message: string;
 }
 
+export interface TemplateEngineeringNote {
+  noteId: string;
+  category: string;
+  severity: string;
+  message: string;
+}
+
 export interface TemplateData {
   header: TemplateHeader;
   komaxRows: TemplateKomaxRow[];
@@ -75,6 +87,9 @@ export interface TemplateData {
   pinMapRows: TemplatePinMapRow[];
   assemblySteps: TemplateAssemblyStep[];
   engineeringFlags: TemplateFlagItem[];
+  engineeringNotes: TemplateEngineeringNote[];
+  allKomaxTerminated: boolean;
+  hasManualPress: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +115,10 @@ function formatNull(val: string | number | null | undefined): string {
 // Main mapper
 // ---------------------------------------------------------------------------
 
-export function buildTemplateData(job: HarnessInstructionJob): TemplateData {
+export function buildTemplateData(
+  job:                 HarnessInstructionJob,
+  processInstructions?: ProcessInstructionBundle | null,
+): TemplateData {
   const wireMap = new Map<string, WireInstance>(
     job.wire_instances.map(w => [w.wire_id, w])
   );
@@ -117,17 +135,22 @@ export function buildTemplateData(job: HarnessInstructionJob): TemplateData {
   };
 
   const komaxRows: TemplateKomaxRow[] = job.komax_rows.map(r => {
-    const wire = wireMap.get(r.wire_id);
+    const wire  = wireMap.get(r.wire_id);
+    const setup = processInstructions?.komax_setup.find(e => e.komax_id === r.komax_id);
     return {
-      komaxId: r.komax_id,
-      wireId: r.wire_id,
-      aciPartNumber: wire?.aci_wire_part_number ?? '—',
-      gauge: wire ? String(wire.gauge) : '—',
-      color: wire?.color ?? '—',
-      cutLength: formatLength(r.cut_length),
-      stripA: formatNull(r.strip_a),
-      stripB: formatNull(r.strip_b),
-      programNumber: formatNull(r.program_number),
+      komaxId:             r.komax_id,
+      wireId:              r.wire_id,
+      aciPartNumber:       wire?.aci_wire_part_number ?? '—',
+      gauge:               wire ? String(wire.gauge) : '—',
+      color:               wire?.color ?? '—',
+      cutLength:           formatLength(setup?.cut_length ?? r.cut_length),
+      stripA:              formatNull(setup?.strip_end_a ?? r.strip_a),
+      stripB:              formatNull(setup?.strip_end_b ?? r.strip_b),
+      programNumber:       formatNull(r.program_number),
+      terminalA:           formatNull(setup?.terminal_a ?? wire?.end_a.terminal_part_number),
+      terminalB:           formatNull(setup?.terminal_b ?? wire?.end_b.terminal_part_number),
+      applicator:          formatNull(setup?.applicator),
+      terminationLocation: setup?.termination_location ?? '—',
     };
   });
 
@@ -172,5 +195,22 @@ export function buildTemplateData(job: HarnessInstructionJob): TemplateData {
     message: f.message,
   }));
 
-  return { header, komaxRows, pressRows, pinMapRows, assemblySteps, engineeringFlags };
+  const engineeringNotes: TemplateEngineeringNote[] = (processInstructions?.engineering_notes ?? []).map(n => ({
+    noteId:   n.note_id,
+    category: n.category,
+    severity: n.severity,
+    message:  n.message,
+  }));
+
+  return {
+    header,
+    komaxRows,
+    pressRows,
+    pinMapRows,
+    assemblySteps,
+    engineeringFlags,
+    engineeringNotes,
+    allKomaxTerminated: processInstructions?.all_komax_terminated ?? false,
+    hasManualPress:     processInstructions?.has_manual_press     ?? false,
+  };
 }

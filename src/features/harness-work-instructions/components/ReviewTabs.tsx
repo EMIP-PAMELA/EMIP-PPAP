@@ -12,6 +12,7 @@ import type {
   HarnessInstructionJob,
   EngineeringFlag,
 } from '../types/harnessInstruction.schema';
+import type { ProcessInstructionBundle, StationType } from '../types/processInstructions';
 import WireInstancesTab from './WireInstancesTab';
 import ReviewQuestionsTab from './ReviewQuestionsTab';
 
@@ -31,17 +32,27 @@ interface ReviewTabsProps {
   onUpdateWire: (index: number, field: EditableWireField, value: string | number | null) => void;
   onUpdateQuestion: (id: string, answer: string | null, resolved: boolean) => void;
   isLocked?: boolean;
+  processInstructions?: ProcessInstructionBundle | null;
 }
 
 const TABS = [
   { id: 'overview',   label: 'Overview' },
   { id: 'wires',      label: 'Wire Instances' },
-  { id: 'komax',      label: 'Komax' },
-  { id: 'press',      label: 'Manual Press' },
+  { id: 'komax',      label: 'Komax Setup' },
+  { id: 'press',      label: 'Press Setup' },
   { id: 'pinmap',     label: 'Pin Map' },
+  { id: 'assembly',   label: 'Assembly' },
   { id: 'questions',  label: 'Questions' },
   { id: 'preview',    label: 'Preview' },
 ];
+
+const STATION_BADGE: Record<StationType, string> = {
+  KOMAX:      'bg-blue-100 text-blue-700',
+  PRESS:      'bg-orange-100 text-orange-700',
+  ASSEMBLY:   'bg-green-100 text-green-700',
+  LABEL:      'bg-gray-100 text-gray-600',
+  INSPECTION: 'bg-purple-100 text-purple-700',
+};
 
 function ReadOnlyTable({
   headers,
@@ -96,6 +107,7 @@ export default function ReviewTabs({
   onUpdateWire,
   onUpdateQuestion,
   isLocked,
+  processInstructions,
 }: ReviewTabsProps) {
   const unresolvedFlags = flags.filter(f => !f.resolved);
 
@@ -105,17 +117,19 @@ export default function ReviewTabs({
       <div className="flex border-b border-gray-200 bg-gray-50 flex-shrink-0 overflow-x-auto">
         {TABS.map(tab => {
           let badge: number | null = null;
-          if (tab.id === 'wires')     badge = job.wire_instances.length;
-          if (tab.id === 'komax')     badge = job.komax_rows.length;
-          if (tab.id === 'press')     badge = job.press_rows.length;
-          if (tab.id === 'pinmap')    badge = job.pin_map_rows.length;
+          if (tab.id === 'wires')    badge = job.wire_instances.length;
+          if (tab.id === 'komax')    badge = processInstructions?.komax_setup.length ?? job.komax_rows.length;
+          if (tab.id === 'press')    badge = processInstructions?.press_setup.length ?? job.press_rows.length;
+          if (tab.id === 'pinmap')   badge = job.pin_map_rows.length;
+          if (tab.id === 'assembly') badge = processInstructions?.assembly_instructions.length ?? job.assembly_steps.length;
           if (tab.id === 'questions') badge = job.review_questions.filter(q => !q.resolved).length;
 
           const flagsForTab = unresolvedFlags.filter(f => f.field_ref?.startsWith(
-            tab.id === 'wires' ? 'wire_instances' :
-            tab.id === 'komax' ? 'komax_rows' :
-            tab.id === 'press' ? 'press_rows' :
-            tab.id === 'pinmap' ? 'pin_map_rows' : '__none__'
+            tab.id === 'wires'    ? 'wire_instances' :
+            tab.id === 'komax'    ? 'komax_rows' :
+            tab.id === 'press'    ? 'press_rows' :
+            tab.id === 'pinmap'   ? 'pin_map_rows' :
+            tab.id === 'assembly' ? 'assembly_steps' : '__none__'
           )).length;
 
           return (
@@ -188,19 +202,59 @@ export default function ReviewTabs({
           />
         )}
 
-        {/* Komax */}
-        {activeTab === 'komax' && (
+        {/* Komax Setup */}
+        {activeTab === 'komax' && processInstructions && (
+          <ReadOnlyTable
+            headers={['Komax ID', 'Wire ID', 'ACI P/N', 'Gauge', 'Color', 'Cut Length', 'Source', 'Strip A', 'Strip B', 'Term A', 'Term B', 'Location', 'Applicator']}
+            rows={processInstructions.komax_setup.map(e => [
+              e.komax_id,
+              e.wire_id,
+              e.aci_wire_part_number,
+              e.gauge,
+              e.color,
+              e.cut_length != null ? `${e.cut_length.toFixed(3)}"` : null,
+              e.cut_length_source,
+              e.strip_end_a != null ? String(e.strip_end_a) : null,
+              e.strip_end_b != null ? String(e.strip_end_b) : null,
+              e.terminal_a,
+              e.terminal_b,
+              e.termination_location,
+              e.applicator,
+            ])}
+            emptyMsg="No Komax setup entries"
+          />
+        )}
+        {activeTab === 'komax' && !processInstructions && (
           <ReadOnlyTable
             headers={['Komax ID', 'Wire ID', 'Cut Length (in)', 'Strip A', 'Strip B', 'Program #']}
-            rows={job.komax_rows.map((r, i) => [
+            rows={job.komax_rows.map(r => [
               r.komax_id, r.wire_id, r.cut_length, r.strip_a, r.strip_b, r.program_number,
             ])}
             emptyMsg="No Komax rows extracted"
           />
         )}
 
-        {/* Manual Press */}
-        {activeTab === 'press' && (
+        {/* Press Setup */}
+        {activeTab === 'press' && processInstructions && (
+          <ReadOnlyTable
+            headers={['Press ID', 'Wire ID', 'Gauge', 'Color', 'Terminal P/N', 'Applicator', 'Hand Tool', 'Strip', 'Source']}
+            rows={processInstructions.press_setup.map(e => [
+              e.press_id,
+              e.wire_id,
+              e.gauge,
+              e.color,
+              e.terminal_part_number,
+              e.applicator_id,
+              e.hand_tool_ref,
+              e.strip_length != null ? String(e.strip_length) : null,
+              e.source.length > 60 ? e.source.slice(0, 57) + '...' : e.source,
+            ])}
+            emptyMsg={processInstructions.all_komax_terminated
+              ? 'No manual press required — all terminations handled in Komax'
+              : 'No press setup entries'}
+          />
+        )}
+        {activeTab === 'press' && !processInstructions && (
           <ReadOnlyTable
             headers={['Press ID', 'Wire ID', 'Terminal P/N', 'Applicator', 'Crimp Height']}
             rows={job.press_rows.map(r => [
@@ -231,6 +285,44 @@ export default function ReviewTabs({
             })}
             emptyMsg="No pin map rows — upload a structured drawing to resolve endpoints"
           />
+        )}
+
+        {/* Assembly Instructions */}
+        {activeTab === 'assembly' && (
+          <div className="overflow-auto h-full">
+            {processInstructions && processInstructions.assembly_instructions.length > 0 ? (
+              <div className="text-xs">
+                {processInstructions.assembly_instructions.map(step => (
+                  <div key={step.step_number} className="flex gap-3 px-3 py-2 border-b border-gray-100 hover:bg-gray-50">
+                    <div className="w-8 flex-shrink-0 font-bold text-gray-500 pt-0.5">{step.step_number}.</div>
+                    <div className="flex-shrink-0 pt-0.5">
+                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${STATION_BADGE[step.station_type]}`}>
+                        {step.station_type}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono text-gray-800 leading-snug">{step.instruction_text || '—'}</div>
+                      {step.related_wire_ids.length > 0 && (
+                        <div className="text-gray-400 mt-0.5">Wires: {step.related_wire_ids.join(', ')}</div>
+                      )}
+                      {step.related_connector_ids.length > 0 && (
+                        <div className="text-gray-400">Connectors: {step.related_connector_ids.join(', ')}</div>
+                      )}
+                      {step.flags.length > 0 && (
+                        <div className="text-orange-600 mt-0.5">{step.flags.join(' · ')}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-xs text-gray-400">
+                {processInstructions
+                  ? 'No assembly steps in this job'
+                  : 'Upload a BOM to generate assembly instructions'}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Questions */}

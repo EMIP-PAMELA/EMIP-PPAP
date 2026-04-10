@@ -24,6 +24,8 @@ import type {
 import type { CanonicalDrawingDraft } from '@/src/features/harness-work-instructions/types/drawingDraft';
 import { fuseDrawingWithBOM } from '@/src/features/harness-work-instructions/services/drawingFusionService';
 import { resolveEndpoints } from '@/src/features/harness-work-instructions/services/endpointResolutionService';
+import { buildProcessInstructions } from '@/src/features/harness-work-instructions/services/processInstructionService';
+import type { ProcessInstructionBundle } from '@/src/features/harness-work-instructions/types/processInstructions';
 
 interface ApprovalRecord {
   jobId: string;
@@ -53,8 +55,21 @@ export default function HarnessInstructionsPage() {
   const [uploadingBOM, setUploadingBOM] = useState(false);
   const [drawing, setDrawing] = useState<CanonicalDrawingDraft | null>(null);
   const [uploadingDrawing, setUploadingDrawing] = useState(false);
+  const [processInstructions, setProcessInstructions] = useState<ProcessInstructionBundle | null>(null);
   const bomFileRef = useRef<HTMLInputElement>(null);
   const drawingFileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!job) { setProcessInstructions(null); return; }
+    const bundle = buildProcessInstructions(job);
+    setProcessInstructions(bundle);
+    console.log('[HWI PROCESS INSTRUCTIONS BUILT]', {
+      komax: bundle.komax_setup.length,
+      press: bundle.press_setup.length,
+      assembly: bundle.assembly_instructions.length,
+      notes: bundle.engineering_notes.length,
+    });
+  }, [job]);
 
   const isLocked = approvalRecord !== null;
 
@@ -481,6 +496,7 @@ export default function HarnessInstructionsPage() {
               onUpdateWire={handleUpdateWire}
               onUpdateQuestion={handleUpdateQuestion}
               isLocked={isLocked}
+              processInstructions={processInstructions}
             />
           </div>
 
