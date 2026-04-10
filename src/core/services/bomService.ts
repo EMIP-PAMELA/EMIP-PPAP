@@ -1843,3 +1843,126 @@ export function parseProcessStructure(rawLines: string[]): import('../data/bom/t
 
   return rawBOM;
 }
+
+// ============================================================
+// HWI.7.1: BLOCK-BASED PROCESS MODEL
+// ============================================================
+
+/**
+ * A typed structural block extracted from flat BOM text.
+ *
+ * OPERATION  — line with 2–3 leading dashes (--10 WR-CRIMP ...)
+ * COMPONENT  — line with 4+ leading dashes plus continuation lines
+ * INSTRUCTION — free-text line inside an operation context (SET UP:, HAND CUT WIRES:, etc.)
+ */
+export interface BOMBlock {
+  type: 'operation' | 'component' | 'instruction';
+  /** All raw text lines that belong to this block */
+  lines: string[];
+  /** OPERATION only — numeric step from BOM (e.g. "10") */
+  step_number?: string;
+  /** OPERATION only — resource/work-center code (e.g. "WR-CRIMP") */
+  operation_code?: string;
+  /** OPERATION only — human description, noise-stripped */
+  operation_description?: string;
+}
+
+/**
+ * Local helper — count leading dash characters, normalising en/em dashes.
+ * Intentionally private; parserService has an identical private copy.
+ */
+function leadingDashCount(line: string): number {
+  const norm = line.replace(/[–—]/g, '-').trimStart();
+  const m = norm.match(/^(-+)/);
+  return m ? m[1].length : 0;
+}
+
+/** Lines whose content is BOM metadata, not process instructions */
+const NOISE_LINE_RE =
+  /^(Qty Per|Fixed Qty|Resource ID|Run:|Service ID|Scrap|Type:|Unit of Measure)/i;
+
+/**
+ * Convert flat BOM text lines into typed structural blocks.
+ *
+ * Rules:
+ *   – 2–3 leading dashes  → OPERATION block (captures step + resource code)
+ *   – 4+  leading dashes  → COMPONENT block; collects all continuation lines
+ *                           until the next dashed line (for multi-line qty parsing)
+ *   – Other non-noise lines inside an active operation → INSTRUCTION block
+ *
+ * Log prefixes:
+ *   [BOM BLOCK GROUPING]         — summary of all blocks found
+ *   [BOM OPERATION PARSED]       — one per detected operation
+ *   [BOM COMPONENT BLOCK PARSED] — one per detected component block
+ *   [BOM INSTRUCTION CAPTURED]   — one per captured instruction line
+ */
+export function groupBOMBlocks(lines: string[]): BOMBlock[] {
+  const blocks: BOMBlock[] = [];
+  let inOperation = false;
+  let i = 0;
+
+  while (i < lines.length) {
+    const line  = lines[i];
+    const trimmed = line.trim();
+
+    if (!trimmed) { i++; continue; }
+
+    const dashes = leadingDashCount(line);
+
+    // ── OPERATION LINE ──────────────────────────────────────
+    if (dashes >= 2 && dashes <= 3 && !trimmed.match(/^-{3,}\s*PAGE\s*\d+/i)) {
+      inOperation = true;
+      const norm = trimmed.replace(/[–—]/g, '-');
+      const opM  = norm.match(/^-{2,3}(\d+)\s+([A-Z0-9][A-Z0-9-]*)(?:\s+-+\s*(.+?))?(?:\s+Type:.*)?$/i);
+      const opCode = (opM?.[2] ?? 'UNKNOWN').toUpperCase();
+      const opDesc = (opM?.[3] ?? '').replace(/\s*Type:.*$/i, '').trim();
+
+      blocks.push({
+        type: 'operation',
+        lines: [line],
+        step_number:          opM?.[1] ?? 'XX',
+        operation_code:       opCode,
+        operation_description: opDesc,
+      });
+      console.log('[BOM OPERATION PARSED]', { step: opM?.[1] ?? 'XX', code: opCode, desc: opDesc.substring(0, 50) });
+      i++;
+
+    // ── COMPONENT LINE ──────────────────────────────────────
+    } else if (dashes >= 4) {
+      const compLines: string[] = [line];
+      i++;
+      // Collect continuation lines (Qty Per:, Fixed Qty:, etc.)
+      while (i < lines.length) {
+        const next = lines[i];
+        const nt   = next.trim();
+        if (!nt) { i++; continue; }
+        if (leadingDashCount(next) >= 2) break; // next op or component starts
+        compLines.push(next);
+        i++;
+      }
+      blocks.push({ type: 'component', lines: compLines });
+      console.log('[BOM COMPONENT BLOCK PARSED]', {
+        firstLine: line.substring(0, 70),
+        continuationLines: compLines.length - 1,
+      });
+
+    // ── INSTRUCTION LINE ────────────────────────────────────
+    } else if (inOperation && !NOISE_LINE_RE.test(trimmed)) {
+      blocks.push({ type: 'instruction', lines: [line] });
+      console.log('[BOM INSTRUCTION CAPTURED]', { text: trimmed.substring(0, 80) });
+      i++;
+
+    } else {
+      i++;
+    }
+  }
+
+  console.log('[BOM BLOCK GROUPING]', {
+    total:        blocks.length,
+    operations:   blocks.filter(b => b.type === 'operation').length,
+    components:   blocks.filter(b => b.type === 'component').length,
+    instructions: blocks.filter(b => b.type === 'instruction').length,
+  });
+
+  return blocks;
+}
