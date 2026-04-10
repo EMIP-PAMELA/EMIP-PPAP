@@ -101,7 +101,7 @@ export default function WireInstancesTab({ wireInstances, flags, onUpdate, isLoc
             {[
               'Wire ID', 'ACI Part #', 'Gauge', 'Color',
               'Cut Length (in)', 'Strip A', 'Strip B',
-              'End A', 'End B', 'Source',
+              'End A', 'End B', 'Source / Confidence',
             ].map(h => (
               <th
                 key={h}
@@ -219,12 +219,27 @@ export default function WireInstancesTab({ wireInstances, flags, onUpdate, isLoc
                   </div>
                 </Cell>
 
-                {/* Provenance confidence */}
-                <td className="px-2 py-1.5 text-gray-400 border-r border-gray-100 whitespace-nowrap">
-                  <span className="capitalize text-xs">{wire.provenance.source_type}</span>
-                  <span className="ml-1 text-gray-300">
-                    {Math.round(wire.provenance.confidence * 100)}%
-                  </span>
+                {/* Source + match_confidence */}
+                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-xs ${
+                      wire.provenance.source_type === 'drawing' ? 'text-indigo-600 font-medium' : 'text-gray-400'
+                    }`}>
+                      {wire.provenance.source_type === 'drawing' ? '📐' : '📋'}{' '}
+                      {wire.cut_length_source ?? wire.provenance.source_type}
+                    </span>
+                    {wire.match_confidence && (
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                        wire.match_confidence === 'HIGH'
+                          ? 'bg-green-100 text-green-700'
+                          : wire.match_confidence === 'MEDIUM'
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : 'bg-red-100 text-red-700'
+                      }`}>
+                        {wire.match_confidence}
+                      </span>
+                    )}
+                  </div>
                 </td>
               </tr>
             );

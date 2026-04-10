@@ -36,6 +36,7 @@ export const EndTerminalSchema = z.strictObject({
 const CutLengthSourceSchema = z.enum([
   'REQUIRES_DRAWING',
   'DRAWING_SPEC',
+  'DRAWING',
   'MANUAL_ENTRY',
   'UNKNOWN',
 ]);
@@ -55,6 +56,7 @@ export const WireInstanceSchema = z.strictObject({
   strip_end_b: z.number().nullable(),
   end_a: EndTerminalSchema,
   end_b: EndTerminalSchema,
+  match_confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   provenance: ProvenanceSchema,
 });
 

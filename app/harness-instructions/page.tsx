@@ -22,6 +22,7 @@ import type {
   EngineeringFlag,
 } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
 import type { CanonicalDrawingDraft } from '@/src/features/harness-work-instructions/types/drawingDraft';
+import { fuseDrawingWithBOM } from '@/src/features/harness-work-instructions/services/drawingFusionService';
 
 interface ApprovalRecord {
   jobId: string;
@@ -146,6 +147,13 @@ export default function HarnessInstructionsPage() {
         wireRows: json.drawing.wire_rows.length,
         flags: json.drawing.flags.length,
       });
+      // If a BOM job is already loaded, fuse immediately
+      if (job && json.drawing.wire_rows.length > 0) {
+        const fused = fuseDrawingWithBOM(json.drawing, job);
+        setJob(fused);
+        setFlags(fused.engineering_flags);
+        console.log('[HWI UI FUSION APPLIED]', { source: 'drawing_upload', wires: fused.wire_instances.length });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(`Drawing upload failed: ${msg}`);
@@ -169,10 +177,18 @@ export default function HarnessInstructionsPage() {
       });
       const json = await res.json() as { ok: boolean; job?: HarnessInstructionJob; error?: string };
       if (!json.ok || !json.job) throw new Error(json.error ?? 'BOM upload failed');
-      setJob(json.job);
-      setFlags(json.job.engineering_flags ?? []);
+      // If a drawing is already loaded, fuse immediately
+      const baseJob = json.job;
+      const fusedJob = drawing && drawing.wire_rows.length > 0
+        ? fuseDrawingWithBOM(drawing, baseJob)
+        : baseJob;
+      setJob(fusedJob);
+      setFlags(fusedJob.engineering_flags ?? []);
       setApprovalRecord(null);
       setActiveTab('wires');
+      if (drawing && drawing.wire_rows.length > 0) {
+        console.log('[HWI UI FUSION APPLIED]', { source: 'bom_upload', wires: fusedJob.wire_instances.length });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(`BOM upload failed: ${msg}`);
