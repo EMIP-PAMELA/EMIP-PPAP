@@ -28,6 +28,7 @@ import { parseBOMText, parseBOMWithValidation, PARSER_VERSION } from '../parser/
 import { supabase } from '@/src/lib/supabaseClient';
 import { looksLikeWirePart } from '@/src/core/utils/wireDetection';
 import { resolveClassification } from '@/src/core/services/classificationLookup';
+import { WIRE_WEIGHT_TABLE } from '@/src/core/data/wireWeights';
 
 // ============================================================
 // AI CLASSIFICATION OVERLAY (Phase 3H.24A)
@@ -416,6 +417,7 @@ export interface SKUInsights {
   estimatedGrossWeight: number | null;  // V6.4: Total wire weight (copper + insulation)
   copperPercent: number | null;  // V6.4: Copper percentage of gross weight
   insulationPercent: number | null;  // V6.4: Insulation percentage of gross weight
+  weightSource: 'EMPIRICAL' | 'CALCULATED' | null;
   lengthUnit: 'feet' | 'inches';  // V6.2.4: Source unit (deterministic)
   unitSource: 'engineering_master';  // V6.2.4: Unit source metadata
   // Phase 3H.19: DUAL COPPER MODEL - Wire length breakdown
@@ -567,14 +569,16 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   let estimatedCopperWeight = 0;
   let estimatedInsulationWeight = 0;
   let estimatedGrossWeight = 0;
-  
+
   // Phase 3H.19: DUAL COPPER MODEL - Net/Gross/Scrap copper calculation
   let netCopperWeight = 0;      // From usable length
   let grossCopperWeight = 0;     // From cut length
-  
+
   // Phase 3H.21.6: Track completeness - if any wire missing gauge, mark incomplete
   let hasUnknownGauge = false;
-  
+  let hasMissingLength = false;
+  let weightSource: 'EMPIRICAL' | 'CALCULATED' | null = null;
+
   // V6.4.4: Calibration-first calculation with derived insulation
   wireRecords.forEach(r => {
     const gauge = r.gauge || '';
@@ -586,15 +590,56 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
         part: r.component_part_number,
         description: r.description
       });
+      return;
     }
-    const lengthFeet = r.length * r.qtyPer;
+
+    const lengthFeet = r.length && r.qtyPer ? r.length * r.qtyPer : 0;
+    if (!lengthFeet || lengthFeet <= 0) {
+      hasMissingLength = true;
+      console.warn('[SKU INSIGHTS] Wire with missing length', {
+        part: r.component_part_number,
+        description: r.description,
+        length: r.length,
+        qtyPer: r.qtyPer
+      });
+      return;
+    }
     // Phase 3H.19: Get usable and cut lengths for dual model
     const usableLengthFeet = r.usableLength || r.effectiveLength;
     const cutLengthFeet = r.cutLength || usableLengthFeet;
     
+    const normalizedGauge = parseInt(gauge.replace(/[^0-9]/g, ''), 10);
+    const lookup = Number.isFinite(normalizedGauge)
+      ? WIRE_WEIGHT_TABLE[normalizedGauge as keyof typeof WIRE_WEIGHT_TABLE]
+      : undefined;
+
+    if (lookup) {
+      weightSource = 'EMPIRICAL';
+
+      const copper = lengthFeet * lookup.copper;
+      const gross = lengthFeet * lookup.gross;
+      const insulation = Math.max(0, gross - copper);
+
+      estimatedCopperWeight += copper;
+      estimatedInsulationWeight += insulation;
+      estimatedGrossWeight += gross;
+
+      netCopperWeight += usableLengthFeet * lookup.copper;
+      grossCopperWeight += cutLengthFeet * lookup.copper;
+
+      console.log('[COPPER EMPIRICAL USED]', {
+        gauge: normalizedGauge,
+        lengthFeet: Number(lengthFeet.toFixed(4)),
+        copperPerFt: lookup.copper,
+        grossPerFt: lookup.gross,
+      });
+      return;
+    }
+
     const calibration = CALIBRATION_CACHE[gauge];
-    
+
     if (calibration) {
+      weightSource = weightSource ?? 'CALCULATED';
       // V6.4.4: Use calibration data ONLY (10 ft sample method)
       const copper = lengthFeet * calibration.copperLbsPerFt;
       const gross = lengthFeet * calibration.grossLbsPerFt;
@@ -625,17 +670,23 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
       // V6.4.4: Fallback to AWG lookup table (copper-only)
       const factor = getCopperFactor(gauge);
       if (factor && r.length) {
+        weightSource = weightSource ?? 'CALCULATED';
         const copper = lengthFeet * factor;
         
         estimatedCopperWeight += copper;
         estimatedGrossWeight += copper;  // Assume copper-only for fallback
         // IMPORTANT: estimatedInsulationWeight remains 0 in fallback path
+        console.log('[COPPER FALLBACK USED]', {
+          gauge,
+          lengthFeet: Number(lengthFeet.toFixed(4)),
+          copperPerFt: factor,
+        });
       }
     }
   });
   
   // Phase 3H.21.6: If any gauge missing, set all copper weights to null
-  const isComplete = !hasUnknownGauge && wireRecords.length > 0;
+  const isComplete = !hasUnknownGauge && !hasMissingLength && wireRecords.length > 0;
   
   const finalEstimatedCopperWeight = isComplete ? estimatedCopperWeight : null;
   const finalEstimatedInsulationWeight = isComplete ? estimatedInsulationWeight : null;
@@ -643,6 +694,7 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   const finalNetCopperWeight = isComplete ? netCopperWeight : null;
   const finalGrossCopperWeight = isComplete ? grossCopperWeight : null;
   const finalScrapCopperWeight = isComplete ? Math.max(0, grossCopperWeight - netCopperWeight) : null;
+  const finalWeightSource = isComplete ? weightSource : null;
   
   // V6.4: Calculate percentage metrics
   const copperPercent = isComplete && estimatedGrossWeight > 0 ? estimatedCopperWeight / estimatedGrossWeight : null;
@@ -743,6 +795,7 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     estimatedGrossWeight: finalEstimatedGrossWeight,  // V6.4: Gross weight
     copperPercent,  // V6.4: Copper percentage
     insulationPercent,  // V6.4: Insulation percentage
+    weightSource: finalWeightSource,
     lengthUnit: sourceUnit,  // V6.2.4: Deterministic source unit
     unitSource: 'engineering_master',  // V6.2.4: Unit source metadata
     // Phase 3H.19: DUAL COPPER MODEL - Wire length breakdown
