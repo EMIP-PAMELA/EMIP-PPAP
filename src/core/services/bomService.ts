@@ -394,11 +394,12 @@ export interface SKUInsights {
   gaugeBreakdown: Record<string, number>;
   colorBreakdown: Record<string, number>;
   operationStepDistribution: Record<string, number>;
-  estimatedCopperWeight: number;
-  estimatedInsulationWeight: number;  // V6.4: Insulation weight (from calibration)
-  estimatedGrossWeight: number;  // V6.4: Total wire weight (copper + insulation)
-  copperPercent: number;  // V6.4: Copper percentage of gross weight
-  insulationPercent: number;  // V6.4: Insulation percentage of gross weight
+  // Phase 3H.21.6: Copper weights can be null if gauge data missing
+  estimatedCopperWeight: number | null;
+  estimatedInsulationWeight: number | null;  // V6.4: Insulation weight (from calibration)
+  estimatedGrossWeight: number | null;  // V6.4: Total wire weight (copper + insulation)
+  copperPercent: number | null;  // V6.4: Copper percentage of gross weight
+  insulationPercent: number | null;  // V6.4: Insulation percentage of gross weight
   lengthUnit: 'feet' | 'inches';  // V6.2.4: Source unit (deterministic)
   unitSource: 'engineering_master';  // V6.2.4: Unit source metadata
   // Phase 3H.19: DUAL COPPER MODEL - Wire length breakdown
@@ -407,9 +408,12 @@ export interface SKUInsights {
   scrapWireLengthFeet: number;  // Scrap = Cut - Usable
   scrapPercent: number;          // Scrap as % of cut length
   // Phase 3H.19: DUAL COPPER MODEL - Copper weight breakdown
-  netCopperWeight: number;       // From usable length
-  grossCopperWeight: number;    // From cut length
-  scrapCopperWeight: number;    // Gross - Net
+  // Phase 3H.21.6: Can be null if gauge data missing
+  netCopperWeight: number | null;       // From usable length
+  grossCopperWeight: number | null;    // From cut length
+  scrapCopperWeight: number | null;    // Gross - Net
+  // Phase 3H.21.6: Completeness flag
+  isComplete: boolean;  // True if all wires have gauge data
 }
 
 /**
@@ -525,9 +529,21 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   let netCopperWeight = 0;      // From usable length
   let grossCopperWeight = 0;     // From cut length
   
+  // Phase 3H.21.6: Track completeness - if any wire missing gauge, mark incomplete
+  let hasUnknownGauge = false;
+  
   // V6.4.4: Calibration-first calculation with derived insulation
   wireRecords.forEach(r => {
     const gauge = r.gauge || '';
+    
+    // Phase 3H.21.6: Check for missing gauge
+    if (!gauge || gauge === 'UNKNOWN') {
+      hasUnknownGauge = true;
+      console.warn('[SKU INSIGHTS] Wire with unknown gauge', {
+        part: r.component_part_number,
+        description: r.description
+      });
+    }
     const lengthFeet = r.length * r.qtyPer;
     // Phase 3H.19: Get usable and cut lengths for dual model
     const usableLengthFeet = r.usableLength || r.effectiveLength;
@@ -575,22 +591,39 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     }
   });
   
-  // V6.4: Calculate percentage metrics
-  const copperPercent = estimatedGrossWeight > 0 ? estimatedCopperWeight / estimatedGrossWeight : 0;
-  const insulationPercent = estimatedGrossWeight > 0 ? estimatedInsulationWeight / estimatedGrossWeight : 0;
+  // Phase 3H.21.6: If any gauge missing, set all copper weights to null
+  const isComplete = !hasUnknownGauge && wireRecords.length > 0;
   
-  // Phase 3H.19: Calculate scrap copper weight
-  const scrapCopperWeight = Math.max(0, grossCopperWeight - netCopperWeight);
+  const finalEstimatedCopperWeight = isComplete ? estimatedCopperWeight : null;
+  const finalEstimatedInsulationWeight = isComplete ? estimatedInsulationWeight : null;
+  const finalEstimatedGrossWeight = isComplete ? estimatedGrossWeight : null;
+  const finalNetCopperWeight = isComplete ? netCopperWeight : null;
+  const finalGrossCopperWeight = isComplete ? grossCopperWeight : null;
+  const finalScrapCopperWeight = isComplete ? Math.max(0, grossCopperWeight - netCopperWeight) : null;
+  
+  // V6.4: Calculate percentage metrics
+  const copperPercent = isComplete && estimatedGrossWeight > 0 ? estimatedCopperWeight / estimatedGrossWeight : null;
+  const insulationPercent = isComplete && estimatedGrossWeight > 0 ? estimatedInsulationWeight / estimatedGrossWeight : null;
+  
+  // Phase 3H.21.6: Log completeness state
+  if (!isComplete) {
+    console.warn('[SKU INSIGHTS INCOMPLETE]', {
+      wireTypes,
+      hasUnknownGauge,
+      note: 'Copper calculations set to null due to missing gauge data'
+    });
+  }
   
   // Phase 3H.19: Debug logging for dual copper model
   console.log('[COPPER DUAL MODEL]', {
     netFeet: totalUsableFeet,
     grossFeet: totalCutFeet,
     scrapFeet: totalScrapFeet,
-    netCopper: netCopperWeight,
-    grossCopper: grossCopperWeight,
-    scrapCopper: scrapCopperWeight,
-    scrapPercent
+    netCopper: finalNetCopperWeight,
+    grossCopper: finalGrossCopperWeight,
+    scrapCopper: finalScrapCopperWeight,
+    scrapPercent,
+    isComplete  // Phase 3H.21.6
   });
   
   // V6.2: STEP 8 - Operation step distribution (count-based, this is correct)
@@ -661,9 +694,10 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     gaugeBreakdown,
     colorBreakdown,
     operationStepDistribution,
-    estimatedCopperWeight,
-    estimatedInsulationWeight,  // V6.4: Insulation weight
-    estimatedGrossWeight,  // V6.4: Gross weight
+    // Phase 3H.21.6: Use final copper weights (null if incomplete)
+    estimatedCopperWeight: finalEstimatedCopperWeight,
+    estimatedInsulationWeight: finalEstimatedInsulationWeight,  // V6.4: Insulation weight
+    estimatedGrossWeight: finalEstimatedGrossWeight,  // V6.4: Gross weight
     copperPercent,  // V6.4: Copper percentage
     insulationPercent,  // V6.4: Insulation percentage
     lengthUnit: sourceUnit,  // V6.2.4: Deterministic source unit
@@ -673,10 +707,12 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     cutWireLengthFeet: totalCutFeet,
     scrapWireLengthFeet: totalScrapFeet,
     scrapPercent,
-    // Phase 3H.19: DUAL COPPER MODEL - Copper weight breakdown
-    netCopperWeight,
-    grossCopperWeight,
-    scrapCopperWeight
+    // Phase 3H.19/3H.21.6: DUAL COPPER MODEL - Copper weight breakdown (null if incomplete)
+    netCopperWeight: finalNetCopperWeight,
+    grossCopperWeight: finalGrossCopperWeight,
+    scrapCopperWeight: finalScrapCopperWeight,
+    // Phase 3H.21.6: Completeness flag
+    isComplete
   };
 }
 
@@ -689,9 +725,10 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
  */
 export interface FamilyCopperIndex {
   family: string;
-  totalCopper: number;
-  totalInsulation: number;
-  totalGross: number;
+  // Phase 3H.21.6: Can be null if any wire has missing gauge
+  totalCopper: number | null;
+  totalInsulation: number | null;
+  totalGross: number | null;
   totalLength: number;
   totalWireTypes: number;  // Phase 3H.20: Renamed from totalWireCount
   skuCount: number;
@@ -754,8 +791,8 @@ export function computeFamilyCopperIndex(
     families: Object.entries(result).map(([family, data]) => ({
       family,
       skuCount: data.skuCount,
-      totalCopper: Number(data.totalCopper.toFixed(4)),
-      totalGross: Number(data.totalGross.toFixed(4))
+      totalCopper: data.totalCopper !== null ? Number(data.totalCopper.toFixed(4)) : null,  // Phase 3H.21.6
+      totalGross: data.totalGross !== null ? Number(data.totalGross.toFixed(4)) : null  // Phase 3H.21.6
     }))
   });
   
@@ -891,12 +928,17 @@ export function computeMaterialDelta(
   const currInsights = computeSKUInsights(currentRecords);
   
   // V6.3: Calculate deltas
+  // Phase 3H.21.6: Handle null-safe copper delta
+  const copperDelta = (currInsights.estimatedCopperWeight !== null && prevInsights.estimatedCopperWeight !== null)
+    ? currInsights.estimatedCopperWeight - prevInsights.estimatedCopperWeight
+    : 0;  // Default to 0 if either is null (can't calculate delta)
+  
   const materialDelta: MaterialDelta = {
     partNumber,
     fromRevision: previousRev,
     toRevision: currentRev,
     wireLengthDelta: currInsights.totalWireLength - prevInsights.totalWireLength,
-    copperDelta: currInsights.estimatedCopperWeight - prevInsights.estimatedCopperWeight,
+    copperDelta,  // Phase 3H.21.6: Null-safe delta
     wireTypesDelta: currInsights.wireTypes - prevInsights.wireTypes,  // Phase 3H.20: Renamed
     gaugeDelta: diffDistribution(
       currInsights.gaugeBreakdown,

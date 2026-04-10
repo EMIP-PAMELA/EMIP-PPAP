@@ -560,7 +560,16 @@ export default function BOMDetailPage() {
               
               <div className="bg-amber-50 p-4 rounded">
                 <div className="text-xs text-amber-600 uppercase tracking-wide mb-1">Copper Weight</div>
-                <div className="text-2xl font-bold text-amber-900">{skuInsights.estimatedCopperWeight.toFixed(3)} lbs</div>
+                {/* Phase 3H.21.6: Null-safe copper display */}
+                <div className="text-2xl font-bold text-amber-900">
+                  {skuInsights.estimatedCopperWeight !== null 
+                    ? `${skuInsights.estimatedCopperWeight.toFixed(3)} lbs`
+                    : <span className="text-gray-400">N/A</span>
+                  }
+                </div>
+                {skuInsights.estimatedCopperWeight === null && (
+                  <div className="text-xs text-yellow-600 mt-1">Gauge data incomplete</div>
+                )}
               </div>
             </div>
             
@@ -568,22 +577,30 @@ export default function BOMDetailPage() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
               <div className="bg-green-50 p-4 rounded">
                 <div className="text-xs text-green-600 uppercase tracking-wide mb-1">Insulation Weight</div>
-                <div className="text-2xl font-bold text-green-900">{skuInsights.estimatedInsulationWeight.toFixed(3)} lbs</div>
+                <div className="text-2xl font-bold text-green-900">
+                  {skuInsights.estimatedInsulationWeight !== null ? `${skuInsights.estimatedInsulationWeight.toFixed(3)} lbs` : <span className="text-gray-400">N/A</span>}
+                </div>
               </div>
               
               <div className="bg-purple-50 p-4 rounded">
                 <div className="text-xs text-purple-600 uppercase tracking-wide mb-1">Gross Weight</div>
-                <div className="text-2xl font-bold text-purple-900">{skuInsights.estimatedGrossWeight.toFixed(3)} lbs</div>
+                <div className="text-2xl font-bold text-purple-900">
+                  {skuInsights.estimatedGrossWeight !== null ? `${skuInsights.estimatedGrossWeight.toFixed(3)} lbs` : <span className="text-gray-400">N/A</span>}
+                </div>
               </div>
               
-              <div className="bg-amber-50 p-4 rounded">
-                <div className="text-xs text-amber-600 uppercase tracking-wide mb-1">Copper %</div>
-                <div className="text-2xl font-bold text-amber-900">{(skuInsights.copperPercent * 100).toFixed(1)}%</div>
+              <div className="bg-orange-50 p-4 rounded">
+                <div className="text-xs text-orange-600 uppercase tracking-wide mb-1">Copper %</div>
+                <div className="text-2xl font-bold text-orange-900">
+                  {skuInsights.copperPercent !== null ? `${skuInsights.copperPercent.toFixed(1)}%` : <span className="text-gray-400">N/A</span>}
+                </div>
               </div>
               
-              <div className="bg-green-50 p-4 rounded">
-                <div className="text-xs text-green-600 uppercase tracking-wide mb-1">Insulation %</div>
-                <div className="text-2xl font-bold text-green-900">{(skuInsights.insulationPercent * 100).toFixed(1)}%</div>
+              <div className="bg-teal-50 p-4 rounded">
+                <div className="text-xs text-teal-600 uppercase tracking-wide mb-1">Insulation %</div>
+                <div className="text-2xl font-bold text-teal-900">
+                  {skuInsights.insulationPercent !== null ? `${skuInsights.insulationPercent.toFixed(1)}%` : <span className="text-gray-400">N/A</span>}
+                </div>
               </div>
               
               <div className="bg-gray-50 p-4 rounded">
