@@ -1,9 +1,10 @@
 /**
  * Harness Work Instruction Generator — Review UI
- * Phase HWI.3 — Hybrid Grid + Guided Panel Review
+ * Phase HWI.3 / HWI.5 — Hybrid Grid + Approval Workflow
  *
  * Layout: 3-column (Job Info | Tabs | Flags)
  * State: job + flags managed locally, no re-fetches after edits
+ * Approval: locks all editing, stores to DB, uploads PDF artifact
  */
 
 'use client';
@@ -13,10 +14,18 @@ import EMIPLayout from '../layout/EMIPLayout';
 import JobHeader from '@/src/features/harness-work-instructions/components/JobHeader';
 import ReviewTabs from '@/src/features/harness-work-instructions/components/ReviewTabs';
 import FlagsPanel from '@/src/features/harness-work-instructions/components/FlagsPanel';
+import JobHistoryPanel from '@/src/features/harness-work-instructions/components/JobHistoryPanel';
 import type {
   HarnessInstructionJob,
   EngineeringFlag,
 } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
+
+interface ApprovalRecord {
+  jobId: string;
+  version: number;
+  artifactUrl: string | null;
+  approvedAt: string;
+}
 
 type EditableWireField =
   | 'aci_wire_part_number'
@@ -33,6 +42,11 @@ export default function HarnessInstructionsPage() {
   const [error, setError]   = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('wires');
   const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [approving, setApproving]       = useState(false);
+  const [approvalRecord, setApprovalRecord] = useState<ApprovalRecord | null>(null);
+  const [showHistory, setShowHistory]   = useState(false);
+
+  const isLocked = approvalRecord !== null;
 
   useEffect(() => {
     console.log('[HWI UI LOAD]', { timestamp: new Date().toISOString() });
@@ -96,6 +110,34 @@ export default function HarnessInstructionsPage() {
         ),
       };
     });
+  }
+
+  async function handleApprove() {
+    if (!job || !canApprove || isLocked) return;
+    setApproving(true);
+    try {
+      const res = await fetch('/api/harness-instructions/approve-job', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ job, approvedBy: 'engineer' }),
+      });
+      const json = await res.json() as {
+        ok: boolean; jobId?: string; version?: number;
+        artifactUrl?: string; approvedAt?: string; error?: string;
+      };
+      if (!json.ok) throw new Error(json.error ?? 'Approval failed');
+      setApprovalRecord({
+        jobId:       json.jobId!,
+        version:     json.version!,
+        artifactUrl: json.artifactUrl ?? null,
+        approvedAt:  json.approvedAt!,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`Approval failed: ${msg}`);
+    } finally {
+      setApproving(false);
+    }
   }
 
   async function handleGeneratePDF() {
@@ -213,6 +255,15 @@ export default function HarnessInstructionsPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* History button */}
+            <button
+              onClick={() => setShowHistory(true)}
+              className="px-3 py-1.5 rounded text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 transition-colors"
+            >
+              🕓 History
+            </button>
+
+            {/* Generate PDF */}
             <button
               onClick={handleGeneratePDF}
               disabled={generatingPDF}
@@ -225,19 +276,40 @@ export default function HarnessInstructionsPage() {
               {generatingPDF ? '⏳ Generating...' : '📄 Generate PDF'}
             </button>
 
-            <button
-              disabled={!canApprove}
-              onClick={() => alert('Approval flow — coming in HWI.5')}
-              className={`px-4 py-1.5 rounded text-xs font-semibold transition-colors ${
-                canApprove
-                  ? 'bg-green-600 text-white hover:bg-green-700'
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              {canApprove
-                ? '✅ Approve Instruction'
-                : `⚠️ ${unresolvedFlags.length} issue${unresolvedFlags.length !== 1 ? 's' : ''} pending`}
-            </button>
+            {/* Approve / Approved */}
+            {isLocked ? (
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1.5 rounded text-xs font-semibold bg-green-100 text-green-800 border border-green-300">
+                  ✅ Approved · v{approvalRecord!.version}
+                </span>
+                {approvalRecord!.artifactUrl && (
+                  <a
+                    href={approvalRecord!.artifactUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                  >
+                    📄 Download PDF
+                  </a>
+                )}
+              </div>
+            ) : (
+              <button
+                disabled={!canApprove || approving}
+                onClick={handleApprove}
+                className={`px-4 py-1.5 rounded text-xs font-semibold transition-colors ${
+                  canApprove && !approving
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                {approving
+                  ? '⏳ Approving...'
+                  : canApprove
+                  ? '✅ Approve Instruction'
+                  : `⚠️ ${unresolvedFlags.length} issue${unresolvedFlags.length !== 1 ? 's' : ''} pending`}
+              </button>
+            )}
           </div>
         </div>
 
@@ -262,6 +334,13 @@ export default function HarnessInstructionsPage() {
 
           {/* CENTER — Tabs */}
           <div className="flex-1 overflow-hidden flex flex-col min-w-0">
+            {isLocked && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-t-lg text-xs text-green-700 flex-shrink-0">
+                <span className="font-semibold">🔒 APPROVED</span>
+                <span className="text-green-600">v{approvalRecord!.version} · {new Date(approvalRecord!.approvedAt).toLocaleString()}</span>
+                <span className="text-green-500 ml-1">— editing disabled</span>
+              </div>
+            )}
             <ReviewTabs
               job={job}
               flags={flags}
@@ -269,6 +348,7 @@ export default function HarnessInstructionsPage() {
               onTabChange={setActiveTab}
               onUpdateWire={handleUpdateWire}
               onUpdateQuestion={handleUpdateQuestion}
+              isLocked={isLocked}
             />
           </div>
 
@@ -282,6 +362,13 @@ export default function HarnessInstructionsPage() {
 
         </div>
       </div>
+      {/* History panel modal */}
+      {showHistory && job && (
+        <JobHistoryPanel
+          partNumber={job.metadata.part_number}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </EMIPLayout>
   );
 }

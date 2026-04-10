@@ -23,6 +23,7 @@ interface WireInstancesTabProps {
   wireInstances: WireInstance[];
   flags: EngineeringFlag[];
   onUpdate: (index: number, field: EditableWireField, value: string | number | null) => void;
+  isLocked?: boolean;
 }
 
 function getActiveFlags(flags: EngineeringFlag[], path: string): EngineeringFlag[] {
@@ -57,9 +58,10 @@ interface InputCellProps {
   path: string;
   onChange: (val: string) => void;
   placeholder?: string;
+  isLocked?: boolean;
 }
 
-function InputCell({ value, type = 'text', flags: allFlags, path, onChange, placeholder }: InputCellProps) {
+function InputCell({ value, type = 'text', flags: allFlags, path, onChange, placeholder, isLocked }: InputCellProps) {
   const hits = getActiveFlags(allFlags, path);
   const hasFlag = hits.length > 0;
 
@@ -69,8 +71,11 @@ function InputCell({ value, type = 'text', flags: allFlags, path, onChange, plac
         type={type}
         value={value}
         placeholder={placeholder}
-        onChange={e => onChange(e.target.value)}
-        className={`w-full bg-transparent px-2 py-1.5 text-xs border-0 focus:outline-none focus:bg-blue-50 min-w-0 ${
+        readOnly={isLocked}
+        onChange={isLocked ? undefined : e => onChange(e.target.value)}
+        className={`w-full bg-transparent px-2 py-1.5 text-xs border-0 focus:outline-none min-w-0 ${
+          isLocked ? 'cursor-default text-gray-600' : 'focus:bg-blue-50'
+        } ${
           hasFlag ? 'text-red-700 placeholder-red-300' : 'text-gray-800'
         }`}
         style={{ minWidth: '60px' }}
@@ -79,7 +84,7 @@ function InputCell({ value, type = 'text', flags: allFlags, path, onChange, plac
   );
 }
 
-export default function WireInstancesTab({ wireInstances, flags, onUpdate }: WireInstancesTabProps) {
+export default function WireInstancesTab({ wireInstances, flags, onUpdate, isLocked }: WireInstancesTabProps) {
   if (wireInstances.length === 0) {
     return (
       <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
@@ -129,6 +134,7 @@ export default function WireInstancesTab({ wireInstances, flags, onUpdate }: Wir
                   path={p('aci_wire_part_number')}
                   onChange={v => onUpdate(index, 'aci_wire_part_number', v)}
                   placeholder="ACI Part #"
+                  isLocked={isLocked}
                 />
 
                 <InputCell
@@ -137,6 +143,7 @@ export default function WireInstancesTab({ wireInstances, flags, onUpdate }: Wir
                   path={p('gauge')}
                   onChange={v => onUpdate(index, 'gauge', v)}
                   placeholder="AWG"
+                  isLocked={isLocked}
                 />
 
                 <InputCell
@@ -145,6 +152,7 @@ export default function WireInstancesTab({ wireInstances, flags, onUpdate }: Wir
                   path={p('color')}
                   onChange={v => onUpdate(index, 'color', v)}
                   placeholder="Color"
+                  isLocked={isLocked}
                 />
 
                 <InputCell
@@ -156,6 +164,7 @@ export default function WireInstancesTab({ wireInstances, flags, onUpdate }: Wir
                     const n = parseFloat(v);
                     onUpdate(index, 'cut_length', isNaN(n) ? 0 : n);
                   }}
+                  isLocked={isLocked}
                 />
 
                 <InputCell
@@ -165,6 +174,7 @@ export default function WireInstancesTab({ wireInstances, flags, onUpdate }: Wir
                   path={p('strip_end_a')}
                   onChange={v => onUpdate(index, 'strip_end_a', v === '' ? null : parseFloat(v) || 0)}
                   placeholder="—"
+                  isLocked={isLocked}
                 />
 
                 <InputCell
@@ -174,6 +184,7 @@ export default function WireInstancesTab({ wireInstances, flags, onUpdate }: Wir
                   path={p('strip_end_b')}
                   onChange={v => onUpdate(index, 'strip_end_b', v === '' ? null : parseFloat(v) || 0)}
                   placeholder="—"
+                  isLocked={isLocked}
                 />
 
                 {/* End A — read-only display (complex object) */}

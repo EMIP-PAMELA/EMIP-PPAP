@@ -14,9 +14,10 @@ import type { ReviewQuestion } from '../types/harnessInstruction.schema';
 interface ReviewQuestionsTabProps {
   questions: ReviewQuestion[];
   onUpdate: (id: string, answer: string | null, resolved: boolean) => void;
+  isLocked?: boolean;
 }
 
-export default function ReviewQuestionsTab({ questions, onUpdate }: ReviewQuestionsTabProps) {
+export default function ReviewQuestionsTab({ questions, onUpdate, isLocked }: ReviewQuestionsTabProps) {
   if (questions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-32 text-gray-400">
@@ -52,22 +53,27 @@ export default function ReviewQuestionsTab({ questions, onUpdate }: ReviewQuesti
                 <div className="flex gap-2 items-end">
                   <textarea
                     value={q.answer ?? ''}
-                    placeholder="Enter answer..."
+                    placeholder={isLocked ? '' : 'Enter answer...'}
                     rows={2}
-                    onChange={e => onUpdate(q.id, e.target.value || null, q.resolved)}
-                    className="flex-1 text-sm border border-orange-200 rounded px-2 py-1.5 bg-white resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  />
-                  <button
-                    onClick={() => onUpdate(q.id, q.answer, true)}
-                    disabled={!q.answer?.trim()}
-                    className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex-shrink-0 ${
-                      q.answer?.trim()
-                        ? 'bg-green-600 text-white hover:bg-green-700'
-                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    readOnly={isLocked}
+                    onChange={isLocked ? undefined : e => onUpdate(q.id, e.target.value || null, q.resolved)}
+                    className={`flex-1 text-sm border border-orange-200 rounded px-2 py-1.5 bg-white resize-none focus:outline-none focus:ring-1 focus:ring-blue-400 ${
+                      isLocked ? 'cursor-default bg-gray-50 text-gray-600' : ''
                     }`}
-                  >
-                    Mark Resolved
-                  </button>
+                  />
+                  {!isLocked && (
+                    <button
+                      onClick={() => onUpdate(q.id, q.answer, true)}
+                      disabled={!q.answer?.trim()}
+                      className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex-shrink-0 ${
+                        q.answer?.trim()
+                          ? 'bg-green-600 text-white hover:bg-green-700'
+                          : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      Mark Resolved
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -98,12 +104,14 @@ export default function ReviewQuestionsTab({ questions, onUpdate }: ReviewQuesti
                       )}
                     </div>
                   </div>
-                  <button
-                    onClick={() => onUpdate(q.id, q.answer, false)}
-                    className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0"
-                  >
-                    Reopen
-                  </button>
+                  {!isLocked && (
+                    <button
+                      onClick={() => onUpdate(q.id, q.answer, false)}
+                      className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0"
+                    >
+                      Reopen
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

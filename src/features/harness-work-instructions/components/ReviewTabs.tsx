@@ -30,6 +30,7 @@ interface ReviewTabsProps {
   onTabChange: (tab: string) => void;
   onUpdateWire: (index: number, field: EditableWireField, value: string | number | null) => void;
   onUpdateQuestion: (id: string, answer: string | null, resolved: boolean) => void;
+  isLocked?: boolean;
 }
 
 const TABS = [
@@ -94,6 +95,7 @@ export default function ReviewTabs({
   onTabChange,
   onUpdateWire,
   onUpdateQuestion,
+  isLocked,
 }: ReviewTabsProps) {
   const unresolvedFlags = flags.filter(f => !f.resolved);
 
@@ -182,6 +184,7 @@ export default function ReviewTabs({
             wireInstances={job.wire_instances}
             flags={flags}
             onUpdate={onUpdateWire}
+            isLocked={isLocked}
           />
         )}
 
@@ -223,6 +226,7 @@ export default function ReviewTabs({
           <ReviewQuestionsTab
             questions={job.review_questions}
             onUpdate={onUpdateQuestion}
+            isLocked={isLocked}
           />
         )}
 
