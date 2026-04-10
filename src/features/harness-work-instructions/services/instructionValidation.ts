@@ -1,16 +1,18 @@
 /**
  * Harness Work Instruction Generator — Runtime Validation Service
  * Phase HWI.1 — Schema Validation Layer
+ * Phase HWI.2 — validateAndMapErrors() added for AI pipeline
  *
- * All AI extraction output MUST pass validateInstruction() before
- * being accepted into the review workflow or stored.
+ * All AI extraction output MUST pass validation before entering review workflow.
  */
 
 import { z } from 'zod';
 import {
   HarnessInstructionJobSchema,
   type HarnessInstructionJob,
+  type EngineeringFlag,
 } from '../types/harnessInstruction.schema';
+import { mapZodErrorsToFlags } from '../utils/validationMapper';
 
 const LOG_PREFIX = '[HWI VALIDATION ERROR]';
 
@@ -76,4 +78,73 @@ export function safeValidateInstruction(data: unknown): ValidationOutcome {
   }
 
   return { success: true, data: result.data };
+}
+
+// ---------------------------------------------------------------------------
+// HWI.2 additions — validation-aware reconciliation
+// ---------------------------------------------------------------------------
+
+export interface FallbackMeta {
+  id: string;
+  partNumber: string;
+  revision: string;
+}
+
+/**
+ * Build a minimal valid HarnessInstructionJob as a safe fallback.
+ * All arrays are empty; engineering_flags will be populated by the caller.
+ */
+function buildFallbackJob(meta: FallbackMeta): HarnessInstructionJob {
+  return {
+    id: meta.id,
+    status: 'review',
+    metadata: {
+      part_number: meta.partNumber,
+      revision: meta.revision,
+      description: null,
+      source_document_url: null,
+      created_at: new Date().toISOString(),
+      approved_at: null,
+      generated_pdf_url: null,
+    },
+    wire_instances: [],
+    press_rows: [],
+    komax_rows: [],
+    pin_map_rows: [],
+    assembly_steps: [],
+    engineering_flags: [],
+    review_questions: [],
+  };
+}
+
+/**
+ * Validate AI output and reconcile errors into EngineeringFlags.
+ *
+ * - If data validates: return it directly with no extra flags.
+ * - If data fails validation: convert ZodIssues → flags, return safe fallback job.
+ *
+ * The returned job is ALWAYS a valid HarnessInstructionJob.
+ * Any schema violations appear as engineering_flags for reviewer action.
+ *
+ * @param rawData  - Unknown data from AI extraction
+ * @param fallback - Metadata used to build fallback job if validation fails
+ */
+export function validateAndMapErrors(
+  rawData: unknown,
+  fallback: FallbackMeta
+): { job: HarnessInstructionJob; flags: EngineeringFlag[] } {
+  const validation = safeValidateInstruction(rawData);
+
+  if (validation.success) {
+    console.log('[HWI VALIDATION RESULT] Passed — data conforms to schema');
+    return { job: validation.data, flags: [] };
+  }
+
+  const flags = mapZodErrorsToFlags(validation.issues);
+  console.log(`[HWI VALIDATION RESULT] ${flags.length} issue(s) — using fallback job`);
+
+  const job = buildFallbackJob(fallback);
+  job.engineering_flags = flags;
+
+  return { job, flags };
 }
