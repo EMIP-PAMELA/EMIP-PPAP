@@ -26,6 +26,7 @@
 import { BOMRecord, FlattenedBOM, WireBOM, RawBOMData } from '../data/bom/types';
 import { parseBOMText, parseBOMWithValidation, PARSER_VERSION } from '../parser/parserService';
 import { supabase } from '@/src/lib/supabaseClient';
+import { looksLikeWirePart } from '@/src/core/utils/wireDetection';
 
 // ============================================================
 // V6.7: REVISION INTELLIGENCE LAYER
@@ -436,12 +437,37 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   const sourceUnit: 'feet' | 'inches' = 'feet';
   const unitFactor = 12;  // feet → inches conversion
   
-  // Phase 3H.18.1: STEP 2 - Filter to canonical wire records only (category === 'WIRE')
+  // Phase 3H.18.1: STEP 2 - Filter to wire records (canonical + recovery layer)
   // Use effectiveLength directly from normalizeComponentForAnalytics (ALREADY in FEET)
   // NO re-computation - effectiveLength is SINGLE SOURCE OF TRUTH
-  const wireRecords = normalized.filter(
+  const canonicalWireCount = normalized.filter(
     r => r.category === 'WIRE' && r.effectiveLength > 0
-  );
+  ).length;
+
+  const wireRecords = normalized.filter(r => {
+    if (r.effectiveLength <= 0) {
+      return false;
+    }
+
+    const isCanonicalWire = r.category === 'WIRE';
+    const isRecoveredWire = !isCanonicalWire && looksLikeWirePart(r.component_part_number);
+
+    if (isRecoveredWire) {
+      console.warn('[WIRE RECOVERY]', {
+        part: r.component_part_number,
+        reason: 'Recovered via part number pattern',
+        originalCategory: r.category
+      });
+    }
+
+    return isCanonicalWire || isRecoveredWire;
+  });
+
+  console.log('[WIRE DETECTION SUMMARY]', {
+    total: normalized.length,
+    canonical: canonicalWireCount,
+    recovered: wireRecords.length - canonicalWireCount
+  });
   
   // Phase 3H.18.1: STEP 3 - Count distinct wire components (not sum of qtyPer)
   // Phase 3H.20: Renamed to wireTypes to clarify this is distinct wire part numbers
