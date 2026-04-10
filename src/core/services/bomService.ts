@@ -175,50 +175,88 @@ interface NormalizedComponent {
 function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent {
   const isWire = record.category === 'WIRE';
   
-  // Phase 3H.18.2: CANONICAL WIRE LENGTH SOURCE
-  // For wires: use quantity (Qty Per) as usable wire length
-  // For non-wires: fall back to length field if available
-  const rawLength = isWire 
-    ? (Number(record.quantity) || 0)  // Qty Per = usable wire length
-    : (Number(record.length) || 0);   // Non-wire: use length field
+  // Phase 3H.20: WIRE LENGTH SOURCE DETECTION
+  // Different BOM formats store wire length in different fields:
+  // Format A (NH45-102119-02): qty_per = actual footage, cutLength = scrap-inclusive
+  // Format B (NH45-107818-16): qty_per = count (1), cutLength = actual footage
+  
+  const qtyPer = Number(record.quantity) || 0;
+  const cutLength = Number(record.length) || 0;
+  
+  let usableLength: number;
+  let lengthSourceMode: 'QTY_PER_MODE' | 'CUT_LENGTH_MODE';
+  
+  if (isWire) {
+    // Detect correct length source based on value patterns
+    if (qtyPer <= 1 && cutLength > 1) {
+      // Format B: qtyPer is count (1), cutLength is actual footage
+      usableLength = cutLength;
+      lengthSourceMode = 'CUT_LENGTH_MODE';
+    } else {
+      // Format A: qtyPer is actual footage (default assumption)
+      usableLength = qtyPer;
+      lengthSourceMode = 'QTY_PER_MODE';
+    }
     
+    // Phase 3H.20: Log length mode detection
+    console.log('[WIRE LENGTH MODE]', {
+      part: record.component_part_number,
+      qtyPer,
+      cutLength,
+      selected: usableLength,
+      mode: lengthSourceMode
+    });
+  } else {
+    // Non-wires: use qtyPer as quantity
+    usableLength = 0;
+    lengthSourceMode = 'QTY_PER_MODE';
+  }
+  
   const quantity = Number(record.quantity) || 0;
   // V6.2: qty_per may not exist in all records, default to 1
   // For Cable Quest, qty_per is stored in 'quantity' field
-  const qtyPer = isWire ? 1 : (Number((record as any).qty_per) || 1);
-  
-  // Phase 3H.18.2: Wire length audit logging
-  if (isWire && rawLength > 0) {
-    console.log('[WIRE LENGTH SOURCE AUDIT]', {
-      part: record.component_part_number,
-      qtyPer: record.quantity,  // Qty Per from BOM = usable length
-      cutLength: record.length, // Cut length with scrap (IGNORED)
-      canonicalLengthUsed: rawLength,
-      isWire,
-      source: 'quantity (Qty Per)'
-    });
-  }
+  const qtyPerMultiplier = isWire ? 1 : (Number((record as any).qty_per) || 1);
   
   // Phase 3H.16.3: Log category from DB for debugging
   if (record.category) {
     console.log(`📦 BOM RECORD CATEGORY: ${record.component_part_number} → ${record.category}`);
   }
   
-  // Phase 3H.19: DUAL COPPER MODEL - Calculate wire length sources
-  const usableLength = isWire ? rawLength : undefined;  // Qty Per (usable)
-  const cutLength = isWire ? (Number(record.length) || rawLength) : undefined;  // Cut length (with scrap)
-  const scrapLength = (usableLength !== undefined && cutLength !== undefined)
-    ? Math.max(0, cutLength - usableLength)  // Ensure non-negative
+  // Phase 3H.20: STEP 2 - Correct dual model inputs
+  // usableLength = detected actual footage
+  // cutLengthForDual = the other value (for scrap calculation)
+  const cutLengthForDual = isWire 
+    ? (lengthSourceMode === 'QTY_PER_MODE' ? cutLength : qtyPer)
     : undefined;
   
-  // Phase 3H.19: Log dual copper model data for wires
-  if (isWire && usableLength !== undefined && cutLength !== undefined) {
-    console.log('[COPPER DUAL MODEL]', {
+  const scrapLength = (isWire && cutLengthForDual !== undefined && cutLengthForDual > usableLength)
+    ? Math.max(0, cutLengthForDual - usableLength)
+    : undefined;
+  
+  // Phase 3H.20: Sanity validation guard
+  const scrapPercent = (usableLength > 0 && cutLengthForDual !== undefined) 
+    ? ((cutLengthForDual - usableLength) / cutLengthForDual * 100) 
+    : 0;
+  
+  if (isWire && scrapPercent > 50) {
+    console.warn('[WIRE LENGTH WARNING]', {
       part: record.component_part_number,
-      usableFeet: usableLength,
-      cutFeet: cutLength,
-      scrapFeet: scrapLength,
-      scrapPercent: cutLength > 0 ? ((cutLength - usableLength) / cutLength * 100).toFixed(1) + '%' : '0%'
+      qtyPer,
+      cutLength,
+      usableLength,
+      scrapPercent: scrapPercent.toFixed(1) + '%',
+      note: 'Possible incorrect length source selection'
+    });
+  }
+  
+  // Phase 3H.20: Wire semantic model logging
+  if (isWire) {
+    console.log('[WIRE SEMANTIC MODEL]', {
+      part: record.component_part_number,
+      usableLength,
+      cutLength: cutLengthForDual,
+      scrapLength,
+      interpretation: lengthSourceMode
     });
   }
   
@@ -229,9 +267,9 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
   return {
     component_part_number: record.component_part_number,
     description: record.description || null,
-    length: rawLength,  // Phase 3H.18.2: Uses quantity (Qty Per) for wires
+    length: usableLength,  // Phase 3H.20: Detected usable wire length
     quantity,
-    qtyPer,
+    qtyPer: qtyPerMultiplier,
     gauge: record.gauge || null,
     color: record.color || null,
     colorNormalized: record.normalizedcolor || record.color || 'UNKNOWN',
@@ -239,11 +277,11 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
     // Phase 3H.18.1: Canonical wire detection using persisted category
     isWire: record.category === 'WIRE',
     // SINGLE SOURCE OF TRUTH: effectiveLength is always in FEET
-    // Phase 3H.18.2: Uses rawLength (Qty Per for wires) * qtyPer
-    effectiveLength: rawLength * qtyPer,
-    // Phase 3H.19: DUAL COPPER MODEL - Wire length sources
-    usableLength,
-    cutLength,
+    // Phase 3H.20: Uses usableLength * qtyPerMultiplier
+    effectiveLength: usableLength * qtyPerMultiplier,
+    // Phase 3H.19/3H.20: DUAL COPPER MODEL - Wire length sources
+    usableLength: isWire ? usableLength : undefined,
+    cutLength: cutLengthForDual,
     scrapLength,
     operation_step: record.operation_step || null
   };
@@ -331,9 +369,11 @@ export function getActiveCalibrations(): Record<string, WireCalibration> {
 export interface SKUInsights {
   totalComponents: number;
   totalQuantity: number;
-  wireCount: number;
+  // Phase 3H.20: Renamed from wireCount to clarify this is distinct wire types, not physical pieces
+  wireTypes: number;
   totalWireLength: number;
-  avgWireLength: number;
+  // Phase 3H.20: Renamed from avgWireLength to clarify this is average per wire type (aggregated rows)
+  avgLengthPerWireType: number;
   gaugeBreakdown: Record<string, number>;
   colorBreakdown: Record<string, number>;
   operationStepDistribution: Record<string, number>;
@@ -381,7 +421,8 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   const wireRecords = normalized.filter(r => r.isWire && r.effectiveLength > 0);
   
   // Phase 3H.18.1: STEP 3 - Count distinct wire components (not sum of qtyPer)
-  const wireCount = wireRecords.length;
+  // Phase 3H.20: Renamed to wireTypes to clarify this is distinct wire part numbers
+  const wireTypes = wireRecords.length;
   
   // V6.2: STEP 3 - Initialize metrics
   const totalComponents = normalized.length;
@@ -398,7 +439,8 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   const totalWireLength = totalWireLengthFeet * unitFactor;
   
   // Phase 3H.18.1: Fix average - use component count, not qtyPer sum
-  const avgWireLength = wireCount > 0 ? totalWireLength / wireCount : 0;
+  // Phase 3H.20: Renamed to clarify this is average per wire type (aggregated rows)
+  const avgLengthPerWireType = wireTypes > 0 ? totalWireLength / wireTypes : 0;
   
   // Phase 3H.19: DUAL COPPER MODEL - Aggregate usable/cut/scrap lengths
   const totalUsableFeet = wireRecords.reduce(
@@ -545,10 +587,10 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   
   // Phase 3H.18.1: STEP 9 - Validation logging with deterministic unit enforcement
   console.log('[WIRE AUDIT]', {
-    wireCount,
+    wireTypes,  // Phase 3H.20: Renamed from wireCount
     totalFeet: totalWireLengthFeet,
     totalInches: totalWireLength,
-    avgInches: avgWireLength,
+    avgInches: avgLengthPerWireType,  // Phase 3H.20: Renamed
     unitFactor,
     sample: wireRecords.slice(0, 3).map(r => ({
       part: r.component_part_number,
@@ -564,12 +606,12 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     behavior: 'deterministic_no_detection',
     unitFactor,
     sampleLengths: normalized.slice(0, 3).map(r => r.length),
-    wireCount,  // Phase 3H.18.1: Now component count, not qtyPer sum
+    wireTypes,  // Phase 3H.18.1: Now component count, not qtyPer sum // Phase 3H.20: Renamed
     totalWireLengthFeet: Number(totalWireLengthFeet.toFixed(2)),
     totalWireLength: Number(totalWireLength.toFixed(2)),
     totalWireLengthDisplay: `${totalWireLengthFeet.toFixed(2)} ft`,
-    avgWireLength: Number(avgWireLength.toFixed(2)),
-    avgWireLengthDisplay: `${(avgWireLength / 12).toFixed(2)} ft`,
+    avgLengthPerWireType: Number(avgLengthPerWireType.toFixed(2)),  // Phase 3H.20: Renamed
+    avgLengthPerWireTypeDisplay: `${(avgLengthPerWireType / 12).toFixed(2)} ft`,  // Phase 3H.20: Renamed
     copperWeight: Number(estimatedCopperWeight.toFixed(4)),
     colorDistribution: Object.fromEntries(
       Object.entries(colorBreakdown).map(([k, v]) => [k, Number(v.toFixed(2))])
@@ -596,9 +638,9 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   return {
     totalComponents,
     totalQuantity,
-    wireCount,
+    wireTypes,  // Phase 3H.20: Renamed from wireCount
     totalWireLength,
-    avgWireLength,
+    avgLengthPerWireType,  // Phase 3H.20: Renamed from avgWireLength
     gaugeBreakdown,
     colorBreakdown,
     operationStepDistribution,
@@ -634,7 +676,7 @@ export interface FamilyCopperIndex {
   totalInsulation: number;
   totalGross: number;
   totalLength: number;
-  totalWireCount: number;
+  totalWireTypes: number;  // Phase 3H.20: Renamed from totalWireCount
   skuCount: number;
 }
 
@@ -683,7 +725,7 @@ export function computeFamilyCopperIndex(
       totalInsulation: insights.estimatedInsulationWeight,
       totalGross: insights.estimatedGrossWeight,
       totalLength: insights.totalWireLength,
-      totalWireCount: insights.wireCount,
+      totalWireTypes: insights.wireTypes,  // Phase 3H.20: Renamed
       skuCount: uniqueSKUs.size
     };
   });
@@ -750,7 +792,7 @@ export interface MaterialDelta {
   toRevision: string;
   wireLengthDelta: number;
   copperDelta: number;
-  wireCountDelta: number;
+  wireTypesDelta: number;  // Phase 3H.20: Renamed from wireCountDelta
   gaugeDelta: Record<string, number>;
   colorDelta: Record<string, number>;
 }
@@ -838,7 +880,7 @@ export function computeMaterialDelta(
     toRevision: currentRev,
     wireLengthDelta: currInsights.totalWireLength - prevInsights.totalWireLength,
     copperDelta: currInsights.estimatedCopperWeight - prevInsights.estimatedCopperWeight,
-    wireCountDelta: currInsights.wireCount - prevInsights.wireCount,
+    wireTypesDelta: currInsights.wireTypes - prevInsights.wireTypes,  // Phase 3H.20: Renamed
     gaugeDelta: diffDistribution(
       currInsights.gaugeBreakdown,
       prevInsights.gaugeBreakdown
@@ -856,7 +898,7 @@ export function computeMaterialDelta(
     toRevision: currentRev,
     wireLengthDelta: Number(materialDelta.wireLengthDelta.toFixed(2)),
     copperDelta: Number(materialDelta.copperDelta.toFixed(4)),
-    wireCountDelta: materialDelta.wireCountDelta,
+    wireTypesDelta: materialDelta.wireTypesDelta,  // Phase 3H.20: Renamed
     gaugeDelta: Object.fromEntries(
       Object.entries(materialDelta.gaugeDelta).map(([k, v]) => [k, Number(v.toFixed(2))])
     ),
