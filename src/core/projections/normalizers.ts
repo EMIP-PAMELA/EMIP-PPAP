@@ -326,24 +326,27 @@ export function isWire(
  * Phase 3H.14.1: Wrapper around existing detection functions
  * Phase 3H.14.2: Enhanced with keyword arrays for improved accuracy
  * Phase 3H.17.3: Added HARDWARE, LABEL, SLEEVING categories with precision rules
+ * Phase 3H.17.5: SEMANTIC PRIORITY SYSTEM - specific categories take precedence over generic WIRE
  * Returns structured category string for BOM display
  * 
  * @param partNumber Part number
  * @param description Description
  * @returns Category string: WIRE | CONNECTOR | TERMINAL | SEAL | HARDWARE | LABEL | SLEEVING | UNKNOWN
  * 
- * Phase 3H.17.4: Test Cases - Actual Behavior:
- * - "W18GR1015" (part number) → WIRE (W\d+ pattern)
+ * Phase 3H.17.5: SEMANTIC PRIORITY TEST CASES (specific > generic):
+ * Priority Order: LABEL → SLEEVING → HARDWARE → CONNECTOR → TERMINAL → SEAL → WIRE → UNKNOWN
+ * 
+ * - "W18GR1015" (part number) → WIRE (W\d+ pattern - highest confidence)
  * - "SVH-21T-P1.1" (part number) → TERMINAL (SVH pattern)
  * - "VHR-5N" (part number) → CONNECTOR (VHR pattern)
- * - "Wire Assembly" (description) → WIRE (WIRE_KEYWORDS fallback)
- * - "Pin Contact Housing" (description) → CONNECTOR (housing keyword, terminal excluded)
- * - "Cable Tie Clip" (description) → HARDWARE (clip keyword)
- * - "Wire Label Sticker" (description) → WIRE (WIRE_KEYWORDS before LABEL)
- * - "Heat Shrink Sleeve" (description) → SLEEVING (sleeve keyword)
+ * - "Wire Label Sticker" (description) → LABEL (PRIORITY: label > wire)
+ * - "Heat Shrink Sleeve" (description) → SLEEVING (PRIORITY: sleeve > wire)
+ * - "Cable Tie Clip" (description) → HARDWARE (PRIORITY: clip > wire)
  * - "Connector Housing" (description) → CONNECTOR (connector keyword)
  * - "Terminal Contact" (description) → TERMINAL (terminal keyword)
+ * - "Pin Contact Housing" (description) → CONNECTOR (housing excludes terminal)
  * - "Cavities Plug Housing" (description) → CONNECTOR (plug + housing)
+ * - "18AWG Wire" (description) → WIRE (gauge pattern - constrained fallback)
  * - "Unknown Part" (description) → UNKNOWN (no matches)
  */
 export function classifyComponent(
@@ -354,22 +357,74 @@ export function classifyComponent(
     return 'UNKNOWN';
   }
   
-  // Phase 3H.17.3: Normalize inputs for robust matching
+  // Phase 3H.17.5: Normalize input once for consistent matching
   const pnUpper = (partNumber || '').toUpperCase().trim();
-  const descLower = (description || '').toLowerCase().trim();
+  const descLower = (description || '').toLowerCase().trim().replace(/\s+/g, ' ');
   const searchText = `${partNumber || ''} ${description || ''}`.toUpperCase();
   
-  // Phase 3H.17.3: Enhanced classification with precision rules and expanded categories
-  // Priority order: WIRE → TERMINAL → CONNECTOR → SEAL → HARDWARE → LABEL → SLEEVING → UNKNOWN
+  // Phase 3H.17.5: SEMANTIC PRIORITY SYSTEM
+  // Strict evaluation order: specific categories MUST take precedence over generic WIRE matches
+  // Priority: LABEL → SLEEVING → HARDWARE → CONNECTOR → TERMINAL → SEAL → WIRE → UNKNOWN
+  // Rationale: "Wire Label Sticker" is a LABEL, not a WIRE - specific function over generic material
   
-  // A. WIRE (highest priority)
+  // A. WIRE (part number pattern only - highest confidence)
   // Wire detection: starts with W followed by digits (e.g., W18GR1015)
+  // This pattern is highly specific and takes precedence
   if (pnUpper.match(/^W\d+/)) {
     return 'WIRE';
   }
   
-  // B. TERMINAL (with false positive protection)
+  // B. LABEL (Priority 1 - specific component type)
+  // Guard: If description contains both "wire" and label keywords, classify as LABEL
+  // Example: "Wire Label Sticker" → LABEL (not WIRE)
+  if (
+    descLower.includes('label') ||
+    descLower.includes('sticker') ||
+    descLower.includes('tag')
+  ) {
+    return 'LABEL';
+  }
+  
+  // C. SLEEVING (Priority 2 - specific component type)
+  // Guard: "Heat Shrink Sleeve" → SLEEVING (not WIRE)
+  if (
+    descLower.includes('sleeve') ||
+    descLower.includes('heat shrink') ||
+    descLower.includes('shrink')
+  ) {
+    return 'SLEEVING';
+  }
+  
+  // D. HARDWARE (Priority 3 - specific component type)
+  // Examples: "Cable Tie Clip", "Mounting Screw"
+  if (
+    descLower.includes('clip') ||
+    descLower.includes('tie') ||
+    descLower.includes('screw') ||
+    descLower.includes('bolt') ||
+    descLower.includes('fastener')
+  ) {
+    return 'HARDWARE';
+  }
+  
+  // E. CONNECTOR (Priority 4 - connector-specific detection)
+  // Part number patterns OR description keywords
+  // Assembly keyword removed - too broad, causes misclassification
+  if (
+    pnUpper.includes('JST') ||
+    pnUpper.includes('VHR') ||
+    descLower.includes('connector') ||
+    descLower.includes('housing') ||
+    descLower.includes('receptacle') ||
+    descLower.includes('plug') ||
+    descLower.includes('header')
+  ) {
+    return 'CONNECTOR';
+  }
+  
+  // F. TERMINAL (Priority 5 - with false positive protection)
   // Only classify as terminal if explicitly terminal OR pin/contact without housing
+  // Guard: "Pin Contact Housing" → CONNECTOR (not TERMINAL because of housing)
   if (
     pnUpper.includes('T-') ||
     pnUpper.includes('TERM') ||
@@ -386,20 +441,7 @@ export function classifyComponent(
     return 'TERMINAL';
   }
   
-  // C. CONNECTOR (assembly removed - too broad)
-  if (
-    pnUpper.includes('JST') ||
-    pnUpper.includes('VHR') ||
-    descLower.includes('connector') ||
-    descLower.includes('housing') ||
-    descLower.includes('receptacle') ||
-    descLower.includes('plug') ||
-    descLower.includes('header')
-  ) {
-    return 'CONNECTOR';
-  }
-  
-  // D. SEAL
+  // G. SEAL (Priority 6)
   if (
     descLower.includes('seal') ||
     descLower.includes('grommet')
@@ -407,61 +449,36 @@ export function classifyComponent(
     return 'SEAL';
   }
   
-  // E. HARDWARE (NEW CATEGORY)
-  if (
-    descLower.includes('clip') ||
-    descLower.includes('tie') ||
-    descLower.includes('screw') ||
-    descLower.includes('bolt') ||
-    descLower.includes('fastener')
-  ) {
-    return 'HARDWARE';
+  // H. WIRE (Priority 7 - CONSTRAINED FALLBACK)
+  // Only classify as WIRE if no higher-priority category matched
+  // AND description/part number strongly indicates actual wire
+  // Wire-specific patterns: gauge numbers (e.g., 18AWG, 20GA), insulation types
+  const hasGaugePattern = /\d+\s*(AWG|GA|GAUGE)/i.test(searchText);
+  const hasWireKeyword = /\b(WIRE|CABLE|LEAD)\b/i.test(searchText);
+  
+  if (hasGaugePattern || hasWireKeyword) {
+    return 'WIRE';
   }
   
-  // F. LABEL (NEW CATEGORY)
-  if (
-    descLower.includes('label') ||
-    descLower.includes('sticker') ||
-    descLower.includes('tag')
-  ) {
-    return 'LABEL';
-  }
-  
-  // G. SLEEVING (NEW CATEGORY)
-  if (
-    descLower.includes('sleeve') ||
-    descLower.includes('heat shrink') ||
-    descLower.includes('shrink')
-  ) {
-    return 'SLEEVING';
-  }
-  
-  // H. FALLBACK: Keyword arrays for classification (legacy support)
-  const WIRE_KEYWORDS = ['WIRE', 'CABLE', 'LEAD', 'AWG', 'GAUGE'];
+  // I. LEGACY FALLBACK (lowest priority)
+  // Only check legacy keywords for categories not yet matched
   const CONNECTOR_KEYWORDS = ['CONNECTOR', 'CONN', 'PLUG', 'SOCKET', 'RECEPTACLE', 'HOUSING'];
   const TERMINAL_KEYWORDS = ['TERMINAL', 'TERM', 'CONTACT'];
   const SEAL_KEYWORDS = ['SEAL', 'GROMMET'];
-  
-  // Check using existing detection functions
-  if (isWire(partNumber, description) || WIRE_KEYWORDS.some(k => searchText.includes(k))) {
-    return 'WIRE';
-  }
   
   if (isConnector(partNumber, description) || CONNECTOR_KEYWORDS.some(k => searchText.includes(k))) {
     return 'CONNECTOR';
   }
   
-  // Check for terminals
   if (TERMINAL_KEYWORDS.some(k => searchText.includes(k))) {
     return 'TERMINAL';
   }
   
-  // Check for seals
   if (SEAL_KEYWORDS.some(k => searchText.includes(k))) {
     return 'SEAL';
   }
   
-  // Phase 3H.17.3: Log UNKNOWN classifications for debugging
+  // Phase 3H.17.5: Log UNKNOWN classifications for debugging
   console.warn('⚠️ UNKNOWN COMPONENT TYPE', {
     partNumber,
     description: description ? description.substring(0, 50) : null
