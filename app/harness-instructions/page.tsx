@@ -32,6 +32,7 @@ export default function HarnessInstructionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('wires');
+  const [generatingPDF, setGeneratingPDF] = useState(false);
 
   useEffect(() => {
     console.log('[HWI UI LOAD]', { timestamp: new Date().toISOString() });
@@ -95,6 +96,36 @@ export default function HarnessInstructionsPage() {
         ),
       };
     });
+  }
+
+  async function handleGeneratePDF() {
+    if (!job) return;
+    setGeneratingPDF(true);
+    try {
+      const res = await fetch('/api/harness-instructions/generate-pdf', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ job }),
+      });
+      if (!res.ok) {
+        const err = await res.json() as { error?: string };
+        throw new Error(err.error ?? 'PDF generation failed');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `WI-${job.metadata.part_number}-Rev${job.metadata.revision}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`PDF generation failed: ${msg}`);
+    } finally {
+      setGeneratingPDF(false);
+    }
   }
 
   function handleFlagClick(flag: EngineeringFlag) {
@@ -181,19 +212,33 @@ export default function HarnessInstructionsPage() {
             </div>
           </div>
 
-          <button
-            disabled={!canApprove}
-            onClick={() => alert('Approval flow — coming in HWI.4')}
-            className={`px-4 py-1.5 rounded text-xs font-semibold transition-colors flex-shrink-0 ${
-              canApprove
-                ? 'bg-green-600 text-white hover:bg-green-700'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            {canApprove
-              ? '✅ Approve Instruction'
-              : `⚠️ ${unresolvedFlags.length} issue${unresolvedFlags.length !== 1 ? 's' : ''} pending`}
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={handleGeneratePDF}
+              disabled={generatingPDF}
+              className={`px-4 py-1.5 rounded text-xs font-semibold transition-colors ${
+                generatingPDF
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {generatingPDF ? '⏳ Generating...' : '📄 Generate PDF'}
+            </button>
+
+            <button
+              disabled={!canApprove}
+              onClick={() => alert('Approval flow — coming in HWI.5')}
+              className={`px-4 py-1.5 rounded text-xs font-semibold transition-colors ${
+                canApprove
+                  ? 'bg-green-600 text-white hover:bg-green-700'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {canApprove
+                ? '✅ Approve Instruction'
+                : `⚠️ ${unresolvedFlags.length} issue${unresolvedFlags.length !== 1 ? 's' : ''} pending`}
+            </button>
+          </div>
         </div>
 
         {/* 3-column layout */}
