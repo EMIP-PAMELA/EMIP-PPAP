@@ -229,6 +229,16 @@ function looksLikeWireComp(partNumber: string, description: string): boolean {
   return /\bAWG\b|\bWIRE\b/.test(upper);
 }
 
+/**
+ * HWI.7.3: Returns true if the operation contains an APPLICATOR reference,
+ * indicating Komax performs both cutting AND termination (no manual press needed).
+ * Scans instruction lines first, then component raw_first_line text.
+ */
+function detectApplicator(op: OperationModel): boolean {
+  if (op.instructions.some(line => /APPLICATOR/i.test(line))) return true;
+  return op.components.some(c => /APPLICATOR/i.test(c.raw_first_line));
+}
+
 // ---------------------------------------------------------------------------
 // Shared normalisation helpers
 // ---------------------------------------------------------------------------
@@ -330,6 +340,16 @@ async function normalizeFromModels(
   let komaxIdx  = 0;
   let globalStep = 0;
 
+  // flag() hoisted here so it is available inside Phase C (KOMAX termination flags)
+  let flagIdx = 0;
+  function flag(
+    type: EngineeringFlag['flag_type'],
+    message: string,
+    field_ref: string | null = null,
+  ): EngineeringFlag {
+    return { flag_id: `F${(++flagIdx).toString().padStart(3, '0')}`, flag_type: type, field_ref, message, resolved: false };
+  }
+
   for (const op of opModels) {
     const opType  = getOperationType(op.operation_code);
     const comps   = op.components;
@@ -342,8 +362,14 @@ async function normalizeFromModels(
       .map(c => wireMap.get(c.part_number)?.wire_id)
       .filter((id): id is string => Boolean(id));
 
-    // ── KOMAX: one row per component, regardless of classification ──────
+    // ── KOMAX: split by termination location (HWI.7.3) ─────────────────
     if (opType === 'KOMAX') {
+      const isKomaxCrimp        = detectApplicator(op);
+      const terminationLocation = isKomaxCrimp ? 'KOMAX' : 'PRESS';
+      const terminationNote     = isKomaxCrimp
+        ? 'KOMAX_TERMINATED — applicator detected in operation text'
+        : 'CUT_ONLY — no applicator detected; manual press expected';
+
       for (const comp of comps) {
         komaxIdx++;
         komax_rows.push({
@@ -353,10 +379,10 @@ async function normalizeFromModels(
           strip_a:        null,
           strip_b:        null,
           program_number: null,
-          provenance:     bomProvenance('Cut length from Qty Per; wire_id from part-number heuristic'),
+          provenance:     bomProvenance(`${terminationNote}; cut_length from Qty Per`),
         });
       }
-      // Fallback: if no components parsed from KOMAX block, emit one placeholder row
+      // Fallback: placeholder when no components parsed in KOMAX block
       if (comps.length === 0) {
         komaxIdx++;
         komax_rows.push({
@@ -366,9 +392,43 @@ async function normalizeFromModels(
           strip_a:        null,
           strip_b:        null,
           program_number: null,
-          provenance:     bomProvenance('No components parsed — placeholder row for this KOMAX operation'),
+          provenance:     bomProvenance(`No components parsed — placeholder; ${terminationNote}`),
         });
       }
+
+      // CUT_ONLY: Komax only strips — emit press rows for non-wire components in this op
+      if (!isKomaxCrimp) {
+        const wireRef       = wireIdsInOp[0] ?? (wire_instances[0]?.wire_id ?? 'TBD');
+        const terminalComps = comps.filter(c => !looksLikeWireComp(c.part_number, c.description));
+        for (const comp of terminalComps) {
+          pressIdx++;
+          press_rows.push({
+            press_id:             pad(pressIdx, 'P'),
+            wire_id:              wireRef,
+            terminal_part_number: comp.part_number,
+            applicator_id:        null,
+            crimp_height:         null,
+            provenance:           bomProvenance('POST_KOMAX — manual press required; no applicator detected in CUTGROUP op'),
+          });
+        }
+      }
+
+      // Ambiguity flag: applicator present but non-wire components also exist
+      if (isKomaxCrimp && comps.some(c => !looksLikeWireComp(c.part_number, c.description))) {
+        engineering_flags.push(flag(
+          'warning',
+          `Op ${op.operation_code}: applicator detected but non-wire components present — verify termination location`,
+          'press_rows',
+        ));
+      }
+
+      // Termination decision log
+      console.log('[HWI TERMINATION DECISION]', {
+        op:                  op.operation_code,
+        hasApplicator:       isKomaxCrimp,
+        terminationLocation,
+        pressRowsCreated:    press_rows.length - pressCount.before,
+      });
     }
 
     // ── PRESS: one row per component, regardless of classification ──────
@@ -444,16 +504,7 @@ async function normalizeFromModels(
     });
   }
 
-  // ── PHASE D: Engineering flags ─────────────────────────────────────────────
-  let flagIdx = 0;
-  function flag(
-    type: EngineeringFlag['flag_type'],
-    message: string,
-    field_ref: string | null = null,
-  ): EngineeringFlag {
-    return { flag_id: `F${(++flagIdx).toString().padStart(3, '0')}`, flag_type: type, field_ref, message, resolved: false };
-  }
-
+  // ── PHASE D: Engineering flags (flag() and flagIdx defined before Phase C loop) ────
   engineering_flags.push(
     flag('review_required', 'All data is BOM-derived — review each field against the engineering print'),
     flag('info', 'Pin map not available from BOM parsing — must be completed manually', 'pin_map_rows'),
@@ -465,8 +516,17 @@ async function normalizeFromModels(
     engineering_flags.push(flag('warning', 'No wire instances were detected from BOM — review part numbers and re-upload', 'wire_instances'));
   if (komax_rows.length === 0)
     engineering_flags.push(flag('warning', 'No Komax rows generated — confirm BOM contains a CUTGROUP operation', 'komax_rows'));
-  if (press_rows.length === 0)
-    engineering_flags.push(flag('warning', 'No press rows generated — confirm BOM contains a CRIMP operation', 'press_rows'));
+  if (press_rows.length === 0) {
+    const komaxOps            = opModels.filter(op => getOperationType(op.operation_code) === 'KOMAX');
+    const allKomaxTerminated  = komaxOps.length > 0 && komaxOps.every(op => detectApplicator(op));
+    engineering_flags.push(flag(
+      allKomaxTerminated ? 'info' : 'warning',
+      allKomaxTerminated
+        ? 'All terminations handled in Komax (applicator detected) — no manual press required'
+        : 'No press rows generated — confirm BOM contains a CRIMP operation',
+      'press_rows',
+    ));
+  }
 
   for (const wire of wire_instances) {
     if (wire.gauge === 'UNKNOWN')
