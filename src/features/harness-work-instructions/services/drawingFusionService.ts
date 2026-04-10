@@ -36,9 +36,12 @@ import type { CanonicalDrawingDraft, DraftWireRow } from '../types/drawingDraft'
 export type MatchConfidence = 'HIGH' | 'MEDIUM' | 'LOW';
 
 interface BomWireType {
+  key:                  string;
   gauge:                string;
   color:                string;
   aci_wire_part_number: string;
+  qty:                  number;
+  assigned:             number;
 }
 
 interface MatchResult {
@@ -82,24 +85,37 @@ function mkJobFlag(
 // Step 3: Build BOM type index (deduped by gauge + color)
 // ---------------------------------------------------------------------------
 
+function normalizeToken(value: string | number | null | undefined): string | null {
+  if (value == null) return null;
+  const str = String(value).trim();
+  return str.length === 0 ? null : str.toUpperCase();
+}
+
 function buildBomTypeIndex(wires: WireInstance[]): BomWireType[] {
-  const seen = new Set<string>();
-  const types: BomWireType[] = [];
+  const map = new Map<string, BomWireType>();
 
   for (const wire of wires) {
-    const g = String(wire.gauge).toUpperCase();
-    const c = wire.color.toUpperCase();
-    const key = `${g}|${c}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    types.push({
-      gauge:                g,
-      color:                c,
+    const gauge = normalizeToken(wire.gauge) ?? 'UNKNOWN';
+    const color = normalizeToken(wire.color) ?? 'UNKNOWN';
+    const key = `${gauge}|${color}`;
+    const existing = map.get(key);
+
+    if (existing) {
+      existing.qty += 1;
+      continue;
+    }
+
+    map.set(key, {
+      key,
+      gauge,
+      color,
       aci_wire_part_number: wire.aci_wire_part_number,
+      qty: 1,
+      assigned: 0,
     });
   }
 
-  return types;
+  return [...map.values()];
 }
 
 // ---------------------------------------------------------------------------
@@ -108,8 +124,8 @@ function buildBomTypeIndex(wires: WireInstance[]): BomWireType[] {
 
 function scoreMatch(row: DraftWireRow, bom: BomWireType): number {
   let score = 0;
-  const drawingGauge = row.gauge?.toUpperCase() ?? null;
-  const drawingColor = row.color?.toUpperCase() ?? null;
+  const drawingGauge = normalizeToken(row.gauge);
+  const drawingColor = normalizeToken(row.color);
 
   if (drawingGauge && drawingGauge !== 'UNKNOWN') {
     if (drawingGauge === bom.gauge) score += 2;
@@ -139,19 +155,21 @@ function matchDrawingRow(row: DraftWireRow, bomTypes: BomWireType[]): MatchResul
     return { bomType: null, score: 0, confidence: 'LOW' };
   }
 
-  let best: BomWireType = bomTypes[0];
-  let bestScore = scoreMatch(row, bomTypes[0]);
+  const scored = bomTypes
+    .map(bt => ({ bt, score: scoreMatch(row, bt) }))
+    .sort((a, b) => b.score - a.score);
 
-  for (let i = 1; i < bomTypes.length; i++) {
-    const s = scoreMatch(row, bomTypes[i]);
-    if (s > bestScore) { bestScore = s; best = bomTypes[i]; }
+  for (const { bt, score } of scored) {
+    if (bt.assigned >= bt.qty) continue;
+    bt.assigned += 1;
+    return {
+      bomType:    bt,
+      score,
+      confidence: confidenceFromScore(score),
+    };
   }
 
-  return {
-    bomType:    best,
-    score:      bestScore,
-    confidence: confidenceFromScore(bestScore),
-  };
+  return { bomType: null, score: 0, confidence: 'LOW' };
 }
 
 // ---------------------------------------------------------------------------
@@ -175,11 +193,11 @@ function buildFusedWireInstances(
       : `DW${String(idx + 1).padStart(3, '0')}`;
 
     const resolvedGauge = bom?.gauge
-      ?? row.gauge?.toUpperCase()
+      ?? normalizeToken(row.gauge)
       ?? 'UNKNOWN';
 
     const resolvedColor = bom?.color
-      ?? row.color?.toUpperCase()
+      ?? normalizeToken(row.color)
       ?? 'UNKNOWN';
 
     const resolvedACI = bom?.aci_wire_part_number
@@ -190,9 +208,11 @@ function buildFusedWireInstances(
       wire_id:       wireId,
       drawing_gauge: row.gauge,
       drawing_color: row.color,
-      assigned_type: bom ? `${bom.gauge}/${bom.color}` : 'NO_MATCH',
+      assigned_type: bom ? `${bom.gauge}/${bom.color}` : 'UNMATCHED',
       confidence:    match.confidence,
       score:         match.score,
+      assigned_count: bom?.assigned ?? 0,
+      remaining_capacity: bom ? Math.max(bom.qty - bom.assigned, 0) : 0,
     });
 
     wires.push({
@@ -215,6 +235,14 @@ function buildFusedWireInstances(
           : 'No BOM type matched — manual attribution required',
       },
     });
+
+    if (!bom) {
+      flags.push(mkJobFlag(
+        'review_required',
+        `Wire ${wireId}: unable to assign BOM wire type — manual selection required`,
+        `wire_instances.${idx}`,
+      ));
+    }
 
     // Step 9: flags for low-confidence or incomplete rows
     if (match.confidence === 'LOW') {
@@ -245,6 +273,14 @@ function buildFusedWireInstances(
         `wire_instances.${idx}.cut_length`,
       ));
     }
+
+    if (bom && bom.assigned > bom.qty) {
+      flags.push(mkJobFlag(
+        'error',
+        `Wire ${wireId}: wire assignment exceeded BOM quantity constraint (${bom.assigned}/${bom.qty})`,
+        `wire_instances.${idx}`,
+      ));
+    }
   }
 
   return wires;
@@ -260,26 +296,30 @@ function validateQuantities(
   bomTypes:   BomWireType[],
   flags:      EngineeringFlag[],
 ): void {
-  // Count fused assignments per BOM type
-  const assignedCounts = new Map<string, number>();
-  for (const w of fusedWires) {
-    const key = `${String(w.gauge).toUpperCase()}|${w.color.toUpperCase()}`;
-    assignedCounts.set(key, (assignedCounts.get(key) ?? 0) + 1);
-  }
-
-  // Flag BOM types with zero drawing assignments
   for (const bt of bomTypes) {
-    const key = `${bt.gauge}|${bt.color}`;
-    if (!assignedCounts.has(key)) {
+    if (bt.assigned > bt.qty) {
       flags.push(mkJobFlag(
-        'warning',
-        `BOM wire type ${bt.gauge}AWG ${bt.color} (${bt.aci_wire_part_number}) has no drawing wire rows assigned — verify completeness`,
+        'error',
+        `BOM wire type ${bt.gauge}AWG ${bt.color} over-assigned (${bt.assigned}/${bt.qty})`,
+        'wire_instances',
+      ));
+      continue;
+    }
+    if (bt.assigned === 0) {
+      flags.push(mkJobFlag(
+        'review_required',
+        `BOM wire type ${bt.gauge}AWG ${bt.color} (${bt.aci_wire_part_number}) not used in drawing (0/${bt.qty})`,
+        'wire_instances',
+      ));
+    } else if (bt.assigned < bt.qty) {
+      flags.push(mkJobFlag(
+        'review_required',
+        `BOM wire type ${bt.gauge}AWG ${bt.color} under-assigned (${bt.assigned}/${bt.qty})`,
         'wire_instances',
       ));
     }
   }
 
-  // Flag significant count mismatch
   const drawingCount = fusedWires.length;
   const bomCount     = bomWires.length;
   if (Math.abs(drawingCount - bomCount) > bomCount) {

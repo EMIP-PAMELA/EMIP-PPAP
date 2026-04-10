@@ -229,13 +229,16 @@ export default function WireInstancesTab({ wireInstances, flags, onUpdate, isLoc
                       {wire.cut_length_source ?? wire.provenance.source_type}
                     </span>
                     {wire.match_confidence && (
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                        wire.match_confidence === 'HIGH'
-                          ? 'bg-green-100 text-green-700'
-                          : wire.match_confidence === 'MEDIUM'
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}>
+                      <span
+                        title={wire.match_confidence === 'LOW' ? 'Requires manual validation before approval' : undefined}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                          wire.match_confidence === 'HIGH'
+                            ? 'bg-green-100 text-green-700'
+                            : wire.match_confidence === 'MEDIUM'
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}
+                      >
                         {wire.match_confidence}
                       </span>
                     )}
