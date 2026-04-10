@@ -147,20 +147,52 @@ interface NormalizedComponent {
 // Wire detection now uses canonical category === 'WIRE' from classifyComponent()
 // See src/core/projections/normalizers.ts for classification logic
 
+// CANONICAL WIRE LENGTH RULE:
+// For Cable Quest BOM wire rows, use qty_per (record.quantity) as usable wire length.
+// Trailing/top row numeric values represent cut length including scrap
+// and must NOT be used for copper, wire totals, or average wire length.
+// 
+// BOMRecord.quantity = Qty Per from "Qty Per: Unit of Measure" column (USABLE LENGTH)
+// BOMRecord.length = parsed row-end value (CUT LENGTH with scrap) - IGNORE for wires
+
 /**
  * V6.2: Normalize component with computed fields
  * 
  * Adds:
  * - colorNormalized: Standardized color label
- * - isWire: True wire detection
+ * - isWire: True wire detection using canonical category
  * - qtyPer: Quantity per assembly (default 1)
- * - effectiveLength: length * qtyPer (true material usage)
+ * - effectiveLength: canonical wire length * qtyPer (true material usage in FEET)
+ * 
+ * Phase 3H.18.2: For wires, uses record.quantity (Qty Per) as canonical length,
+ * NOT record.length which contains cut length with scrap.
  */
 function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent {
-  const length = Number(record.length) || 0;
+  const isWire = record.category === 'WIRE';
+  
+  // Phase 3H.18.2: CANONICAL WIRE LENGTH SOURCE
+  // For wires: use quantity (Qty Per) as usable wire length
+  // For non-wires: fall back to length field if available
+  const rawLength = isWire 
+    ? (Number(record.quantity) || 0)  // Qty Per = usable wire length
+    : (Number(record.length) || 0);   // Non-wire: use length field
+    
   const quantity = Number(record.quantity) || 0;
   // V6.2: qty_per may not exist in all records, default to 1
-  const qtyPer = Number((record as any).qty_per) || 1;
+  // For Cable Quest, qty_per is stored in 'quantity' field
+  const qtyPer = isWire ? 1 : (Number((record as any).qty_per) || 1);
+  
+  // Phase 3H.18.2: Wire length audit logging
+  if (isWire && rawLength > 0) {
+    console.log('[WIRE LENGTH SOURCE AUDIT]', {
+      part: record.component_part_number,
+      qtyPer: record.quantity,  // Qty Per from BOM = usable length
+      cutLength: record.length, // Cut length with scrap (IGNORED)
+      canonicalLengthUsed: rawLength,
+      isWire,
+      source: 'quantity (Qty Per)'
+    });
+  }
   
   // Phase 3H.16.3: Log category from DB for debugging
   if (record.category) {
@@ -174,7 +206,7 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
   return {
     component_part_number: record.component_part_number,
     description: record.description || null,
-    length,
+    length: rawLength,  // Phase 3H.18.2: Uses quantity (Qty Per) for wires
     quantity,
     qtyPer,
     gauge: record.gauge || null,
@@ -184,8 +216,8 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
     // Phase 3H.18.1: Canonical wire detection using persisted category
     isWire: record.category === 'WIRE',
     // SINGLE SOURCE OF TRUTH: effectiveLength is always in FEET
-    // Derived from: length (feet) * qtyPer (quantity per assembly)
-    effectiveLength: length * qtyPer,
+    // Phase 3H.18.2: Uses rawLength (Qty Per for wires) * qtyPer
+    effectiveLength: rawLength * qtyPer,
     operation_step: record.operation_step || null
   };
 }

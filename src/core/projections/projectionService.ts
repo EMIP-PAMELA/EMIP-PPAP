@@ -189,21 +189,21 @@ function extractWires(records: BOMRecord[]): WireProjection[] {
     const colorInput = record.color || record.description || record.component_part_number;
     const color = normalizeWireColor(colorInput);
 
-    // Get length (use stored length or parse from description)
+    // Phase 3H.18.2: CANONICAL WIRE LENGTH SOURCE
+    // For Cable Quest BOM wire rows, use quantity (Qty Per) as usable wire length.
+    // record.length contains cut length with scrap and must NOT be used.
     let length = 0;
     let lengthUnit = 'ft';
 
-    if (record.length) {
-      // V5.6.4: Use stored length directly (already in feet)
+    // Use quantity (Qty Per) as canonical usable wire length
+    if (record.quantity && record.quantity > 0) {
+      length = record.quantity;  // Qty Per = usable wire length in feet
+      lengthUnit = 'ft';
+    } else if (record.length) {
+      // Fallback only if quantity is not available (should not happen for wires)
+      console.warn('[WIRE LENGTH WARNING] Using cut length fallback for wire:', record.component_part_number);
       length = record.length;
       lengthUnit = 'ft';
-    } else if (record.description) {
-      // Parse from description
-      const parsed = parseLengthFromDescription(record.description);
-      if (parsed) {
-        length = normalizeLengthToFeet(parsed.value, parsed.unit);
-        lengthUnit = 'ft';
-      }
     }
 
     wires.push({
