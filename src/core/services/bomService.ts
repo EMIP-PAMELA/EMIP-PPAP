@@ -143,19 +143,9 @@ interface NormalizedComponent {
   operation_step: string | null;
 }
 
-/**
- * V6.2: True wire detection based on description and part number
- * 
- * A component is a wire if:
- * - Description contains "WIRE", OR
- * - Part number starts with "W"
- */
-function isWireComponent(record: BOMRecord): boolean {
-  const desc = (record.description || '').toUpperCase();
-  const part = (record.component_part_number || '').toUpperCase();
-
-  return desc.includes('WIRE') || part.startsWith('W');
-}
+// Phase 3H.18.1: REMOVED legacy isWireComponent() function
+// Wire detection now uses canonical category === 'WIRE' from classifyComponent()
+// See src/core/projections/normalizers.ts for classification logic
 
 /**
  * V6.2: Normalize component with computed fields
@@ -191,7 +181,10 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
     color: record.color || null,
     colorNormalized: record.normalizedcolor || record.color || 'UNKNOWN',
     category: record.category || null,  // Phase 3H.16.3: Pass category from DB
-    isWire: isWireComponent(record),
+    // Phase 3H.18.1: Canonical wire detection using persisted category
+    isWire: record.category === 'WIRE',
+    // SINGLE SOURCE OF TRUTH: effectiveLength is always in FEET
+    // Derived from: length (feet) * qtyPer (quantity per assembly)
     effectiveLength: length * qtyPer,
     operation_step: record.operation_step || null
   };
@@ -309,43 +302,34 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   // V6.2: STEP 1 - Normalize all components with computed fields
   const normalized = records.map(normalizeComponentForAnalytics);
   
-  // V6.2.4: STEP 2A - Enforce deterministic source unit (Engineering Masters = feet)
+  // Phase 3H.18.1: STEP 2A - Enforce deterministic source unit (Engineering Masters = feet)
   const sourceUnit: 'feet' | 'inches' = 'feet';
   const unitFactor = 12;  // feet → inches conversion
   
-  // V6.2.4: STEP 2B - Normalize all lengths to canonical inches
-  const normalizedWithUnits = normalized.map(r => ({
-    ...r,
-    normalizedLength: r.length * unitFactor,  // feet → inches
-    effectiveLength: r.length * unitFactor * r.qtyPer
-  }));
+  // Phase 3H.18.1: STEP 2 - Filter to wire records only
+  // Use effectiveLength directly from normalizeComponentForAnalytics (ALREADY in FEET)
+  // NO re-computation - effectiveLength is SINGLE SOURCE OF TRUTH
+  const wireRecords = normalized.filter(r => r.isWire && r.effectiveLength > 0);
   
-  // V6.2: STEP 2 - Filter to wire records only
-  const wireRecords = normalizedWithUnits.filter(r => r.isWire && r.length > 0);
-  
-  // V6.2.1: Calculate physical wire count (sum of qtyPer)
-  const physicalWireCount = wireRecords.reduce(
-    (sum, r) => sum + r.qtyPer,
-    0
-  );
-  
-  const componentWireCount = wireRecords.length;
+  // Phase 3H.18.1: STEP 3 - Count distinct wire components (not sum of qtyPer)
+  const wireCount = wireRecords.length;
   
   // V6.2: STEP 3 - Initialize metrics
   const totalComponents = normalized.length;
   const totalQuantity = normalized.reduce((sum, r) => sum + r.quantity, 0);
   
-  // V6.2.1: Use physical wire count (backward compatible via wireCount variable)
-  const wireCount = physicalWireCount;
-  
-  // V6.2: STEP 4 - Material-based wire length calculation
-  const totalWireLength = wireRecords.reduce(
+  // Phase 3H.18.1: STEP 4 - Material-based wire length calculation (FEET)
+  // effectiveLength from normalizeComponentForAnalytics is already length * qtyPer in FEET
+  const totalWireLengthFeet = wireRecords.reduce(
     (sum, r) => sum + r.effectiveLength,
     0
   );
   
-  // V6.2.1: Fix average - use physical wire count, not component count
-  const avgWireLength = physicalWireCount > 0 ? totalWireLength / physicalWireCount : 0;
+  // Phase 3H.18.1: STEP 5 - Convert to inches for display/storage
+  const totalWireLength = totalWireLengthFeet * unitFactor;
+  
+  // Phase 3H.18.1: Fix average - use component count, not qtyPer sum
+  const avgWireLength = wireCount > 0 ? totalWireLength / wireCount : 0;
   
   // V6.2: STEP 5 - Length-weighted color distribution
   const colorBreakdown: Record<string, number> = {};
@@ -445,19 +429,33 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     }
   });
   
-  // V6.2.4: STEP 9 - Validation logging with deterministic unit enforcement
+  // Phase 3H.18.1: STEP 9 - Validation logging with deterministic unit enforcement
+  console.log('[WIRE AUDIT]', {
+    wireCount,
+    totalFeet: totalWireLengthFeet,
+    totalInches: totalWireLength,
+    avgInches: avgWireLength,
+    unitFactor,
+    sample: wireRecords.slice(0, 3).map(r => ({
+      part: r.component_part_number,
+      length: r.length,
+      qtyPer: r.qtyPer,
+      effectiveLength: r.effectiveLength
+    }))
+  });
+
   console.log('🧠 V6.2.4 UNIT SOURCE LOCKED', {
     unit: 'feet',
     source: 'engineering_master',
     behavior: 'deterministic_no_detection',
     unitFactor,
     sampleLengths: normalized.slice(0, 3).map(r => r.length),
-    componentWireCount,
-    physicalWireCount,
+    wireCount,  // Phase 3H.18.1: Now component count, not qtyPer sum
+    totalWireLengthFeet: Number(totalWireLengthFeet.toFixed(2)),
     totalWireLength: Number(totalWireLength.toFixed(2)),
-    totalWireLengthDisplay: `${(totalWireLength / 12).toFixed(1)} ft`,
+    totalWireLengthDisplay: `${totalWireLengthFeet.toFixed(2)} ft`,
     avgWireLength: Number(avgWireLength.toFixed(2)),
-    avgWireLengthDisplay: `${(avgWireLength / 12).toFixed(1)} ft`,
+    avgWireLengthDisplay: `${(avgWireLength / 12).toFixed(2)} ft`,
     copperWeight: Number(estimatedCopperWeight.toFixed(4)),
     colorDistribution: Object.fromEntries(
       Object.entries(colorBreakdown).map(([k, v]) => [k, Number(v.toFixed(2))])
