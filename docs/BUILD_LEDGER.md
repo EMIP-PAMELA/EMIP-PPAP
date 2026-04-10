@@ -69664,3 +69664,45 @@ WHERE table_name = 'ppap_records' AND column_name = 'workflow_phase';
 - Commit: Initial Supabase setup
 
 ---
+
+## 2026-04-10 11:51 CT - [HWI.0] Initialize Harness Work Instruction Generator Module
+- Summary: Bootstrapped Harness Work Instruction Generator as a new EMIP feature module with complete documentation, folder structure, type scaffolding, API route scaffolds, and minimal UI
+- Files changed:
+  - `docs/modules/harness-work-instructions/BUILD_PLAN.md` (created) - Module roadmap and architecture
+  - `docs/modules/harness-work-instructions/DATA_CONTRACT.md` (created) - Canonical data model
+  - `docs/modules/harness-work-instructions/REVIEW_WORKFLOW.md` (created) - Human-in-the-loop governance
+  - `docs/modules/harness-work-instructions/PDF_TEMPLATE_SPEC.md` (created) - PDF rendering strategy
+  - `docs/modules/harness-work-instructions/PROMPTS.md` (created) - AI extraction prompts (placeholder)
+  - `docs/modules/harness-work-instructions/BUILD_LEDGER.md` (created) - Module-specific build log
+  - `src/features/harness-work-instructions/README.md` (created) - Module overview
+  - `src/features/harness-work-instructions/types/harnessInstruction.ts` (created) - Core type definitions
+  - `src/features/harness-work-instructions/types/reviewDecision.ts` (created) - Review workflow types
+  - `app/api/harness-instructions/create-job/route.ts` (created) - Scaffold API route
+  - `app/api/harness-instructions/upload-source/route.ts` (created) - Scaffold API route
+  - `app/api/harness-instructions/extract-phase1/route.ts` (created) - Scaffold API route
+  - `app/api/harness-instructions/save-review/route.ts` (created) - Scaffold API route
+  - `app/api/harness-instructions/approve-job/route.ts` (created) - Scaffold API route
+  - `app/api/harness-instructions/generate-pdf/route.ts` (created) - Scaffold API route
+  - `app/api/harness-instructions/get-job/route.ts` (created) - Scaffold API route
+  - `app/api/harness-instructions/list-jobs/route.ts` (created) - Scaffold API route
+  - `app/harness-instructions/page.tsx` (created) - Main dashboard shell
+  - `src/features/harness-work-instructions/components/HarnessInstructionShell.tsx` (created) - Layout component
+  - `src/features/harness-work-instructions/components/JobHeader.tsx` (created) - Job header component
+  - `src/features/harness-work-instructions/components/SourceDocumentPanel.tsx` (created) - Document viewer component
+  - `src/features/harness-work-instructions/components/ReviewTabs.tsx` (created) - Review UI tabs component
+- Database changes: None (schema planned for HWI.1)
+- Decisions made:
+  - Two-phase workflow: AI extraction/review → deterministic PDF generation
+  - Manual governance: all AI extractions require explicit human approval
+  - React-PDF strategy for template-based PDF rendering
+  - Feature-based organization following existing EMIP patterns (`src/features/` not `src/modules/`)
+  - Deterministic rendering: same approved data = same PDF output (100% reproducible)
+- Risks / follow-ups:
+  - No AI extraction logic implemented yet (HWI.2)
+  - No PDF generation logic implemented yet (HWI.4)
+  - Database schema pending (HWI.1)
+  - Review UI implementation pending (HWI.3)
+- Verification: TypeScript compilation successful, all API routes respond with scaffold JSON
+- Commit: `feat(hwi): initialize Harness Work Instruction Generator module scaffold and docs`
+
+---

@@ -8,8 +8,8 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { classifyComponent, normalizeWireColor } from '@/src/core/projections/normalizers';
-import { getMappedCategory } from '@/src/core/services/classificationLookup';
+import { normalizeWireColor } from '@/src/core/projections/normalizers';
+import { resolveClassification } from '@/src/core/services/classificationLookup';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -152,13 +152,12 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
 
         // Backfill category
         if (needsCategoryUpdate) {
-          const mappedCategory = await getMappedCategory(record.component_part_number);
-          const category = mappedCategory ?? classifyComponent(
+          const resolution = await resolveClassification(
             record.component_part_number,
             record.description
           );
-          updates.category = category;
-          console.log(`  ↳ Record ${record.id} (${record.component_part_number}): ${record.category || 'NULL'} → ${category}`);
+          updates.category = resolution.category;
+          console.log(`  ↳ Record ${record.id} (${record.component_part_number}): ${record.category || 'NULL'} → ${resolution.category}`);
         }
 
         // Apply update

@@ -16,6 +16,31 @@ const ALLOWED_CATEGORIES = [
   'HARDWARE', 'LABEL', 'SLEEVING', 'HOUSING', 'UNKNOWN'
 ];
 
+const MAX_RETRIES = 3;
+
+async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, options);
+
+    if (res.status !== 529) {
+      return res;
+    }
+
+    console.warn('[AI RETRY]', {
+      attempt,
+      status: res.status,
+      note: 'Anthropic overloaded — retrying'
+    });
+
+    if (attempt < MAX_RETRIES) {
+      const delay = Math.pow(2, attempt) * 500;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw new Error('Anthropic overloaded after retries');
+}
+
 function buildPrompt(partNumber: string, description: string | null): string {
   return `You are a harness manufacturing domain expert. Classify the component below into exactly one of these categories:
 WIRE, TERMINAL, CONNECTOR, SEAL, HARDWARE, LABEL, SLEEVING, HOUSING, UNKNOWN
@@ -41,7 +66,14 @@ Description: ${description ?? 'N/A'}`;
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
+
+  console.log('[AI ENV CHECK]', {
+    hasKey: !!apiKey,
+    keyPreview: apiKey?.slice(0, 10) ?? null
+  });
+
   if (!apiKey) {
+    console.error('[AI ERROR] Missing ANTHROPIC_API_KEY');
     return NextResponse.json(
       { error: 'ANTHROPIC_API_KEY is not configured on the server. Set it in .env.local.' },
       { status: 500 }
@@ -60,6 +92,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'partNumber is required' }, { status: 400 });
   }
 
+  console.log('[AI REQUEST]', {
+    part: partNumber.trim(),
+    timestamp: new Date().toISOString()
+  });
+
   const claudeBody = {
     model: CLAUDE_MODEL,
     max_tokens: 256,
@@ -75,21 +112,33 @@ export async function POST(request: NextRequest) {
 
   let anthropicResponse: Response;
   try {
-    anthropicResponse = await fetch(CLAUDE_API_URL, {
+    anthropicResponse = await fetchWithRetry(CLAUDE_API_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'content-type': 'application/json',
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify(claudeBody)
     });
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes('overloaded')) {
+      return NextResponse.json(
+        { error: 'AI temporarily overloaded. Please retry.' },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
-      { error: 'Failed to reach Claude API', details: err instanceof Error ? err.message : String(err) },
+      { error: 'Failed to reach Claude API', details: errMsg },
       { status: 502 }
     );
   }
+
+  console.log('[AI SUCCESS]', {
+    part: partNumber.trim(),
+    status: anthropicResponse.status
+  });
 
   const responseData = await anthropicResponse.json();
 

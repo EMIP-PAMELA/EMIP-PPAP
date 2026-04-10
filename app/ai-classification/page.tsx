@@ -14,42 +14,245 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import EMIPLayout from '../layout/EMIPLayout';
+import { derivePatternPrefix } from '@/src/core/utils/patternTools';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const VALID_CATEGORIES = [
-  'WIRE', 'TERMINAL', 'CONNECTOR', 'SEAL',
-  'HARDWARE', 'LABEL', 'SLEEVING', 'HOUSING',
+const CATEGORY_OPTIONS = [
+  'WIRE',
+  'TERMINAL',
+  'CONNECTOR',
+  'SEAL',
+  'FERRULE',
+  'HOUSING',
+  'PLUG',
+  'HARDWARE',
+  'LABEL',
+  'SLEEVING',
+  'OTHER'
 ] as const;
 
-type Category = typeof VALID_CATEGORIES[number];
+const UI_MAX_RETRIES = 1;
+const UI_RETRY_DELAY_MS = 2000;
 
+type CategoryOption = typeof CATEGORY_OPTIONS[number];
+type CanonicalCategory = 'WIRE' | 'TERMINAL' | 'CONNECTOR' | 'SEAL' | 'HARDWARE' | 'LABEL' | 'SLEEVING' | 'HOUSING' | 'UNKNOWN';
+
+const CATEGORY_TO_CANONICAL: Record<CategoryOption, CanonicalCategory> = {
+  WIRE: 'WIRE',
+  TERMINAL: 'TERMINAL',
+  CONNECTOR: 'CONNECTOR',
+  SEAL: 'SEAL',
+  FERRULE: 'TERMINAL',
+  HOUSING: 'HOUSING',
+  PLUG: 'CONNECTOR',
+  HARDWARE: 'HARDWARE',
+  LABEL: 'LABEL',
+  SLEEVING: 'SLEEVING',
+  OTHER: 'UNKNOWN'
+};
+
+const CANONICAL_TO_OPTION: Record<CanonicalCategory, CategoryOption> = {
+  WIRE: 'WIRE',
+  TERMINAL: 'TERMINAL',
+  CONNECTOR: 'CONNECTOR',
+  SEAL: 'SEAL',
+  HARDWARE: 'HARDWARE',
+  LABEL: 'LABEL',
+  SLEEVING: 'SLEEVING',
+  HOUSING: 'HOUSING',
+  UNKNOWN: 'OTHER'
+};
+ 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type RowStatus = 'idle' | 'analyzing' | 'suggested' | 'accepted' | 'rejected' | 'overridden';
-type LogType = 'AI_REQUEST' | 'AI_RESPONSE' | 'USER_ACTION' | 'DB_WRITE';
-
-interface AISuggestion {
-  category: string;
-  confidence: number;
-  reason: string;
-}
+type RowStatus = 'idle' | 'analyzing' | 'suggested' | 'rejected';
+type LogType =
+  | 'AI_REQUEST'
+  | 'AI_RESPONSE'
+  | 'AI_RETRY_UI'
+  | 'USER_MODIFIED'
+  | 'USER_ACTION'
+  | 'CLASSIFICATION_SAVED'
+  | 'PATTERN'
+  | 'DB_WRITE';
 
 interface ClassificationRow {
   partNumber: string;
   description: string | null;
   status: RowStatus;
-  suggestion: AISuggestion | null;
-  savedCategory: string | null;
-  overrideOpen: boolean;
-  overrideValue: Category;
+  aiCategory: CanonicalCategory | null;
+  aiConfidence: number | null;
+  aiReason: string | null;
+  selectedCategory: CategoryOption | '';
   saving: boolean;
+  patternSaving: boolean;
+  patternCreated: boolean;
   error: string | null;
 }
+
+const RowItem = React.memo(function RowItem({
+  row,
+  analyzeLoading,
+  onCategoryChange,
+  onSave,
+  onAnalyze,
+  onPatternSave,
+  onReject
+}: RowItemProps) {
+  const aiConfidence = typeof row.aiConfidence === 'number' ? row.aiConfidence : null;
+  const selectionMatchesAI = Boolean(
+    row.selectedCategory &&
+    row.aiCategory &&
+    CATEGORY_TO_CANONICAL[row.selectedCategory] === row.aiCategory
+  );
+
+  return (
+    <tr
+      id={`row-${row.partNumber}`}
+      className="hover:bg-gray-50 transition-colors"
+    >
+      <td className="px-4 py-3 font-mono text-xs text-gray-900 whitespace-nowrap">
+        {row.partNumber}
+      </td>
+
+      <td className="px-4 py-3 text-gray-600">
+        <span
+          className="block max-w-[200px] truncate"
+          title={row.description ?? ''}
+        >
+          {row.description
+            ? row.description
+            : <span className="text-gray-300 italic">—</span>}
+        </span>
+      </td>
+
+      <td className="px-4 py-3 whitespace-nowrap">
+        <StatusBadge status={row.status} />
+      </td>
+
+      <td className="px-4 py-3">
+        {row.aiCategory ? (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-purple-700">{row.aiCategory}</span>
+              {row.aiReason && (
+                <span
+                  title={row.aiReason}
+                  className="text-gray-400 cursor-help text-base leading-none select-none"
+                >
+                  ℹ️
+                </span>
+              )}
+            </div>
+            {row.aiReason && (
+              <div className="text-xs text-gray-500 line-clamp-2">
+                {row.aiReason}
+              </div>
+            )}
+          </div>
+        ) : (
+          <span className="text-gray-300 text-xs">—</span>
+        )}
+        {row.status !== 'suggested' && row.error && (
+          <div className="text-xs text-red-500 mt-1 max-w-[200px] truncate" title={row.error}>
+            {row.error}
+          </div>
+        )}
+      </td>
+
+      <td className="px-4 py-3 min-w-[90px]">
+        {aiConfidence !== null ? (
+          <>
+            <div className={`text-xs font-bold mb-1 ${confidenceTextColor(aiConfidence)}`}>
+              {(aiConfidence * 100).toFixed(0)}%
+            </div>
+            <div className="w-16 bg-gray-200 rounded-full h-1.5">
+              <div
+                className={`h-1.5 rounded-full transition-all ${confidenceBarColor(aiConfidence)}`}
+                style={{ width: `${aiConfidence * 100}%` }}
+              />
+            </div>
+          </>
+        ) : (
+          <span className="text-gray-300 text-xs">—</span>
+        )}
+      </td>
+
+      <td className="px-4 py-3 min-w-[200px]">
+        <select
+          value={row.selectedCategory}
+          onChange={(e) => onCategoryChange(row.partNumber, e.target.value)}
+          disabled={row.patternSaving}
+          className="w-full text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-gray-50 disabled:text-gray-400"
+        >
+          <option value="">Select Category</option>
+          {CATEGORY_OPTIONS.map((cat) => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
+        </select>
+
+        {row.aiCategory && row.selectedCategory && (
+          <div className={`text-xs mt-1 ${selectionMatchesAI ? 'text-green-600' : 'text-orange-500'}`}>
+            {selectionMatchesAI ? 'AI suggested this' : 'Manually changed'}
+          </div>
+        )}
+
+        {row.status === 'suggested' && !row.selectedCategory && (
+          <div className="text-xs text-gray-400 mt-1">Select a category to enable Save</div>
+        )}
+
+        {row.status === 'suggested' && row.error && (
+          <div className="text-xs text-red-500 mt-1" title={row.error}>
+            {row.error}
+          </div>
+        )}
+      </td>
+
+      <td className="px-4 py-3 whitespace-nowrap">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onSave(row.partNumber)}
+              disabled={!row.selectedCategory || row.saving}
+              className="px-3 py-1.5 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            >
+              {row.saving ? 'Saving…' : '💾 Save'}
+            </button>
+            <button
+              onClick={() => onAnalyze(row.partNumber, row.description)}
+              disabled={analyzeLoading}
+              className="px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 border border-blue-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {analyzeLoading ? 'Analyzing…' : 'Analyze'}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onPatternSave(row.partNumber)}
+              disabled={!row.selectedCategory || row.patternSaving || row.patternCreated}
+              className="px-3 py-1.5 bg-pink-100 text-pink-700 text-xs font-medium rounded-lg hover:bg-pink-200 border border-pink-200 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            >
+              {row.patternSaving ? 'Saving pattern…' : row.patternCreated ? 'Pattern saved' : 'Save as Pattern'}
+            </button>
+            <button
+              onClick={() => onReject(row.partNumber)}
+              className="px-2 py-1.5 bg-red-50 text-red-600 text-xs rounded-lg hover:bg-red-100 border border-red-100 transition-colors"
+            >
+              ❌ Reject
+            </button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+});
+
+RowItem.displayName = 'RowItem';
 
 interface LogEntry {
   id: number;
@@ -57,6 +260,16 @@ interface LogEntry {
   type: LogType;
   message: string;
   detail?: string;
+}
+
+interface RowItemProps {
+  row: ClassificationRow;
+  analyzeLoading: boolean;
+  onCategoryChange: (partNumber: string, categoryValue: string) => void;
+  onSave: (partNumber: string) => void;
+  onAnalyze: (partNumber: string, description: string | null) => void;
+  onPatternSave: (partNumber: string) => void;
+  onReject: (partNumber: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,19 +295,23 @@ function logTypeStyle(t: LogType): string {
   switch (t) {
     case 'AI_REQUEST':  return 'text-blue-400';
     case 'AI_RESPONSE': return 'text-purple-400';
+    case 'AI_RETRY_UI': return 'text-cyan-400';
+    case 'USER_MODIFIED': return 'text-orange-400';
     case 'USER_ACTION': return 'text-yellow-400';
+    case 'CLASSIFICATION_SAVED': return 'text-emerald-400';
+    case 'PATTERN': return 'text-pink-400';
     case 'DB_WRITE':    return 'text-green-400';
   }
+
+  return 'text-gray-400';
 }
 
 function StatusBadge({ status }: { status: RowStatus }) {
   const map: Record<RowStatus, { cls: string; label: string }> = {
-    idle:       { cls: 'bg-gray-100 text-gray-500',     label: '—' },
+    idle:       { cls: 'bg-gray-100 text-gray-500',     label: 'Awaiting' },
     analyzing:  { cls: 'bg-blue-50 text-blue-600',      label: 'Analyzing…' },
-    suggested:  { cls: 'bg-purple-50 text-purple-700',  label: 'AI Suggested' },
-    accepted:   { cls: 'bg-green-50 text-green-700',    label: '✅ Accepted' },
+    suggested:  { cls: 'bg-purple-50 text-purple-700',  label: 'Pending Save' },
     rejected:   { cls: 'bg-red-50 text-red-600',        label: '❌ Rejected' },
-    overridden: { cls: 'bg-orange-50 text-orange-700',  label: '✏️ Overridden' },
   };
   const { cls, label } = map[status];
   return (
@@ -112,10 +329,13 @@ export default function AIClassificationPage() {
   // We keep a ref mirror of rows to avoid stale closures in batch async loops
   const rowsRef = useRef<ClassificationRow[]>([]);
   const [rows, setRowsInner] = useState<ClassificationRow[]>([]);
+  const [loadingRows, setLoadingRows] = useState<Record<string, boolean>>({});
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [batchAnalyzing, setBatchAnalyzing] = useState(false);
+  const [sessionSaved, setSessionSaved] = useState(0);
+  const scrollYRef = useRef(0);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Synchronized state setter — keeps ref in sync
@@ -147,6 +367,7 @@ export default function AIClassificationPage() {
   const loadUnknownParts = async () => {
     setLoading(true);
     setLoadError(null);
+    setSessionSaved(0);
     try {
       const res = await fetch('/api/ai/unknowns');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -156,11 +377,13 @@ export default function AIClassificationPage() {
         partNumber: p.partNumber,
         description: p.description,
         status: 'idle',
-        suggestion: null,
-        savedCategory: null,
-        overrideOpen: false,
-        overrideValue: 'TERMINAL',
+        aiCategory: null,
+        aiConfidence: null,
+        aiReason: null,
+        selectedCategory: '',
         saving: false,
+        patternSaving: false,
+        patternCreated: false,
         error: null,
       })));
     } catch (err) {
@@ -177,52 +400,155 @@ export default function AIClassificationPage() {
   // ---------------------------------------------------------------------------
 
   const analyzeRow = async (partNumber: string, description: string | null) => {
-    // Guard: skip if already analyzing
+    // Guard: skip if already analyzing or loading
     const current = rowsRef.current.find(r => r.partNumber === partNumber);
-    if (!current || current.status === 'analyzing') return;
+    if (!current || current.status === 'analyzing' || loadingRows[partNumber]) {
+      return;
+    }
 
+    const part = partNumber.trim();
     updateRow(partNumber, { status: 'analyzing', error: null });
-    addLog('AI_REQUEST', `Classify ${partNumber}`, `Description: ${description ?? 'N/A'}`);
+    setLoadingRows(prev => ({ ...prev, [partNumber]: true }));
+    addLog('AI_REQUEST', `Classify ${part}`, `Description: ${description ?? 'N/A'}`);
 
     try {
-      const res = await fetch('/api/ai/classify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ partNumber, description }),
-      });
-      const data = await res.json();
+      for (let attempt = 0; attempt <= UI_MAX_RETRIES; attempt++) {
+        let res: Response;
 
-      if (!res.ok) {
-        const errMsg: string = data.error ?? `HTTP ${res.status}`;
-        addLog('AI_RESPONSE', `Error — ${partNumber}`, errMsg);
-        updateRow(partNumber, { status: 'idle', error: errMsg });
+        try {
+          res = await fetch('/api/ai/classify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ partNumber, description }),
+          });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          addLog('AI_RESPONSE', `Network error — ${part}`, errMsg);
+          updateRow(partNumber, { status: 'idle', error: errMsg });
+          return;
+        }
+
+        if (res.status === 503) {
+          if (attempt < UI_MAX_RETRIES) {
+            addLog('AI_RETRY_UI', `Retrying part: ${part}`, `Attempt ${attempt + 2}`);
+            await new Promise(resolve => setTimeout(resolve, UI_RETRY_DELAY_MS));
+            continue;
+          }
+
+          updateRow(partNumber, { status: 'idle', error: 'AI busy — try again' });
+          return;
+        }
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          const errMsg: string = data.error ?? `HTTP ${res.status}`;
+          addLog('AI_RESPONSE', `Error — ${part}`, errMsg);
+          updateRow(partNumber, { status: 'idle', error: errMsg });
+          return;
+        }
+
+        const pct = (data.confidence * 100).toFixed(0);
+        addLog('AI_RESPONSE', `${part} → ${data.category} (${pct}%)`, data.reason);
+
+        const aiCategory = (data.category as CanonicalCategory) ?? 'UNKNOWN';
+        const existing = rowsRef.current.find(r => r.partNumber === partNumber);
+        const preferredSelection = existing?.selectedCategory
+          ? existing.selectedCategory
+          : CANONICAL_TO_OPTION[aiCategory] ?? 'OTHER';
+
+        updateRow(partNumber, {
+          status: 'suggested',
+          aiCategory,
+          aiConfidence: data.confidence,
+          aiReason: data.reason,
+          selectedCategory: preferredSelection,
+          error: null,
+        });
         return;
       }
-
-      const pct = (data.confidence * 100).toFixed(0);
-      addLog('AI_RESPONSE', `${partNumber} → ${data.category} (${pct}%)`, data.reason);
-      updateRow(partNumber, {
-        status: 'suggested',
-        suggestion: { category: data.category, confidence: data.confidence, reason: data.reason },
-        error: null,
+    } finally {
+      setLoadingRows(prev => {
+        if (!prev[partNumber]) return prev;
+        const copy = { ...prev };
+        delete copy[partNumber];
+        return copy;
       });
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      addLog('AI_RESPONSE', `Network error — ${partNumber}`, errMsg);
-      updateRow(partNumber, { status: 'idle', error: errMsg });
     }
   };
 
   // ---------------------------------------------------------------------------
-  // Save helper (used by Accept and Override)
+  // Manual selection helpers
   // ---------------------------------------------------------------------------
+
+  const handleCategoryChange = (partNumber: string, categoryValue: string) => {
+    if (categoryValue !== '' && !CATEGORY_OPTIONS.includes(categoryValue as CategoryOption)) {
+      return;
+    }
+
+    const normalized: CategoryOption | '' = categoryValue === '' ? '' : (categoryValue as CategoryOption);
+    const existing = rowsRef.current.find(r => r.partNumber === partNumber);
+    if (existing && existing.selectedCategory === normalized) {
+      return;
+    }
+
+    setRows(prev => prev.map(r => r.partNumber === partNumber ? { ...r, selectedCategory: normalized, error: null } : r));
+    addLog('USER_MODIFIED', `${partNumber} selection`, normalized || 'Cleared selection');
+  };
+
+  const savePattern = async (partNumber: string) => {
+    const row = rowsRef.current.find(r => r.partNumber === partNumber);
+    if (!row || !row.selectedCategory) {
+      updateRow(partNumber, { error: 'Select a category before saving a pattern.' });
+      return;
+    }
+
+    const patternPrefix = derivePatternPrefix(partNumber);
+    if (!patternPrefix) {
+      updateRow(partNumber, { error: 'Part number too short for pattern.' });
+      return;
+    }
+
+    const canonicalCategory = CATEGORY_TO_CANONICAL[row.selectedCategory];
+    updateRow(partNumber, { patternSaving: true, error: null });
+
+    try {
+      const res = await fetch('/api/ai/patterns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pattern: patternPrefix,
+          matchType: 'prefix',
+          category: canonicalCategory,
+          confidence: 1,
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        const detail = data.error ?? 'Unknown error';
+        addLog('PATTERN', `Failed to create pattern for ${partNumber}`, detail);
+        updateRow(partNumber, { patternSaving: false, error: detail });
+        return;
+      }
+
+      addLog('PATTERN', `Pattern saved for ${partNumber}`, `${patternPrefix} → ${canonicalCategory}`);
+      updateRow(partNumber, { patternSaving: false, patternCreated: true });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      addLog('PATTERN', `Failed to create pattern for ${partNumber}`, detail);
+      updateRow(partNumber, { patternSaving: false, error: detail });
+    } finally {
+      // no-op
+    }
+  };
 
   const saveClassification = async (
     partNumber: string,
     category: string,
     confidence: number,
     description: string | null,
-    source: 'AI' | 'MANUAL'
+    source: 'AI' | 'AI_APPROVED' | 'MANUAL'
   ): Promise<boolean> => {
     try {
       const res = await fetch('/api/ai/classify-save', {
@@ -247,37 +573,72 @@ export default function AIClassificationPage() {
   // Row actions
   // ---------------------------------------------------------------------------
 
-  const acceptRow = async (partNumber: string) => {
-    const row = rowsRef.current.find(r => r.partNumber === partNumber);
-    if (!row?.suggestion) return;
+  const removeRowWithAnimation = (partNumber: string) => {
+    if (typeof window !== 'undefined') {
+      scrollYRef.current = window.scrollY;
+      const rowElement = document.getElementById(`row-${partNumber}`);
+      if (rowElement) {
+        rowElement.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+        rowElement.style.opacity = '0';
+        rowElement.style.transform = 'translateY(-4px)';
+      }
+    }
 
-    addLog('USER_ACTION', `Accept: ${partNumber} → ${row.suggestion.category}`);
-    updateRow(partNumber, { saving: true });
+    setTimeout(() => {
+      setRows(prev => prev.filter(r => r.partNumber !== partNumber));
+      if (typeof window !== 'undefined') {
+        setTimeout(() => {
+          window.scrollTo(0, scrollYRef.current);
+        }, 0);
+      }
+    }, 200);
+  };
+
+  const saveRow = async (partNumber: string) => {
+    const row = rowsRef.current.find(r => r.partNumber === partNumber);
+    if (!row) return;
+
+    if (!row.selectedCategory) {
+      updateRow(partNumber, { error: 'Select a category before saving.' });
+      return;
+    }
+
+    const canonicalCategory = CATEGORY_TO_CANONICAL[row.selectedCategory];
+    const matchesAI = row.aiCategory ? canonicalCategory === row.aiCategory : false;
+    const resolvedSource = matchesAI ? 'AI_APPROVED' : 'MANUAL';
+    const resolvedConfidence = matchesAI && typeof row.aiConfidence === 'number'
+      ? row.aiConfidence
+      : 1.0;
+
+    addLog('USER_ACTION', `Save requested: ${partNumber}`, `${canonicalCategory} [${resolvedSource}]`);
+    updateRow(partNumber, { saving: true, error: null });
+
     const ok = await saveClassification(
-      partNumber, row.suggestion.category, row.suggestion.confidence, row.description, 'AI'
+      partNumber,
+      canonicalCategory,
+      resolvedConfidence,
+      row.description,
+      resolvedSource
     );
-    updateRow(partNumber, { status: ok ? 'accepted' : 'suggested', savedCategory: ok ? row.suggestion.category : null, saving: false });
+
+    if (!ok) {
+      updateRow(partNumber, { saving: false });
+      return;
+    }
+
+    setSessionSaved(count => count + 1);
+    addLog(
+      'CLASSIFICATION_SAVED',
+      `part: ${partNumber}`,
+      `selected: ${row.selectedCategory} | AI suggested: ${row.aiCategory ?? 'N/A'} | source: ${resolvedSource}`
+    );
+
+    removeRowWithAnimation(partNumber);
   };
 
   const rejectRow = (partNumber: string) => {
     addLog('USER_ACTION', `Reject: ${partNumber} — not stored`);
-    updateRow(partNumber, { status: 'rejected' });
-  };
-
-  const commitOverride = async (partNumber: string) => {
-    const row = rowsRef.current.find(r => r.partNumber === partNumber);
-    if (!row) return;
-
-    addLog('USER_ACTION', `Override: ${partNumber} → ${row.overrideValue} [MANUAL]`);
-    updateRow(partNumber, { saving: true, overrideOpen: false });
-    const ok = await saveClassification(
-      partNumber, row.overrideValue, 1.0, row.description, 'MANUAL'
-    );
-    updateRow(partNumber, {
-      status: ok ? 'overridden' : row.status,
-      savedCategory: ok ? row.overrideValue : null,
-      saving: false,
-    });
+    updateRow(partNumber, { status: 'rejected', selectedCategory: '' });
   };
 
   // ---------------------------------------------------------------------------
@@ -298,14 +659,18 @@ export default function AIClassificationPage() {
     setBatchAnalyzing(false);
   };
 
-  const acceptHighConfidence = async () => {
-    const eligible = rowsRef.current.filter(
-      r => r.status === 'suggested' && r.suggestion && r.suggestion.confidence >= 0.85
-    );
+  const saveHighConfidence = async () => {
+    const eligible = rowsRef.current.filter(r => {
+      if (r.status !== 'suggested') return false;
+      if (!r.selectedCategory || typeof r.aiConfidence !== 'number' || !r.aiCategory) return false;
+      const canonical = CATEGORY_TO_CANONICAL[r.selectedCategory];
+      return canonical === r.aiCategory && r.aiConfidence >= 0.85;
+    });
+
     if (!eligible.length) return;
-    addLog('USER_ACTION', `Batch accept: ${eligible.length} rows ≥ 85% confidence`);
+    addLog('USER_ACTION', `Batch save: ${eligible.length} rows ≥ 85% confidence`);
     for (const row of eligible) {
-      await acceptRow(row.partNumber);
+      await saveRow(row.partNumber);
     }
   };
 
@@ -315,10 +680,13 @@ export default function AIClassificationPage() {
 
   const pending   = rows.filter(r => r.status === 'idle' || r.status === 'rejected').length;
   const suggested = rows.filter(r => r.status === 'suggested').length;
-  const saved     = rows.filter(r => r.status === 'accepted' || r.status === 'overridden').length;
-  const eligibleForBatchAccept = rows.filter(
-    r => r.status === 'suggested' && r.suggestion && r.suggestion.confidence >= 0.85
-  ).length;
+  const saved     = sessionSaved;
+  const eligibleForBatchSave = rows.filter(r => {
+    if (r.status !== 'suggested') return false;
+    if (!r.selectedCategory || typeof r.aiConfidence !== 'number' || !r.aiCategory) return false;
+    const canonical = CATEGORY_TO_CANONICAL[r.selectedCategory];
+    return canonical === r.aiCategory && r.aiConfidence >= 0.85;
+  }).length;
 
   // ---------------------------------------------------------------------------
   // Render
@@ -371,11 +739,11 @@ export default function AIClassificationPage() {
               {batchAnalyzing ? '⏳ Analyzing…' : `🔍 Analyze All Visible (${pending})`}
             </button>
             <button
-              onClick={acceptHighConfidence}
-              disabled={eligibleForBatchAccept === 0}
+              onClick={saveHighConfidence}
+              disabled={eligibleForBatchSave === 0}
               className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              ✅ Accept All ≥ 85% ({eligibleForBatchAccept})
+              💾 Save All ≥ 85% ({eligibleForBatchSave})
             </button>
             <span className="text-xs text-gray-400 ml-auto">
               Governance: no auto-writes — all saves require explicit action
@@ -412,170 +780,22 @@ export default function AIClassificationPage() {
                       <th className="px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Status</th>
                       <th className="px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">AI Suggestion</th>
                       <th className="px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Confidence</th>
+                      <th className="px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Decision</th>
                       <th className="px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {rows.map(row => (
-                      <tr
+                      <RowItem
                         key={row.partNumber}
-                        className={`hover:bg-gray-50 transition-colors ${
-                          row.status === 'accepted' || row.status === 'overridden' ? 'opacity-55' : ''
-                        }`}
-                      >
-                        {/* Part Number */}
-                        <td className="px-4 py-3 font-mono text-xs text-gray-900 whitespace-nowrap">
-                          {row.partNumber}
-                        </td>
-
-                        {/* Description */}
-                        <td className="px-4 py-3 text-gray-600">
-                          <span
-                            className="block max-w-[200px] truncate"
-                            title={row.description ?? ''}
-                          >
-                            {row.description
-                              ? row.description
-                              : <span className="text-gray-300 italic">—</span>}
-                          </span>
-                        </td>
-
-                        {/* Status */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <StatusBadge status={row.status} />
-                        </td>
-
-                        {/* AI Suggestion */}
-                        <td className="px-4 py-3">
-                          {row.suggestion ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-semibold text-purple-700">{row.suggestion.category}</span>
-                              {row.suggestion.reason && (
-                                <span
-                                  title={row.suggestion.reason}
-                                  className="text-gray-400 cursor-help text-base leading-none select-none"
-                                >
-                                  ℹ️
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-gray-300 text-xs">—</span>
-                          )}
-                          {row.savedCategory && (row.status === 'accepted' || row.status === 'overridden') && (
-                            <div className="text-xs text-gray-500 mt-0.5">
-                              Saved: {row.savedCategory}
-                            </div>
-                          )}
-                          {row.error && (
-                            <div
-                              className="text-xs text-red-500 mt-0.5 max-w-[180px] truncate"
-                              title={row.error}
-                            >
-                              {row.error}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Confidence */}
-                        <td className="px-4 py-3 min-w-[90px]">
-                          {row.suggestion ? (
-                            <>
-                              <div className={`text-xs font-bold mb-1 ${confidenceTextColor(row.suggestion.confidence)}`}>
-                                {(row.suggestion.confidence * 100).toFixed(0)}%
-                              </div>
-                              <div className="w-16 bg-gray-200 rounded-full h-1.5">
-                                <div
-                                  className={`h-1.5 rounded-full transition-all ${confidenceBarColor(row.suggestion.confidence)}`}
-                                  style={{ width: `${row.suggestion.confidence * 100}%` }}
-                                />
-                              </div>
-                            </>
-                          ) : (
-                            <span className="text-gray-300 text-xs">—</span>
-                          )}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {row.saving ? (
-                            <span className="text-xs text-gray-400 animate-pulse">Saving…</span>
-                          ) : row.overrideOpen ? (
-                            <div className="flex items-center gap-1.5">
-                              <select
-                                value={row.overrideValue}
-                                onChange={e => updateRow(row.partNumber, { overrideValue: e.target.value as Category })}
-                                className="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
-                              >
-                                {VALID_CATEGORIES.map(cat => (
-                                  <option key={cat} value={cat}>{cat}</option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={() => commitOverride(row.partNumber)}
-                                className="px-2 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
-                              >
-                                Save
-                              </button>
-                              <button
-                                onClick={() => updateRow(row.partNumber, { overrideOpen: false })}
-                                className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 transition-colors"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ) : row.status === 'idle' || row.status === 'rejected' ? (
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => analyzeRow(row.partNumber, row.description)}
-                                className="px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 border border-blue-200 transition-colors"
-                              >
-                                Analyze
-                              </button>
-                              <button
-                                onClick={() => updateRow(row.partNumber, { overrideOpen: true })}
-                                title="Manually classify"
-                                className="px-2 py-1.5 text-gray-400 text-xs rounded hover:bg-gray-100 transition-colors"
-                              >
-                                ✏️
-                              </button>
-                            </div>
-                          ) : row.status === 'analyzing' ? (
-                            <span className="text-blue-400 text-xs font-medium tracking-widest animate-pulse">● ● ●</span>
-                          ) : row.status === 'suggested' ? (
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                onClick={() => acceptRow(row.partNumber)}
-                                className="px-3 py-1.5 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 transition-colors"
-                              >
-                                ✅ Accept
-                              </button>
-                              <button
-                                onClick={() => rejectRow(row.partNumber)}
-                                title="Reject (local only)"
-                                className="px-2 py-1.5 bg-red-50 text-red-600 text-xs rounded-lg hover:bg-red-100 border border-red-100 transition-colors"
-                              >
-                                ❌
-                              </button>
-                              <button
-                                onClick={() => updateRow(row.partNumber, { overrideOpen: true })}
-                                title="Override with manual category"
-                                className="px-2 py-1.5 bg-gray-50 text-gray-500 text-xs rounded-lg hover:bg-gray-100 border border-gray-200 transition-colors"
-                              >
-                                ✏️
-                              </button>
-                            </div>
-                          ) : (
-                            /* accepted / overridden */
-                            <button
-                              onClick={() => updateRow(row.partNumber, { status: 'idle', suggestion: null, error: null })}
-                              className="text-xs text-gray-400 hover:text-gray-600 underline"
-                            >
-                              Re-analyze
-                            </button>
-                          )}
-                        </td>
-                      </tr>
+                        row={row}
+                        analyzeLoading={!!loadingRows[row.partNumber]}
+                        onCategoryChange={handleCategoryChange}
+                        onSave={saveRow}
+                        onAnalyze={analyzeRow}
+                        onPatternSave={savePattern}
+                        onReject={rejectRow}
+                      />
                     ))}
                   </tbody>
                 </table>

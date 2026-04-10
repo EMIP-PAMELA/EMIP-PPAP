@@ -27,8 +27,7 @@ import { BOMRecord, FlattenedBOM, WireBOM, RawBOMData } from '../data/bom/types'
 import { parseBOMText, parseBOMWithValidation, PARSER_VERSION } from '../parser/parserService';
 import { supabase } from '@/src/lib/supabaseClient';
 import { looksLikeWirePart } from '@/src/core/utils/wireDetection';
-import { classifyComponent } from '@/src/core/projections/normalizers';
-import { getMappedCategory } from '@/src/core/services/classificationLookup';
+import { resolveClassification } from '@/src/core/services/classificationLookup';
 
 // ============================================================
 // AI CLASSIFICATION OVERLAY (Phase 3H.24A)
@@ -38,13 +37,8 @@ export async function classifyComponentWithLookup(
   partNumber: string | null | undefined,
   description: string | null | undefined
 ): Promise<string> {
-  const mapped = partNumber ? await getMappedCategory(partNumber) : null;
-
-  if (mapped && mapped !== 'UNKNOWN') {
-    return mapped;
-  }
-
-  return classifyComponent(partNumber, description);
+  const resolution = await resolveClassification(partNumber, description);
+  return resolution.category;
 }
 
 // ============================================================

@@ -1,4 +1,6 @@
 import { supabase } from '@/src/lib/supabaseClient';
+import { classifyComponent } from '@/src/core/projections/normalizers';
+import { getPatternMatch } from '@/src/core/services/patternLookup';
 
 const CLASSIFICATION_CACHE = new Map<string, string | null>();
 
@@ -66,17 +68,27 @@ export async function upsertClassificationMapping(params: {
     description: params.description ?? null
   };
 
-  const { error } = await supabase
+  console.log('[AI CLASSIFICATION UPSERT] Attempting insert', payload);
+
+  const { data, error } = await supabase
     .from('component_classification_map')
-    .upsert(payload, { onConflict: 'part_number' });
+    .upsert(payload, { onConflict: 'part_number' })
+    .select();
 
   if (error) {
     console.error('[AI CLASSIFICATION STORE] Failed to upsert mapping', {
       part: normalized,
-      error
+      payload,
+      error,
+      errorMessage: error.message,
+      errorCode: error.code,
+      errorDetails: error.details,
+      errorHint: error.hint
     });
     throw error;
   }
+
+  console.log('[AI CLASSIFICATION UPSERT] Success', { data, part: normalized });
 
   CLASSIFICATION_CACHE.set(normalized, payload.category);
 
@@ -86,4 +98,39 @@ export async function upsertClassificationMapping(params: {
     confidence: payload.confidence,
     source: payload.source
   });
+}
+
+type ClassificationSource = 'MAP' | 'PATTERN' | 'CANONICAL';
+
+export interface ClassificationResolution {
+  category: string;
+  source: ClassificationSource;
+  confidence: number;
+}
+
+export async function resolveClassification(partNumber: string | null | undefined, description: string | null | undefined): Promise<ClassificationResolution> {
+  const normalized = normalizePart(partNumber);
+
+  if (normalized) {
+    const mapped = await getMappedCategory(normalized);
+    if (mapped && mapped !== 'UNKNOWN') {
+      return { category: mapped, source: 'MAP', confidence: 1 };
+    }
+
+    const pattern = await getPatternMatch(normalized);
+    if (pattern) {
+      return {
+        category: pattern.category,
+        source: 'PATTERN',
+        confidence: pattern.confidence ?? 1
+      };
+    }
+  }
+
+  const fallbackCategory = classifyComponent(partNumber ?? null, description ?? null);
+  return {
+    category: fallbackCategory,
+    source: 'CANONICAL',
+    confidence: 1
+  };
 }
