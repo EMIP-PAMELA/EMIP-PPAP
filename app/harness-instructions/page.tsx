@@ -1,66 +1,240 @@
 /**
- * Harness Work Instruction Generator — Main Dashboard
- * Phase HWI.0 — Scaffold Only
+ * Harness Work Instruction Generator — Review UI
+ * Phase HWI.3 — Hybrid Grid + Guided Panel Review
+ *
+ * Layout: 3-column (Job Info | Tabs | Flags)
+ * State: job + flags managed locally, no re-fetches after edits
  */
 
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import EMIPLayout from '../layout/EMIPLayout';
+import JobHeader from '@/src/features/harness-work-instructions/components/JobHeader';
+import ReviewTabs from '@/src/features/harness-work-instructions/components/ReviewTabs';
+import FlagsPanel from '@/src/features/harness-work-instructions/components/FlagsPanel';
+import type {
+  HarnessInstructionJob,
+  EngineeringFlag,
+} from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
+
+type EditableWireField =
+  | 'aci_wire_part_number'
+  | 'gauge'
+  | 'color'
+  | 'cut_length'
+  | 'strip_end_a'
+  | 'strip_end_b';
 
 export default function HarnessInstructionsPage() {
+  const [job, setJob]       = useState<HarnessInstructionJob | null>(null);
+  const [flags, setFlags]   = useState<EngineeringFlag[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]   = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('wires');
+
+  useEffect(() => {
+    console.log('[HWI UI LOAD]', { timestamp: new Date().toISOString() });
+
+    fetch('/api/harness-instructions/extract-phase1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+      .then(r => r.json())
+      .then((json: { ok: boolean; data?: HarnessInstructionJob }) => {
+        if (json.ok && json.data) {
+          setJob(json.data);
+          setFlags(json.data.engineering_flags ?? []);
+          console.log('[HWI UI LOAD]', {
+            wires: json.data.wire_instances.length,
+            flags: json.data.engineering_flags.length,
+          });
+        } else {
+          setError('Failed to load extraction data');
+        }
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  function handleUpdateWire(
+    index: number,
+    field: EditableWireField,
+    value: string | number | null
+  ) {
+    console.log('[HWI FIELD UPDATE]', { type: 'wire', index, field, value });
+    const fieldRef = `wire_instances.${index}.${field}`;
+
+    setJob(prev => {
+      if (!prev) return prev;
+      const wires = [...prev.wire_instances];
+      wires[index] = { ...wires[index], [field]: value };
+      return { ...prev, wire_instances: wires };
+    });
+
+    setFlags(prev =>
+      prev.map(f => {
+        if (f.field_ref === fieldRef && !f.resolved) {
+          console.log('[HWI FLAG RESOLVED]', { fieldRef });
+          return { ...f, resolved: true };
+        }
+        return f;
+      })
+    );
+  }
+
+  function handleUpdateQuestion(id: string, answer: string | null, resolved: boolean) {
+    console.log('[HWI FIELD UPDATE]', { type: 'question', id, resolved });
+    setJob(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        review_questions: prev.review_questions.map(q =>
+          q.id === id ? { ...q, answer, resolved } : q
+        ),
+      };
+    });
+  }
+
+  function handleFlagClick(flag: EngineeringFlag) {
+    const ref = flag.field_ref ?? '';
+    if (ref.startsWith('wire_instances'))  setActiveTab('wires');
+    else if (ref.startsWith('press_rows')) setActiveTab('press');
+    else if (ref.startsWith('komax_rows')) setActiveTab('komax');
+    else if (ref.startsWith('pin_map_rows')) setActiveTab('pinmap');
+    else if (ref.startsWith('review_questions')) setActiveTab('questions');
+
+    setTimeout(() => {
+      const parts = ref.split('.');
+      if (parts.length >= 2) {
+        document
+          .getElementById(`${parts[0]}-${parts[1]}`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 150);
+  }
+
+  const unresolvedFlags   = flags.filter(f => !f.resolved && f.flag_type !== 'info');
+  const canApprove        = unresolvedFlags.length === 0;
+  const resolvedCount     = flags.filter(f => f.resolved).length;
+  const completionPct     = flags.length > 0
+    ? Math.round((resolvedCount / flags.length) * 100)
+    : 100;
+
+  // ---------------------------------------------------------------------------
+  // Loading / error states
+  // ---------------------------------------------------------------------------
+
+  if (loading) {
+    return (
+      <EMIPLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-gray-400 text-sm animate-pulse">Loading extraction data...</div>
+        </div>
+      </EMIPLayout>
+    );
+  }
+
+  if (error || !job) {
+    return (
+      <EMIPLayout>
+        <div className="p-5 bg-red-50 border border-red-200 rounded-lg">
+          <div className="text-red-700 font-medium text-sm">Failed to load instruction job</div>
+          <div className="text-red-500 text-xs mt-1">{error ?? 'No data returned'}</div>
+        </div>
+      </EMIPLayout>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Main 3-column review layout
+  // ---------------------------------------------------------------------------
+
   return (
     <EMIPLayout>
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
-        <div className="text-center space-y-4">
-          <h1 className="text-4xl font-bold text-gray-900">
-            🔌 Harness Work Instruction Generator
-          </h1>
-          <p className="text-lg text-gray-600 max-w-2xl">
-            Module scaffold initialized. Build phases pending.
-          </p>
-          <div className="mt-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-800 mb-3">
-              Phase HWI.0 — Scaffolding Complete
-            </h2>
-            <div className="text-left space-y-2 text-sm text-gray-700">
-              <div className="flex items-center gap-2">
-                <span className="text-green-600">✅</span>
-                <span>Documentation structure created</span>
+      <div className="flex flex-col" style={{ height: 'calc(100vh - 128px)' }}>
+
+        {/* Summary bar */}
+        <div className="flex items-center justify-between px-4 py-2 bg-white border border-gray-200 rounded-lg mb-3 flex-shrink-0 gap-4">
+          <div className="flex items-center gap-5 min-w-0">
+            <span className="font-semibold text-gray-700 text-sm truncate">
+              🔌 {job.metadata.part_number} · Rev {job.metadata.revision}
+            </span>
+
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
+              unresolvedFlags.length > 0
+                ? 'bg-orange-100 text-orange-700'
+                : 'bg-green-100 text-green-700'
+            }`}>
+              {flags.length} flags · {unresolvedFlags.length} unresolved
+            </span>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="w-20 bg-gray-200 rounded-full h-1.5">
+                <div
+                  className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${completionPct}%` }}
+                />
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-green-600">✅</span>
-                <span>Module folder structure established</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-green-600">✅</span>
-                <span>Type scaffolding complete</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-green-600">✅</span>
-                <span>API routes scaffolded</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-yellow-600">⏳</span>
-                <span>Database schema (future)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-yellow-600">⏳</span>
-                <span>AI extraction (future)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-yellow-600">⏳</span>
-                <span>Review UI (future)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-yellow-600">⏳</span>
-                <span>PDF generation (future)</span>
-              </div>
+              <span className="text-xs text-gray-400">{completionPct}%</span>
             </div>
           </div>
-          <div className="mt-4 text-sm text-gray-500">
-            See <code className="bg-gray-100 px-2 py-1 rounded">docs/modules/harness-work-instructions/BUILD_PLAN.md</code> for roadmap
+
+          <button
+            disabled={!canApprove}
+            onClick={() => alert('Approval flow — coming in HWI.4')}
+            className={`px-4 py-1.5 rounded text-xs font-semibold transition-colors flex-shrink-0 ${
+              canApprove
+                ? 'bg-green-600 text-white hover:bg-green-700'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            {canApprove
+              ? '✅ Approve Instruction'
+              : `⚠️ ${unresolvedFlags.length} issue${unresolvedFlags.length !== 1 ? 's' : ''} pending`}
+          </button>
+        </div>
+
+        {/* 3-column layout */}
+        <div className="flex-1 flex gap-3 overflow-hidden min-h-0">
+
+          {/* LEFT — Job Info */}
+          <div className="w-52 flex-shrink-0 overflow-y-auto">
+            <JobHeader
+              partNumber={job.metadata.part_number}
+              revision={job.metadata.revision}
+              status={job.status}
+              wireCount={job.wire_instances.length}
+              pressCount={job.press_rows.length}
+              komaxCount={job.komax_rows.length}
+              pinMapCount={job.pin_map_rows.length}
+              stepCount={job.assembly_steps.length}
+              flagCount={flags.length}
+              unresolvedCount={unresolvedFlags.length}
+            />
           </div>
+
+          {/* CENTER — Tabs */}
+          <div className="flex-1 overflow-hidden flex flex-col min-w-0">
+            <ReviewTabs
+              job={job}
+              flags={flags}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              onUpdateWire={handleUpdateWire}
+              onUpdateQuestion={handleUpdateQuestion}
+            />
+          </div>
+
+          {/* RIGHT — Flags */}
+          <div className="w-60 flex-shrink-0 overflow-hidden">
+            <FlagsPanel
+              flags={flags}
+              onFlagClick={handleFlagClick}
+            />
+          </div>
+
         </div>
       </div>
     </EMIPLayout>
