@@ -105,11 +105,11 @@ export default function EMIPDashboardPage() {
     
     try {
       const partNumbers = boms.map(b => b.partNumber);
-      let totalCopper = 0;
+      let totalCopper: number | null = null;  // Phase 3H.21.4: null-safe type
       
       if (partNumbers.length > 0) {
         const copperAgg = await getCopperUsageAcrossParts(partNumbers);
-        totalCopper = copperAgg.totalCopperWeight;
+        totalCopper = copperAgg.totalCopperWeight ?? null;  // Phase 3H.21.4: Preserve null
       }
       
       setStats(prev => ({
@@ -123,10 +123,10 @@ export default function EMIPDashboardPage() {
       });
     } catch (copperError) {
       console.warn('🧭 [Dashboard] Copper data unavailable:', copperError);
-      // Keep null to show "Load Error" state
+      // Phase 3H.21.4: Use null to indicate error/incomplete state
       setStats(prev => ({
         ...prev,
-        totalCopperWeight: -1 // -1 indicates error
+        totalCopperWeight: null  // null indicates error or incomplete
       }));
     } finally {
       setCopperLoading(false);
@@ -203,16 +203,15 @@ export default function EMIPDashboardPage() {
                 <p className="text-sm text-gray-600">Total Copper (lbs)</p>
                 <p className="text-3xl font-bold text-orange-600">
                   {/* Phase 3H.18: Handle async copper loading states */}
+                  {/* Phase 3H.21.4: Null-safe copper display */}
                   {copperLoading ? (
                     <span className="text-gray-400">Loading...</span>
                   ) : stats.totalCopperWeight === null ? (
-                    <span className="text-gray-400">--</span>
-                  ) : stats.totalCopperWeight === -1 ? (
-                    <span className="text-red-500 text-lg">Error</span>
+                    <span className="text-gray-400">N/A</span>
                   ) : stats.totalCopperWeight > 0 ? (
                     stats.totalCopperWeight.toFixed(1)
                   ) : (
-                    'N/A'
+                    '0.0'
                   )}
                 </p>
               </div>
