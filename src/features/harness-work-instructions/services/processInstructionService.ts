@@ -28,6 +28,8 @@ import type {
   KomaxRow,
   EngineeringFlag,
 } from '../types/harnessInstruction.schema';
+import type { ToolingDecision } from './learningSignatures';
+import { buildToolingSignature } from './learningSignatures';
 import type {
   ProcessInstructionBundle,
   KomaxSetupEntry,
@@ -190,7 +192,10 @@ function buildKomaxSetup(job: HarnessInstructionJob): KomaxSetupEntry[] {
 // 2. Press Setup
 // ---------------------------------------------------------------------------
 
-function buildPressSetup(job: HarnessInstructionJob): PressSetupEntry[] {
+function buildPressSetup(
+  job:             HarnessInstructionJob,
+  toolingOverrides?: Map<string, ToolingDecision>,
+): PressSetupEntry[] {
   const wireMap = new Map(job.wire_instances.map(w => [w.wire_id, w]));
   const entries: PressSetupEntry[] = [];
 
@@ -198,7 +203,18 @@ function buildPressSetup(job: HarnessInstructionJob): PressSetupEntry[] {
     const wire  = wireMap.get(pr.wire_id);
     const flags: string[] = [];
 
-    if (!pr.applicator_id) {
+    // Apply learned tooling override if applicator is missing
+    let resolvedApplicator = pr.applicator_id;
+    if (!resolvedApplicator && toolingOverrides?.size) {
+      const sig     = buildToolingSignature(pr.terminal_part_number, 'PRESS');
+      const learned = toolingOverrides.get(sig);
+      if (learned?.applicator_id) {
+        resolvedApplicator = learned.applicator_id;
+        console.log('[HWI LEARNING APPLIED]', { context_type: 'TOOLING', signature: sig, press_id: pr.press_id });
+      }
+    }
+
+    if (!resolvedApplicator) {
       flags.push('[REVIEW_REQUIRED] No applicator or hand tool specified — verify against crimp specification');
     }
     if (!wire) {
@@ -218,7 +234,7 @@ function buildPressSetup(job: HarnessInstructionJob): PressSetupEntry[] {
       gauge:                wire ? String(wire.gauge) : '—',
       color:                wire?.color ?? '—',
       terminal_part_number: pr.terminal_part_number,
-      applicator_id:        pr.applicator_id,
+      applicator_id:        resolvedApplicator,
       hand_tool_ref:        handTools[0] ?? null,
       strip_length:         wire?.strip_end_a ?? null,
       source:               pr.provenance.note ?? 'BOM_DERIVED',
@@ -380,10 +396,11 @@ function buildEngineeringNotes(
 // ---------------------------------------------------------------------------
 
 export function buildProcessInstructions(
-  job: HarnessInstructionJob,
+  job:             HarnessInstructionJob,
+  toolingOverrides?: Map<string, ToolingDecision>,
 ): ProcessInstructionBundle {
   const komax_setup           = buildKomaxSetup(job);
-  const press_setup           = buildPressSetup(job);
+  const press_setup           = buildPressSetup(job, toolingOverrides);
   const assembly_instructions = buildAssemblyInstructions(job);
   const engineering_notes     = buildEngineeringNotes(job, komax_setup, press_setup);
 

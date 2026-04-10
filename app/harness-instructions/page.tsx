@@ -26,6 +26,7 @@ import { fuseDrawingWithBOM } from '@/src/features/harness-work-instructions/ser
 import { resolveEndpoints } from '@/src/features/harness-work-instructions/services/endpointResolutionService';
 import { buildProcessInstructions } from '@/src/features/harness-work-instructions/services/processInstructionService';
 import type { ProcessInstructionBundle } from '@/src/features/harness-work-instructions/types/processInstructions';
+import { loadFusionHints } from '@/src/features/harness-work-instructions/services/learningService';
 
 interface ApprovalRecord {
   jobId: string;
@@ -165,8 +166,9 @@ export default function HarnessInstructionsPage() {
       });
       // If a BOM job is already loaded, fuse + resolve endpoints immediately
       if (job && json.drawing.wire_rows.length > 0) {
-        const fused   = fuseDrawingWithBOM(json.drawing, job);
-        const resolved = resolveEndpoints(fused, json.drawing);
+        const hints   = await loadFusionHints(json.drawing, job);
+        const fused   = fuseDrawingWithBOM(json.drawing, job, hints);
+        const resolved = resolveEndpoints(fused, json.drawing, hints);
         setJob(resolved);
         setFlags(resolved.engineering_flags);
         console.log('[HWI UI FUSION APPLIED]',     { source: 'drawing_upload', wires: resolved.wire_instances.length });
@@ -199,8 +201,9 @@ export default function HarnessInstructionsPage() {
       const baseJob = json.job;
       let finalJob = baseJob;
       if (drawing && drawing.wire_rows.length > 0) {
-        const fused = fuseDrawingWithBOM(drawing, baseJob);
-        finalJob    = resolveEndpoints(fused, drawing);
+        const hints = await loadFusionHints(drawing, baseJob);
+        const fused = fuseDrawingWithBOM(drawing, baseJob, hints);
+        finalJob    = resolveEndpoints(fused, drawing, hints);
         console.log('[HWI UI FUSION APPLIED]',    { source: 'bom_upload', wires: finalJob.wire_instances.length });
         console.log('[HWI UI ENDPOINTS APPLIED]', { pinMapRows: finalJob.pin_map_rows.length });
       }

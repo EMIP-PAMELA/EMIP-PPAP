@@ -21,6 +21,7 @@ import { safeValidateInstruction } from '@/src/features/harness-work-instruction
 import { generateInstructionPDF } from '@/src/features/harness-work-instructions/services/pdfService';
 import { saveApprovedJob } from '@/src/features/harness-work-instructions/services/jobService';
 import { learnPatternsFromApprovedJob } from '@/src/core/services/patternLearningService';
+import { learnFromApprovedJob } from '@/src/features/harness-work-instructions/services/learningService';
 
 export async function POST(request: NextRequest) {
   let body: { job?: unknown; approvedBy?: string };
@@ -77,6 +78,11 @@ export async function POST(request: NextRequest) {
     // Pattern learning — fire-and-forget, never fails the approval response
     learnPatternsFromApprovedJob(job).catch((err: Error) =>
       console.error('[HWI approve-job] Pattern learning failed (non-fatal):', err.message)
+    );
+
+    // Resolution memory learning — fire-and-forget
+    learnFromApprovedJob(job).catch((err: Error) =>
+      console.error('[HWI approve-job] Resolution learning failed (non-fatal):', err.message)
     );
 
     return NextResponse.json({

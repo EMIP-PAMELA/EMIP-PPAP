@@ -28,6 +28,8 @@ import type {
   EndTerminal,
 } from '../types/harnessInstruction.schema';
 import type { CanonicalDrawingDraft, DraftWireRow } from '../types/drawingDraft';
+import type { FusionHints, WireMatchDecision } from './learningSignatures';
+import { buildWireMatchSignature } from './learningSignatures';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -177,20 +179,46 @@ function matchDrawingRow(row: DraftWireRow, bomTypes: BomWireType[]): MatchResul
 // ---------------------------------------------------------------------------
 
 function buildFusedWireInstances(
-  wire_rows:  DraftWireRow[],
-  bomTypes:   BomWireType[],
-  flags:      EngineeringFlag[],
+  wire_rows:          DraftWireRow[],
+  bomTypes:           BomWireType[],
+  flags:              EngineeringFlag[],
+  wireMatchOverrides?: Map<string, WireMatchDecision>,
 ): WireInstance[] {
   const wires: WireInstance[] = [];
 
   for (let idx = 0; idx < wire_rows.length; idx++) {
     const row    = wire_rows[idx];
-    const match  = matchDrawingRow(row, bomTypes);
-    const bom    = match.bomType;
 
+    // Compute wireId first so it is available for learning log
     const wireId = row.wire_id
       ? String(row.wire_id)
       : `DW${String(idx + 1).padStart(3, '0')}`;
+
+    // Apply wire-match learning override if available (before normal scoring)
+    let match: MatchResult;
+    if (wireMatchOverrides && wireMatchOverrides.size > 0) {
+      const sig     = buildWireMatchSignature(row.gauge, row.color, row.length);
+      const learned = wireMatchOverrides.get(sig);
+      if (learned) {
+        const bt = bomTypes.find(
+          b => b.gauge === learned.gauge && b.color === learned.color && b.assigned < b.qty
+        );
+        if (bt) {
+          bt.assigned += 1;
+          match = { bomType: bt, score: 4, confidence: 'HIGH' };
+          console.log('[HWI LEARNING APPLIED]', { context_type: 'WIRE_MATCH', signature: sig, wire_id: wireId });
+        } else {
+          console.log('[HWI LEARNING SKIPPED]', { reason: 'learned_bom_type_exhausted', signature: sig, wire_id: wireId });
+          match = matchDrawingRow(row, bomTypes);
+        }
+      } else {
+        match = matchDrawingRow(row, bomTypes);
+      }
+    } else {
+      match = matchDrawingRow(row, bomTypes);
+    }
+
+    const bom    = match.bomType;
 
     const resolvedGauge = bom?.gauge
       ?? normalizeToken(row.gauge)
@@ -338,6 +366,7 @@ function validateQuantities(
 export function fuseDrawingWithBOM(
   drawing: CanonicalDrawingDraft,
   job:     HarnessInstructionJob,
+  hints?:  FusionHints,
 ): HarnessInstructionJob {
   flagSeq = 0;
 
@@ -367,7 +396,7 @@ export function fuseDrawingWithBOM(
   const fusionFlags: EngineeringFlag[] = [];
   const bomTypes = buildBomTypeIndex(job.wire_instances);
 
-  const fusedWires = buildFusedWireInstances(drawing.wire_rows, bomTypes, fusionFlags);
+  const fusedWires = buildFusedWireInstances(drawing.wire_rows, bomTypes, fusionFlags, hints?.wireMatchOverrides);
 
   validateQuantities(fusedWires, job.wire_instances, bomTypes, fusionFlags);
 

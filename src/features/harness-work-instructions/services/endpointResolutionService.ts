@@ -26,6 +26,8 @@ import type {
   Provenance,
 } from '../types/harnessInstruction.schema';
 import type { CanonicalDrawingDraft, DraftWireRow } from '../types/drawingDraft';
+import type { FusionHints, EndpointDecision } from './learningSignatures';
+import { buildEndpointSignature } from './learningSignatures';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -127,9 +129,10 @@ function pickTerminalForWire(
 // ---------------------------------------------------------------------------
 
 function computeWireEndpoints(
-  wire:    WireInstance,
-  row:     DraftWireRow | null,
-  termIdx: TerminalIndex,
+  wire:              WireInstance,
+  row:               DraftWireRow | null,
+  termIdx:           TerminalIndex,
+  endpointOverride?: EndpointDecision,
 ): ResolvedEndpoints {
   const NULL_END: EndTerminal = {
     connector_id:         null,
@@ -137,6 +140,26 @@ function computeWireEndpoints(
     terminal_part_number: null,
     seal_part_number:     null,
   };
+
+  // Apply learned endpoint override if available (replaces missing drawing data)
+  if (endpointOverride && !row?.connector_a) {
+    const end_a: EndTerminal = {
+      connector_id:         endpointOverride.connector_id,
+      cavity:               endpointOverride.cavity,
+      terminal_part_number: endpointOverride.terminal_part_number,
+      seal_part_number:     null,
+    };
+    const aScore = (end_a.connector_id ? 3 : 0) + (end_a.cavity ? 2 : 0) + (end_a.terminal_part_number ? 1 : 0);
+    const confidence = Math.min(aScore / 6, 1);
+    const level: EndpointResolutionLevel = aScore >= 3 ? 'PARTIAL_A' : 'NONE';
+    console.log('[HWI LEARNING APPLIED]', {
+      context_type: 'ENDPOINT',
+      wire_id:      wire.wire_id,
+      connector:    end_a.connector_id,
+      cavity:       end_a.cavity,
+    });
+    return { end_a, end_b: NULL_END, level, confidence };
+  }
 
   if (!row) {
     return { end_a: NULL_END, end_b: NULL_END, level: 'NONE', confidence: 0 };
@@ -296,6 +319,7 @@ function addEndpointFlags(
 export function resolveEndpoints(
   job:     HarnessInstructionJob,
   drawing: CanonicalDrawingDraft,
+  hints?:  FusionHints,
 ): HarnessInstructionJob {
   flagSeq   = 0;
   pinMapSeq = 0;
@@ -312,9 +336,18 @@ export function resolveEndpoints(
   const newFlags: EngineeringFlag[] = [];
   const newPinMapRows: PinMapRow[] = [];
 
+  const endpointOverrides = hints?.endpointOverrides;
+
   const resolvedWires: WireInstance[] = job.wire_instances.map((wire, idx) => {
-    const row       = findDrawingRow(wire, idx, rowIndex);
-    const endpoints = computeWireEndpoints(wire, row, termIndex);
+    const row = findDrawingRow(wire, idx, rowIndex);
+
+    // Build endpoint signature to look up learned override
+    const drawingRow   = row;
+    const connHint     = drawingRow?.connector_a ?? null;
+    const labelHint    = drawingRow?.wire_label ?? wire.wire_id;
+    const learnedEndpt = endpointOverrides?.get(buildEndpointSignature(labelHint, connHint));
+
+    const endpoints = computeWireEndpoints(wire, row, termIndex, learnedEndpt);
     const pinRows   = buildPinMapRows(wire, endpoints);
 
     newPinMapRows.push(...pinRows);
