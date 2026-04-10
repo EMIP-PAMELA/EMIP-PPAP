@@ -32,9 +32,9 @@ export default function CopperPage() {
   const [familyIndex, setFamilyIndex] = useState<Record<string, FamilyCopperIndex>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [totalCopper, setTotalCopper] = useState(0);
-  const [totalGross, setTotalGross] = useState(0);
-  const [totalInsulation, setTotalInsulation] = useState(0);
+  const [totalCopper, setTotalCopper] = useState<number | null>(null);
+  const [totalGross, setTotalGross] = useState<number | null>(null);
+  const [totalInsulation, setTotalInsulation] = useState<number | null>(null);
   const [totalSKUs, setTotalSKUs] = useState(0);
   
   // V6.4.2: Interactive state
@@ -51,6 +51,12 @@ export default function CopperPage() {
   const [calGross, setCalGross] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const formatWeight = (value: number | null, digits = 3) =>
+    value !== null ? `${value.toFixed(digits)} lbs` : 'N/A';
+
+  const formatPercentage = (value: number | null, digits = 1) =>
+    value !== null ? `${value.toFixed(digits)}%` : 'N/A';
+
   useEffect(() => {
     loadCopperData();
     loadCalibrations();
@@ -66,17 +72,12 @@ export default function CopperPage() {
     
     const index = computeFamilyCopperIndex(filteredRecords);
     
-    let copper = 0;
-    let gross = 0;
-    let insulation = 0;
-    let skus = 0;
-    
-    Object.values(index).forEach(family => {
-      copper += family.totalCopper;
-      gross += family.totalGross;
-      insulation += family.totalInsulation;
-      skus += family.skuCount;
-    });
+    const {
+      copper,
+      gross,
+      insulation,
+      skus
+    } = aggregateFamilyTotals(index);
     
     setFamilyIndex(index);
     setTotalCopper(copper);
@@ -84,6 +85,47 @@ export default function CopperPage() {
     setTotalInsulation(insulation);
     setTotalSKUs(skus);
   }, [selectedSKUs, allRecords]);
+
+  const aggregateFamilyTotals = (index: Record<string, FamilyCopperIndex>) => {
+    let copper: number | null = 0;
+    let gross: number | null = 0;
+    let insulation: number | null = 0;
+    let skus = 0;
+    let isComplete = true;
+
+    Object.values(index).forEach(family => {
+      skus += family.skuCount;
+
+      if (family.totalCopper === null) {
+        copper = null;
+        isComplete = false;
+      } else if (copper !== null) {
+        copper += family.totalCopper;
+      }
+
+      if (family.totalGross === null) {
+        gross = null;
+        isComplete = false;
+      } else if (gross !== null) {
+        gross += family.totalGross;
+      }
+
+      if (family.totalInsulation === null) {
+        insulation = null;
+        isComplete = false;
+      } else if (insulation !== null) {
+        insulation += family.totalInsulation;
+      }
+    });
+
+    if (!isComplete) {
+      copper = null;
+      gross = null;
+      insulation = null;
+    }
+
+    return { copper, gross, insulation, skus };
+  };
   
   // V6.4.2: Interaction handlers
   const toggleSKU = (partNumber: string) => {
@@ -201,18 +243,13 @@ export default function CopperPage() {
       // V6.4.1: Compute family copper index
       const index = computeFamilyCopperIndex(allRecords);
       
-      // V6.4.1: Calculate totals
-      let copper = 0;
-      let gross = 0;
-      let insulation = 0;
-      let skus = 0;
-      
-      Object.values(index).forEach(family => {
-        copper += family.totalCopper;
-        gross += family.totalGross;
-        insulation += family.totalInsulation;
-        skus += family.skuCount;
-      });
+      // V6.4.1: Calculate totals with completeness tracking (Phase 3H.21.7)
+      const {
+        copper,
+        gross,
+        insulation,
+        skus
+      } = aggregateFamilyTotals(index);
       
       // V6.4.2: Store all records for filtering
       setAllRecords(allRecords);
@@ -244,8 +281,8 @@ export default function CopperPage() {
       
       console.log('🧠 V6.4.2 UI LOADED', {
         familyCount: Object.keys(index).length,
-        totalCopper: copper.toFixed(4),
-        totalGross: gross.toFixed(4),
+        totalCopper: copper !== null ? copper.toFixed(4) : null,
+        totalGross: gross !== null ? gross.toFixed(4) : null,
         skuGroupCount: Object.keys(skuGroups).length
       });
       
@@ -301,7 +338,7 @@ export default function CopperPage() {
           </div>
           <div className="bg-orange-50 rounded-lg p-4">
             <div className="text-sm text-orange-600">Total Copper Weight</div>
-            <div className="text-3xl font-bold text-orange-700">{totalCopper.toFixed(2)} lbs</div>
+            <div className="text-3xl font-bold text-orange-700">{formatWeight(totalCopper, 2)}</div>
           </div>
         </div>
 
@@ -349,11 +386,11 @@ export default function CopperPage() {
             </div>
             <div className="bg-white rounded-lg shadow p-6">
               <div className="text-sm text-gray-600">Total Gross Weight</div>
-              <div className="text-2xl font-bold text-gray-900">{totalGross.toFixed(3)} lbs</div>
+              <div className="text-2xl font-bold text-gray-900">{formatWeight(totalGross)}</div>
             </div>
             <div className="bg-white rounded-lg shadow p-6">
               <div className="text-sm text-gray-600">Total Insulation</div>
-              <div className="text-2xl font-bold text-gray-900">{totalInsulation.toFixed(3)} lbs</div>
+              <div className="text-2xl font-bold text-gray-900">{formatWeight(totalInsulation)}</div>
             </div>
           </div>
         )}
@@ -419,17 +456,17 @@ export default function CopperPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="text-orange-600 font-semibold">
-                            {family.totalCopper.toFixed(3)} lbs
+                            {formatWeight(family.totalCopper)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="text-green-600 font-semibold">
-                            {family.totalInsulation.toFixed(3)} lbs
+                            {formatWeight(family.totalInsulation)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="text-purple-600 font-semibold">
-                            {family.totalGross.toFixed(3)} lbs
+                            {formatWeight(family.totalGross)}
                           </span>
                         </td>
                       </tr>
@@ -476,13 +513,13 @@ export default function CopperPage() {
                                         <span className="font-medium">Length:</span> {insights.totalWireLength.toFixed(1)} ft
                                       </div>
                                       <div className="text-orange-600">
-                                        <span className="font-medium">Copper:</span> {insights.estimatedCopperWeight.toFixed(3)} lbs
+                                        <span className="font-medium">Copper:</span> {formatWeight(insights.estimatedCopperWeight)}
                                       </div>
                                       <div className="text-green-600">
-                                        <span className="font-medium">Insulation:</span> {insights.estimatedInsulationWeight.toFixed(3)} lbs
+                                        <span className="font-medium">Insulation:</span> {formatWeight(insights.estimatedInsulationWeight)}
                                       </div>
                                       <div className="text-purple-600">
-                                        <span className="font-medium">Gross:</span> {insights.estimatedGrossWeight.toFixed(3)} lbs
+                                        <span className="font-medium">Gross:</span> {formatWeight(insights.estimatedGrossWeight)}
                                       </div>
                                     </div>
                                   </div>
