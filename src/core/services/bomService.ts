@@ -1809,3 +1809,37 @@ export async function parseAndStoreBOM(
   
   return rawData;
 }
+
+// ============================================================
+// HWI.7: PROCESS STRUCTURE PARSER (extension, no logic duplication)
+// ============================================================
+
+/**
+ * Parse raw BOM text lines into a structured process model.
+ *
+ * Delegates entirely to the existing core parseBOMText() engine.
+ * Returns RawBOMData whose .operations[] describes each work-center
+ * step (WR-CRIMP, WR-WIREASSY, etc.) and the components within it.
+ *
+ * Log prefixes:
+ *   [BOM PROCESS PARSE START]   — called with line count
+ *   [BOM OPERATION DETECTED]    — operations found
+ *   [BOM COMPONENT DETECTED]    — total components across all ops
+ */
+export function parseProcessStructure(rawLines: string[]): import('../data/bom/types').RawBOMData {
+  console.log('[BOM PROCESS PARSE START]', { lineCount: rawLines.length });
+
+  const rawBOM = parseBOMText(rawLines.join('\n'));
+
+  const componentCount = rawBOM.operations.reduce((n, op) => n + op.components.length, 0);
+
+  console.log('[BOM OPERATION DETECTED]', {
+    masterPartNumber: rawBOM.masterPartNumber,
+    operationCount: rawBOM.operations.length,
+    operationIds: rawBOM.operations.map(o => o.resourceId),
+  });
+
+  console.log('[BOM COMPONENT DETECTED]', { componentCount });
+
+  return rawBOM;
+}

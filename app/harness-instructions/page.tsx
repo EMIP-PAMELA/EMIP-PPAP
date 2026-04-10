@@ -1,15 +1,16 @@
 /**
  * Harness Work Instruction Generator — Review UI
- * Phase HWI.3 / HWI.5 — Hybrid Grid + Approval Workflow
+ * Phase HWI.3 / HWI.5 / HWI.7 — Hybrid Grid + Approval + BOM Upload
  *
  * Layout: 3-column (Job Info | Tabs | Flags)
  * State: job + flags managed locally, no re-fetches after edits
  * Approval: locks all editing, stores to DB, uploads PDF artifact
+ * BOM Upload: client-side PDF text extraction → parseBOMToHWI() → populates UI
  */
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import EMIPLayout from '../layout/EMIPLayout';
 import JobHeader from '@/src/features/harness-work-instructions/components/JobHeader';
 import ReviewTabs from '@/src/features/harness-work-instructions/components/ReviewTabs';
@@ -45,6 +46,8 @@ export default function HarnessInstructionsPage() {
   const [approving, setApproving]       = useState(false);
   const [approvalRecord, setApprovalRecord] = useState<ApprovalRecord | null>(null);
   const [showHistory, setShowHistory]   = useState(false);
+  const [uploadingBOM, setUploadingBOM] = useState(false);
+  const bomFileRef = useRef<HTMLInputElement>(null);
 
   const isLocked = approvalRecord !== null;
 
@@ -110,6 +113,33 @@ export default function HarnessInstructionsPage() {
         ),
       };
     });
+  }
+
+  async function handleBOMFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingBOM(true);
+    try {
+      const { extractTextFromPDF } = await import('@/src/features/documentEngine/utils/pdfToText');
+      const bomText = await extractTextFromPDF(file);
+      const res = await fetch('/api/harness-instructions/upload-bom', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bomText, fileName: file.name }),
+      });
+      const json = await res.json() as { ok: boolean; job?: HarnessInstructionJob; error?: string };
+      if (!json.ok || !json.job) throw new Error(json.error ?? 'BOM upload failed');
+      setJob(json.job);
+      setFlags(json.job.engineering_flags ?? []);
+      setApprovalRecord(null);
+      setActiveTab('wires');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`BOM upload failed: ${msg}`);
+    } finally {
+      setUploadingBOM(false);
+      if (bomFileRef.current) bomFileRef.current.value = '';
+    }
   }
 
   async function handleApprove() {
@@ -254,7 +284,29 @@ export default function HarnessInstructionsPage() {
             </div>
           </div>
 
+          {/* Hidden BOM file input */}
+          <input
+            ref={bomFileRef}
+            type="file"
+            accept=".pdf"
+            className="hidden"
+            onChange={handleBOMFileChange}
+          />
+
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Upload BOM PDF */}
+            <button
+              onClick={() => bomFileRef.current?.click()}
+              disabled={uploadingBOM || isLocked}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                uploadingBOM || isLocked
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-purple-600 text-white hover:bg-purple-700'
+              }`}
+            >
+              {uploadingBOM ? '⏳ Parsing...' : '📥 Upload BOM PDF'}
+            </button>
+
             {/* History button */}
             <button
               onClick={() => setShowHistory(true)}
