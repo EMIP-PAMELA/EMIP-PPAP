@@ -127,6 +127,7 @@ function normalizeColorLabel(rawColor: string | null | undefined): string {
 
 /**
  * V6.2: Normalized component with computed fields
+ * Phase 3H.19: Extended with dual copper model (usable/cut/scrap)
  */
 interface NormalizedComponent {
   component_part_number: string;
@@ -139,7 +140,11 @@ interface NormalizedComponent {
   colorNormalized: string;
   category: string | null;  // Phase 3H.16.3: Component category from DB
   isWire: boolean;
-  effectiveLength: number;  // V6.2: length * qtyPer
+  effectiveLength: number;  // V6.2: length * qtyPer (usable length)
+  // Phase 3H.19: DUAL COPPER MODEL - Wire length sources
+  usableLength?: number;    // Qty Per (feet) - usable wire length
+  cutLength?: number;       // Cut length (feet) - includes scrap
+  scrapLength?: number;     // Cut - Usable (feet)
   operation_step: string | null;
 }
 
@@ -199,6 +204,24 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
     console.log(`📦 BOM RECORD CATEGORY: ${record.component_part_number} → ${record.category}`);
   }
   
+  // Phase 3H.19: DUAL COPPER MODEL - Calculate wire length sources
+  const usableLength = isWire ? rawLength : undefined;  // Qty Per (usable)
+  const cutLength = isWire ? (Number(record.length) || rawLength) : undefined;  // Cut length (with scrap)
+  const scrapLength = (usableLength !== undefined && cutLength !== undefined)
+    ? Math.max(0, cutLength - usableLength)  // Ensure non-negative
+    : undefined;
+  
+  // Phase 3H.19: Log dual copper model data for wires
+  if (isWire && usableLength !== undefined && cutLength !== undefined) {
+    console.log('[COPPER DUAL MODEL]', {
+      part: record.component_part_number,
+      usableFeet: usableLength,
+      cutFeet: cutLength,
+      scrapFeet: scrapLength,
+      scrapPercent: cutLength > 0 ? ((cutLength - usableLength) / cutLength * 100).toFixed(1) + '%' : '0%'
+    });
+  }
+  
   // Phase 3H.15.6: Use normalizedcolor from DB as single source of truth
   // Phase 3H.16.3: Use category from DB as single source of truth
   // Phase 3H.16.5: Use normalizedcolor (lowercase) to match DB schema
@@ -218,6 +241,10 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
     // SINGLE SOURCE OF TRUTH: effectiveLength is always in FEET
     // Phase 3H.18.2: Uses rawLength (Qty Per for wires) * qtyPer
     effectiveLength: rawLength * qtyPer,
+    // Phase 3H.19: DUAL COPPER MODEL - Wire length sources
+    usableLength,
+    cutLength,
+    scrapLength,
     operation_step: record.operation_step || null
   };
 }
@@ -299,6 +326,7 @@ export function getActiveCalibrations(): Record<string, WireCalibration> {
 
 /**
  * V6.1: SKU Insights - Derived engineering intelligence from BOM data
+ * Phase 3H.19: Extended with dual copper model (usable/cut/scrap)
  */
 export interface SKUInsights {
   totalComponents: number;
@@ -316,6 +344,15 @@ export interface SKUInsights {
   insulationPercent: number;  // V6.4: Insulation percentage of gross weight
   lengthUnit: 'feet' | 'inches';  // V6.2.4: Source unit (deterministic)
   unitSource: 'engineering_master';  // V6.2.4: Unit source metadata
+  // Phase 3H.19: DUAL COPPER MODEL - Wire length breakdown
+  usableWireLengthFeet: number;  // Usable length (Qty Per)
+  cutWireLengthFeet: number;     // Cut length (includes scrap)
+  scrapWireLengthFeet: number;  // Scrap = Cut - Usable
+  scrapPercent: number;          // Scrap as % of cut length
+  // Phase 3H.19: DUAL COPPER MODEL - Copper weight breakdown
+  netCopperWeight: number;       // From usable length
+  grossCopperWeight: number;    // From cut length
+  scrapCopperWeight: number;    // Gross - Net
 }
 
 /**
@@ -363,6 +400,25 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   // Phase 3H.18.1: Fix average - use component count, not qtyPer sum
   const avgWireLength = wireCount > 0 ? totalWireLength / wireCount : 0;
   
+  // Phase 3H.19: DUAL COPPER MODEL - Aggregate usable/cut/scrap lengths
+  const totalUsableFeet = wireRecords.reduce(
+    (sum, r) => sum + (r.usableLength || r.effectiveLength),
+    0
+  );
+  const totalCutFeet = wireRecords.reduce(
+    (sum, r) => sum + (r.cutLength || r.usableLength || r.effectiveLength),
+    0
+  );
+  const totalScrapFeet = Math.max(0, totalCutFeet - totalUsableFeet);
+  
+  // Convert to inches
+  const totalUsableInches = totalUsableFeet * unitFactor;
+  const totalCutInches = totalCutFeet * unitFactor;
+  const totalScrapInches = totalScrapFeet * unitFactor;
+  
+  // Phase 3H.19: Scrap percentage
+  const scrapPercent = totalCutFeet > 0 ? (totalScrapFeet / totalCutFeet) * 100 : 0;
+  
   // V6.2: STEP 5 - Length-weighted color distribution
   const colorBreakdown: Record<string, number> = {};
   wireRecords.forEach(r => {
@@ -406,10 +462,18 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   let estimatedInsulationWeight = 0;
   let estimatedGrossWeight = 0;
   
+  // Phase 3H.19: DUAL COPPER MODEL - Net/Gross/Scrap copper calculation
+  let netCopperWeight = 0;      // From usable length
+  let grossCopperWeight = 0;     // From cut length
+  
   // V6.4.4: Calibration-first calculation with derived insulation
   wireRecords.forEach(r => {
     const gauge = r.gauge || '';
     const lengthFeet = r.length * r.qtyPer;
+    // Phase 3H.19: Get usable and cut lengths for dual model
+    const usableLengthFeet = r.usableLength || r.effectiveLength;
+    const cutLengthFeet = r.cutLength || usableLengthFeet;
+    
     const calibration = CALIBRATION_CACHE[gauge];
     
     if (calibration) {
@@ -421,6 +485,10 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
       estimatedCopperWeight += copper;
       estimatedInsulationWeight += insulation;
       estimatedGrossWeight += gross;
+      
+      // Phase 3H.19: Calculate dual copper weights
+      netCopperWeight += usableLengthFeet * calibration.copperLbsPerFt;
+      grossCopperWeight += cutLengthFeet * calibration.copperLbsPerFt;
       
       // V6.4.4: Debug calibration usage
       if (lengthFeet > 0) {
@@ -451,6 +519,20 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   // V6.4: Calculate percentage metrics
   const copperPercent = estimatedGrossWeight > 0 ? estimatedCopperWeight / estimatedGrossWeight : 0;
   const insulationPercent = estimatedGrossWeight > 0 ? estimatedInsulationWeight / estimatedGrossWeight : 0;
+  
+  // Phase 3H.19: Calculate scrap copper weight
+  const scrapCopperWeight = Math.max(0, grossCopperWeight - netCopperWeight);
+  
+  // Phase 3H.19: Debug logging for dual copper model
+  console.log('[COPPER DUAL MODEL]', {
+    netFeet: totalUsableFeet,
+    grossFeet: totalCutFeet,
+    scrapFeet: totalScrapFeet,
+    netCopper: netCopperWeight,
+    grossCopper: grossCopperWeight,
+    scrapCopper: scrapCopperWeight,
+    scrapPercent
+  });
   
   // V6.2: STEP 8 - Operation step distribution (count-based, this is correct)
   const operationStepDistribution: Record<string, number> = {};
@@ -526,7 +608,16 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
     copperPercent,  // V6.4: Copper percentage
     insulationPercent,  // V6.4: Insulation percentage
     lengthUnit: sourceUnit,  // V6.2.4: Deterministic source unit
-    unitSource: 'engineering_master'  // V6.2.4: Unit source metadata
+    unitSource: 'engineering_master',  // V6.2.4: Unit source metadata
+    // Phase 3H.19: DUAL COPPER MODEL - Wire length breakdown
+    usableWireLengthFeet: totalUsableFeet,
+    cutWireLengthFeet: totalCutFeet,
+    scrapWireLengthFeet: totalScrapFeet,
+    scrapPercent,
+    // Phase 3H.19: DUAL COPPER MODEL - Copper weight breakdown
+    netCopperWeight,
+    grossCopperWeight,
+    scrapCopperWeight
   };
 }
 
