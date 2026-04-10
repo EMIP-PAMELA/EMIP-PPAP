@@ -172,8 +172,24 @@ interface NormalizedComponent {
  * Phase 3H.18.2: For wires, uses record.quantity (Qty Per) as canonical length,
  * NOT record.length which contains cut length with scrap.
  */
+// Phase 3H.21: Import gauge extraction utility
+import { extractGaugeFromPart } from '@/core/utils/wireUtils';
+
 function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent {
   const isWire = record.category === 'WIRE';
+  
+  // Phase 3H.21: Extract gauge from wire part number
+  const extractedGauge = isWire 
+    ? extractGaugeFromPart(record.component_part_number)
+    : null;
+  
+  // Phase 3H.21: Log gauge detection for wires
+  if (isWire) {
+    console.log('[WIRE GAUGE DETECTION]', {
+      part: record.component_part_number,
+      gauge: extractedGauge
+    });
+  }
   
   // Phase 3H.20: WIRE LENGTH SOURCE DETECTION
   // Different BOM formats store wire length in different fields:
@@ -270,7 +286,8 @@ function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent 
     length: usableLength,  // Phase 3H.20: Detected usable wire length
     quantity,
     qtyPer: qtyPerMultiplier,
-    gauge: record.gauge || null,
+    // Phase 3H.21: Use extracted gauge from part number, fallback to record.gauge
+    gauge: extractedGauge !== null ? String(extractedGauge) : (record.gauge || null),
     color: record.color || null,
     colorNormalized: record.normalizedcolor || record.color || 'UNKNOWN',
     category: record.category || null,  // Phase 3H.16.3: Pass category from DB

@@ -58,6 +58,7 @@ export const COPPER_FACTORS: Record<string, number> = {
 
 /**
  * Wire-level copper breakdown
+ * Phase 3H.21.1: weight can be null for unknown gauge
  */
 export interface WireCopperBreakdown {
   /** Wire gauge */
@@ -75,12 +76,13 @@ export interface WireCopperBreakdown {
   /** Quantity of wires */
   quantity: number;
   
-  /** Copper weight (pounds) */
-  weight: number;
+  /** Copper weight (pounds) — null if gauge unknown */
+  weight: number | null;
 }
 
 /**
  * SKU-level copper calculation result
+ * Phase 3H.21.1: totals can be null if calculation incomplete
  */
 export interface CopperCalculationResult {
   /** Part number */
@@ -89,14 +91,17 @@ export interface CopperCalculationResult {
   /** Revision */
   revision: string;
   
-  /** Total copper weight (pounds) */
-  totalCopperWeight: number;
+  /** Total copper weight (pounds) — null if any wire has unknown gauge */
+  totalCopperWeight: number | null;
   
   /** Wire-by-wire breakdown */
   wireBreakdown: WireCopperBreakdown[];
   
   /** Calculation timestamp */
   calculatedAt: string;
+  
+  /** Phase 3H.21.1: True if all wires had known gauge */
+  isComplete: boolean;
 }
 
 /**

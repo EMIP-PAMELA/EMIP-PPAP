@@ -92,14 +92,35 @@ export function calculateCopperForPart(
 
   const wireBreakdown: WireCopperBreakdown[] = [];
   let totalCopperWeight = 0;
+  let hasUnknownGauge = false;
 
   // Process each wire
   for (const wire of projection.wires) {
+    // Phase 3H.21: Enforce copper calculation guard
+    if (!wire.gauge) {
+      console.warn('[COPPER CALCULATION BLOCKED]', {
+        part: wire.partNumber,
+        reason: 'Gauge not detected'
+      });
+      hasUnknownGauge = true;
+      
+      // Add to breakdown with null weight for unknown gauge
+      wireBreakdown.push({
+        gauge: 'UNKNOWN',
+        color: wire.color,
+        partNumber: wire.partNumber,
+        totalLength: wire.length,
+        quantity: wire.quantity,
+        weight: null  // Phase 3H.21.1: null (not 0) for unknown gauge
+      });
+      continue;
+    }
+    
     const weight = calculateWireCopperWeight(wire);
 
     // Add to breakdown
     wireBreakdown.push({
-      gauge: wire.gauge || 'UNKNOWN',
+      gauge: wire.gauge,
       color: wire.color,
       partNumber: wire.partNumber,
       totalLength: wire.length,
@@ -109,18 +130,41 @@ export function calculateCopperForPart(
 
     totalCopperWeight += weight;
   }
+  
+  // Phase 3H.21.1: Determine completeness and final totals
+  const isComplete = !hasUnknownGauge;
+  
+  // Phase 3H.21.1: If incomplete, return null for totals (not underestimated values)
+  const finalCopperWeight = isComplete ? totalCopperWeight : null;
+  
+  // Phase 3H.21.1: Log completeness state
+  console.log('[COPPER COMPLETENESS]', {
+    partNumber: projection.partNumber,
+    isComplete,
+    hasUnknownGauge,
+    totalCopperWeight: isComplete ? totalCopperWeight : null
+  });
+  
+  // Phase 3H.21: If any wire has unknown gauge, mark copper weight as potentially incomplete
+  if (hasUnknownGauge) {
+    console.warn('[COPPER CALCULATION INCOMPLETE]', {
+      partNumber: projection.partNumber,
+      note: 'Some wires lack gauge detection — copper weight set to null'
+    });
+  }
 
   const result: CopperCalculationResult = {
     partNumber: projection.partNumber,
     revision: projection.revision,
-    totalCopperWeight,
+    totalCopperWeight: finalCopperWeight,  // Phase 3H.21.1: null if incomplete
     wireBreakdown,
-    calculatedAt: new Date().toISOString()
+    calculatedAt: new Date().toISOString(),
+    isComplete  // Phase 3H.21.1: Completeness flag
   };
 
   console.log('🧠 V5.4 COPPER CALCULATION', {
     partNumber: projection.partNumber,
-    totalCopperWeight,
+    totalCopperWeight: finalCopperWeight,
     wireCount: wireBreakdown.length,
     timestamp: result.calculatedAt
   });
