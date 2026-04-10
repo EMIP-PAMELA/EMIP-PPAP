@@ -26,7 +26,8 @@ import { fuseDrawingWithBOM } from '@/src/features/harness-work-instructions/ser
 import { resolveEndpoints } from '@/src/features/harness-work-instructions/services/endpointResolutionService';
 import { buildProcessInstructions } from '@/src/features/harness-work-instructions/services/processInstructionService';
 import type { ProcessInstructionBundle } from '@/src/features/harness-work-instructions/types/processInstructions';
-import { loadFusionHints } from '@/src/features/harness-work-instructions/services/learningService';
+import { loadFusionHints, persistLearningUsageEvents } from '@/src/features/harness-work-instructions/services/learningService';
+import type { FusionHints } from '@/src/features/harness-work-instructions/services/learningSignatures';
 
 interface ApprovalRecord {
   jobId: string;
@@ -57,12 +58,13 @@ export default function HarnessInstructionsPage() {
   const [drawing, setDrawing] = useState<CanonicalDrawingDraft | null>(null);
   const [uploadingDrawing, setUploadingDrawing] = useState(false);
   const [processInstructions, setProcessInstructions] = useState<ProcessInstructionBundle | null>(null);
+  const [fusionHints, setFusionHints] = useState<FusionHints | null>(null);
   const bomFileRef = useRef<HTMLInputElement>(null);
   const drawingFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!job) { setProcessInstructions(null); return; }
-    const bundle = buildProcessInstructions(job);
+    const bundle = buildProcessInstructions(job, fusionHints?.toolingOverrides, fusionHints ?? undefined);
     setProcessInstructions(bundle);
     console.log('[HWI PROCESS INSTRUCTIONS BUILT]', {
       komax: bundle.komax_setup.length,
@@ -70,7 +72,7 @@ export default function HarnessInstructionsPage() {
       assembly: bundle.assembly_instructions.length,
       notes: bundle.engineering_notes.length,
     });
-  }, [job]);
+  }, [job, fusionHints]);
 
   const isLocked = approvalRecord !== null;
 
@@ -169,6 +171,10 @@ export default function HarnessInstructionsPage() {
         const hints   = await loadFusionHints(json.drawing, job);
         const fused   = fuseDrawingWithBOM(json.drawing, job, hints);
         const resolved = resolveEndpoints(fused, json.drawing, hints);
+        await persistLearningUsageEvents(hints).catch(err =>
+          console.warn('[HWI LEARNING] persist usage events failed (drawing upload)', err)
+        );
+        setFusionHints(hints);
         setJob(resolved);
         setFlags(resolved.engineering_flags);
         console.log('[HWI UI FUSION APPLIED]',     { source: 'drawing_upload', wires: resolved.wire_instances.length });
@@ -204,8 +210,14 @@ export default function HarnessInstructionsPage() {
         const hints = await loadFusionHints(drawing, baseJob);
         const fused = fuseDrawingWithBOM(drawing, baseJob, hints);
         finalJob    = resolveEndpoints(fused, drawing, hints);
+        await persistLearningUsageEvents(hints).catch(err =>
+          console.warn('[HWI LEARNING] persist usage events failed (bom upload)', err)
+        );
+        setFusionHints(hints);
         console.log('[HWI UI FUSION APPLIED]',    { source: 'bom_upload', wires: finalJob.wire_instances.length });
         console.log('[HWI UI ENDPOINTS APPLIED]', { pinMapRows: finalJob.pin_map_rows.length });
+      } else {
+        setFusionHints(null);
       }
       setJob(finalJob);
       setFlags(finalJob.engineering_flags ?? []);

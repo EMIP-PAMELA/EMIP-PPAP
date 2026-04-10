@@ -28,8 +28,8 @@ import type {
   EndTerminal,
 } from '../types/harnessInstruction.schema';
 import type { CanonicalDrawingDraft, DraftWireRow } from '../types/drawingDraft';
-import type { FusionHints, WireMatchDecision } from './learningSignatures';
-import { buildWireMatchSignature } from './learningSignatures';
+import type { FusionHints, LearnedDecision, WireMatchDecision } from './learningSignatures';
+import { buildWireMatchSignature, trackLearningEvent } from './learningSignatures';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -179,10 +179,11 @@ function matchDrawingRow(row: DraftWireRow, bomTypes: BomWireType[]): MatchResul
 // ---------------------------------------------------------------------------
 
 function buildFusedWireInstances(
-  wire_rows:          DraftWireRow[],
-  bomTypes:           BomWireType[],
-  flags:              EngineeringFlag[],
-  wireMatchOverrides?: Map<string, WireMatchDecision>,
+  wire_rows:             DraftWireRow[],
+  bomTypes:              BomWireType[],
+  flags:                 EngineeringFlag[],
+  wireMatchOverrides?:   Map<string, LearnedDecision<WireMatchDecision>>,  // eslint-disable-line @typescript-eslint/no-use-before-define
+  hints?:                FusionHints,
 ): WireInstance[] {
   const wires: WireInstance[] = [];
 
@@ -193,6 +194,7 @@ function buildFusedWireInstances(
     const wireId = row.wire_id
       ? String(row.wire_id)
       : `DW${String(idx + 1).padStart(3, '0')}`;
+    let learnedApplied = false;
 
     // Apply wire-match learning override if available (before normal scoring)
     let match: MatchResult;
@@ -200,16 +202,57 @@ function buildFusedWireInstances(
       const sig     = buildWireMatchSignature(row.gauge, row.color, row.length);
       const learned = wireMatchOverrides.get(sig);
       if (learned) {
+        let conflict = false;
+        // Conflict rule: gauge mismatch or explicit color mismatch
+        if (row.gauge && learned.decision.gauge && row.gauge.trim().toUpperCase() !== learned.decision.gauge) {
+          conflict = true;
+        }
+        if (!conflict && row.color && learned.decision.color && row.color.trim().toUpperCase() !== learned.decision.color) {
+          conflict = true;
+        }
+
         const bt = bomTypes.find(
-          b => b.gauge === learned.gauge && b.color === learned.color && b.assigned < b.qty
+          b => b.gauge === learned.decision.gauge && b.color === learned.decision.color && b.assigned < b.qty
         );
-        if (bt) {
+        const nextConflictCount = (learned.conflict_count ?? 0) + 1;
+
+        if (!conflict && bt) {
           bt.assigned += 1;
           match = { bomType: bt, score: 4, confidence: 'HIGH' };
+          learnedApplied = true;
+          trackLearningEvent(hints, { context_type: 'WIRE_MATCH', signature: sig, outcome: 'USED' });
           console.log('[HWI LEARNING APPLIED]', { context_type: 'WIRE_MATCH', signature: sig, wire_id: wireId });
         } else {
-          console.log('[HWI LEARNING SKIPPED]', { reason: 'learned_bom_type_exhausted', signature: sig, wire_id: wireId });
           match = matchDrawingRow(row, bomTypes);
+          const outcome = conflict ? 'CONFLICT' : 'OVERRIDDEN';
+          trackLearningEvent(hints, { context_type: 'WIRE_MATCH', signature: sig, outcome });
+          if (conflict) {
+            flags.push(mkJobFlag(
+              'review_required',
+              `Wire ${wireId}: learned wire match ${sig} conflicts with drawing data — verify gauge/color`,
+              `wire_instances.${idx}`,
+            ));
+            console.warn('[HWI LEARNING CONFLICT]', { context_type: 'WIRE_MATCH', signature: sig, wire_id: wireId });
+
+            match.confidence = nextConflictCount > 3 ? 'LOW' : 'MEDIUM';
+            if (match.confidence === 'LOW') {
+              flags.push(mkJobFlag(
+                'review_required',
+                `Wire ${wireId}: learned wire match ${sig} repeatedly conflicted — treat attribution as LOW confidence`,
+                `wire_instances.${idx}`,
+              ));
+              console.warn('[HWI LEARNING DEGRADED]', { context_type: 'WIRE_MATCH', signature: sig, wire_id: wireId });
+            }
+            if (nextConflictCount > (learned.usage_count ?? 0)) {
+              flags.push(mkJobFlag(
+                'warning',
+                `Wire ${wireId}: learned wire match ${sig} appears unstable — review recommended`,
+                `wire_instances.${idx}`,
+              ));
+            }
+          } else {
+            console.log('[HWI LEARNING SKIPPED]', { reason: 'learned_bom_type_exhausted', signature: sig, wire_id: wireId });
+          }
         }
       } else {
         match = matchDrawingRow(row, bomTypes);
@@ -256,7 +299,7 @@ function buildFusedWireInstances(
       end_b:                NULL_TERMINAL,
       match_confidence:     match.confidence,
       provenance: {
-        source_type: 'drawing',
+        source_type: learnedApplied ? 'learned' : 'drawing',
         confidence:  Math.min(match.score / 4, 1),
         note: bom
           ? `BOM match: ${bom.gauge}AWG ${bom.color} → ${bom.aci_wire_part_number}`
@@ -396,7 +439,13 @@ export function fuseDrawingWithBOM(
   const fusionFlags: EngineeringFlag[] = [];
   const bomTypes = buildBomTypeIndex(job.wire_instances);
 
-  const fusedWires = buildFusedWireInstances(drawing.wire_rows, bomTypes, fusionFlags, hints?.wireMatchOverrides);
+  const fusedWires = buildFusedWireInstances(
+    drawing.wire_rows,
+    bomTypes,
+    fusionFlags,
+    hints?.wireMatchOverrides,
+    hints,
+  );
 
   validateQuantities(fusedWires, job.wire_instances, bomTypes, fusionFlags);
 

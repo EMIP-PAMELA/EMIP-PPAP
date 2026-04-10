@@ -46,21 +46,53 @@ export interface ToolingDecision {
   hand_tool_ref: string | null;
 }
 
+export interface LearnedDecision<TDecision> {
+  decision:        TDecision;
+  confidence:      number;
+  usage_count:     number;
+  conflict_count:  number;
+}
+
+export type LearningOutcome = 'USED' | 'CONFLICT' | 'OVERRIDDEN';
+
+export interface LearningUsageEvent {
+  context_type: ContextType;
+  signature:    string;
+  outcome:      LearningOutcome;
+}
+
 // ---------------------------------------------------------------------------
 // FusionHints — pre-fetched learning data, passed to sync services
 // ---------------------------------------------------------------------------
 
 export interface FusionHints {
-  wireMatchOverrides: Map<string, WireMatchDecision>;
-  endpointOverrides:  Map<string, EndpointDecision>;
-  toolingOverrides:   Map<string, ToolingDecision>;
+  wireMatchOverrides: Map<string, LearnedDecision<WireMatchDecision>>;
+  endpointOverrides:  Map<string, LearnedDecision<EndpointDecision>>;
+  toolingOverrides:   Map<string, LearnedDecision<ToolingDecision>>;
+  usageEvents:        LearningUsageEvent[];
 }
 
-export const EMPTY_FUSION_HINTS: FusionHints = {
-  wireMatchOverrides: new Map(),
-  endpointOverrides:  new Map(),
-  toolingOverrides:   new Map(),
-};
+export function createEmptyFusionHints(): FusionHints {
+  return {
+    wireMatchOverrides: new Map(),
+    endpointOverrides:  new Map(),
+    toolingOverrides:   new Map(),
+    usageEvents:        [],
+  };
+}
+
+export const EMPTY_FUSION_HINTS: FusionHints = createEmptyFusionHints();
+
+export function trackLearningEvent(hints: FusionHints | undefined, event: LearningUsageEvent): void {
+  if (!hints) return;
+  hints.usageEvents.push(event);
+  if (event.outcome === 'OVERRIDDEN') {
+    console.warn('[HWI LEARNING OVERRIDE]', {
+      context_type: event.context_type,
+      signature:    event.signature,
+    });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers

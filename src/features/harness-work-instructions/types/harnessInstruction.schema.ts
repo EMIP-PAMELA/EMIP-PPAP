@@ -16,7 +16,7 @@ import { z } from 'zod';
 // ---------------------------------------------------------------------------
 
 export const ProvenanceSchema = z.strictObject({
-  source_type: z.enum(['drawing', 'bom', 'derived', 'manual']),
+  source_type: z.enum(['drawing', 'bom', 'derived', 'manual', 'learned']),
   source_ref: z.string().optional(),
   confidence: z.number().min(0).max(1),
   note: z.string().optional(),

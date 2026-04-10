@@ -28,8 +28,8 @@ import type {
   KomaxRow,
   EngineeringFlag,
 } from '../types/harnessInstruction.schema';
-import type { ToolingDecision } from './learningSignatures';
-import { buildToolingSignature } from './learningSignatures';
+import type { ToolingDecision, FusionHints, LearnedDecision } from './learningSignatures';
+import { buildToolingSignature, trackLearningEvent } from './learningSignatures';
 import type {
   ProcessInstructionBundle,
   KomaxSetupEntry,
@@ -194,7 +194,8 @@ function buildKomaxSetup(job: HarnessInstructionJob): KomaxSetupEntry[] {
 
 function buildPressSetup(
   job:             HarnessInstructionJob,
-  toolingOverrides?: Map<string, ToolingDecision>,
+  toolingOverrides?: Map<string, LearnedDecision<ToolingDecision>>,
+  hints?:           FusionHints,
 ): PressSetupEntry[] {
   const wireMap = new Map(job.wire_instances.map(w => [w.wire_id, w]));
   const entries: PressSetupEntry[] = [];
@@ -205,12 +206,28 @@ function buildPressSetup(
 
     // Apply learned tooling override if applicator is missing
     let resolvedApplicator = pr.applicator_id;
+    let usedLearnedTooling = false;
     if (!resolvedApplicator && toolingOverrides?.size) {
       const sig     = buildToolingSignature(pr.terminal_part_number, 'PRESS');
       const learned = toolingOverrides.get(sig);
-      if (learned?.applicator_id) {
-        resolvedApplicator = learned.applicator_id;
-        console.log('[HWI LEARNING APPLIED]', { context_type: 'TOOLING', signature: sig, press_id: pr.press_id });
+      if (learned?.decision.applicator_id) {
+        if (pr.applicator_id && pr.applicator_id !== learned.decision.applicator_id) {
+          trackLearningEvent(hints, { context_type: 'TOOLING', signature: sig, outcome: 'CONFLICT' });
+          flags.push('[REVIEW_REQUIRED] Learned tooling conflicts with BOM-provided applicator — verify selection');
+          const nextConflictCount = (learned.conflict_count ?? 0) + 1;
+          if (nextConflictCount > 3) {
+            flags.push('[REVIEW_REQUIRED] Learned tooling entry is degraded — treat as LOW confidence');
+            console.warn('[HWI LEARNING DEGRADED]', { context_type: 'TOOLING', signature: sig, press_id: pr.press_id });
+          }
+          if (nextConflictCount > (learned.usage_count ?? 0)) {
+            flags.push('[WARNING] Learned tooling pattern appears unstable — review recommended');
+          }
+        } else {
+          resolvedApplicator = learned.decision.applicator_id;
+          usedLearnedTooling = true;
+          trackLearningEvent(hints, { context_type: 'TOOLING', signature: sig, outcome: 'USED' });
+          console.log('[HWI LEARNING APPLIED]', { context_type: 'TOOLING', signature: sig, press_id: pr.press_id });
+        }
       }
     }
 
@@ -228,6 +245,10 @@ function buildPressSetup(
     const stepWithWire = job.assembly_steps.find(s => s.wire_ids.includes(pr.wire_id));
     const handTools    = stepWithWire ? extractHandToolsFromText(stepWithWire.instruction) : [];
 
+    const provenance = usedLearnedTooling
+      ? { ...pr.provenance, source_type: 'learned' as const, note: 'Learned tooling applied' }
+      : pr.provenance;
+
     entries.push({
       press_id:             pr.press_id,
       wire_id:              pr.wire_id,
@@ -237,9 +258,9 @@ function buildPressSetup(
       applicator_id:        resolvedApplicator,
       hand_tool_ref:        handTools[0] ?? null,
       strip_length:         wire?.strip_end_a ?? null,
-      source:               pr.provenance.note ?? 'BOM_DERIVED',
+      source:               usedLearnedTooling ? 'LEARNED' : (pr.provenance.note ?? 'BOM_DERIVED'),
       flags,
-      provenance:           pr.provenance,
+      provenance,
     });
   }
 
@@ -397,10 +418,11 @@ function buildEngineeringNotes(
 
 export function buildProcessInstructions(
   job:             HarnessInstructionJob,
-  toolingOverrides?: Map<string, ToolingDecision>,
+  toolingOverrides?: Map<string, LearnedDecision<ToolingDecision>>,
+  hints?:           FusionHints,
 ): ProcessInstructionBundle {
   const komax_setup           = buildKomaxSetup(job);
-  const press_setup           = buildPressSetup(job, toolingOverrides);
+  const press_setup           = buildPressSetup(job, toolingOverrides, hints);
   const assembly_instructions = buildAssemblyInstructions(job);
   const engineering_notes     = buildEngineeringNotes(job, komax_setup, press_setup);
 
@@ -414,12 +436,9 @@ export function buildProcessInstructions(
     press_setup:           press_setup.length,
     assembly_instructions: assembly_instructions.length,
     engineering_notes:     engineering_notes.length,
-    all_komax_terminated,
-    has_manual_press,
-    timestamp:             new Date().toISOString(),
   });
 
-  return {
+  const bundle: ProcessInstructionBundle = {
     generated_at:          new Date().toISOString(),
     komax_setup,
     press_setup,
@@ -428,4 +447,6 @@ export function buildProcessInstructions(
     all_komax_terminated,
     has_manual_press,
   };
+
+  return bundle;
 }

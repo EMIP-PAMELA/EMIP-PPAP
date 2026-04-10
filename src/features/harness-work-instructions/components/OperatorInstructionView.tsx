@@ -118,6 +118,7 @@ function provenanceTag(sourceType: string): string {
     case 'drawing': return '📐 Drawing';
     case 'derived': return '🧠 Derived';
     case 'manual':  return '✏️ Manual';
+    case 'learned': return '🧠 Learned';
     default:        return '❓';
   }
 }

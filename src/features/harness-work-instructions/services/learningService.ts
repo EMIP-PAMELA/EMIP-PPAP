@@ -26,6 +26,17 @@ import {
   buildEndpointSignature,
   buildToolingSignature,
   EMPTY_FUSION_HINTS,
+  createEmptyFusionHints,
+  trackLearningEvent,
+} from './learningSignatures';
+import type {
+  FusionHints,
+  WireMatchDecision,
+  EndpointDecision,
+  ToolingDecision,
+  LearnedDecision,
+  LearningUsageEvent,
+  ContextType,
 } from './learningSignatures';
 
 // Re-export everything from signatures so callers only need one import
@@ -36,12 +47,14 @@ export * from './learningSignatures';
 // ---------------------------------------------------------------------------
 
 interface ResolutionRow {
-  context_type:      string;
+  context_type:      ContextType;
   context_signature: string;
   decision:          Record<string, unknown>;
   confidence:        number;
   source:            string;
   created_at:        string;
+  usage_count?:      number;
+  conflict_count?:   number;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,7 +62,7 @@ interface ResolutionRow {
 // ---------------------------------------------------------------------------
 
 export async function storeResolution(
-  contextType: string,
+  contextType: ContextType,
   signature:   string,
   decision:    Record<string, unknown>,
   confidence   = 1.0,
@@ -64,6 +77,8 @@ export async function storeResolution(
         confidence,
         source:            'MANUAL_APPROVED',
         created_at:        new Date().toISOString(),
+        usage_count:       0,
+        conflict_count:    0,
       },
       { onConflict: 'context_type,context_signature' },
     );
@@ -81,12 +96,12 @@ export async function storeResolution(
 // ---------------------------------------------------------------------------
 
 export async function lookupResolution(
-  contextType: string,
+  contextType: ContextType,
   signature:   string,
-): Promise<Record<string, unknown> | null> {
+): Promise<LearnedDecision<Record<string, unknown>> | null> {
   const { data, error } = await supabase
     .from('hwi_resolution_memory')
-    .select('decision')
+    .select('decision, confidence, usage_count, conflict_count')
     .eq('context_type', contextType)
     .eq('context_signature', signature)
     .order('confidence', { ascending: false })
@@ -94,7 +109,12 @@ export async function lookupResolution(
     .maybeSingle();
 
   if (error || !data) return null;
-  return data.decision as Record<string, unknown>;
+  return {
+    decision:       data.decision as Record<string, unknown>,
+    confidence:     data.confidence ?? 1,
+    usage_count:    data.usage_count ?? 0,
+    conflict_count: data.conflict_count ?? 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -103,8 +123,6 @@ export async function lookupResolution(
 // Called BEFORE fuseDrawingWithBOM + resolveEndpoints in page.tsx.
 // Returns EMPTY_FUSION_HINTS on any failure — never throws.
 // ---------------------------------------------------------------------------
-
-import type { FusionHints, WireMatchDecision, EndpointDecision, ToolingDecision } from './learningSignatures';
 
 export async function loadFusionHints(
   drawing: CanonicalDrawingDraft,
@@ -122,32 +140,57 @@ export async function loadFusionHints(
     }
 
     const allSigs = [...sigSet];
-    if (allSigs.length === 0) return EMPTY_FUSION_HINTS;
+    if (allSigs.length === 0) return createEmptyFusionHints();
 
     const { data, error } = await supabase
       .from('hwi_resolution_memory')
-      .select('context_type, context_signature, decision')
+      .select('context_type, context_signature, decision, confidence, usage_count, conflict_count')
       .in('context_signature', allSigs);
 
     if (error || !data || data.length === 0) {
       if (error) console.warn('[HWI LEARNING] loadFusionHints failed (non-fatal):', error.message);
-      return EMPTY_FUSION_HINTS;
+      return createEmptyFusionHints();
     }
 
-    const wireMatchOverrides = new Map<string, WireMatchDecision>();
-    const endpointOverrides  = new Map<string, EndpointDecision>();
-    const toolingOverrides   = new Map<string, ToolingDecision>();
+    const wireMatchOverrides = new Map<string, LearnedDecision<WireMatchDecision>>();
+    const endpointOverrides  = new Map<string, LearnedDecision<EndpointDecision>>();
+    const toolingOverrides   = new Map<string, LearnedDecision<ToolingDecision>>();
 
     for (const row of data) {
+      const learnedRow: LearnedDecision<any> = {
+        decision:       row.decision as Record<string, unknown>,
+        confidence:     row.confidence ?? 1,
+        usage_count:    row.usage_count ?? 0,
+        conflict_count: row.conflict_count ?? 0,
+      };
+      if (learnedRow.conflict_count > learnedRow.usage_count) {
+        console.warn('[HWI LEARNING SKIPPED]', {
+          reason:       'unstable_pattern',
+          context_type: row.context_type,
+          signature:    row.context_signature,
+          usage:        learnedRow.usage_count,
+          conflicts:    learnedRow.conflict_count,
+        });
+        continue;
+      }
       switch (row.context_type) {
         case 'WIRE_MATCH':
-          wireMatchOverrides.set(row.context_signature, row.decision as WireMatchDecision);
+          wireMatchOverrides.set(
+            row.context_signature,
+            learnedRow as LearnedDecision<WireMatchDecision>,
+          );
           break;
         case 'ENDPOINT':
-          endpointOverrides.set(row.context_signature, row.decision as EndpointDecision);
+          endpointOverrides.set(
+            row.context_signature,
+            learnedRow as LearnedDecision<EndpointDecision>,
+          );
           break;
         case 'TOOLING':
-          toolingOverrides.set(row.context_signature, row.decision as ToolingDecision);
+          toolingOverrides.set(
+            row.context_signature,
+            learnedRow as LearnedDecision<ToolingDecision>,
+          );
           break;
       }
     }
@@ -159,12 +202,12 @@ export async function loadFusionHints(
       tooling:       toolingOverrides.size,
     });
 
-    return { wireMatchOverrides, endpointOverrides, toolingOverrides };
+    return { wireMatchOverrides, endpointOverrides, toolingOverrides, usageEvents: [] };
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn('[HWI LEARNING] loadFusionHints exception (non-fatal):', msg);
-    return EMPTY_FUSION_HINTS;
+    return createEmptyFusionHints();
   }
 }
 
@@ -197,6 +240,8 @@ export async function learnFromApprovedJob(job: HarnessInstructionJob): Promise<
       confidence:        1.0,
       source:            'MANUAL_APPROVED',
       created_at:        now,
+      usage_count:       0,
+      conflict_count:    0,
     });
   }
 
@@ -217,6 +262,8 @@ export async function learnFromApprovedJob(job: HarnessInstructionJob): Promise<
         confidence:  1.0,
         source:      'MANUAL_APPROVED',
         created_at:  now,
+        usage_count: 0,
+        conflict_count: 0,
       });
     }
 
@@ -233,6 +280,8 @@ export async function learnFromApprovedJob(job: HarnessInstructionJob): Promise<
         confidence:  1.0,
         source:      'MANUAL_APPROVED',
         created_at:  now,
+        usage_count: 0,
+        conflict_count: 0,
       });
     }
   }
@@ -249,6 +298,8 @@ export async function learnFromApprovedJob(job: HarnessInstructionJob): Promise<
       confidence:  1.0,
       source:      'MANUAL_APPROVED',
       created_at:  now,
+      usage_count: 0,
+      conflict_count: 0,
     });
   }
 
@@ -289,4 +340,116 @@ export async function learnFromApprovedJob(job: HarnessInstructionJob): Promise<
     endpoints:    deduped.filter(r => r.context_type === 'ENDPOINT').length,
     tooling:      deduped.filter(r => r.context_type === 'TOOLING').length,
   });
+}
+
+// ---------------------------------------------------------------------------
+// persistLearningUsageEvents — flushes tracked usage/conflict deltas to Supabase
+// ---------------------------------------------------------------------------
+
+interface UsageMutation {
+  context_type:   ContextType;
+  signature:      string;
+  usage_delta:    number;
+  conflict_delta: number;
+  last_used_at?:  string;
+}
+
+function getMapForContext(
+  hints: FusionHints,
+  context: ContextType,
+): Map<string, LearnedDecision<any>> {
+  switch (context) {
+    case 'WIRE_MATCH':
+      return hints.wireMatchOverrides as Map<string, LearnedDecision<any>>;
+    case 'ENDPOINT':
+      return hints.endpointOverrides as Map<string, LearnedDecision<any>>;
+    case 'TOOLING':
+      return hints.toolingOverrides as Map<string, LearnedDecision<any>>;
+    case 'TERMINAL':
+    default:
+      return new Map();
+  }
+}
+
+export async function persistLearningUsageEvents(hints?: FusionHints): Promise<void> {
+  if (!hints || hints.usageEvents.length === 0) return;
+
+  const grouped = new Map<string, UsageMutation>();
+  const now     = new Date().toISOString();
+
+  for (const event of hints.usageEvents) {
+    const key = `${event.context_type}::${event.signature}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        context_type:   event.context_type,
+        signature:      event.signature,
+        usage_delta:    0,
+        conflict_delta: 0,
+      });
+    }
+    const mutation = grouped.get(key)!;
+    if (event.outcome === 'USED') {
+      mutation.usage_delta += 1;
+      mutation.last_used_at = now;
+    } else if (event.outcome === 'CONFLICT' || event.outcome === 'OVERRIDDEN') {
+      mutation.conflict_delta += 1;
+    }
+  }
+
+  for (const mutation of grouped.values()) {
+    const sourceMap = getMapForContext(hints, mutation.context_type);
+    const learned   = sourceMap.get(mutation.signature);
+    const currentUsage    = learned?.usage_count ?? 0;
+    const currentConflict = learned?.conflict_count ?? 0;
+
+    const nextUsage    = currentUsage + mutation.usage_delta;
+    const nextConflict = currentConflict + mutation.conflict_delta;
+
+    const payload: Record<string, unknown> = {};
+    if (mutation.usage_delta > 0) {
+      payload.usage_count = nextUsage;
+      payload.last_used_at = mutation.last_used_at ?? now;
+    }
+    if (mutation.conflict_delta > 0) {
+      payload.conflict_count = nextConflict;
+    }
+
+    if (Object.keys(payload).length === 0) {
+      continue;
+    }
+
+    const { error } = await supabase
+      .from('hwi_resolution_memory')
+      .update(payload)
+      .eq('context_type', mutation.context_type)
+      .eq('context_signature', mutation.signature);
+
+    if (error) {
+      console.warn('[HWI LEARNING] persistLearningUsageEvents failed', {
+        context_type: mutation.context_type,
+        signature:    mutation.signature,
+        error:        error.message,
+      });
+      continue;
+    }
+
+    if (mutation.usage_delta > 0) {
+      console.log('[HWI LEARNING USED]', {
+        context_type: mutation.context_type,
+        signature:    mutation.signature,
+        usage_count:  nextUsage,
+      });
+      if (learned) learned.usage_count = nextUsage;
+    }
+    if (mutation.conflict_delta > 0) {
+      console.warn('[HWI LEARNING CONFLICT]', {
+        context_type: mutation.context_type,
+        signature:    mutation.signature,
+        conflict_count: nextConflict,
+      });
+      if (learned) learned.conflict_count = nextConflict;
+    }
+  }
+
+  hints.usageEvents = [];
 }

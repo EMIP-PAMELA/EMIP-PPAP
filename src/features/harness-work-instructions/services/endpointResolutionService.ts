@@ -26,8 +26,8 @@ import type {
   Provenance,
 } from '../types/harnessInstruction.schema';
 import type { CanonicalDrawingDraft, DraftWireRow } from '../types/drawingDraft';
-import type { FusionHints, EndpointDecision } from './learningSignatures';
-import { buildEndpointSignature } from './learningSignatures';
+import type { FusionHints, EndpointDecision, LearnedDecision } from './learningSignatures';
+import { buildEndpointSignature, trackLearningEvent } from './learningSignatures';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -40,6 +40,7 @@ interface ResolvedEndpoints {
   end_b:      EndTerminal;
   level:      EndpointResolutionLevel;
   confidence: number; // 0–1
+  usedLearned: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +133,9 @@ function computeWireEndpoints(
   wire:              WireInstance,
   row:               DraftWireRow | null,
   termIdx:           TerminalIndex,
-  endpointOverride?: EndpointDecision,
+  endpointOverride?: LearnedDecision<EndpointDecision>,
+  hints?:            FusionHints,
+  signature?:        string,
 ): ResolvedEndpoints {
   const NULL_END: EndTerminal = {
     connector_id:         null,
@@ -143,26 +146,28 @@ function computeWireEndpoints(
 
   // Apply learned endpoint override if available (replaces missing drawing data)
   if (endpointOverride && !row?.connector_a) {
+    const decision = endpointOverride.decision;
     const end_a: EndTerminal = {
-      connector_id:         endpointOverride.connector_id,
-      cavity:               endpointOverride.cavity,
-      terminal_part_number: endpointOverride.terminal_part_number,
+      connector_id:         decision.connector_id,
+      cavity:               decision.cavity,
+      terminal_part_number: decision.terminal_part_number,
       seal_part_number:     null,
     };
     const aScore = (end_a.connector_id ? 3 : 0) + (end_a.cavity ? 2 : 0) + (end_a.terminal_part_number ? 1 : 0);
     const confidence = Math.min(aScore / 6, 1);
     const level: EndpointResolutionLevel = aScore >= 3 ? 'PARTIAL_A' : 'NONE';
+    if (signature) trackLearningEvent(hints, { context_type: 'ENDPOINT', signature, outcome: 'USED' });
     console.log('[HWI LEARNING APPLIED]', {
       context_type: 'ENDPOINT',
       wire_id:      wire.wire_id,
       connector:    end_a.connector_id,
       cavity:       end_a.cavity,
     });
-    return { end_a, end_b: NULL_END, level, confidence };
+    return { end_a, end_b: NULL_END, level, confidence, usedLearned: true };
   }
 
   if (!row) {
-    return { end_a: NULL_END, end_b: NULL_END, level: 'NONE', confidence: 0 };
+    return { end_a: NULL_END, end_b: NULL_END, level: 'NONE', confidence: 0, usedLearned: false };
   }
 
   const fallbackTerminal = pickTerminalForWire(wire, termIdx);
@@ -198,7 +203,7 @@ function computeWireEndpoints(
 
   const confidence = Math.min((aScore + bScore) / 12, 1);
 
-  return { end_a, end_b, level, confidence };
+  return { end_a, end_b, level, confidence, usedLearned: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +219,7 @@ function buildPinMapRows(
 ): PinMapRow[] {
   const rows: PinMapRow[] = [];
   const prov: Provenance = {
-    source_type: 'drawing',
+    source_type: endpoints.usedLearned ? 'learned' : 'drawing',
     confidence:  endpoints.confidence,
     note:        'Resolved from drawing wire row endpoint fields',
   };
@@ -345,9 +350,50 @@ export function resolveEndpoints(
     const drawingRow   = row;
     const connHint     = drawingRow?.connector_a ?? null;
     const labelHint    = drawingRow?.wire_label ?? wire.wire_id;
-    const learnedEndpt = endpointOverrides?.get(buildEndpointSignature(labelHint, connHint));
+    const sig         = buildEndpointSignature(labelHint, connHint);
+    const learnedEndpt = endpointOverrides?.get(sig);
 
-    const endpoints = computeWireEndpoints(wire, row, termIndex, learnedEndpt);
+    let endpoints: ResolvedEndpoints;
+    if (learnedEndpt) {
+      let conflict = false;
+      if (row?.connector_a && learnedEndpt.decision.connector_id && row.connector_a !== learnedEndpt.decision.connector_id) {
+        conflict = true;
+      }
+      if (!conflict && row?.cavity_a && learnedEndpt.decision.cavity && row.cavity_a !== learnedEndpt.decision.cavity) {
+        conflict = true;
+      }
+      const nextConflictCount = (learnedEndpt.conflict_count ?? 0) + 1;
+
+      if (conflict) {
+        trackLearningEvent(hints, { context_type: 'ENDPOINT', signature: sig, outcome: 'CONFLICT' });
+        newFlags.push(mkFlag(
+          'review_required',
+          `Wire ${wire.wire_id}: learned endpoint ${sig} conflicts with drawing data — verify connector/cavity`,
+          `wire_instances.${idx}`,
+        ));
+        if (nextConflictCount > 3) {
+          newFlags.push(mkFlag(
+            'review_required',
+            `Wire ${wire.wire_id}: learned endpoint ${sig} repeatedly conflicted — treat as LOW confidence`,
+            `wire_instances.${idx}`,
+          ));
+          console.warn('[HWI LEARNING DEGRADED]', { context_type: 'ENDPOINT', signature: sig, wire_id: wire.wire_id });
+        }
+        if (nextConflictCount > (learnedEndpt.usage_count ?? 0)) {
+          newFlags.push(mkFlag(
+            'warning',
+            `Wire ${wire.wire_id}: learned endpoint ${sig} appears unstable — review recommended`,
+            `wire_instances.${idx}`,
+          ));
+        }
+        endpoints = computeWireEndpoints(wire, row, termIndex, undefined, hints);
+      } else {
+        endpoints = computeWireEndpoints(wire, row, termIndex, learnedEndpt, hints, sig);
+      }
+    } else {
+      endpoints = computeWireEndpoints(wire, row, termIndex, undefined, hints);
+    }
+
     const pinRows   = buildPinMapRows(wire, endpoints);
 
     newPinMapRows.push(...pinRows);
@@ -362,14 +408,20 @@ export function resolveEndpoints(
       confidence:        endpoints.confidence,
     });
 
+    const provenance = {
+      ...wire.provenance,
+      confidence: Math.max(wire.provenance.confidence, endpoints.confidence),
+    };
+    if (endpoints.usedLearned) {
+      provenance.source_type = 'learned';
+      provenance.note = 'Learned endpoint applied';
+    }
+
     return {
       ...wire,
       end_a: endpoints.end_a,
       end_b: endpoints.end_b,
-      provenance: {
-        ...wire.provenance,
-        confidence: Math.max(wire.provenance.confidence, endpoints.confidence),
-      },
+      provenance,
     };
   });
 
