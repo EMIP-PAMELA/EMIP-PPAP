@@ -213,11 +213,23 @@ export default function ReviewTabs({
         {/* Pin Map */}
         {activeTab === 'pinmap' && (
           <ReadOnlyTable
-            headers={['PM ID', 'Connector ID', 'Cavity', 'Wire ID', 'Terminal P/N']}
-            rows={job.pin_map_rows.map(r => [
-              r.pin_map_id, r.connector_id, r.cavity, r.wire_id, r.terminal_part_number,
-            ])}
-            emptyMsg="No pin map rows extracted"
+            headers={['PM ID', 'Connector', 'Cavity', 'Wire ID', 'Gauge', 'Color', 'Terminal P/N', 'Confidence']}
+            rows={job.pin_map_rows.map(r => {
+              const wire = job.wire_instances.find(w => w.wire_id === r.wire_id);
+              return [
+                r.pin_map_id,
+                r.connector_id,
+                r.cavity,
+                r.wire_id,
+                wire ? String(wire.gauge) : null,
+                wire?.color ?? null,
+                r.terminal_part_number,
+                r.provenance.confidence != null
+                  ? `${Math.round(r.provenance.confidence * 100)}%`
+                  : null,
+              ];
+            })}
+            emptyMsg="No pin map rows — upload a structured drawing to resolve endpoints"
           />
         )}
 

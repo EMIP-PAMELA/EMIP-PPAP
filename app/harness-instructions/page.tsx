@@ -23,6 +23,7 @@ import type {
 } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
 import type { CanonicalDrawingDraft } from '@/src/features/harness-work-instructions/types/drawingDraft';
 import { fuseDrawingWithBOM } from '@/src/features/harness-work-instructions/services/drawingFusionService';
+import { resolveEndpoints } from '@/src/features/harness-work-instructions/services/endpointResolutionService';
 
 interface ApprovalRecord {
   jobId: string;
@@ -147,12 +148,14 @@ export default function HarnessInstructionsPage() {
         wireRows: json.drawing.wire_rows.length,
         flags: json.drawing.flags.length,
       });
-      // If a BOM job is already loaded, fuse immediately
+      // If a BOM job is already loaded, fuse + resolve endpoints immediately
       if (job && json.drawing.wire_rows.length > 0) {
-        const fused = fuseDrawingWithBOM(json.drawing, job);
-        setJob(fused);
-        setFlags(fused.engineering_flags);
-        console.log('[HWI UI FUSION APPLIED]', { source: 'drawing_upload', wires: fused.wire_instances.length });
+        const fused   = fuseDrawingWithBOM(json.drawing, job);
+        const resolved = resolveEndpoints(fused, json.drawing);
+        setJob(resolved);
+        setFlags(resolved.engineering_flags);
+        console.log('[HWI UI FUSION APPLIED]',     { source: 'drawing_upload', wires: resolved.wire_instances.length });
+        console.log('[HWI UI ENDPOINTS APPLIED]',  { pinMapRows: resolved.pin_map_rows.length });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -177,18 +180,19 @@ export default function HarnessInstructionsPage() {
       });
       const json = await res.json() as { ok: boolean; job?: HarnessInstructionJob; error?: string };
       if (!json.ok || !json.job) throw new Error(json.error ?? 'BOM upload failed');
-      // If a drawing is already loaded, fuse immediately
+      // If a drawing is already loaded, fuse + resolve endpoints immediately
       const baseJob = json.job;
-      const fusedJob = drawing && drawing.wire_rows.length > 0
-        ? fuseDrawingWithBOM(drawing, baseJob)
-        : baseJob;
-      setJob(fusedJob);
-      setFlags(fusedJob.engineering_flags ?? []);
+      let finalJob = baseJob;
+      if (drawing && drawing.wire_rows.length > 0) {
+        const fused = fuseDrawingWithBOM(drawing, baseJob);
+        finalJob    = resolveEndpoints(fused, drawing);
+        console.log('[HWI UI FUSION APPLIED]',    { source: 'bom_upload', wires: finalJob.wire_instances.length });
+        console.log('[HWI UI ENDPOINTS APPLIED]', { pinMapRows: finalJob.pin_map_rows.length });
+      }
+      setJob(finalJob);
+      setFlags(finalJob.engineering_flags ?? []);
       setApprovalRecord(null);
       setActiveTab('wires');
-      if (drawing && drawing.wire_rows.length > 0) {
-        console.log('[HWI UI FUSION APPLIED]', { source: 'bom_upload', wires: fusedJob.wire_instances.length });
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(`BOM upload failed: ${msg}`);

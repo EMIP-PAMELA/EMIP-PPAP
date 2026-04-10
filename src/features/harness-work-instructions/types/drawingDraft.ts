@@ -21,6 +21,7 @@ export interface DraftWireRow {
   row_index:        number;
   raw_text:         string;
   wire_id:          string | null;
+  wire_label:       string | null;  // label from drawing (e.g. CKT-01, W1-MAIN)
   length:           number | null;
   gauge:            string | null;
   color:            string | null;
@@ -31,6 +32,8 @@ export interface DraftWireRow {
   connector_b:      string | null;
   cavity_a:         string | null;
   cavity_b:         string | null;
+  pin_a:            string | null;  // pin designation at end A (may overlap cavity_a)
+  pin_b:            string | null;  // pin designation at end B (may overlap cavity_b)
 }
 
 export interface DraftConnectorRow {

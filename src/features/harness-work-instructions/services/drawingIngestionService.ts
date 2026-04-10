@@ -200,11 +200,14 @@ function extractEquivalentParts(lines: string[]): string[] {
 // Step 7a: STRUCTURED_TABLE extractor
 // ---------------------------------------------------------------------------
 
-const TABLE_HEADER_RE = /\b(?:ID|CIRCUIT|#)\b.*\b(?:LENGTH|LEN)\b/i;
+const TABLE_HEADER_RE = /\b(?:ID|CIRCUIT|CKT|WIRE|#)\b.*\b(?:LENGTH|LEN|FROM|TO|CONN(?:ECTOR)?|PIN|TERMINAL)\b/i;
 const LENGTH_RE       = /\b(\d{1,4}(?:\.\d{1,3})?)\s*(?:IN|")?/i;
 const GAUGE_RE        = /\b(\d{2})\s*(?:AWG|GA)\b/i;
 const COLOR_RE        = /\b(RED|BLK|BLACK|WHT|WHITE|BLU|BLUE|GRN|GREEN|YEL|YELLOW|ORN|ORANGE|PNK|PINK|VIO|VIOLET|GRA|GRAY|GRY|BRN|BROWN|TAN|NAT|NATURAL)\b/i;
 const ACI_PN_RE       = /\b([A-Z]{2,4}\d{4,}(?:-[A-Z0-9]+)*)\b/g;
+const CONNECTOR_RE    = /\b(J\d{1,3}[A-Z]?|P\d{1,3}[A-Z]?|CON[-\s]?\d{1,3}|CN\d{1,3}|HSG[-\s]?\d{0,3}|PLUG[-\s]?\d{0,3})\b/gi;
+const CAVITY_RE       = /\b(?:PIN|CAV(?:ITY)?)[-\s]?(\w{1,4})\b/gi;
+const WIRE_LABEL_RE   = /\bCKT[-. ]?(\w+)/i;
 
 function parseWireRowFromLine(raw: string, row_index: number): DraftWireRow {
   const lenM   = raw.match(LENGTH_RE);
@@ -212,22 +215,28 @@ function parseWireRowFromLine(raw: string, row_index: number): DraftWireRow {
   const colorM = raw.match(COLOR_RE);
   const aciM   = [...raw.matchAll(ACI_PN_RE)];
 
-  const idM = raw.match(/^([A-Z]?\d{1,4})\s/);
+  const idM         = raw.match(/^([A-Z]?\d{1,4})\s/);
+  const connectors  = [...raw.matchAll(CONNECTOR_RE)].map(m => m[1].replace(/\s/g, '').toUpperCase());
+  const cavities    = [...raw.matchAll(CAVITY_RE)].map(m => m[1].toUpperCase());
+  const labelM      = raw.match(WIRE_LABEL_RE);
 
   return {
     row_index,
     raw_text:        raw,
     wire_id:         idM ? idM[1] : null,
-    length:          lenM  ? parseFloat(lenM[1])   : null,
-    gauge:           gaugeM ? gaugeM[1]             : null,
-    color:           colorM ? colorM[1].toUpperCase() : null,
-    aci_part_number: aciM.length > 0 ? aciM[0][1] : null,
-    terminal_a:      aciM.length > 1 ? aciM[1][1] : null,
-    terminal_b:      aciM.length > 2 ? aciM[2][1] : null,
-    connector_a:     null,
-    connector_b:     null,
-    cavity_a:        null,
-    cavity_b:        null,
+    wire_label:      labelM ? `CKT-${labelM[1]}` : null,
+    length:          lenM   ? parseFloat(lenM[1])         : null,
+    gauge:           gaugeM ? gaugeM[1]                   : null,
+    color:           colorM ? colorM[1].toUpperCase()     : null,
+    aci_part_number: aciM.length > 0 ? aciM[0][1]        : null,
+    terminal_a:      aciM.length > 1 ? aciM[1][1]        : null,
+    terminal_b:      aciM.length > 2 ? aciM[2][1]        : null,
+    connector_a:     connectors[0] ?? null,
+    connector_b:     connectors[1] ?? null,
+    cavity_a:        cavities[0]   ?? null,
+    cavity_b:        cavities[1]   ?? null,
+    pin_a:           cavities[0]   ?? null,
+    pin_b:           cavities[1]   ?? null,
   };
 }
 
@@ -304,6 +313,7 @@ function extractCalloutDraft(
       row_index:       rowIdx++,
       raw_text:        line,
       wire_id:         null,
+      wire_label:      null,
       length:          lenM ? parseFloat(lenM[1]) : null,
       gauge:           null,
       color:           null,
@@ -314,6 +324,8 @@ function extractCalloutDraft(
       connector_b:     null,
       cavity_a:        null,
       cavity_b:        null,
+      pin_a:           null,
+      pin_b:           null,
     });
   }
 
