@@ -106,15 +106,20 @@ export interface CopperCalculationResult {
 
 /**
  * Multi-SKU aggregation result
+ * Phase 3H.21.3: totalCopperWeight can be null if any part has incomplete calculation
  */
 export interface CopperUsageAggregation {
-  /** Total copper weight across all SKUs (pounds) */
-  totalCopperWeight: number;
+  /** Total copper weight across all SKUs (pounds) — null if any part incomplete */
+  totalCopperWeight: number | null;
+  
+  /** Phase 3H.21.3: True if all parts had complete copper calculations */
+  isComplete: boolean;
   
   /** Copper usage by wire gauge */
   byGauge: Record<string, {
     gauge: string;
-    totalWeight: number;
+    /** Phase 3H.21.3: null if any wire in this gauge has unknown weight */
+    totalWeight: number | null;
     totalLength: number;
     wireCount: number;
   }>;
@@ -122,7 +127,8 @@ export interface CopperUsageAggregation {
   /** Copper usage by wire color */
   byColor: Record<string, {
     color: string;
-    totalWeight: number;
+    /** Phase 3H.21.3: null if any wire in this color has unknown weight */
+    totalWeight: number | null;
     totalLength: number;
     wireCount: number;
   }>;
@@ -153,13 +159,14 @@ export interface WireUsageFilter {
 
 /**
  * Filtered wire usage result
+ * Phase 3H.21.3: totalWeight can be null if any wire has unknown weight
  */
 export interface FilteredWireUsage {
   /** Total length (feet) */
   totalLength: number;
   
-  /** Total copper weight (pounds) */
-  totalWeight: number;
+  /** Total copper weight (pounds) — null if any wire has unknown weight */
+  totalWeight: number | null;
   
   /** Number of matching wires */
   wireCount: number;

@@ -90,17 +90,19 @@ export async function getCopperUsageAcrossParts(
   const byPart: CopperCalculationResult[] = [];
   const byGauge: Record<string, {
     gauge: string;
-    totalWeight: number;
+    totalWeight: number | null;
     totalLength: number;
     wireCount: number;
   }> = {};
   const byColor: Record<string, {
     color: string;
-    totalWeight: number;
+    totalWeight: number | null;
     totalLength: number;
     wireCount: number;
   }> = {};
-  let totalCopperWeight = 0;
+  // Phase 3H.21.3: Initialize with null-safe type
+  let totalCopperWeight: number | null = 0;
+  let isComplete = true;  // Phase 3H.21.3: Track completeness
 
   // Process each part
   for (const partNumber of partNumbers) {
@@ -113,7 +115,18 @@ export async function getCopperUsageAcrossParts(
 
     // Add to per-part results
     byPart.push(copperResult);
-    totalCopperWeight += copperResult.totalCopperWeight;
+    
+    // Phase 3H.21.3: Safe aggregation - if any null, total becomes null
+    if (totalCopperWeight !== null && copperResult.totalCopperWeight !== null) {
+      totalCopperWeight += copperResult.totalCopperWeight;
+    } else {
+      totalCopperWeight = null;
+    }
+    
+    // Phase 3H.21.3: Track completeness
+    if (!copperResult.isComplete) {
+      isComplete = false;
+    }
 
     // Aggregate by gauge
     for (const wire of copperResult.wireBreakdown) {
@@ -125,7 +138,12 @@ export async function getCopperUsageAcrossParts(
           wireCount: 0
         };
       }
-      byGauge[wire.gauge].totalWeight += wire.weight;
+      // Phase 3H.21.3: Safe weight aggregation
+      if (byGauge[wire.gauge].totalWeight !== null && wire.weight !== null) {
+        byGauge[wire.gauge].totalWeight += wire.weight;
+      } else {
+        byGauge[wire.gauge].totalWeight = null;
+      }
       byGauge[wire.gauge].totalLength += wire.totalLength;
       byGauge[wire.gauge].wireCount += 1;
     }
@@ -141,14 +159,20 @@ export async function getCopperUsageAcrossParts(
           wireCount: 0
         };
       }
-      byColor[colorKey].totalWeight += wire.weight;
+      // Phase 3H.21.3: Safe weight aggregation
+      if (byColor[colorKey].totalWeight !== null && wire.weight !== null) {
+        byColor[colorKey].totalWeight += wire.weight;
+      } else {
+        byColor[colorKey].totalWeight = null;
+      }
       byColor[colorKey].totalLength += wire.totalLength;
       byColor[colorKey].wireCount += 1;
     }
   }
 
   const result: CopperUsageAggregation = {
-    totalCopperWeight,
+    totalCopperWeight,  // Phase 3H.21.3: null if any part incomplete
+    isComplete,  // Phase 3H.21.3: Completeness flag
     byGauge,
     byColor,
     byPart,
@@ -194,7 +218,7 @@ export async function getWireUsage(
   const affectedSKUs = new Set<string>();
   const matchingWires: WireCopperBreakdown[] = [];
   let totalLength = 0;
-  let totalWeight = 0;
+  let totalWeight: number | null = 0;  // Phase 3H.21.3: null-safe type
 
   // If no part numbers specified, we can't query
   // (Future: could query all active BOMs, but that's expensive)
@@ -235,14 +259,19 @@ export async function getWireUsage(
         matchingWires.push(wire);
         affectedSKUs.add(copperResult.partNumber);
         totalLength += wire.totalLength;
-        totalWeight += wire.weight;
+        // Phase 3H.21.3: Safe weight aggregation
+        if (totalWeight !== null && wire.weight !== null) {
+          totalWeight += wire.weight;
+        } else {
+          totalWeight = null;
+        }
       }
     }
   }
 
   const result: FilteredWireUsage = {
     totalLength,
-    totalWeight,
+    totalWeight,  // Phase 3H.21.3: null if any wire has unknown weight
     wireCount: matchingWires.length,
     affectedSKUs: Array.from(affectedSKUs),
     filter,
