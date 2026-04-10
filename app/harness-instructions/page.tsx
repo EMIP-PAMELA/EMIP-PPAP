@@ -1,6 +1,6 @@
 /**
  * Harness Work Instruction Generator — Review UI
- * Phase HWI.3 / HWI.5 / HWI.7 — Hybrid Grid + Approval + BOM Upload
+ * Phase HWI.3 / HWI.5 / HWI.7 / HWI.8 — Hybrid Grid + Approval + BOM Upload + Drawing Ingestion
  *
  * Layout: 3-column (Job Info | Tabs | Flags)
  * State: job + flags managed locally, no re-fetches after edits
@@ -16,10 +16,12 @@ import JobHeader from '@/src/features/harness-work-instructions/components/JobHe
 import ReviewTabs from '@/src/features/harness-work-instructions/components/ReviewTabs';
 import FlagsPanel from '@/src/features/harness-work-instructions/components/FlagsPanel';
 import JobHistoryPanel from '@/src/features/harness-work-instructions/components/JobHistoryPanel';
+import DrawingSummaryPanel from '@/src/features/harness-work-instructions/components/DrawingSummaryPanel';
 import type {
   HarnessInstructionJob,
   EngineeringFlag,
 } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
+import type { CanonicalDrawingDraft } from '@/src/features/harness-work-instructions/types/drawingDraft';
 
 interface ApprovalRecord {
   jobId: string;
@@ -47,7 +49,10 @@ export default function HarnessInstructionsPage() {
   const [approvalRecord, setApprovalRecord] = useState<ApprovalRecord | null>(null);
   const [showHistory, setShowHistory]   = useState(false);
   const [uploadingBOM, setUploadingBOM] = useState(false);
+  const [drawing, setDrawing] = useState<CanonicalDrawingDraft | null>(null);
+  const [uploadingDrawing, setUploadingDrawing] = useState(false);
   const bomFileRef = useRef<HTMLInputElement>(null);
+  const drawingFileRef = useRef<HTMLInputElement>(null);
 
   const isLocked = approvalRecord !== null;
 
@@ -119,6 +124,35 @@ export default function HarnessInstructionsPage() {
         ),
       };
     });
+  }
+
+  async function handleDrawingFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingDrawing(true);
+    try {
+      const { extractTextFromPDF } = await import('@/src/features/documentEngine/utils/pdfToText');
+      const drawingText = await extractTextFromPDF(file);
+      const res = await fetch('/api/harness-instructions/upload-drawing', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ drawingText, fileName: file.name }),
+      });
+      const json = await res.json() as { ok: boolean; drawing?: CanonicalDrawingDraft; error?: string };
+      if (!json.ok || !json.drawing) throw new Error(json.error ?? 'Drawing upload failed');
+      setDrawing(json.drawing);
+      console.log('[HWI UI DRAWING LOADED]', {
+        type: json.drawing.drawing_type,
+        wireRows: json.drawing.wire_rows.length,
+        flags: json.drawing.flags.length,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`Drawing upload failed: ${msg}`);
+    } finally {
+      setUploadingDrawing(false);
+      if (drawingFileRef.current) drawingFileRef.current.value = '';
+    }
   }
 
   async function handleBOMFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -290,13 +324,20 @@ export default function HarnessInstructionsPage() {
             </div>
           </div>
 
-          {/* Hidden BOM file input */}
+          {/* Hidden file inputs */}
           <input
             ref={bomFileRef}
             type="file"
             accept=".pdf"
             className="hidden"
             onChange={handleBOMFileChange}
+          />
+          <input
+            ref={drawingFileRef}
+            type="file"
+            accept=".pdf"
+            className="hidden"
+            onChange={handleDrawingFileChange}
           />
 
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -311,6 +352,19 @@ export default function HarnessInstructionsPage() {
               }`}
             >
               {uploadingBOM ? '⏳ Parsing...' : '📥 Upload BOM PDF'}
+            </button>
+
+            {/* Upload Drawing PDF */}
+            <button
+              onClick={() => drawingFileRef.current?.click()}
+              disabled={uploadingDrawing}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                uploadingDrawing
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
+              }`}
+            >
+              {uploadingDrawing ? '⏳ Parsing...' : '📐 Upload Drawing PDF'}
             </button>
 
             {/* History button */}
@@ -420,6 +474,16 @@ export default function HarnessInstructionsPage() {
 
         </div>
       </div>
+      {/* Drawing summary panel */}
+      {drawing && (
+        <div className="mt-3 px-0">
+          <DrawingSummaryPanel
+            drawing={drawing}
+            onDismiss={() => setDrawing(null)}
+          />
+        </div>
+      )}
+
       {/* History panel modal */}
       {showHistory && job && (
         <JobHistoryPanel
