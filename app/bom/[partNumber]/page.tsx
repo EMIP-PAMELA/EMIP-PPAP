@@ -132,7 +132,7 @@ export default function BOMDetailPage() {
       console.log('🧠 V6.1 SKU INTELLIGENCE', {
         partNumber: detail.partNumber,
         totalComponents: insights.totalComponents,
-        wireCount: insights.wireCount,
+        wireTypes: insights.wireTypes,  // Phase 3H.20.1: Renamed from wireCount
         totalWireLength: insights.totalWireLength,
         estimatedCopperWeight: insights.estimatedCopperWeight
       });
@@ -545,7 +545,7 @@ export default function BOMDetailPage() {
               
               <div className="bg-blue-50 p-4 rounded">
                 <div className="text-xs text-blue-600 uppercase tracking-wide mb-1">Wire Types</div>
-                <div className="text-2xl font-bold text-blue-900">{skuInsights.wireCount}</div>
+                <div className="text-2xl font-bold text-blue-900">{skuInsights.wireTypes}</div>  {/* Phase 3H.20.1: Renamed from wireCount */}
               </div>
               
               <div className="bg-blue-50 p-4 rounded">
@@ -555,7 +555,7 @@ export default function BOMDetailPage() {
               
               <div className="bg-blue-50 p-4 rounded">
                 <div className="text-xs text-blue-600 uppercase tracking-wide mb-1">Avg Wire Length</div>
-                <div className="text-2xl font-bold text-blue-900">{skuInsights.avgWireLength.toFixed(1)}"</div>
+                <div className="text-2xl font-bold text-blue-900">{skuInsights.avgLengthPerWireType.toFixed(1)}"</div>  {/* Phase 3H.20.1: Renamed from avgWireLength */}
               </div>
               
               <div className="bg-amber-50 p-4 rounded">
@@ -602,7 +602,7 @@ export default function BOMDetailPage() {
                     {Object.entries(skuInsights.gaugeBreakdown)
                       .sort(([a], [b]) => parseInt(a) - parseInt(b))
                       .map(([gauge, count]) => {
-                        const percentage = (count / skuInsights.wireCount) * 100;
+                        const percentage = (count / skuInsights.wireTypes) * 100;  // Phase 3H.20.1: Renamed from wireCount
                         return (
                           <div key={gauge} className="grid grid-cols-[120px_1fr_80px] items-center gap-3 py-1">
                             <div className="text-sm font-medium text-gray-700">
@@ -718,8 +718,8 @@ export default function BOMDetailPage() {
               )}
             </div>
             
-            {/* No wire data message */}
-            {skuInsights.wireCount === 0 && (
+            {/* No wire data message - Phase 3H.20.1: Renamed from wireCount to wireTypes */}
+            {skuInsights.wireTypes === 0 && (
               <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600">
                 No wire components detected in this BOM.
               </div>
@@ -896,7 +896,7 @@ export default function BOMDetailPage() {
                     </div>
                     <div>
                       <div className="text-xs text-gray-600 uppercase tracking-wide mb-1">Wires</div>
-                      <div className="text-sm font-semibold text-gray-900">{skuInsights?.wireCount || 0}</div>
+                      <div className="text-sm font-semibold text-gray-900">{skuInsights?.wireTypes || 0}</div>  {/* Phase 3H.20.1: Renamed from wireCount */}
                     </div>
                     <div>
                       <div className="text-xs text-gray-600 uppercase tracking-wide mb-1">Connectors</div>
