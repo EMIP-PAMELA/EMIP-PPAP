@@ -33,6 +33,9 @@ const NAVIGATION_ITEMS: NavigationItem[] = [
   { label: 'BOM Repository', path: '/bom', icon: '🗂️' },
   { label: 'Copper Index', path: '/copper', icon: '🔧' },
   { label: 'Analytics', path: '/analytics', icon: '📈' },
+  { label: 'SKU Models', path: '/sku', icon: '🧩' },
+  { label: 'Harness Instructions', path: '/harness-instructions', icon: '🧵' },
+  { label: 'Work Instructions', path: '/work-instructions', icon: '🛠️' },
   { label: 'Admin', path: '/admin', icon: '⚙️' }
 ];
 

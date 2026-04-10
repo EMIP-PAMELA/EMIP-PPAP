@@ -1,0 +1,401 @@
+import { supabase } from '@/src/lib/supabaseClient';
+import { hashBuffer, hashText } from '../utils/documentHash';
+import { summarizeLineDiff, type DocumentDiffSummary } from '../utils/documentDiff';
+
+export type DocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
+
+export interface SKURecord {
+  id: string;
+  part_number: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function getTextStoragePath(storagePath: string): string {
+  return `${storagePath}${TEXT_OBJECT_SUFFIX}`;
+}
+
+async function storeExtractedText(storagePath: string, text?: string | null): Promise<string | null> {
+  if (!text || text.trim().length === 0) return null;
+  const textPath = getTextStoragePath(storagePath);
+  const buffer = Buffer.from(text, 'utf8');
+  const { error } = await supabase.storage.from(SKU_BUCKET).upload(textPath, buffer, {
+    contentType: 'text/plain',
+    upsert: true,
+  });
+  if (error) {
+    console.warn('[HWI DOCUMENT TEXT STORE] Failed to persist extracted text', {
+      storage_path: textPath,
+      error: error.message,
+    });
+    return null;
+  }
+  return textPath;
+}
+
+async function loadExtractedText(storagePath: string): Promise<string | null> {
+  const textPath = getTextStoragePath(storagePath);
+  const { data, error } = await supabase.storage.from(SKU_BUCKET).download(textPath);
+  if (error || !data) {
+    return null;
+  }
+  const blobLike: Blob | ArrayBuffer = data as any;
+  if (typeof (blobLike as Blob).text === 'function') {
+    return (blobLike as Blob).text();
+  }
+  if (blobLike instanceof ArrayBuffer) {
+    return Buffer.from(blobLike).toString('utf8');
+  }
+  if (typeof (blobLike as Blob).arrayBuffer === 'function') {
+    const buffer = await (blobLike as Blob).arrayBuffer();
+    return Buffer.from(buffer).toString('utf8');
+  }
+  return null;
+}
+
+export interface SKUDocumentRecord {
+  id: string;
+  sku_id: string;
+  document_type: DocumentType;
+  revision: string;
+  file_url: string;
+  file_name: string;
+  storage_path: string;
+  uploaded_at: string;
+  is_current: boolean;
+  content_hash: string | null;
+  extracted_text_hash: string | null;
+  phantom_rev_flag: boolean;
+  phantom_rev_note: string | null;
+  phantom_diff_summary: DocumentDiffSummary | null;
+  compared_to_document_id: string | null;
+}
+
+const SKU_BUCKET = 'sku-documents';
+const TEXT_OBJECT_SUFFIX = '.extracted.txt';
+
+export type UploadDocumentStatus = 'uploaded' | 'duplicate' | 'phantom_rev';
+
+export interface UploadDocumentResult {
+  status: UploadDocumentStatus;
+  phantom_rev: boolean;
+  message: string;
+  diff_summary?: DocumentDiffSummary | null;
+  document: SKUDocumentRecord;
+}
+
+function normalizeDocumentType(type: string): DocumentType {
+  const normalized = type.trim().toUpperCase();
+  if (normalized === 'CUSTOMER') return 'CUSTOMER_DRAWING';
+  if (normalized === 'INTERNAL') return 'INTERNAL_DRAWING';
+  if (normalized === 'BOM' || normalized === 'CUSTOMER_DRAWING' || normalized === 'INTERNAL_DRAWING') {
+    return normalized as DocumentType;
+  }
+  throw new Error(`Unsupported document type: ${type}`);
+}
+
+export async function createSKU(partNumber: string, description?: string): Promise<SKURecord> {
+  const payload = {
+    part_number: partNumber.trim().toUpperCase(),
+    description: description?.trim() || null,
+  };
+
+  const { data, error } = await supabase
+    .from('sku')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[HWI SKU CREATE] Failed', { error: error.message, part_number: payload.part_number });
+    throw new Error(error.message);
+  }
+
+  console.log('[HWI SKU CREATED]', { part_number: payload.part_number, id: data.id });
+  return data as SKURecord;
+}
+
+export async function getSKU(partNumber: string): Promise<{ sku: SKURecord; documents: SKUDocumentRecord[] } | null> {
+  const normalized = partNumber.trim().toUpperCase();
+  const { data, error } = await supabase
+    .from('sku')
+    .select('id, part_number, description, created_at, updated_at, sku_documents(*)')
+    .eq('part_number', normalized)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[HWI SKU FETCH] Failed', { part_number: normalized, error: error.message });
+    throw new Error(error.message);
+  }
+
+  if (!data) return null;
+
+  const { sku_documents, ...rest } = data as SKURecord & { sku_documents?: SKUDocumentRecord[] };
+  return {
+    sku: rest,
+    documents: sku_documents ?? [],
+  };
+}
+
+export async function listSKUs(): Promise<SKURecord[]> {
+  const { data, error } = await supabase
+    .from('sku')
+    .select('id, part_number, description, created_at, updated_at')
+    .order('part_number', { ascending: true });
+
+  if (error) {
+    console.error('[HWI SKU LIST] Failed', { error: error.message });
+    throw new Error(error.message);
+  }
+
+  return data as SKURecord[];
+}
+
+async function markDocumentsNonCurrent(skuId: string, type: DocumentType): Promise<void> {
+  const { error } = await supabase
+    .from('sku_documents')
+    .update({ is_current: false })
+    .eq('sku_id', skuId)
+    .eq('document_type', type);
+
+  if (error) {
+    console.warn('[HWI SKU DOC FLAG] Failed to reset current flags', {
+      sku_id: skuId,
+      document_type: type,
+      error: error.message,
+    });
+  }
+}
+
+export async function uploadDocument(
+  skuId: string,
+  file: File,
+  type: DocumentType | string,
+  revision: string,
+  extractedText?: string,
+): Promise<UploadDocumentResult> {
+  const documentType = normalizeDocumentType(type);
+  const timestamp = Date.now();
+  const safeName = file.name.replace(/\s+/g, '-');
+  const normalizedRevision = revision?.trim() || 'UNSPECIFIED';
+  const storagePath = `${skuId}/${documentType}/${normalizedRevision}/${timestamp}-${safeName}`;
+
+  const arrayBuffer = await file.arrayBuffer();
+  const contentHash = hashBuffer(arrayBuffer);
+  console.log('[HWI DOCUMENT HASHED]', {
+    sku_id: skuId,
+    document_type: documentType,
+    revision: normalizedRevision,
+    content_hash: contentHash,
+  });
+
+  let extractedTextHash: string | null = null;
+  if (extractedText && extractedText.trim().length > 0) {
+    extractedTextHash = hashText(extractedText);
+  }
+
+  const { data: existingDocs, error: existingError } = await supabase
+    .from('sku_documents')
+    .select('*')
+    .eq('sku_id', skuId)
+    .eq('document_type', documentType)
+    .eq('revision', normalizedRevision)
+    .order('uploaded_at', { ascending: false });
+
+  if (existingError) {
+    console.error('[HWI DOCUMENT LOOKUP] Failed', {
+      sku_id: skuId,
+      document_type: documentType,
+      revision: normalizedRevision,
+      error: existingError.message,
+    });
+    throw new Error(existingError.message);
+  }
+
+  const duplicateDoc = existingDocs?.find(doc => doc.content_hash && doc.content_hash === contentHash);
+  if (duplicateDoc) {
+    console.log('[HWI DUPLICATE DOCUMENT]', {
+      sku_id: skuId,
+      document_type: documentType,
+      revision: normalizedRevision,
+    });
+    return {
+      status: 'duplicate',
+      phantom_rev: false,
+      message: 'Document already exists with identical content',
+      document: duplicateDoc,
+    };
+  }
+
+  const phantomRev = (existingDocs?.length ?? 0) > 0;
+  const phantomNote = phantomRev
+    ? 'Possible undocumented functional change: same revision, different content'
+    : null;
+  let diffSummary: DocumentDiffSummary | null = null;
+  let comparedDocumentId: string | null = null;
+
+  const { error: uploadError } = await supabase
+    .storage
+    .from(SKU_BUCKET)
+    .upload(storagePath, arrayBuffer, {
+      contentType: file.type || 'application/pdf',
+      upsert: false,
+    });
+
+  if (uploadError) {
+    console.error('[HWI DOCUMENT UPLOAD] Storage failed', {
+      sku_id: skuId,
+      document_type: documentType,
+      error: uploadError.message,
+    });
+    throw new Error(uploadError.message);
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(SKU_BUCKET).getPublicUrl(storagePath);
+
+  await storeExtractedText(storagePath, extractedText);
+
+  if (phantomRev) {
+    const baselineDoc = existingDocs?.[0];
+    if (baselineDoc && extractedText && extractedText.trim().length > 0) {
+      const previousText = await loadExtractedText(baselineDoc.storage_path);
+      if (previousText) {
+        diffSummary = summarizeLineDiff(previousText, extractedText);
+        comparedDocumentId = baselineDoc.id;
+        // Trust model note: revision metadata is advisory. Content hashes detect differences, and this summary aids
+        // reviewers in judging significance — final approval remains with human engineers.
+        console.log('[HWI DOCUMENT DIFF BUILT]', {
+          sku_id: skuId,
+          document_type: documentType,
+          revision: normalizedRevision,
+          compared_to_document_id: comparedDocumentId,
+          changed_line_count: diffSummary.changed_line_count,
+          likely_functional_change: diffSummary.likely_functional_change,
+        });
+      } else {
+        console.log('[HWI DOCUMENT DIFF SKIPPED]', {
+          reason: 'missing_previous_text',
+          sku_id: skuId,
+          document_type: documentType,
+          revision: normalizedRevision,
+        });
+      }
+    } else {
+      console.log('[HWI DOCUMENT DIFF SKIPPED]', {
+        reason: 'missing_extracted_text',
+        sku_id: skuId,
+        document_type: documentType,
+        revision: normalizedRevision,
+      });
+    }
+  }
+
+  await markDocumentsNonCurrent(skuId, documentType);
+
+  const payload = {
+    sku_id:        skuId,
+    document_type: documentType,
+    revision:      normalizedRevision,
+    file_url:      publicUrl,
+    file_name:     file.name,
+    storage_path:  storagePath,
+    is_current:    true,
+    content_hash:        contentHash,
+    extracted_text_hash: extractedTextHash,
+    phantom_rev_flag:    phantomRev,
+    phantom_rev_note:    phantomNote,
+    phantom_diff_summary: diffSummary,
+    compared_to_document_id: comparedDocumentId,
+  };
+
+  const { data, error } = await supabase
+    .from('sku_documents')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[HWI DOCUMENT PERSIST] Failed', { error: error.message, payload });
+    throw new Error(error.message);
+  }
+
+  await supabase
+    .from('sku')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', skuId);
+
+  if (phantomRev) {
+    console.warn('[HWI PHANTOM REV DETECTED]', {
+      sku_id: skuId,
+      document_type: documentType,
+      revision: normalizedRevision,
+      previous_document_id: existingDocs?.[0]?.id ?? null,
+      new_document_id: data.id,
+    });
+  }
+
+  console.log('[HWI DOCUMENT UPLOADED]', {
+    sku_id: skuId,
+    document_type: documentType,
+    revision: normalizedRevision,
+    storage_path: payload.storage_path,
+  });
+
+  return {
+    status: phantomRev ? 'phantom_rev' : 'uploaded',
+    phantom_rev: phantomRev,
+    message: phantomRev
+      ? '⚠️ Possible Phantom Revision Detected — same revision, different content uploaded. Review for undocumented functional changes.'
+      : 'Document uploaded and marked as current source of truth.',
+    diff_summary: diffSummary,
+    document: data as SKUDocumentRecord,
+  };
+}
+
+export async function getCurrentDocuments(skuId: string): Promise<SKUDocumentRecord[]> {
+  const { data, error } = await supabase
+    .from('sku_documents')
+    .select('*')
+    .eq('sku_id', skuId)
+    .eq('is_current', true)
+    .order('document_type', { ascending: true });
+
+  if (error) {
+    console.error('[HWI SKU DOCS] Failed to fetch current documents', { sku_id: skuId, error: error.message });
+    throw new Error(error.message);
+  }
+
+  return data as SKUDocumentRecord[];
+}
+
+export async function setCurrentDocument(documentId: string): Promise<SKUDocumentRecord | null> {
+  const { data: doc, error: fetchError } = await supabase
+    .from('sku_documents')
+    .select('*')
+    .eq('id', documentId)
+    .single();
+
+  if (fetchError) {
+    console.error('[HWI DOC CURRENT] Failed to load document', { document_id: documentId, error: fetchError.message });
+    throw new Error(fetchError.message);
+  }
+
+  await markDocumentsNonCurrent(doc.sku_id, doc.document_type as DocumentType);
+
+  const { data, error } = await supabase
+    .from('sku_documents')
+    .update({ is_current: true })
+    .eq('id', documentId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[HWI DOC CURRENT] Failed to set current', { document_id: documentId, error: error.message });
+    throw new Error(error.message);
+  }
+
+  return data as SKUDocumentRecord;
+}
