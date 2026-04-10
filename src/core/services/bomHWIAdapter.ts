@@ -201,15 +201,37 @@ function buildOperationModels(blocks: BOMBlock[]): OperationModel[] {
 }
 
 // ---------------------------------------------------------------------------
-// Shared normalisation helpers
+// HWI.7.2: Operation-type resolver (keyword-specific, order-sensitive)
 // ---------------------------------------------------------------------------
 
-function detectOpType(code: string): 'komax' | 'press' | 'assembly' {
-  const id = code.toUpperCase();
-  if (/CUT|KOM|STRIP/.test(id))          return 'komax';
-  if (/CRIMP|PRESS|TERM|SEAL/.test(id))  return 'press';
-  return 'assembly';
+type OpBucket = 'KOMAX' | 'PRESS' | 'ASSEMBLY' | 'UNKNOWN';
+
+/**
+ * Map an operation code to a HWI row-generation bucket.
+ * Checks specific substrings first, then broader regex for non-standard codes.
+ */
+function getOperationType(code: string): OpBucket {
+  const uc = code.toUpperCase();
+  if (uc.includes('CUTGROUP'))                  return 'KOMAX';
+  if (uc.includes('CRIMP'))                     return 'PRESS';
+  if (uc.includes('WIREASSY'))                  return 'ASSEMBLY';
+  if (uc.includes('LABEL') || uc.includes('BAG')) return 'ASSEMBLY';
+  // Broader fallbacks for non-standard site-specific codes
+  if (/CUT|KOM|STRIP/.test(uc))                return 'KOMAX';
+  if (/PRESS|TERM(?!INAL)|SEAL/.test(uc))      return 'PRESS';
+  return 'UNKNOWN';
 }
+
+/** True if a part number or description matches wire-like patterns */
+function looksLikeWireComp(partNumber: string, description: string): boolean {
+  if (WIRE_PART_RE.test(partNumber)) return true;
+  const upper = (partNumber + ' ' + description).toUpperCase();
+  return /\bAWG\b|\bWIRE\b/.test(upper);
+}
+
+// ---------------------------------------------------------------------------
+// Shared normalisation helpers
+// ---------------------------------------------------------------------------
 
 function bomProvenance(note?: string): Provenance {
   return { source_type: 'bom', confidence: 0.7, source_ref: 'bom_parse', ...(note ? { note } : {}) };
@@ -223,13 +245,17 @@ function pad(n: number, prefix: string): string {
   return `${prefix}${n.toString().padStart(3, '0')}`;
 }
 
+// Classify helper — still used for metadata summary and future flags
 async function classifyComp(partId: string, desc: string): Promise<string> {
   if (WIRE_PART_RE.test(partId)) return 'WIRE';
   return classifyComponentWithLookup(partId, desc);
 }
 
 // ---------------------------------------------------------------------------
-// normalizeFromModels — core normalisation using OperationModel[]
+// normalizeFromModels — HWI.7.2 operation-driven mapping
+//
+// Row generation is driven by OPERATION TYPE, not component classification.
+// Classification results are collected for metadata/flags but NEVER gate rows.
 // ---------------------------------------------------------------------------
 
 async function normalizeFromModels(
@@ -239,7 +265,7 @@ async function normalizeFromModels(
 ): Promise<HarnessInstructionJob> {
   const now = new Date().toISOString();
 
-  // ── STEP 1: Classify all components in parallel ────────────────────
+  // ── PHASE A: Classify all components (metadata only — does NOT gate rows) ─
   type ClassifiedComp = ComponentModel & { opModel: OperationModel; category: string };
   const allClassified: ClassifiedComp[] = [];
 
@@ -252,116 +278,173 @@ async function normalizeFromModels(
     })
   );
 
-  // ── STEP 2: Deduplicate wires across all operations ────────────────
+  // ── PHASE B: Wire instances — heuristic, not classification-gated ─────────
+  // Candidates: part matches wire pattern OR operation is KOMAX (all wires)
   const wireMap = new Map<string, WireInstance>();
   let wireIdx = 0;
 
-  for (const cc of allClassified) {
-    if (cc.category !== 'WIRE') continue;
-    if (wireMap.has(cc.part_number)) continue;
+  for (const op of opModels) {
+    const opType = getOperationType(op.operation_code);
+    for (const comp of op.components) {
+      const isWireCandidate =
+        looksLikeWireComp(comp.part_number, comp.description) ||
+        opType === 'KOMAX';
 
-    wireIdx++;
-    const wireId = pad(wireIdx, 'W');
+      if (!isWireCandidate) continue;
+      if (wireMap.has(comp.part_number)) continue;
 
-    // Gauge + color: try part number first (W20BK format), then description
-    const fromPart = parseWireToken(cc.part_number);
-    const fromDesc = parseWireToken(cc.description + ' ' + cc.raw_first_line);
-    const gauge    = fromPart.gauge !== 'UNKNOWN' ? fromPart.gauge : fromDesc.gauge;
-    const color    = fromPart.color !== 'UNKNOWN' ? fromPart.color : fromDesc.color;
+      wireIdx++;
+      const wireId = pad(wireIdx, 'W');
 
-    // Cut length: for wires, quantity from block = length in feet
-    const cutLen = cc.quantity > 0 ? cc.quantity : 1.0;
-    const aciPN  = cc.aci ?? cc.part_number;
+      const fromPart = parseWireToken(comp.part_number);
+      const fromDesc = parseWireToken(comp.description + ' ' + comp.raw_first_line);
+      const gauge    = fromPart.gauge !== 'UNKNOWN' ? fromPart.gauge : fromDesc.gauge;
+      const color    = fromPart.color !== 'UNKNOWN' ? fromPart.color : fromDesc.color;
+      const cutLen   = comp.quantity > 0 ? comp.quantity : 1.0;
+      const aciPN    = comp.aci ?? comp.part_number;
 
-    wireMap.set(cc.part_number, {
-      wire_id:              wireId,
-      aci_wire_part_number: aciPN,
-      gauge,
-      color,
-      cut_length:  cutLen,
-      strip_end_a: null,
-      strip_end_b: null,
-      end_a: nullEndTerminal(),
-      end_b: nullEndTerminal(),
-      provenance: bomProvenance('Gauge/color from part number then description'),
-    });
+      wireMap.set(comp.part_number, {
+        wire_id:              wireId,
+        aci_wire_part_number: aciPN,
+        gauge,
+        color,
+        cut_length:  cutLen,
+        strip_end_a: null,
+        strip_end_b: null,
+        end_a: nullEndTerminal(),
+        end_b: nullEndTerminal(),
+        provenance: bomProvenance('Wire candidate: part-number heuristic or KOMAX operation'),
+      });
+    }
   }
 
   const wire_instances: WireInstance[] = Array.from(wireMap.values());
 
-  // ── STEP 3: Build press_rows / komax_rows / assembly_steps ────────
+  // ── PHASE C: Row generation — driven by operation type, not category ───────
   const press_rows:     PressRow[]     = [];
   const komax_rows:     KomaxRow[]     = [];
   const assembly_steps: AssemblyStep[] = [];
   const engineering_flags: EngineeringFlag[] = [];
 
-  let pressIdx = 0;
-  let komaxIdx = 0;
-  let stepIdx  = 0;
+  let pressIdx  = 0;
+  let komaxIdx  = 0;
+  let globalStep = 0;
 
   for (const op of opModels) {
-    stepIdx++;
-    const opType = detectOpType(op.operation_code);
+    const opType  = getOperationType(op.operation_code);
+    const comps   = op.components;
+    const pressCount  = { before: press_rows.length };
+    const komaxCount  = { before: komax_rows.length };
+    const wireCount   = { before: wire_instances.length };
 
-    const ccInOp = allClassified.filter(cc => cc.opModel === op);
-
-    // Collect wire IDs present in this operation
-    const wireIdsInOp = ccInOp
-      .filter(cc => cc.category === 'WIRE')
-      .map(cc  => wireMap.get(cc.part_number)?.wire_id)
+    // Wire IDs for this operation (from wireMap, heuristic)
+    const wireIdsInOp = comps
+      .map(c => wireMap.get(c.part_number)?.wire_id)
       .filter((id): id is string => Boolean(id));
 
-    // Komax rows — WR-CUTGROUP wires
-    if (opType === 'komax') {
-      for (const cc of ccInOp.filter(c => c.category === 'WIRE')) {
+    // ── KOMAX: one row per component, regardless of classification ──────
+    if (opType === 'KOMAX') {
+      for (const comp of comps) {
         komaxIdx++;
-        const wid = wireMap.get(cc.part_number)?.wire_id ?? 'TBD';
         komax_rows.push({
           komax_id:       pad(komaxIdx, 'K'),
-          wire_id:        wid,
-          cut_length:     cc.quantity > 0 ? cc.quantity : 1.0,
+          wire_id:        wireMap.get(comp.part_number)?.wire_id ?? 'TBD',
+          cut_length:     comp.quantity > 0 ? comp.quantity : 1.0,
           strip_a:        null,
           strip_b:        null,
           program_number: null,
-          provenance:     bomProvenance('Cut length from Qty Per field'),
+          provenance:     bomProvenance('Cut length from Qty Per; wire_id from part-number heuristic'),
+        });
+      }
+      // Fallback: if no components parsed from KOMAX block, emit one placeholder row
+      if (comps.length === 0) {
+        komaxIdx++;
+        komax_rows.push({
+          komax_id:       pad(komaxIdx, 'K'),
+          wire_id:        'TBD',
+          cut_length:     1.0,
+          strip_a:        null,
+          strip_b:        null,
+          program_number: null,
+          provenance:     bomProvenance('No components parsed — placeholder row for this KOMAX operation'),
         });
       }
     }
 
-    // Press rows — WR-CRIMP terminals
-    if (opType === 'press') {
-      const wireRef = wireIdsInOp[0] ?? 'TBD';
-      for (const cc of ccInOp.filter(c => c.category === 'TERMINAL')) {
+    // ── PRESS: one row per component, regardless of classification ──────
+    if (opType === 'PRESS') {
+      // Best wire candidate: first wire from wireMap that appears in THIS or adjacent ops
+      const wireRef = wireIdsInOp[0] ?? (wire_instances[0]?.wire_id ?? 'TBD');
+      for (const comp of comps) {
+        pressIdx++;
+        press_rows.push({
+          press_id:             pad(pressIdx, 'P'),
+          wire_id:              wireMap.get(comp.part_number)?.wire_id ?? wireRef,
+          terminal_part_number: comp.part_number,
+          applicator_id:        null,
+          crimp_height:         null,
+          provenance:           bomProvenance('BOM_DERIVED — classification not required for row creation'),
+        });
+      }
+      // Fallback: placeholder if no components
+      if (comps.length === 0) {
         pressIdx++;
         press_rows.push({
           press_id:             pad(pressIdx, 'P'),
           wire_id:              wireRef,
-          terminal_part_number: cc.part_number,
+          terminal_part_number: 'TBD',
           applicator_id:        null,
           crimp_height:         null,
-          provenance:           bomProvenance('Terminal-to-wire link is estimated from operation context'),
+          provenance:           bomProvenance('No components parsed — placeholder row for this PRESS operation'),
         });
       }
     }
 
-    // Assembly step — one per operation, captures instructions
-    const instrText = op.instructions.length > 0
-      ? op.instructions.join(' | ')
-      : null;
-    const baseInstruction = [op.operation_code, op.description]
-      .filter(Boolean).join(' — ') || `Operation ${stepIdx}`;
+    // ── ASSEMBLY STEPS: one step per instruction line ───────────────────
+    const uniqueWireIds = [...new Set(wireIdsInOp)];
+    if (op.instructions.length > 0) {
+      for (const instrLine of op.instructions) {
+        globalStep++;
+        assembly_steps.push({
+          step_number: globalStep,
+          instruction: instrLine,
+          wire_ids:    uniqueWireIds,
+          tool_ref:    op.operation_code || null,
+          notes:       null,
+          provenance:  bomProvenance(),
+        });
+      }
+    } else {
+      // Always emit at least one step per operation so every op is represented
+      globalStep++;
+      const baseInstruction = [op.operation_code, op.description]
+        .filter(Boolean).join(' — ') || `Operation ${op.step_number}`;
+      assembly_steps.push({
+        step_number: globalStep,
+        instruction: baseInstruction,
+        wire_ids:    uniqueWireIds,
+        tool_ref:    op.operation_code || null,
+        notes:       null,
+        provenance:  bomProvenance(),
+      });
+    }
 
-    assembly_steps.push({
-      step_number: stepIdx,
-      instruction: baseInstruction,
-      wire_ids:    [...new Set(wireIdsInOp)],
-      tool_ref:    op.operation_code || null,
-      notes:       instrText,
-      provenance:  bomProvenance(),
+    // ── Per-operation debug log ─────────────────────────────────────────
+    console.log('[HWI MAPPING]', {
+      op:           op.operation_code,
+      step:         op.step_number,
+      type:         opType,
+      components:   comps.length,
+      instructions: op.instructions.length,
+      rowsCreated: {
+        komax: komax_rows.length - komaxCount.before,
+        press: press_rows.length - pressCount.before,
+        wires: wire_instances.length - wireCount.before,
+      },
     });
   }
 
-  // ── STEP 4: Engineering flags ──────────────────────────────────────
+  // ── PHASE D: Engineering flags ─────────────────────────────────────────────
   let flagIdx = 0;
   function flag(
     type: EngineeringFlag['flag_type'],
@@ -377,6 +460,14 @@ async function normalizeFromModels(
     flag('warning', 'Terminal-to-wire mappings are estimated — verify against crimp specification', 'press_rows'),
   );
 
+  // Emptiness flags — warn but DO NOT block job creation
+  if (wire_instances.length === 0)
+    engineering_flags.push(flag('warning', 'No wire instances were detected from BOM — review part numbers and re-upload', 'wire_instances'));
+  if (komax_rows.length === 0)
+    engineering_flags.push(flag('warning', 'No Komax rows generated — confirm BOM contains a CUTGROUP operation', 'komax_rows'));
+  if (press_rows.length === 0)
+    engineering_flags.push(flag('warning', 'No press rows generated — confirm BOM contains a CRIMP operation', 'press_rows'));
+
   for (const wire of wire_instances) {
     if (wire.gauge === 'UNKNOWN')
       engineering_flags.push(flag('warning', `Gauge not detected for ${wire.aci_wire_part_number}`, `wire_instances.${wire.wire_id}.gauge`));
@@ -386,7 +477,7 @@ async function normalizeFromModels(
       engineering_flags.push(flag('warning', `Cut length defaulted to 1.0 for ${wire.aci_wire_part_number} — verify against print`, `wire_instances.${wire.wire_id}.cut_length`));
   }
 
-  // ── STEP 5: Review questions ───────────────────────────────────────
+  // ── PHASE E: Review questions ──────────────────────────────────────────────
   const review_questions: ReviewQuestion[] = [
     { id: 'RQ-001', prompt: 'Are all wire cut lengths correct per the engineering drawing?',  answer: null, resolved: false },
     { id: 'RQ-002', prompt: 'Are crimp heights specified for each terminal type?',             answer: null, resolved: false },
@@ -395,7 +486,7 @@ async function normalizeFromModels(
     { id: 'RQ-005', prompt: 'Are all strip lengths (end A / end B) specified on the print?',  answer: null, resolved: false },
   ];
 
-  // ── STEP 6: Assemble job ───────────────────────────────────────────
+  // ── PHASE F: Assemble job ──────────────────────────────────────────────────
   const job: HarnessInstructionJob = {
     id:     crypto.randomUUID(),
     status: 'review',
@@ -418,13 +509,13 @@ async function normalizeFromModels(
   };
 
   console.log('[BOM NORMALIZED FOR HWI]', {
-    part_number:    partNumber,
+    part_number:      partNumber,
     revision,
-    wire_instances: wire_instances.length,
-    press_rows:     press_rows.length,
-    komax_rows:     komax_rows.length,
-    assembly_steps: assembly_steps.length,
-    flags:          engineering_flags.length,
+    wire_instances:   wire_instances.length,
+    press_rows:       press_rows.length,
+    komax_rows:       komax_rows.length,
+    assembly_steps:   assembly_steps.length,
+    flags:            engineering_flags.length,
     total_components: allClassified.length,
     categories: allClassified.reduce<Record<string, number>>((acc, cc) => {
       acc[cc.category] = (acc[cc.category] ?? 0) + 1; return acc;
