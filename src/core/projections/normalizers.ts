@@ -363,9 +363,21 @@ export function classifyComponent(
   const searchText = `${partNumber || ''} ${description || ''}`.toUpperCase();
   
   // Phase 3H.17.5: SEMANTIC PRIORITY SYSTEM
-  // Strict evaluation order: specific categories MUST take precedence over generic WIRE matches
-  // Priority: LABEL → SLEEVING → HARDWARE → CONNECTOR → TERMINAL → SEAL → WIRE → UNKNOWN
-  // Rationale: "Wire Label Sticker" is a LABEL, not a WIRE - specific function over generic material
+  // Classification Priority (Phase 3H.17.5 - Semantic Priority Model):
+  // 1. WIRE (part number pattern - highest confidence)
+  // 2. LABEL
+  // 3. SLEEVING
+  // 4. HARDWARE
+  // 5. CONNECTOR
+  // 6. TERMINAL
+  // 7. SEAL
+  // 8. WIRE (keyword-based constrained fallback)
+  // 9. UNKNOWN
+  //
+  // NOTE:
+  // - Specific component types override generic material descriptions
+  // - WIRE keyword matching is intentionally last to prevent false positives
+  // - Part number patterns (W\d+) take precedence as they are highest confidence
   
   // A. WIRE (part number pattern only - highest confidence)
   // Wire detection: starts with W followed by digits (e.g., W18GR1015)

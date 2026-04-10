@@ -145,6 +145,8 @@ export const BOM_FIELDS = {
 
 /**
  * Valid category values
+ * Phase 3H.17.7: Aligned with classifyComponent() outputs
+ * All categories returned by the classifier must be listed here
  */
 export const VALID_CATEGORIES = [
   'WIRE',
@@ -152,6 +154,9 @@ export const VALID_CATEGORIES = [
   'CONNECTOR',
   'HOUSING',
   'SEAL',
+  'HARDWARE',
+  'LABEL',
+  'SLEEVING',
   'UNKNOWN',
 ] as const;
 

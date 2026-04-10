@@ -1,3 +1,9 @@
+// ⚠️ WARNING: NON-CANONICAL CLASSIFICATION LOGIC
+// This classification is local to visual parsing only.
+// DO NOT use for BOM classification.
+// Canonical classification system:
+// src/core/projections/normalizers.ts → classifyComponent
+
 /**
  * Visual Engineering Master Parser v5.0 - "AGNOSTIC SLEDGEHAMMER" Edition
  * Maximum Recall Atomic Parsing for Infor Visual Engineering Reports

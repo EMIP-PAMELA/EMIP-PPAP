@@ -1,3 +1,9 @@
+// ⚠️ WARNING: NON-CANONICAL CLASSIFICATION LOGIC
+// This function is for document processing only.
+// DO NOT use for BOM classification.
+// Canonical classification system:
+// src/core/projections/normalizers.ts → classifyComponent
+
 /**
  * BOM Normalizer - Document Engine Core
  * 
@@ -8,11 +14,14 @@
  * Output: Normalized BOM structures ready for template mapping
  * 
  * This layer contains:
- * - Component classification logic (Component/Consumable/Hardware)
+ * - Component classification logic (Component/Consumable/Hardware) - NON-CANONICAL
  * - Terminal detection logic
  * - UOM interpretation
  * - Wire length calculation
  * - Business rules for component categorization
+ * 
+ * NOTE: classifyComponentType() in this file is for document processing only.
+ * For BOM classification, use src/core/projections/normalizers.ts → classifyComponent()
  * 
  * PLACEHOLDER IMPLEMENTATION
  * Full implementation will be completed in future phase.
