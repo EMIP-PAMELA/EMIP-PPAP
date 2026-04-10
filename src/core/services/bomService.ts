@@ -173,7 +173,7 @@ interface NormalizedComponent {
  * NOT record.length which contains cut length with scrap.
  */
 // Phase 3H.21: Import gauge extraction utility
-import { extractGaugeFromPart } from '@/core/utils/wireUtils';
+import { extractGaugeFromPart } from '@/src/core/utils/wireUtils';
 
 function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent {
   const isWire = record.category === 'WIRE';
