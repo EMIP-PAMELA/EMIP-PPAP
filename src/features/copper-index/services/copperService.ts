@@ -138,14 +138,16 @@ export async function getCopperUsageAcrossParts(
           wireCount: 0
         };
       }
-      // Phase 3H.21.3: Safe weight aggregation
-      if (byGauge[wire.gauge].totalWeight !== null && wire.weight !== null) {
-        byGauge[wire.gauge].totalWeight += wire.weight;
+      // Phase 3H.21.3/3H.21.4/3H.21.5: Safe weight aggregation with local var for TS narrowing
+      // Non-null assertion safe because we just initialized above
+      const gaugeEntry = byGauge[wire.gauge]!;
+      if (gaugeEntry.totalWeight !== null && wire.weight !== null) {
+        gaugeEntry.totalWeight += wire.weight;
       } else {
-        byGauge[wire.gauge].totalWeight = null;
+        gaugeEntry.totalWeight = null;
       }
-      byGauge[wire.gauge].totalLength += wire.totalLength;
-      byGauge[wire.gauge].wireCount += 1;
+      gaugeEntry.totalLength += wire.totalLength;
+      gaugeEntry.wireCount += 1;
     }
 
     // Aggregate by color
@@ -159,14 +161,16 @@ export async function getCopperUsageAcrossParts(
           wireCount: 0
         };
       }
-      // Phase 3H.21.3: Safe weight aggregation
-      if (byColor[colorKey].totalWeight !== null && wire.weight !== null) {
-        byColor[colorKey].totalWeight += wire.weight;
+      // Phase 3H.21.3/3H.21.4/3H.21.5: Safe weight aggregation with local var for TS narrowing
+      // Non-null assertion safe because we just initialized above
+      const colorEntry = byColor[colorKey]!;
+      if (colorEntry.totalWeight !== null && wire.weight !== null) {
+        colorEntry.totalWeight += wire.weight;
       } else {
-        byColor[colorKey].totalWeight = null;
+        colorEntry.totalWeight = null;
       }
-      byColor[colorKey].totalLength += wire.totalLength;
-      byColor[colorKey].wireCount += 1;
+      colorEntry.totalLength += wire.totalLength;
+      colorEntry.wireCount += 1;
     }
   }
 
