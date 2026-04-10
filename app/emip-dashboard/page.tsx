@@ -25,19 +25,20 @@ import { getCopperUsageAcrossParts } from '@/src/features/copper-index/services/
 
 interface DashboardStats {
   activeBOMs: number;
-  totalCopperWeight: number;
+  totalCopperWeight: number | null; // null = not yet loaded
   totalComponents: number;
 }
 
 export default function EMIPDashboardPage() {
   const [stats, setStats] = useState<DashboardStats>({
     activeBOMs: 0,
-    totalCopperWeight: 0,
+    totalCopperWeight: null, // Phase 3H.18: null indicates not loaded
     totalComponents: 0
   });
 
   const [workQueueItems, setWorkQueueItems] = useState<WorkQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [copperLoading, setCopperLoading] = useState(false); // Phase 3H.18: Separate copper loading state
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,22 +58,10 @@ export default function EMIPDashboardPage() {
       const activeBOMCount = boms.length;
       const totalComponents = boms.reduce((sum, bom) => sum + bom.recordCount, 0);
       
-      // Get copper data for all active parts
-      let totalCopper = 0;
-      try {
-        const partNumbers = boms.map(b => b.partNumber);
-        if (partNumbers.length > 0) {
-          const copperAgg = await getCopperUsageAcrossParts(partNumbers);
-          totalCopper = copperAgg.totalCopperWeight;
-        }
-      } catch (copperError) {
-        console.warn('🧭 [Dashboard] Copper data unavailable:', copperError);
-        // Continue without copper data
-      }
-
+      // Phase 3H.18: Set initial stats WITHOUT blocking on copper
       setStats({
         activeBOMs: activeBOMCount,
-        totalCopperWeight: totalCopper,
+        totalCopperWeight: null, // Will load asynchronously
         totalComponents
       });
 
@@ -89,18 +78,58 @@ export default function EMIPDashboardPage() {
 
       setWorkQueueItems(queue);
 
-      console.log('🧭 V6.1 DASHBOARD REAL DATA', {
+      console.log('🧭 V6.1 DASHBOARD CORE DATA LOADED', {
         activeBOMs: activeBOMCount,
         totalComponents,
-        copperLoaded: totalCopper > 0,
         timestamp: new Date().toISOString()
       });
 
       setLoading(false);
+      
+      // Phase 3H.18: Load copper asynchronously AFTER main dashboard loads
+      loadCopperDataAsync(boms);
     } catch (err) {
       console.error('🧭 [Dashboard] Error loading data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
       setLoading(false);
+    }
+  };
+  
+  // Phase 3H.18: Async copper loading - non-blocking
+  const loadCopperDataAsync = async (boms: Awaited<ReturnType<typeof getAllActiveBOMs>>) => {
+    setCopperLoading(true);
+    console.log('🧭 V6.1 DASHBOARD COPPER LOAD START (async)', {
+      skuCount: boms.length,
+      timestamp: new Date().toISOString()
+    });
+    
+    try {
+      const partNumbers = boms.map(b => b.partNumber);
+      let totalCopper = 0;
+      
+      if (partNumbers.length > 0) {
+        const copperAgg = await getCopperUsageAcrossParts(partNumbers);
+        totalCopper = copperAgg.totalCopperWeight;
+      }
+      
+      setStats(prev => ({
+        ...prev,
+        totalCopperWeight: totalCopper
+      }));
+      
+      console.log('🧭 V6.1 DASHBOARD COPPER LOADED', {
+        totalCopperWeight: totalCopper,
+        timestamp: new Date().toISOString()
+      });
+    } catch (copperError) {
+      console.warn('🧭 [Dashboard] Copper data unavailable:', copperError);
+      // Keep null to show "Load Error" state
+      setStats(prev => ({
+        ...prev,
+        totalCopperWeight: -1 // -1 indicates error
+      }));
+    } finally {
+      setCopperLoading(false);
     }
   };
 
@@ -173,7 +202,18 @@ export default function EMIPDashboardPage() {
               <div>
                 <p className="text-sm text-gray-600">Total Copper (lbs)</p>
                 <p className="text-3xl font-bold text-orange-600">
-                  {stats.totalCopperWeight > 0 ? stats.totalCopperWeight.toFixed(1) : 'N/A'}
+                  {/* Phase 3H.18: Handle async copper loading states */}
+                  {copperLoading ? (
+                    <span className="text-gray-400">Loading...</span>
+                  ) : stats.totalCopperWeight === null ? (
+                    <span className="text-gray-400">--</span>
+                  ) : stats.totalCopperWeight === -1 ? (
+                    <span className="text-red-500 text-lg">Error</span>
+                  ) : stats.totalCopperWeight > 0 ? (
+                    stats.totalCopperWeight.toFixed(1)
+                  ) : (
+                    'N/A'
+                  )}
                 </p>
               </div>
               <div className="text-4xl">🔧</div>

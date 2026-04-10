@@ -79,7 +79,15 @@ export function calculateCopperForPart(
 ): CopperCalculationResult {
   console.log('🧠 V5.4 [Copper Calculator] Calculating copper for part', {
     partNumber: projection.partNumber,
-    wireCount: projection.wires.length
+    wireCount: projection.wires.length,
+    totalWireLength: projection.summary.totalWireLength,
+    // Phase 3H.18: Debug wire details
+    firstWire: projection.wires[0] ? {
+      partNumber: projection.wires[0].partNumber,
+      gauge: projection.wires[0].gauge,
+      length: projection.wires[0].length,
+      quantity: projection.wires[0].quantity
+    } : null
   });
 
   const wireBreakdown: WireCopperBreakdown[] = [];

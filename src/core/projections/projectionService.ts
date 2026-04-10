@@ -27,8 +27,8 @@ import {
   normalizeWireColor,
   normalizeLengthToFeet,
   parseLengthFromDescription,
-  isConnector,
-  isWire
+  isConnector
+  // Phase 3H.18: Removed isWire - now using canonical category === 'WIRE'
 } from './normalizers';
 import type { BOMRecord } from '../data/bom/types';
 
@@ -158,15 +158,27 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
 /**
  * Extract and normalize wire data from BOM records
  * 
+ * Phase 3H.18: Now uses canonical category === 'WIRE' for wire detection
+ * This ensures projection respects the classification system from normalizers.ts
+ * 
  * @param records BOM records
  * @returns Wire projections
  */
 function extractWires(records: BOMRecord[]): WireProjection[] {
   const wires: WireProjection[] = [];
+  
+  // Phase 3H.18: Debug validation - count canonical WIRE records
+  const wireCategoryCount = records.filter(r => r.category === 'WIRE').length;
+  console.log('🧠 V5.3 [Projection] Wire extraction debug', {
+    totalRecords: records.length,
+    categoryWIRECount: wireCategoryCount,
+    samplePartNumbers: records.slice(0, 3).map(r => r.component_part_number)
+  });
 
   for (const record of records) {
-    // Check if this is a wire component
-    if (!isWire(record.component_part_number, record.description)) {
+    // Phase 3H.18: Use canonical category === 'WIRE' for wire detection
+    // This is the single source of truth from classifyComponent()
+    if (record.category !== 'WIRE') {
       continue; // Skip non-wire components
     }
 
