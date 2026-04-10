@@ -436,10 +436,12 @@ export function computeSKUInsights(records: BOMRecord[]): SKUInsights {
   const sourceUnit: 'feet' | 'inches' = 'feet';
   const unitFactor = 12;  // feet → inches conversion
   
-  // Phase 3H.18.1: STEP 2 - Filter to wire records only
+  // Phase 3H.18.1: STEP 2 - Filter to canonical wire records only (category === 'WIRE')
   // Use effectiveLength directly from normalizeComponentForAnalytics (ALREADY in FEET)
   // NO re-computation - effectiveLength is SINGLE SOURCE OF TRUTH
-  const wireRecords = normalized.filter(r => r.isWire && r.effectiveLength > 0);
+  const wireRecords = normalized.filter(
+    r => r.category === 'WIRE' && r.effectiveLength > 0
+  );
   
   // Phase 3H.18.1: STEP 3 - Count distinct wire components (not sum of qtyPer)
   // Phase 3H.20: Renamed to wireTypes to clarify this is distinct wire part numbers
