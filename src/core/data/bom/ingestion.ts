@@ -27,11 +27,11 @@ import { BOMRecord, RawBOMData, ParseResult, RawComponent, RawOperation } from '
 import { supabase } from '@/src/lib/supabaseClient';
 import { parseBOMWithValidation } from '@/src/core/parser/parserService';
 import { normalizeRevision, NormalizedRevision, extractRevisionFromRecords, determineRevisionAction } from '@/src/core/services/revisionService';
-import { getBOM, storeBOM, compareRevision } from '@/src/core/services/bomService';
+import { getBOM, storeBOM, compareRevision, classifyComponentWithLookup } from '@/src/core/services/bomService';
 import { normalizePartNumber } from '@/src/core/utils/normalizePartNumber';
 import { isValidPartNumberCandidate } from '@/src/core/utils/isValidPartNumberCandidate';
 import { PARSER_VERSION } from '@/src/core/parser/parserService';
-import { normalizeWireColor, classifyComponent } from '@/src/core/projections/normalizers';
+import { normalizeWireColor } from '@/src/core/projections/normalizers';
 
 // ============================================================
 // INGESTION SOURCE TYPES
@@ -168,7 +168,7 @@ function detectWire(component: RawComponent): {
  * @param ingestionBatchId V5.2: Batch ID for this ingestion
  * @returns Normalized BOM record
  */
-function normalizeComponent(
+async function normalizeComponent(
   component: RawComponent,
   operation: RawOperation,
   masterPartNumber: string,
@@ -176,7 +176,7 @@ function normalizeComponent(
   ingestionBatchId: string,
   normalizedRevision: NormalizedRevision, // V5.2.5: Pass revision
   isActive: boolean // V5.2.5: Active flag determined by revision logic
-): BOMRecord {
+): Promise<BOMRecord> {
   const wireDetection = detectWire(component);
   
   // V5.9.1: Extract color from wire part number
@@ -213,9 +213,10 @@ function normalizeComponent(
     throw new Error(`CRITICAL: Invalid canonical part number in normalizeComponent: "${masterPartNumber}"`);
   }
   
-  // Phase 3H.14.1: Apply classification and normalization
-  // Phase 3H.14.2: Pass description to classifier for improved accuracy
-  const category = classifyComponent(component.detectedPartId, component.rawLine);
+  const category = await classifyComponentWithLookup(
+    component.detectedPartId,
+    component.rawLine
+  );
   // Phase 3H.14.2: Preserve true raw color (pre-transformation)
   const rawColor = wireColorRaw || wireColor; // Use original abbreviation if available
   const normalizedColor = normalizeWireColor(wireColor); // Apply normalization
@@ -632,7 +633,7 @@ export async function ingestBOMFromText(
           continue;
         }
         
-        const normalized = normalizeComponent(
+        const normalized = await normalizeComponent(
           component,
           operation,
           masterPartNumber,

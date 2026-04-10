@@ -10,6 +10,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { normalizeWireColor, classifyComponent } from '../src/core/projections/normalizers';
+import { getMappedCategory } from '../src/core/services/classificationLookup';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -75,7 +76,8 @@ async function backfillNormalization() {
 
       // Backfill category
       if (needsCategoryUpdate) {
-        const category = classifyComponent(
+        const mappedCategory = await getMappedCategory(record.component_part_number);
+        const category = mappedCategory ?? classifyComponent(
           record.component_part_number,
           record.description
         );
