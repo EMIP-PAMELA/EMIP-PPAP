@@ -1,4 +1,4 @@
-import { supabase } from '@/src/lib/supabaseClient';
+import { supabaseServer } from '@/src/lib/supabaseServer';
 import { hashBuffer, hashText } from '../utils/documentHash';
 import { summarizeLineDiff, type DocumentDiffSummary } from '../utils/documentDiff';
 
@@ -95,6 +95,7 @@ export interface SKUDocumentRecord {
 
 const SKU_BUCKET = 'sku-documents';
 const TEXT_OBJECT_SUFFIX = '.extracted.txt';
+const supabase = supabaseServer;
 
 export type UploadDocumentStatus = 'uploaded' | 'duplicate' | 'phantom_rev';
 
