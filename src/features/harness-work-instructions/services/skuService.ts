@@ -1,4 +1,4 @@
-import { supabaseServer } from '@/src/lib/supabaseServer';
+import { getSupabaseServer } from '@/src/lib/supabaseServer';
 import { hashBuffer, hashText } from '../utils/documentHash';
 import { summarizeLineDiff, type DocumentDiffSummary } from '../utils/documentDiff';
 
@@ -38,6 +38,7 @@ function getTextStoragePath(storagePath: string): string {
 }
 
 async function storeExtractedText(storagePath: string, text?: string | null): Promise<string | null> {
+  const supabase = createSupabaseAdmin();
   if (!text || text.trim().length === 0) return null;
   const textPath = getTextStoragePath(storagePath);
   const buffer = Buffer.from(text, 'utf8');
@@ -56,6 +57,7 @@ async function storeExtractedText(storagePath: string, text?: string | null): Pr
 }
 
 export async function loadExtractedText(storagePath: string): Promise<string | null> {
+  const supabase = createSupabaseAdmin();
   const textPath = getTextStoragePath(storagePath);
   const { data, error } = await supabase.storage.from(SKU_BUCKET).download(textPath);
   if (error || !data) {
@@ -96,7 +98,10 @@ export interface SKUDocumentRecord {
 
 const SKU_BUCKET = 'sku-documents';
 const TEXT_OBJECT_SUFFIX = '.extracted.txt';
-const supabase = supabaseServer;
+
+function createSupabaseAdmin() {
+  return getSupabaseServer();
+}
 
 export type UploadDocumentStatus = 'uploaded' | 'duplicate' | 'phantom_rev';
 
@@ -123,6 +128,7 @@ export async function createSKU(
   description?: string,
   createdFrom?: DocumentType,
 ): Promise<SKURecord> {
+  const supabase = createSupabaseAdmin();
   const payload = {
     part_number: partNumber.trim().toUpperCase(),
     description: description?.trim() || null,
@@ -145,6 +151,7 @@ export async function createSKU(
 }
 
 export async function getSKU(partNumber: string): Promise<{ sku: SKURecord; documents: SKUDocumentRecord[] } | null> {
+  const supabase = createSupabaseAdmin();
   const normalized = partNumber.trim().toUpperCase();
   const { data, error } = await supabase
     .from('sku')
@@ -167,6 +174,7 @@ export async function getSKU(partNumber: string): Promise<{ sku: SKURecord; docu
 }
 
 export async function listSKUs(): Promise<SKURecord[]> {
+  const supabase = createSupabaseAdmin();
   const { data, error } = await supabase
     .from('sku')
     .select('id, part_number, description, created_from, created_at, updated_at')
@@ -181,6 +189,7 @@ export async function listSKUs(): Promise<SKURecord[]> {
 }
 
 async function markDocumentsNonCurrent(skuId: string, type: DocumentType): Promise<void> {
+  const supabase = createSupabaseAdmin();
   const { error } = await supabase
     .from('sku_documents')
     .update({ is_current: false })
@@ -203,6 +212,7 @@ export async function uploadDocument(
   revision: string,
   extractedText?: string,
 ): Promise<UploadDocumentResult> {
+  const supabase = createSupabaseAdmin();
   const documentType = normalizeDocumentType(type);
   const timestamp = Date.now();
   const safeName = file.name.replace(/\s+/g, '-');
@@ -223,7 +233,7 @@ export async function uploadDocument(
     extractedTextHash = hashText(extractedText);
   }
 
-  const { data: existingDocs, error: existingError } = await supabase
+  const { data: existingDocsRaw, error: existingError } = await supabase
     .from('sku_documents')
     .select('*')
     .eq('sku_id', skuId)
@@ -241,7 +251,9 @@ export async function uploadDocument(
     throw new Error(existingError.message);
   }
 
-  const duplicateDoc = existingDocs?.find(doc => doc.content_hash && doc.content_hash === contentHash);
+  const existingDocs = (existingDocsRaw ?? []) as SKUDocumentRecord[];
+
+  const duplicateDoc = existingDocs.find((doc: SKUDocumentRecord) => doc.content_hash && doc.content_hash === contentHash);
   if (duplicateDoc) {
     console.log('[HWI DUPLICATE DOCUMENT]', {
       sku_id: skuId,
@@ -256,7 +268,7 @@ export async function uploadDocument(
     };
   }
 
-  const phantomRev = (existingDocs?.length ?? 0) > 0;
+  const phantomRev = existingDocs.length > 0;
   const phantomNote = phantomRev
     ? 'Possible undocumented functional change: same revision, different content'
     : null;
@@ -287,7 +299,7 @@ export async function uploadDocument(
   await storeExtractedText(storagePath, extractedText);
 
   if (phantomRev) {
-    const baselineDoc = existingDocs?.[0];
+    const baselineDoc = existingDocs[0];
     if (baselineDoc && extractedText && extractedText.trim().length > 0) {
       const previousText = await loadExtractedText(baselineDoc.storage_path);
       if (previousText) {
@@ -384,6 +396,7 @@ export async function uploadDocument(
 }
 
 export async function getCurrentDocuments(skuId: string): Promise<SKUDocumentRecord[]> {
+  const supabase = createSupabaseAdmin();
   const { data, error } = await supabase
     .from('sku_documents')
     .select('*')
@@ -407,6 +420,7 @@ export async function getCurrentDocuments(skuId: string): Promise<SKUDocumentRec
 }
 
 export async function setCurrentDocument(documentId: string): Promise<SKUDocumentRecord | null> {
+  const supabase = createSupabaseAdmin();
   const { data: doc, error: fetchError } = await supabase
     .from('sku_documents')
     .select('*')
@@ -467,6 +481,7 @@ export async function updateSKUHeaderIfAllowed(
   incomingSource: DocumentType,
   updates: { description?: string | null },
 ): Promise<boolean> {
+  const supabase = createSupabaseAdmin();
   const currentPriority = currentCreatedFrom ? (SOURCE_PRIORITY[currentCreatedFrom] ?? 0) : 0;
   const incomingPriority = SOURCE_PRIORITY[incomingSource] ?? 0;
 

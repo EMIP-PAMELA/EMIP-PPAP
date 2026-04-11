@@ -14,22 +14,10 @@ import { resolve } from 'path';
 // Load .env.local from project root
 config({ path: resolve(process.cwd(), '.env.local') });
 
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseServer } from '@/src/lib/supabaseServer';
 
 // Environment variables should be set before running this script
 // For local development: source .env.local first
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  console.error('❌ Missing environment variables!');
-  console.error('Required:');
-  console.error('  - NEXT_PUBLIC_SUPABASE_URL');
-  console.error('  - SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY)');
-  console.error('\nMake sure .env.local is configured correctly.');
-  process.exit(1);
-}
-
 // Expected schema based on bomSchema.ts
 const EXPECTED_COLUMNS = [
   'id',
@@ -73,7 +61,7 @@ async function verifyDatabaseSchema() {
   console.log('=' .repeat(80));
   
   try {
-    const supabase = createClient(supabaseUrl!, supabaseKey!);
+    const supabase = getSupabaseServer();
     
     // Step 1: Query actual database schema
     console.log('\n📊 STEP 1: Querying live database schema...\n');

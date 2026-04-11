@@ -7,12 +7,9 @@
  * SAFETY: Should only be executed by admins in controlled environment
  */
 
-import { createClient } from '@supabase/supabase-js';
 import { normalizeWireColor } from '@/src/core/projections/normalizers';
 import { resolveClassification } from '@/src/core/services/classificationLookup';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { getSupabaseServer } from '@/src/lib/supabaseServer';
 
 interface BackfillResult {
   success: boolean;
@@ -51,7 +48,7 @@ export async function runClassificationBackfill(): Promise<BackfillResult> {
   try {
     // Create Supabase client
     console.log('📡 Creating Supabase client...');
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = getSupabaseServer();
 
     // Fetch all BOM records
     console.log('📊 Fetching BOM records...');

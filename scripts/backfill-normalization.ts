@@ -8,14 +8,9 @@
  * npx ts-node scripts/backfill-normalization.ts
  */
 
-import { createClient } from '@supabase/supabase-js';
 import { normalizeWireColor } from '@/src/core/projections/normalizers';
 import { resolveClassification } from '@/src/core/services/classificationLookup';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+import { getSupabaseServer } from '@/src/lib/supabaseServer';
 
 interface BOMRecord {
   id: number;
@@ -28,6 +23,7 @@ interface BOMRecord {
 }
 
 async function backfillNormalization() {
+  const supabase = getSupabaseServer();
   console.log('🔄 Phase 3H.16: Starting normalization and classification backfill...\n');
 
   // Fetch all BOM records
