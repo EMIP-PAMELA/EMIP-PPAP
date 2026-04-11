@@ -1,64 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ingestAndProcessDocument, UnifiedIngestionError } from '@/src/features/harness-work-instructions/services/unifiedIngestionService';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
-
-function normalizeTextPreview(text: string, limit = 2000): string {
-  return text.slice(0, limit).toUpperCase();
-}
-
-type Classification = {
-  detected: DocumentType | 'UNKNOWN';
-  signals: string[];
-};
-
-function detectDocumentType(extractedText: string, fileName: string): Classification {
-  const text = normalizeTextPreview(extractedText);
-  const signals: string[] = [];
-
-  const bomIndicators = [/BILL OF MATERIAL/i, /BOM/i, /ITEM\s+NO\.?/i, /QTY/i, /COMPONENT\s+PART/i];
-  const hasBOMSignal = bomIndicators.some(pattern => {
-    const match = pattern.test(text);
-    if (match) signals.push(`BOM:${pattern}`);
-    return match;
-  });
-  if (hasBOMSignal || /BOM/i.test(fileName)) {
-    return { detected: 'BOM', signals };
-  }
-
-  const internalIndicators = [/INTERNAL DRAWING/i, /DWG NO\.?/i, /DRAWING NUMBER/i, /MANUFACTURING DRAWING/i, /ENGINEERING DRAWING/i];
-  const customerIndicators = [/CUSTOMER DRAWING/i, /CUSTOMER PART/i, /SUPPLIER DRAWING/i];
-
-  const hasInternal = internalIndicators.some(pattern => {
-    const match = pattern.test(text);
-    if (match) signals.push(`INTERNAL:${pattern}`);
-    return match;
-  });
-  const hasCustomer = customerIndicators.some(pattern => {
-    const match = pattern.test(text);
-    if (match) signals.push(`CUSTOMER:${pattern}`);
-    return match;
-  });
-
-  if (hasInternal && !hasCustomer) {
-    return { detected: 'INTERNAL_DRAWING', signals };
-  }
-
-  if (hasCustomer || /DRW/i.test(fileName) || /DWG/i.test(fileName)) {
-    return { detected: 'CUSTOMER_DRAWING', signals };
-  }
-
-  signals.push('FALLBACK:CUSTOMER_DRAWING');
-  return { detected: 'UNKNOWN', signals };
-}
-
-function materializeDocumentType(classification: DocumentType | 'UNKNOWN'): DocumentType {
-  if (classification === 'BOM') return 'BOM';
-  if (classification === 'INTERNAL_DRAWING') return 'INTERNAL_DRAWING';
-  return 'CUSTOMER_DRAWING';
-}
+import { detectDocumentType, materializeDocumentType, type VaultDocumentClassification } from '@/src/features/vault/utils/documentSignals';
+import { classifyDocument } from '@/src/services/classificationService';
 
 function computeDocumentStatus(
-  classification: Classification,
+  classification: VaultDocumentClassification,
   uploadResultStatus: string,
   documentIsCurrent: boolean,
 ): 'CURRENT' | 'OBSOLETE' | 'UNKNOWN' {
@@ -104,6 +51,10 @@ export async function POST(request: NextRequest) {
           : typeof skuHint === 'string' && skuHint.trim().length > 0
             ? skuHint
             : undefined,
+    });
+
+    classifyDocument(ingestionResult.uploadResult.document.id).catch(err => {
+      console.error('[CLASSIFICATION] async trigger failed', err);
     });
 
     const documentStatus = computeDocumentStatus(

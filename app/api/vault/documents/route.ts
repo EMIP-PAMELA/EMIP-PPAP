@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServer } from '@/src/lib/supabaseServer';
-import { loadExtractedText } from '@/src/features/harness-work-instructions/services/skuService';
+import { loadExtractedText, type DocumentClassificationStatus } from '@/src/features/harness-work-instructions/services/skuService';
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 25;
@@ -23,6 +23,15 @@ function parseStatus(value: string | null): 'CURRENT' | 'OBSOLETE' | 'UNKNOWN' |
   return null;
 }
 
+function parseClassificationStatus(value: string | null): DocumentClassificationStatus | null {
+  if (!value) return null;
+  const normalized = value.trim().toUpperCase();
+  const allowed: DocumentClassificationStatus[] = ['PENDING', 'PROCESSING', 'RESOLVED', 'PARTIAL', 'NEEDS_REVIEW'];
+  return allowed.includes(normalized as DocumentClassificationStatus)
+    ? (normalized as DocumentClassificationStatus)
+    : null;
+}
+
 export async function GET(request: NextRequest) {
   const supabase = getSupabaseServer();
   const { searchParams } = new URL(request.url);
@@ -36,6 +45,7 @@ export async function GET(request: NextRequest) {
   const skuFilter = skuFilterRaw ? skuFilterRaw.trim().toUpperCase() : null;
   const documentTypeFilter = normalizeDocumentType(searchParams.get('document_type'));
   const statusFilter = parseStatus(searchParams.get('status'));
+  const classificationStatusFilter = parseClassificationStatus(searchParams.get('classification_status'));
   const search = searchParams.get('search');
   const documentId = searchParams.get('id');
   const includeText = searchParams.get('include_text') === 'true';
@@ -73,6 +83,11 @@ export async function GET(request: NextRequest) {
        phantom_rev_flag,
        phantom_rev_note,
        file_url,
+       classification_status,
+       classification_attempts,
+       classification_confidence,
+       classification_notes,
+       last_classified_at,
        sku:sku_id (part_number),
        storage_path
       `,
@@ -103,6 +118,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  if (classificationStatusFilter) {
+    query = query.eq('classification_status', classificationStatusFilter);
+  }
+
   if (search && search.trim().length > 0) {
     const term = `%${search.trim()}%`;
     query = query.or(`file_name.ilike.${term},revision.ilike.${term}`);
@@ -130,6 +149,11 @@ export async function GET(request: NextRequest) {
       pipeline_status: doc.phantom_rev_flag ? 'PARTIAL' : 'UNKNOWN',
       message: doc.phantom_rev_note ?? null,
       file_url: doc.file_url ?? null,
+      classification_status: doc.classification_status as DocumentClassificationStatus,
+      classification_attempts: doc.classification_attempts ?? 0,
+      classification_confidence: doc.classification_confidence ?? null,
+      classification_notes: doc.classification_notes ?? null,
+      last_classified_at: doc.last_classified_at ?? null,
       storage_path: doc.storage_path as string | null,
       extracted_text: null as string | null,
     };

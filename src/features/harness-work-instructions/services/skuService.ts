@@ -78,6 +78,13 @@ export async function loadExtractedText(storagePath: string): Promise<string | n
   return null;
 }
 
+export type DocumentClassificationStatus =
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'RESOLVED'
+  | 'PARTIAL'
+  | 'NEEDS_REVIEW';
+
 export interface SKUDocumentRecord {
   id: string;
   sku_id: string;
@@ -94,6 +101,11 @@ export interface SKUDocumentRecord {
   phantom_rev_note: string | null;
   phantom_diff_summary: DocumentDiffSummary | null;
   compared_to_document_id: string | null;
+  classification_status: DocumentClassificationStatus;
+  classification_attempts: number;
+  last_classified_at: string | null;
+  classification_confidence: number | null;
+  classification_notes: string | null;
 }
 
 const SKU_BUCKET = 'sku-documents';

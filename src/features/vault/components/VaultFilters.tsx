@@ -6,6 +6,7 @@ export type VaultFilterState = {
   sku?: string;
   documentType?: 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING' | '';
   status?: 'CURRENT' | 'OBSOLETE' | 'UNKNOWN' | '';
+  classificationStatus?: 'PENDING' | 'PROCESSING' | 'PARTIAL' | 'NEEDS_REVIEW' | 'RESOLVED' | '';
   search?: string;
 };
 
@@ -58,6 +59,22 @@ export default function VaultFilters({ value, onChange }: VaultFiltersProps) {
             <option value="CURRENT">Current</option>
             <option value="OBSOLETE">Obsolete</option>
             <option value="UNKNOWN">Unknown</option>
+          </select>
+        </label>
+
+        <label className="flex-1 min-w-[160px] flex flex-col gap-1">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Classification Status</span>
+          <select
+            value={value.classificationStatus ?? ''}
+            onChange={event => handleChange('classificationStatus', event.target.value)}
+            className="rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+          >
+            <option value="">All States</option>
+            <option value="PENDING">Pending</option>
+            <option value="PROCESSING">Processing</option>
+            <option value="PARTIAL">Partial</option>
+            <option value="NEEDS_REVIEW">Needs Review</option>
+            <option value="RESOLVED">Resolved</option>
           </select>
         </label>
 

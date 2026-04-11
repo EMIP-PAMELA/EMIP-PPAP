@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { VaultFilterState } from './VaultFilters';
+import type { DocumentClassificationStatus } from '@/src/features/harness-work-instructions/services/skuService';
 
 interface VaultDocumentRow {
   id: string;
@@ -16,6 +17,11 @@ interface VaultDocumentRow {
   message?: string | null;
   file_url?: string | null;
   extracted_text?: string | null;
+  classification_status: DocumentClassificationStatus;
+  classification_attempts: number;
+  classification_confidence: number | null;
+  classification_notes: string | null;
+  last_classified_at: string | null;
 }
 
 interface VaultDocumentTableProps {
@@ -26,6 +32,14 @@ const statusColors: Record<string, string> = {
   CURRENT: 'bg-emerald-100 text-emerald-800',
   OBSOLETE: 'bg-gray-100 text-gray-600',
   UNKNOWN: 'bg-amber-100 text-amber-800',
+};
+
+const classificationBadges: Record<DocumentClassificationStatus, { label: string; tone: string }> = {
+  PENDING: { label: '🟡 Pending', tone: 'bg-amber-50 text-amber-800 border border-amber-100' },
+  PROCESSING: { label: '🔵 Processing', tone: 'bg-blue-50 text-blue-700 border border-blue-100' },
+  PARTIAL: { label: '🟠 Partial', tone: 'bg-orange-50 text-orange-800 border border-orange-100' },
+  NEEDS_REVIEW: { label: '🔴 Needs Review', tone: 'bg-red-50 text-red-800 border border-red-100' },
+  RESOLVED: { label: '🟢 Resolved', tone: 'bg-emerald-50 text-emerald-800 border border-emerald-100' },
 };
 
 function groupBySkuAndType(documents: VaultDocumentRow[]): { groupKey: string; documents: VaultDocumentRow[] }[] {
@@ -57,6 +71,7 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
       if (filters.sku) params.set('sku', filters.sku);
       if (filters.documentType) params.set('document_type', filters.documentType);
       if (filters.status) params.set('status', filters.status);
+      if (filters.classificationStatus) params.set('classification_status', filters.classificationStatus);
       if (filters.search) params.set('search', filters.search);
       params.set('limit', '100');
 
@@ -133,7 +148,7 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
           </div>
           <div className="divide-y divide-gray-100">
             {group.documents.map((doc, index) => {
-              const computedStatus = index === 0 ? 'CURRENT' : doc.status ?? 'UNKNOWN';
+              const computedStatus = index === 0 ? 'CURRENT' : 'UNKNOWN';
               return (
                 <button
                   key={doc.id}
@@ -148,6 +163,9 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                   </div>
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[computedStatus]}`}>
                     {computedStatus}
+                  </span>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${classificationBadges[doc.classification_status].tone}`}>
+                    {classificationBadges[doc.classification_status].label}
                   </span>
                   <span className="text-xs text-gray-500">{doc.document_type.replace('_', ' ')}</span>
                 </button>
@@ -197,11 +215,35 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                 <dt className="text-xs uppercase text-gray-400">Pipeline</dt>
                 <dd className="font-semibold text-gray-900">{(detail ?? selected).pipeline_status ?? '—'}</dd>
               </div>
+              <div>
+                <dt className="text-xs uppercase text-gray-400">Classification</dt>
+                <dd className="font-semibold text-gray-900">
+                  {classificationBadges[(detail ?? selected).classification_status].label}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-gray-400">Attempts</dt>
+                <dd className="font-semibold text-gray-900">{(detail ?? selected).classification_attempts}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-gray-400">Confidence</dt>
+                <dd className="font-semibold text-gray-900">
+                  {(detail ?? selected).classification_confidence != null
+                    ? `${Math.round(((detail ?? selected).classification_confidence as number) * 100)}%`
+                    : '—'}
+                </dd>
+              </div>
             </dl>
 
             {(detail ?? selected).message && (
               <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 {(detail ?? selected).message}
+              </div>
+            )}
+
+            {(detail ?? selected).classification_notes && (
+              <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                {(detail ?? selected).classification_notes}
               </div>
             )}
 
