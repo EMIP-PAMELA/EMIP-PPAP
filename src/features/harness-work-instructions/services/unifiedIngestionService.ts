@@ -1,5 +1,6 @@
 import { ingestDocumentFirstFlow, type DocumentType, type SKUDocumentRecord, type SKURecord, getCurrentDocuments, loadExtractedText } from './skuService';
 import { resolvePartNumberFromDrawing } from './drawingLookupService';
+import { storeAliasMapping } from './aliasService';
 import { parseBOMToHWI } from '@/src/core/services/bomHWIAdapter';
 import { ingestDrawingPdf } from './drawingIngestionService';
 import { fuseDrawingWithBOM } from './drawingFusionService';
@@ -17,6 +18,18 @@ export class UnifiedIngestionError extends Error {
   constructor(public code: 'MISSING_PART_NUMBER' | 'MISSING_TEXT', message: string) {
     super(message);
   }
+}
+
+function extractDrawingNumber(text: string): string | null {
+  const lines = text.split('\n').slice(0, 50);
+  const regex = /\b\d{3}-\d{4}-\d{3}\b/;
+
+  for (const line of lines) {
+    const match = line.match(regex);
+    if (match) return match[0];
+  }
+
+  return null;
 }
 
 interface IngestAndProcessParams {
@@ -172,6 +185,22 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     if (!partNumber && draft.drawing_number) partNumber = draft.drawing_number;
     if (!revision && draft.revision) revision = draft.revision;
     if (!description && draft.title) description = draft.title;
+  }
+
+  if (!partNumber && normalizedType !== 'BOM') {
+    const drawingNumber = extractDrawingNumber(extractedText);
+    if (drawingNumber) {
+      const resolved = resolvePartNumberFromDrawing(drawingNumber);
+      if (resolved) {
+        partNumber = resolved;
+        console.log('[HWI ALIAS RESOLUTION SUCCESS]', drawingNumber, '→', resolved);
+        storeAliasMapping(drawingNumber, resolved).catch(err => {
+          console.warn('[HWI ALIAS STORE ERROR]', err);
+        });
+      } else {
+        console.warn('[HWI UNRESOLVED DRAWING NUMBER]', drawingNumber);
+      }
+    }
   }
 
   const ensuredPartNumber = ensurePartNumber(partNumber);
