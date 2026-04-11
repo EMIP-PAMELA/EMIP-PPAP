@@ -25,17 +25,26 @@ import Link from 'next/link';
 
 interface NavigationItem {
   label: string;
-  path: string;
+  path?: string;
   icon?: string;
+  children?: NavigationItem[];
+  disabled?: boolean;
 }
 
 const NAVIGATION_ITEMS: NavigationItem[] = [
   { label: 'Dashboard',            path: '/emip-dashboard',   icon: '📊' },
   { label: 'PPAP',                 path: '/ppap',             icon: '📋' },
-  { label: 'SKU Models',           path: '/sku',              icon: '🗂️' },
-  { label: 'Upload BOM',           path: '/upload/bom',       icon: '📄' },
-  { label: 'Upload Drawing',       path: '/upload/drawing',   icon: '📐' },
-  { label: 'BOM Repository',       path: '/bom',              icon: '�' },
+  {
+    label: 'SKU Models',
+    path: '/sku',
+    icon: '🗂️',
+    children: [
+      { label: 'Upload BOM',     path: '/upload/bom',     icon: '📄' },
+      { label: 'Upload Drawing', path: '/upload/drawing', icon: '📐' },
+      { label: 'Bulk Upload (soon)', icon: '�', disabled: true },
+    ],
+  },
+  { label: 'BOM Repository',       path: '/bom',              icon: '📑' },
   { label: 'Copper Index',         path: '/copper',           icon: '🔧' },
   { label: 'Analytics',            path: '/analytics',        icon: '📈' },
   { label: 'AI Classification',    path: '/ai-classification', icon: '🤖' },
@@ -51,11 +60,53 @@ interface EMIPLayoutProps {
 export default function EMIPLayout({ children }: EMIPLayoutProps) {
   const pathname = usePathname();
 
-  const isActive = (path: string) => {
+  const isActive = (path?: string) => {
+    if (!path) return false;
     if (path === '/emip-dashboard') {
       return pathname === path;
     }
     return pathname?.startsWith(path);
+  };
+
+  const isItemActive = (item: NavigationItem): boolean => {
+    if (item.path && isActive(item.path)) return true;
+    return item.children?.some(child => isItemActive(child)) ?? false;
+  };
+
+  const renderNavLink = (item: NavigationItem, isChild = false) => {
+    const active = isItemActive(item);
+    const baseClasses = isChild
+      ? 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm'
+      : 'flex items-center gap-3 px-4 py-3 rounded-lg transition-colors';
+    const stateClasses = active
+      ? 'bg-blue-50 text-blue-700 font-medium'
+      : 'text-gray-700 hover:bg-gray-50';
+
+    const content = (
+      <>
+        {item.icon && <span className={isChild ? 'text-sm' : 'text-xl'}>{item.icon}</span>}
+        <span>{item.label}</span>
+        {item.disabled && <span className="ml-auto text-[10px] uppercase tracking-wide text-gray-400">Soon</span>}
+      </>
+    );
+
+    if (!item.path || item.disabled) {
+      return (
+        <div className={`${baseClasses} ${stateClasses} opacity-60 cursor-not-allowed`}>
+          {content}
+        </div>
+      );
+    }
+
+    const href = item.path!;
+    return (
+      <Link
+        href={href}
+        className={`${baseClasses} ${stateClasses}`}
+      >
+        {content}
+      </Link>
+    );
   };
 
   return (
@@ -83,20 +134,17 @@ export default function EMIPLayout({ children }: EMIPLayoutProps) {
           <nav className="p-4">
             <ul className="space-y-2">
               {NAVIGATION_ITEMS.map((item) => (
-                <li key={item.path}>
-                  <Link
-                    href={item.path}
-                    className={`
-                      flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
-                      ${isActive(item.path) 
-                        ? 'bg-blue-50 text-blue-700 font-medium' 
-                        : 'text-gray-700 hover:bg-gray-50'
-                      }
-                    `}
-                  >
-                    <span className="text-xl">{item.icon}</span>
-                    <span>{item.label}</span>
-                  </Link>
+                <li key={item.path ?? item.label}>
+                  {renderNavLink(item)}
+                  {item.children && item.children.length > 0 && (
+                    <ul className="mt-1 space-y-1">
+                      {item.children.map(child => (
+                        <li key={`${item.label}-${child.path ?? child.label}`}>
+                          {renderNavLink(child, true)}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               ))}
             </ul>

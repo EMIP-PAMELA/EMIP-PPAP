@@ -12,6 +12,7 @@ interface IngestResult {
   message: string;
   sku: { id: string; part_number: string };
   document: { id: string; revision: string; file_name: string };
+  pipeline_status?: 'READY' | 'PARTIAL';
 }
 
 export default function UploadBOMPage() {
@@ -39,9 +40,15 @@ export default function UploadBOMPage() {
     setError(null);
     setResult(null);
 
+    if (!extractedText) {
+      setError('Failed to extract text from PDF. Please try a different file.');
+      setUploading(false);
+      return;
+    }
+
     const fd = new FormData();
     fd.append('file', file);
-    if (extractedText) fd.append('extracted_text', extractedText);
+    fd.append('extracted_text', extractedText);
     if (partNumber) fd.append('part_number', partNumber);
     if (manualRev.trim()) fd.append('revision', manualRev.trim());
 
@@ -184,12 +191,42 @@ export default function UploadBOMPage() {
               </div>
             </div>
 
+            <div className="rounded-xl border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-600 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pipeline</span>
+                <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${
+                  result.pipeline_status === 'READY'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {result.pipeline_status === 'READY' ? 'READY' : 'WAITING FOR DRAWING'}
+                </span>
+              </div>
+              {result.pipeline_status === 'READY' ? (
+                <p>
+                  HWI job generated from current BOM + drawing. Review instructions from the SKU or operator view.
+                </p>
+              ) : (
+                <p>
+                  Upload a matching drawing to this SKU to automatically build the harness instructions.
+                </p>
+              )}
+            </div>
+
             <Link
               href={`/sku/${encodeURIComponent(result.sku.part_number)}`}
               className="inline-flex items-center gap-2 rounded-xl bg-blue-600 text-white font-semibold px-5 py-2 hover:bg-blue-700 transition text-sm"
             >
               Open SKU →
             </Link>
+            {result.pipeline_status === 'READY' && (
+              <Link
+                href={`/work-instructions?sku=${encodeURIComponent(result.sku.part_number)}`}
+                className="inline-flex items-center gap-2 rounded-xl border border-blue-200 text-blue-600 font-semibold px-5 py-2 hover:bg-blue-50 transition text-sm"
+              >
+                🧾 View Work Instructions
+              </Link>
+            )}
           </section>
         )}
       </div>

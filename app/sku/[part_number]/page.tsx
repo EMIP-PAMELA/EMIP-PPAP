@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import EMIPLayout from '../../layout/EMIPLayout';
 import type {
@@ -8,12 +9,8 @@ import type {
   SKUDocumentRecord,
 } from '@/src/features/harness-work-instructions/services/skuService';
 import type { DocumentDiffSummary } from '@/src/features/harness-work-instructions/utils/documentDiff';
-import { fuseDrawingWithBOM } from '@/src/features/harness-work-instructions/services/drawingFusionService';
-import { resolveEndpoints } from '@/src/features/harness-work-instructions/services/endpointResolutionService';
-import { buildProcessInstructions } from '@/src/features/harness-work-instructions/services/processInstructionService';
-import { loadFusionHints, persistLearningUsageEvents } from '@/src/features/harness-work-instructions/services/learningService';
-import type { CanonicalDrawingDraft } from '@/src/features/harness-work-instructions/types/drawingDraft';
 import type { HarnessInstructionJob } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
+import type { ProcessInstructionBundle } from '@/src/features/harness-work-instructions/types/processInstructions';
 
 interface UploadFormState {
   type: 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
@@ -30,17 +27,6 @@ interface PipelineSummary {
 
 type StatusTone = 'success' | 'info' | 'warning';
 
-async function extractTextFromUrl(fileUrl: string, fileName: string): Promise<string> {
-  const res = await fetch(fileUrl);
-  if (!res.ok) {
-    throw new Error(`Failed to download document: ${res.statusText}`);
-  }
-  const blob = await res.blob();
-  const file = new File([blob], fileName, { type: blob.type || 'application/pdf' });
-  const { extractTextFromPDF } = await import('@/src/features/documentEngine/utils/pdfToText');
-  return extractTextFromPDF(file);
-}
-
 export default function SKUDashboardPage() {
   const params = useParams<{ part_number: string }>();
   const partNumberParam = params?.part_number ? decodeURIComponent(params.part_number) : '';
@@ -52,6 +38,7 @@ export default function SKUDashboardPage() {
   const [running, setRunning] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
+  const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'READY' | 'PARTIAL'>('idle');
   const [uploadForm, setUploadForm] = useState<UploadFormState>({ type: 'BOM', revision: 'A' });
   const [statusBanner, setStatusBanner] = useState<{ tone: StatusTone; text: string } | null>(null);
   const [recentDiffInsight, setRecentDiffInsight] = useState<{
@@ -60,6 +47,7 @@ export default function SKUDashboardPage() {
     revision: string;
   } | null>(null);
   const [diffPanelOpen, setDiffPanelOpen] = useState(true);
+  const autoRunSignature = useRef<string | null>(null);
 
   const partNumber = sku?.part_number ?? partNumberParam?.toUpperCase() ?? '';
 
@@ -162,96 +150,62 @@ export default function SKUDashboardPage() {
     }
   }
 
-  async function runPipeline() {
+  async function runPipeline(trigger: 'manual' | 'auto' = 'manual') {
     if (!sku) return;
     try {
       setRunning(true);
-      setMessage(null);
+      if (trigger === 'manual') {
+        setMessage(null);
+      }
       setSummary(null);
 
-      const res = await fetch(`/api/sku/get?partNumber=${encodeURIComponent(sku.part_number)}`);
+      const res = await fetch(`/api/sku/pipeline?part_number=${encodeURIComponent(sku.part_number)}`);
       const json = await res.json();
-      if (!json.ok) throw new Error(json.error ?? 'Failed to refresh SKU');
+      if (!json.ok) throw new Error(json.error ?? 'Failed to process documents');
 
-      const skuDocs: SKUDocumentRecord[] = json.documents;
-      const currentBOM = skuDocs.find(d => d.document_type === 'BOM' && d.is_current);
-      const currentDrawing =
-        skuDocs.find(d => d.document_type === 'INTERNAL_DRAWING' && d.is_current) ||
-        skuDocs.find(d => d.document_type === 'CUSTOMER_DRAWING' && d.is_current);
+      const status = (json.pipeline_status ?? 'PARTIAL') as 'READY' | 'PARTIAL';
+      setPipelineStatus(status);
 
-      if (!currentBOM) {
-        throw new Error('Upload a BOM document before running the pipeline');
+      if (status === 'READY' && json.job && json.process_bundle) {
+        const job: HarnessInstructionJob = json.job as HarnessInstructionJob;
+        const bundle: ProcessInstructionBundle = json.process_bundle as ProcessInstructionBundle;
+
+        setSummary({
+          wires: job.wire_instances?.length ?? 0,
+          pinMapRows: job.pin_map_rows?.length ?? 0,
+          komaxSetup: bundle.komax_setup.length,
+          pressSetup: bundle.press_setup.length,
+          generatedAt: bundle.generated_at,
+        });
+      } else {
+        setSummary(null);
       }
-      if (!currentDrawing) {
-        throw new Error('Upload a drawing (internal or customer) before running the pipeline');
-      }
-
-      const [bomText, drawingText] = await Promise.all([
-        extractTextFromUrl(currentBOM.file_url, currentBOM.file_name),
-        extractTextFromUrl(currentDrawing.file_url, currentDrawing.file_name),
-      ]);
-
-      const bomResponse = await fetch('/api/harness-instructions/upload-bom', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          bomText,
-          partNumber: sku.part_number,
-          revision: currentBOM.revision,
-          fileName: currentBOM.file_name,
-        }),
-      });
-      const bomJson = await bomResponse.json();
-      if (!bomJson.ok || !bomJson.job) {
-        throw new Error(bomJson.error ?? 'BOM parsing failed');
-      }
-
-      const drawingResponse = await fetch('/api/harness-instructions/upload-drawing', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          drawingText,
-          fileName: currentDrawing.file_name,
-        }),
-      });
-      const drawingJson = await drawingResponse.json();
-      if (!drawingJson.ok || !drawingJson.drawing) {
-        throw new Error(drawingJson.error ?? 'Drawing parsing failed');
-      }
-
-      const job: HarnessInstructionJob = bomJson.job;
-      const drawing: CanonicalDrawingDraft = drawingJson.drawing;
-
-      const hints = await loadFusionHints(drawing, job);
-      const fused = fuseDrawingWithBOM(drawing, job, hints);
-      const resolved = resolveEndpoints(fused, drawing, hints);
-      const processBundle = buildProcessInstructions(resolved, hints?.toolingOverrides, hints);
-
-      await persistLearningUsageEvents(hints).catch(err => {
-        console.warn('[HWI LEARNING] persist usage events failed (SKU pipeline run)', err);
-      });
-
-      console.log('[HWI SKU PIPELINE RUN]', {
-        sku_id: sku.id,
-        part_number: sku.part_number,
-        wires: resolved.wire_instances.length,
-        pin_map_rows: resolved.pin_map_rows.length,
-      });
-
-      setSummary({
-        wires: resolved.wire_instances.length,
-        pinMapRows: resolved.pin_map_rows.length,
-        komaxSetup: processBundle.komax_setup.length,
-        pressSetup: processBundle.press_setup.length,
-        generatedAt: processBundle.generated_at,
-      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setMessage(msg);
+      if (trigger === 'manual') {
+        setMessage(msg);
+      } else {
+        console.warn('[HWI AUTO PIPELINE]', msg);
+      }
     } finally {
       setRunning(false);
     }
   }
+
+  useEffect(() => {
+    const currentBOM = docByType.BOM;
+    const currentDrawing = docByType.INTERNAL_DRAWING ?? docByType.CUSTOMER_DRAWING;
+    if (!sku || !currentBOM || !currentDrawing) {
+      setPipelineStatus('PARTIAL');
+      setSummary(null);
+      autoRunSignature.current = null;
+      return;
+    }
+    const sig = `${currentBOM.id}:${currentDrawing.id}`;
+    if (autoRunSignature.current === sig) return;
+    autoRunSignature.current = sig;
+    runPipeline('auto');
+  }, [docByType, sku?.id]);
 
   const sectionDescription = (type: string) => {
     if (type === 'BOM') return 'Bill of Materials';
@@ -475,7 +429,7 @@ export default function SKUDashboardPage() {
           })}
         </section>
 
-        <section className="grid gap-6 lg:grid-cols-2">
+        <section className="grid gap-6 md:grid-cols-2">
           <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -530,22 +484,56 @@ export default function SKUDashboardPage() {
           </div>
 
           <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Pipeline</h2>
-                <p className="text-sm text-gray-500">Run the Harness Work Instruction pipeline from stored documents.</p>
+                <div className="mt-2 inline-flex items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Status</span>
+                  <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${
+                    pipelineStatus === 'READY'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : pipelineStatus === 'idle'
+                        ? 'bg-gray-100 text-gray-500'
+                        : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {pipelineStatus === 'READY' ? 'READY' : pipelineStatus === 'idle' ? 'IDLE' : 'WAITING FOR DOCUMENTS'}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500 mt-1">
+                  {pipelineStatus === 'READY'
+                    ? 'Latest documents have generated a full harness instruction job.'
+                    : 'Upload both a BOM and drawing for this SKU to build instructions automatically.'}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2 w-full lg:w-64">
+                <button
+                  onClick={() => runPipeline('manual')}
+                  disabled={running || loading || !sku}
+                  className="rounded-xl bg-emerald-600 py-2.5 text-center text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-60"
+                >
+                  {running ? 'Refreshing…' : '🔄 Generate / Refresh'}
+                </button>
+                {pipelineStatus === 'READY' ? (
+                  <Link
+                    href={`/work-instructions?sku=${encodeURIComponent(partNumber)}`}
+                    className="rounded-xl border border-blue-200 py-2.5 text-center text-sm font-semibold text-blue-700 hover:bg-blue-50 transition"
+                  >
+                    🧾 View Work Instructions
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="rounded-xl border border-dashed border-gray-200 py-2.5 text-center text-sm font-semibold text-gray-400 cursor-not-allowed"
+                  >
+                    🧾 View Work Instructions
+                  </button>
+                )}
               </div>
             </div>
 
-            <button
-              onClick={runPipeline}
-              disabled={running || loading || !sku}
-              className="w-full rounded-xl bg-emerald-600 py-3 text-center text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-60"
-            >
-              {running ? 'Generating…' : 'Generate Work Instructions'}
-            </button>
-
-            {summary && (
+            {summary ? (
               <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900 space-y-1">
                 <p className="font-semibold">Latest run</p>
                 <p>Wire instances: {summary.wires}</p>
@@ -553,6 +541,12 @@ export default function SKUDashboardPage() {
                 <p>Komax setup entries: {summary.komaxSetup}</p>
                 <p>Press setup entries: {summary.pressSetup}</p>
                 <p className="text-xs text-emerald-700">Generated at {new Date(summary.generatedAt).toLocaleString()}</p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-500">
+                {pipelineStatus === 'READY'
+                  ? 'Pipeline ready — run to refresh the latest instructions.'
+                  : 'Pipeline results will appear here once both BOM and drawing are stored.'}
               </div>
             )}
           </div>

@@ -55,7 +55,7 @@ async function storeExtractedText(storagePath: string, text?: string | null): Pr
   return textPath;
 }
 
-async function loadExtractedText(storagePath: string): Promise<string | null> {
+export async function loadExtractedText(storagePath: string): Promise<string | null> {
   const textPath = getTextStoragePath(storagePath);
   const { data, error } = await supabase.storage.from(SKU_BUCKET).download(textPath);
   if (error || !data) {

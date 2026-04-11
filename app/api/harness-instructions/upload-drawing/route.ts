@@ -14,41 +14,12 @@
  *   3. Return CanonicalDrawingDraft
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { ingestDrawingPdf } from '@/src/features/harness-work-instructions/services/drawingIngestionService';
+import { NextResponse } from 'next/server';
 
-export async function POST(request: NextRequest) {
-  let body: { drawingText?: string; fileName?: string };
-
-  try {
-    body = await request.json() as typeof body;
-  } catch {
-    return NextResponse.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 });
-  }
-
-  const { drawingText, fileName } = body ?? {};
-
-  if (!drawingText || drawingText.trim().length === 0) {
-    return NextResponse.json(
-      { ok: false, error: 'drawingText is required (extract text from PDF in the browser first)' },
-      { status: 400 }
-    );
-  }
-
-  console.log('[HWI upload-drawing] Received drawing text', {
-    textLength: drawingText.length,
-    fileName:   fileName ?? 'not provided',
-  });
-
-  try {
-    const drawing = ingestDrawingPdf({ drawingText, fileName });
-    return NextResponse.json({ ok: true, drawing });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[HWI upload-drawing] Ingestion failed:', msg);
-    return NextResponse.json(
-      { ok: false, error: 'Drawing ingestion failed', details: msg },
-      { status: 500 }
-    );
-  }
+export async function POST() {
+  return NextResponse.json({
+    ok: false,
+    error: 'DEPRECATED_ENDPOINT',
+    message: 'Use /api/upload/drawing (SKU-first ingestion path).',
+  }, { status: 410 });
 }

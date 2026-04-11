@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ingestDocumentFirstFlow, normalizeDocumentType, type DocumentMetadata, type DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
-import { ingestDrawingPdf } from '@/src/features/harness-work-instructions/services/drawingIngestionService';
+import { ingestAndProcessDocument, UnifiedIngestionError } from '@/src/features/harness-work-instructions/services/unifiedIngestionService';
+import { normalizeDocumentType, type DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
 
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
@@ -27,49 +27,22 @@ export async function POST(request: NextRequest) {
   }
 
   const extractedText = typeof extractedTextField === 'string' ? extractedTextField : undefined;
-
-  let partNumber: string | null =
-    typeof manualPartNumber === 'string' && manualPartNumber.trim() ? manualPartNumber.trim().toUpperCase() : null;
-  let revision: string | null =
-    typeof manualRevision === 'string' && manualRevision.trim() ? manualRevision.trim() : null;
-  let description: string | null = null;
-
-  if (extractedText) {
-    const draft = ingestDrawingPdf({ drawingText: extractedText, fileName: file.name });
-    if (!partNumber && draft.drawing_number) {
-      partNumber = draft.drawing_number.trim().toUpperCase();
-    }
-    if (!revision && draft.revision) {
-      revision = draft.revision;
-    }
-    if (draft.title) {
-      description = draft.title;
-    }
+  if (!extractedText || !extractedText.trim()) {
+    return NextResponse.json({ ok: false, error: 'extracted_text is required' }, { status: 400 });
   }
-
-  if (!partNumber) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'Could not derive part number from drawing. Please enter it manually.',
-        needs_manual_part_number: true,
-      },
-      { status: 422 },
-    );
-  }
-
-  const meta: DocumentMetadata = {
-    part_number: partNumber,
-    revision,
-    description,
-    sourceType: documentType,
-  };
 
   try {
-    const result = await ingestDocumentFirstFlow(meta, file, extractedText);
+    const result = await ingestAndProcessDocument({
+      file,
+      documentType,
+      extractedText,
+      partNumberOverride: typeof manualPartNumber === 'string' ? manualPartNumber : undefined,
+      revisionOverride: typeof manualRevision === 'string' ? manualRevision : undefined,
+    });
     return NextResponse.json({
       ok: true,
       sku: { id: result.sku.id, part_number: result.sku.part_number },
+      documents: result.documents,
       sku_created: result.skuCreated,
       header_updated: result.headerUpdated,
       status: result.uploadResult.status,
@@ -77,8 +50,22 @@ export async function POST(request: NextRequest) {
       message: result.uploadResult.message,
       diff_summary: result.uploadResult.diff_summary ?? null,
       document: result.uploadResult.document,
+      pipeline_status: result.pipeline.status,
+      job: result.pipeline.job,
+      process_bundle: result.pipeline.processBundle,
     });
   } catch (err) {
+    if (err instanceof UnifiedIngestionError) {
+      if (err.code === 'MISSING_PART_NUMBER') {
+        return NextResponse.json(
+          { ok: false, error: err.message, needs_manual_part_number: true },
+          { status: 422 },
+        );
+      }
+      if (err.code === 'MISSING_TEXT') {
+        return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
+      }
+    }
     const message = err instanceof Error ? err.message : 'Drawing ingest failed';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }

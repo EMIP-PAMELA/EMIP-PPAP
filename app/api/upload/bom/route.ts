@@ -1,89 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ingestDocumentFirstFlow, type DocumentMetadata } from '@/src/features/harness-work-instructions/services/skuService';
-
-function derivePartNumberFromBOMText(text: string): string | null {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const pnPatterns = [
-    /\b(\d{3}-\d{4,5}-\d{3,4}[A-Z]?)\b/i,
-    /\b([A-Z]{2,4}-\d{4,6}(?:-[A-Z0-9]{1,5})?)\b/,
-    /part\s*(?:number|no\.?|#)[:\s]+([A-Z0-9][A-Z0-9\-]{4,})/i,
-  ];
-  for (const line of lines.slice(0, 40)) {
-    for (const pattern of pnPatterns) {
-      const m = line.match(pattern);
-      if (m) return m[1].trim().toUpperCase();
-    }
-  }
-  return null;
-}
-
-function deriveRevisionFromBOMText(text: string): string | null {
-  const m = text.match(/\bREV(?:ISION)?[:\s.]*([A-Z0-9]{1,4})\b/i);
-  return m ? m[1].toUpperCase() : null;
-}
-
-function deriveDescriptionFromBOMText(text: string): string | null {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const titleRe = /WIRE\s+HARNESS|HARNESS\s+ASSY|CABLE\s+ASSY|WIRING\s+ASSEMBLY/i;
-  for (const line of lines.slice(0, 60)) {
-    if (titleRe.test(line) && line.length < 150) {
-      return line.replace(/\s+/g, ' ').trim();
-    }
-  }
-  return null;
-}
+import { ingestAndProcessDocument, UnifiedIngestionError } from '@/src/features/harness-work-instructions/services/unifiedIngestionService';
 
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get('file');
-  const extractedTextField = formData.get('extracted_text');
   const manualPartNumber = formData.get('part_number');
   const manualRevision = formData.get('revision');
+  const extractedTextField = formData.get('extracted_text');
 
   if (!(file instanceof File)) {
     return NextResponse.json({ ok: false, error: 'file is required' }, { status: 400 });
   }
 
   const extractedText = typeof extractedTextField === 'string' ? extractedTextField : undefined;
-
-  let partNumber: string | null =
-    typeof manualPartNumber === 'string' && manualPartNumber.trim() ? manualPartNumber.trim().toUpperCase() : null;
-
-  let revision: string | null =
-    typeof manualRevision === 'string' && manualRevision.trim() ? manualRevision.trim() : null;
-
-  if (extractedText && !partNumber) {
-    partNumber = derivePartNumberFromBOMText(extractedText);
+  if (!extractedText || !extractedText.trim()) {
+    return NextResponse.json({ ok: false, error: 'extracted_text is required' }, { status: 400 });
   }
-  if (extractedText && !revision) {
-    revision = deriveRevisionFromBOMText(extractedText);
-  }
-
-  const description = extractedText ? deriveDescriptionFromBOMText(extractedText) : null;
-
-  if (!partNumber) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'Could not derive part number from BOM. Please enter it manually.',
-        needs_manual_part_number: true,
-      },
-      { status: 422 },
-    );
-  }
-
-  const meta: DocumentMetadata = {
-    part_number: partNumber,
-    revision,
-    description,
-    sourceType: 'BOM',
-  };
 
   try {
-    const result = await ingestDocumentFirstFlow(meta, file, extractedText);
+    const result = await ingestAndProcessDocument({
+      file,
+      documentType: 'BOM',
+      extractedText,
+      partNumberOverride: typeof manualPartNumber === 'string' ? manualPartNumber : undefined,
+      revisionOverride: typeof manualRevision === 'string' ? manualRevision : undefined,
+    });
     return NextResponse.json({
       ok: true,
       sku: { id: result.sku.id, part_number: result.sku.part_number },
+      documents: result.documents,
       sku_created: result.skuCreated,
       header_updated: result.headerUpdated,
       status: result.uploadResult.status,
@@ -91,8 +36,22 @@ export async function POST(request: NextRequest) {
       message: result.uploadResult.message,
       diff_summary: result.uploadResult.diff_summary ?? null,
       document: result.uploadResult.document,
+      pipeline_status: result.pipeline.status,
+      job: result.pipeline.job,
+      process_bundle: result.pipeline.processBundle,
     });
   } catch (err) {
+    if (err instanceof UnifiedIngestionError) {
+      if (err.code === 'MISSING_PART_NUMBER') {
+        return NextResponse.json(
+          { ok: false, error: err.message, needs_manual_part_number: true },
+          { status: 422 },
+        );
+      }
+      if (err.code === 'MISSING_TEXT') {
+        return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
+      }
+    }
     const message = err instanceof Error ? err.message : 'BOM ingest failed';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
