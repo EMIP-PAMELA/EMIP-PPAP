@@ -40,3 +40,27 @@ export async function storeAliasMapping(drawingNumber: string, partNumber: strin
     part_number: payload.part_number,
   });
 }
+
+export async function resolveAliasFromDB(drawingNumber: string): Promise<string | null> {
+  const supabase = getSupabaseServer();
+  const normalized = drawingNumber.trim().toUpperCase();
+
+  const { data, error } = await supabase
+    .from('sku_aliases')
+    .select('part_number')
+    .eq('alias_value', normalized)
+    .single();
+
+  if (error) {
+    console.warn('[HWI ALIAS DB ERROR]', { drawing_number: normalized, error: error.message });
+    return null;
+  }
+
+  if (data?.part_number) {
+    console.log('[HWI ALIAS DB HIT]', normalized);
+    return data.part_number;
+  }
+
+  console.log('[HWI ALIAS DB MISS]', normalized);
+  return null;
+}

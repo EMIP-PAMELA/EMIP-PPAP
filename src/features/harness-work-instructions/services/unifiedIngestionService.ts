@@ -1,6 +1,6 @@
 import { ingestDocumentFirstFlow, type DocumentType, type SKUDocumentRecord, type SKURecord, getCurrentDocuments, loadExtractedText } from './skuService';
 import { resolvePartNumberFromDrawing } from './drawingLookupService';
-import { storeAliasMapping } from './aliasService';
+import { storeAliasMapping, resolveAliasFromDB } from './aliasService';
 import { parseBOMToHWI } from '@/src/core/services/bomHWIAdapter';
 import { ingestDrawingPdf } from './drawingIngestionService';
 import { fuseDrawingWithBOM } from './drawingFusionService';
@@ -187,13 +187,23 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     if (!description && draft.title) description = draft.title;
   }
 
-  if (!partNumber && normalizedType !== 'BOM') {
+  if (!partNumber) {
     const drawingNumber = extractDrawingNumber(extractedText);
     if (drawingNumber) {
-      const resolved = resolvePartNumberFromDrawing(drawingNumber);
+      let resolved: string | null = null;
+      try {
+        resolved = await resolveAliasFromDB(drawingNumber);
+      } catch (err) {
+        console.warn('[HWI ALIAS DB LOOKUP ERROR]', err);
+      }
+
+      if (!resolved) {
+        resolved = resolvePartNumberFromDrawing(drawingNumber);
+      }
+
       if (resolved) {
         partNumber = resolved;
-        console.log('[HWI ALIAS RESOLUTION SUCCESS]', drawingNumber, '→', resolved);
+        console.log('[HWI RESOLUTION SUCCESS]', drawingNumber, '→', resolved);
         storeAliasMapping(drawingNumber, resolved).catch(err => {
           console.warn('[HWI ALIAS STORE ERROR]', err);
         });
