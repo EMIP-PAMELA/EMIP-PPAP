@@ -22,6 +22,18 @@ interface VaultDocumentRow {
   classification_confidence: number | null;
   classification_notes: string | null;
   last_classified_at: string | null;
+  linked_documents_count: number;
+  highest_confidence_link: { link_type: string; confidence_score: number } | null;
+  conflict_flag: boolean;
+  linked_documents?: {
+    document_id: string;
+    filename: string;
+    document_type: string;
+    sku: string | null;
+    link_type: string;
+    confidence_score: number;
+    signals_used?: string[];
+  }[];
 }
 
 interface VaultDocumentTableProps {
@@ -106,10 +118,10 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
     setSelected(row);
     setDetail(row);
 
-    if (row.extracted_text) return;
+    if (row.extracted_text && row.linked_documents) return;
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/vault/documents?id=${row.id}&include_text=true&limit=1`);
+      const res = await fetch(`/api/vault/documents?id=${row.id}&include_text=true&include_links=true&limit=1`);
       if (!res.ok) throw new Error('Failed to load document');
       const json = await res.json();
       if (json.documents && json.documents[0]) {
@@ -167,6 +179,16 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${classificationBadges[doc.classification_status].tone}`}>
                     {classificationBadges[doc.classification_status].label}
                   </span>
+                  {doc.linked_documents_count > 0 && (
+                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                      🔗 {doc.linked_documents_count}
+                    </span>
+                  )}
+                  {doc.conflict_flag && (
+                    <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+                      ⚠️ Conflict
+                    </span>
+                  )}
                   <span className="text-xs text-gray-500">{doc.document_type.replace('_', ' ')}</span>
                 </button>
               );
@@ -233,6 +255,12 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                     : '—'}
                 </dd>
               </div>
+              <div>
+                <dt className="text-xs uppercase text-gray-400">Linked Documents</dt>
+                <dd className="font-semibold text-gray-900">
+                  {(detail ?? selected).linked_documents_count ?? 0}
+                </dd>
+              </div>
             </dl>
 
             {(detail ?? selected).message && (
@@ -244,6 +272,13 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
             {(detail ?? selected).classification_notes && (
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
                 {(detail ?? selected).classification_notes}
+              </div>
+            )}
+
+            {(detail ?? selected).highest_confidence_link && (
+              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                Highest link: {(detail ?? selected).highest_confidence_link?.link_type ?? 'N/A'} ·
+                Confidence {(detail ?? selected).highest_confidence_link?.confidence_score ?? 0}
               </div>
             )}
 
@@ -259,6 +294,38 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                 <pre className="max-h-[200px] overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 whitespace-pre-wrap">
                   {detail.extracted_text}
                 </pre>
+              </div>
+            )}
+
+            {(detail ?? selected).linked_documents && (detail ?? selected).linked_documents!.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs uppercase text-gray-400 mb-2">Linked Documents</p>
+                <div className="space-y-2">
+                  {(detail ?? selected).linked_documents!.map(link => (
+                    <div key={link.document_id} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold text-gray-900">{link.filename}</p>
+                          <p className="text-xs text-gray-500">
+                            {link.document_type} · SKU {link.sku ?? '—'}
+                          </p>
+                        </div>
+                        <span className="text-xs font-semibold text-gray-700">
+                          {link.link_type} · {link.confidence_score}
+                        </span>
+                      </div>
+                      {link.signals_used && link.signals_used.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-gray-500">
+                          {link.signals_used.map(signal => (
+                            <span key={signal} className="rounded-full bg-gray-100 px-2 py-0.5">
+                              {signal}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

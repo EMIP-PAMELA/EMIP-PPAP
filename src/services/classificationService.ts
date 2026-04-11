@@ -3,6 +3,7 @@ import { loadExtractedText, type DocumentClassificationStatus } from '@/src/feat
 import { detectDocumentType } from '@/src/features/vault/utils/documentSignals';
 import { resolveAliasFromDB, storeAliasMapping } from '@/src/features/harness-work-instructions/services/aliasService';
 import { resolvePartNumberFromDrawing } from '@/src/features/harness-work-instructions/services/drawingLookupService';
+import { linkDocument } from '@/src/services/linkingService';
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1500;
@@ -21,6 +22,12 @@ type RawDocument = {
   storage_path: string | null;
   classification_status: DocumentClassificationStatus;
   classification_attempts: number;
+};
+
+type SignalContext = {
+  partNumber: string | null;
+  drawingNumber: string | null;
+  aliasResolution: string | null;
 };
 
 const PART_NUMBER_PATTERNS = [
@@ -57,41 +64,23 @@ function extractDrawingNumber(text: string | null): string | null {
   return null;
 }
 
-async function deterministicPass(document: RawDocument, extractedText: string | null): Promise<ClassificationOutcome | null> {
-  if (!extractedText) {
-    return null;
-  }
-
-  const partNumber = extractPartNumber(extractedText);
-  if (partNumber) {
+function deterministicPass(document: RawDocument, context: SignalContext): ClassificationOutcome | null {
+  if (context.partNumber) {
     return {
       status: 'RESOLVED',
       confidence: 0.95,
-      notes: `Deterministic pass: detected part number ${partNumber}.`,
+      notes: `Deterministic pass: detected part number ${context.partNumber}.`,
       retry: false,
     };
   }
 
-  const drawingNumber = extractDrawingNumber(extractedText);
-  if (!drawingNumber) {
-    return null;
-  }
-
-  try {
-    const alias = (await resolveAliasFromDB(drawingNumber)) ?? resolvePartNumberFromDrawing(drawingNumber);
-    if (alias) {
-      storeAliasMapping(drawingNumber, alias).catch(err => {
-        console.warn('[CLASSIFICATION] Alias save failed', err);
-      });
-      return {
-        status: 'RESOLVED',
-        confidence: 0.9,
-        notes: `Deterministic pass: alias resolved ${drawingNumber} → ${alias}.`,
-        retry: false,
-      };
-    }
-  } catch (err) {
-    console.warn('[CLASSIFICATION] Alias lookup failed', err);
+  if (context.aliasResolution) {
+    return {
+      status: 'RESOLVED',
+      confidence: 0.9,
+      notes: `Deterministic pass: alias resolved ${context.drawingNumber ?? 'UNKNOWN'} → ${context.aliasResolution}.`,
+      retry: false,
+    };
   }
 
   return null;
@@ -141,8 +130,12 @@ function aiStubPass(): ClassificationOutcome {
   };
 }
 
-async function runClassificationPasses(document: RawDocument, extractedText: string | null): Promise<ClassificationOutcome> {
-  const deterministic = await deterministicPass(document, extractedText);
+async function runClassificationPasses(
+  document: RawDocument,
+  extractedText: string | null,
+  context: SignalContext,
+): Promise<ClassificationOutcome> {
+  const deterministic = deterministicPass(document, context);
   if (deterministic) return deterministic;
 
   const heuristic = heuristicPass(document, extractedText);
@@ -205,8 +198,10 @@ export async function classifyDocument(documentId: string): Promise<void> {
     }
   }
 
+  const signalContext = await buildSignalContext(extractedText);
+
   const nextAttempts = attempts + 1;
-  const outcome = await runClassificationPasses(document as RawDocument, extractedText);
+  const outcome = await runClassificationPasses(document as RawDocument, extractedText, signalContext);
   let statusToPersist: DocumentClassificationStatus = outcome.status;
   let shouldRetry = outcome.retry;
 
@@ -219,6 +214,8 @@ export async function classifyDocument(documentId: string): Promise<void> {
     }
   }
 
+  const inferredPartNumber = signalContext.partNumber ?? signalContext.aliasResolution ?? null;
+
   await supabase
     .from('sku_documents')
     .update({
@@ -227,8 +224,14 @@ export async function classifyDocument(documentId: string): Promise<void> {
       classification_confidence: outcome.confidence,
       classification_notes: outcome.notes,
       last_classified_at: new Date().toISOString(),
+      inferred_part_number: inferredPartNumber,
+      drawing_number: signalContext.drawingNumber ?? null,
     })
     .eq('id', documentId);
+
+  linkDocument(documentId).catch(err => {
+    console.error('[LINKING] async trigger failed', err);
+  });
 
   if (shouldRetry && statusToPersist === 'PENDING') {
     const timer = setTimeout(() => {
@@ -240,6 +243,42 @@ export async function classifyDocument(documentId: string): Promise<void> {
       (timer as NodeJS.Timeout).unref();
     }
   }
+}
+
+async function buildSignalContext(extractedText: string | null): Promise<SignalContext> {
+  if (!extractedText) {
+    return {
+      partNumber: null,
+      drawingNumber: null,
+      aliasResolution: null,
+    };
+  }
+
+  const partNumber = extractPartNumber(extractedText);
+  const drawingNumber = extractDrawingNumber(extractedText);
+  let aliasResolution: string | null = null;
+
+  if (!partNumber && drawingNumber) {
+    try {
+      aliasResolution = (await resolveAliasFromDB(drawingNumber)) ?? resolvePartNumberFromDrawing(drawingNumber);
+      if (!aliasResolution) {
+        aliasResolution = null;
+      } else if (aliasResolution && aliasResolution.length > 0) {
+        storeAliasMapping(drawingNumber, aliasResolution).catch(err => {
+          console.warn('[CLASSIFICATION] Alias save failed', err);
+        });
+      }
+    } catch (err) {
+      console.warn('[CLASSIFICATION] Alias lookup failed', err);
+      aliasResolution = null;
+    }
+  }
+
+  return {
+    partNumber: partNumber ?? null,
+    drawingNumber: drawingNumber ?? null,
+    aliasResolution,
+  };
 }
 
 export async function manuallyClassify(

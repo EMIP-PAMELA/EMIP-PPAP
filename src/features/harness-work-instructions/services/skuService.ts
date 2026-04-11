@@ -106,6 +106,8 @@ export interface SKUDocumentRecord {
   last_classified_at: string | null;
   classification_confidence: number | null;
   classification_notes: string | null;
+  inferred_part_number?: string | null;
+  drawing_number?: string | null;
 }
 
 const SKU_BUCKET = 'sku-documents';
