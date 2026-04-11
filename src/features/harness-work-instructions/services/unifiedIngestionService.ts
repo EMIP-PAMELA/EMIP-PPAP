@@ -1,4 +1,5 @@
 import { ingestDocumentFirstFlow, type DocumentType, type SKUDocumentRecord, type SKURecord, getCurrentDocuments, loadExtractedText } from './skuService';
+import { resolvePartNumberFromDrawing } from './drawingLookupService';
 import { parseBOMToHWI } from '@/src/core/services/bomHWIAdapter';
 import { ingestDrawingPdf } from './drawingIngestionService';
 import { fuseDrawingWithBOM } from './drawingFusionService';
