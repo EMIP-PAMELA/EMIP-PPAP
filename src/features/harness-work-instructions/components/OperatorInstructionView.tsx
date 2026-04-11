@@ -227,7 +227,7 @@ export default function OperatorInstructionView({ job, bundle }: Props) {
           </div>
           <ul className="divide-y divide-red-50">
             {[...reviewIssues, ...warningIssues].map(n => (
-              <li key={n.note_id} className="flex items-start gap-3 px-4 py-2.5 text-xs hover:bg-red-50">
+              <li key={`issue-${n.note_id}-${n.severity}-${n.category}`} className="flex items-start gap-3 px-4 py-2.5 text-xs hover:bg-red-50">
                 <span className="flex-shrink-0 font-mono text-gray-400 pt-0.5">{n.note_id}</span>
                 <span className={`flex-shrink-0 font-bold uppercase ${n.severity === 'review_required' ? 'text-red-600' : 'text-orange-600'}`}>
                   [{n.category}]
@@ -257,7 +257,7 @@ export default function OperatorInstructionView({ job, bundle }: Props) {
                 </tr></thead>
                 <tbody>
                   {group.entries.map(e => (
-                    <tr key={e.wire_id} className="hover:bg-gray-50">
+                    <tr key={`komax-${e.wire_id}-${group.key}`} className="hover:bg-gray-50">
                       <Td mono>{e.wire_id}</Td>
                       <Td mono>{fmtLen(e.cut_length)}</Td>
                       <Td>{e.strip_end_a ?? '—'}</Td>
@@ -287,7 +287,7 @@ export default function OperatorInstructionView({ job, bundle }: Props) {
             </tr></thead>
             <tbody>
               {bundle.press_setup.map(p => (
-                <tr key={p.press_id} className={`hover:bg-gray-50 ${p.flags.length > 0 ? 'bg-orange-50' : ''}`}>
+                <tr key={`press-${p.press_id}-${p.wire_id}`} className={`hover:bg-gray-50 ${p.flags.length > 0 ? 'bg-orange-50' : ''}`}>
                   <Td mono>{p.press_id}</Td>
                   <Td mono>{p.wire_id}</Td>
                   <Td>{p.gauge}</Td>
@@ -314,7 +314,7 @@ export default function OperatorInstructionView({ job, bundle }: Props) {
               const enriched = enrichStepText(step, job.pin_map_rows);
               const badgeCls = STATION_CLS[step.station_type] ?? 'bg-gray-100 text-gray-600 border border-gray-200';
               return (
-                <li key={step.step_number} className="flex gap-3 px-4 py-3 hover:bg-gray-50">
+                <li key={`step-${step.step_number}-${step.station_type}`} className="flex gap-3 px-4 py-3 hover:bg-gray-50">
                   <span className="w-7 flex-shrink-0 font-bold text-gray-400 text-xs pt-1">{step.step_number}.</span>
                   <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium self-start mt-0.5 ${badgeCls}`}>{step.station_type}</span>
                   <div className="flex-1 min-w-0">
@@ -344,7 +344,7 @@ export default function OperatorInstructionView({ job, bundle }: Props) {
         ) : (
           <ul className="divide-y divide-gray-100">
             {bundle.engineering_notes.map(n => (
-              <li key={n.note_id} className={`flex items-start gap-3 px-4 py-2.5 text-xs ${
+              <li key={`eng-${n.note_id}-${n.severity}-${n.category}`} className={`flex items-start gap-3 px-4 py-2.5 text-xs ${
                 n.severity === 'review_required' ? 'bg-red-50' : n.severity === 'warning' ? 'bg-orange-50' : ''
               }`}>
                 <span className="flex-shrink-0 font-mono text-gray-400">{n.note_id}</span>

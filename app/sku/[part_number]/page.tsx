@@ -193,6 +193,7 @@ export default function SKUDashboardPage() {
   }
 
   useEffect(() => {
+    if (loading) return;
     const currentBOM = docByType.BOM;
     const currentDrawing = docByType.INTERNAL_DRAWING ?? docByType.CUSTOMER_DRAWING;
     if (!sku || !currentBOM || !currentDrawing) {
@@ -205,7 +206,7 @@ export default function SKUDashboardPage() {
     if (autoRunSignature.current === sig) return;
     autoRunSignature.current = sig;
     runPipeline('auto');
-  }, [docByType, sku?.id]);
+  }, [docByType, sku?.id, loading]);
 
   const sectionDescription = (type: string) => {
     if (type === 'BOM') return 'Bill of Materials';
@@ -237,6 +238,27 @@ export default function SKUDashboardPage() {
             </p>
           )}
         </header>
+
+        {!loading && sku && (
+          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 flex flex-wrap items-center gap-4">
+            <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Readiness</span>
+            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${docByType.BOM ? 'text-emerald-700' : 'text-red-600'}`}>
+              {docByType.BOM ? '✓' : '✗'} BOM
+            </span>
+            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${(docByType.CUSTOMER_DRAWING || docByType.INTERNAL_DRAWING) ? 'text-emerald-700' : 'text-red-600'}`}>
+              {(docByType.CUSTOMER_DRAWING || docByType.INTERNAL_DRAWING) ? '✓' : '✗'} Drawing
+            </span>
+            <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${
+              pipelineStatus === 'READY'
+                ? 'bg-emerald-100 text-emerald-700'
+                : pipelineStatus === 'PARTIAL'
+                  ? 'bg-amber-100 text-amber-800'
+                  : 'bg-gray-100 text-gray-500'
+            }`}>
+              {pipelineStatus === 'READY' ? 'PIPELINE READY' : pipelineStatus === 'PARTIAL' ? 'INCOMPLETE' : '…'}
+            </span>
+          </div>
+        )}
 
         {sku && !sku.description && !loading && (
           <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">

@@ -42,25 +42,53 @@ export interface UnifiedIngestionResult {
   pipeline: PipelineResult;
 }
 
+const WEAK_PN_TOKENS = new Set([
+  'REV', 'DWG', 'DRW', 'NOTE', 'ITEM', 'DOC', 'PAGE', 'SHEET', 'DATE',
+  'APP', 'CHK', 'ENG', 'TITLE', 'SIZE', 'SCALE', 'ZONE', 'CAGE', 'FSCM',
+]);
+
 function derivePartNumberFromBOM(text: string): string | null {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const patterns = [
-    /\b(\d{3}-\d{4,5}-\d{3,4}[A-Z]?)\b/i,
-    /\b([A-Z]{2,4}-\d{4,6}(?:-[A-Z0-9]{1,5})?)\b/,
-    /part\s*(?:number|no\.?|#)[:\s]+([A-Z0-9][A-Z0-9\-]{4,})/i,
+  const lines = text
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && l.length < 200);
+
+  const patterns: RegExp[] = [
+    /\b(\d{3}-\d{4,5}-\d{3,4}[A-Z]?)\b/,
+    /\b([A-Z]{2,6}-\d{4,6}(?:-[A-Z0-9]{1,5})?)\b/,
+    /part\s*(?:number|no\.?|#)\s*[:\s]+([A-Z0-9]{2}[A-Z0-9\-]{4,})/i,
   ];
-  for (const line of lines.slice(0, 60)) {
+
+  for (const line of lines.slice(0, 50)) {
     for (const pattern of patterns) {
       const match = line.match(pattern);
-      if (match) return match[1].trim().toUpperCase();
+      if (!match) continue;
+      const candidate = match[1].trim().toUpperCase();
+      if (candidate.length < 6) continue;
+      if (WEAK_PN_TOKENS.has(candidate)) continue;
+      if (/^[A-Z]-/i.test(candidate)) continue;
+      return candidate;
     }
   }
   return null;
 }
 
 function deriveRevisionFromBOM(text: string): string | null {
-  const m = text.match(/\bREV(?:ISION)?[:\s.]*([A-Z0-9]{1,4})\b/i);
-  return m ? m[1].toUpperCase() : null;
+  const lines = text
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && l.length < 200);
+
+  for (const line of lines.slice(0, 40)) {
+    const m = line.match(
+      /\b(?:REV(?:ISION)?|REVISION\s*LEVEL|REV\.?\s*NO\.?)[:\s.]*([A-Z0-9]{1,4})\b/i,
+    );
+    if (!m) continue;
+    const candidate = m[1].toUpperCase();
+    if (/^\d+$/.test(candidate)) continue;
+    return candidate;
+  }
+  return null;
 }
 
 function deriveDescriptionFromBOM(text: string): string | null {

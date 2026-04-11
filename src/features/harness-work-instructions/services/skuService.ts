@@ -59,6 +59,7 @@ export async function loadExtractedText(storagePath: string): Promise<string | n
   const textPath = getTextStoragePath(storagePath);
   const { data, error } = await supabase.storage.from(SKU_BUCKET).download(textPath);
   if (error || !data) {
+    console.warn('[HWI EXTRACTED TEXT MISSING]', { storage_path: textPath, error: error?.message ?? 'no data' });
     return null;
   }
   const blobLike: Blob | ArrayBuffer = data as any;
@@ -395,7 +396,14 @@ export async function getCurrentDocuments(skuId: string): Promise<SKUDocumentRec
     throw new Error(error.message);
   }
 
-  return data as SKUDocumentRecord[];
+  const records = data as SKUDocumentRecord[];
+  console.log('[HWI CURRENT DOCS]', {
+    sku_id: skuId,
+    count: records.length,
+    types: records.map(d => d.document_type),
+    revisions: records.map(d => d.revision),
+  });
+  return records;
 }
 
 export async function setCurrentDocument(documentId: string): Promise<SKUDocumentRecord | null> {

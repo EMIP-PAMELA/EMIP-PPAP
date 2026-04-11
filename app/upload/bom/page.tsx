@@ -18,7 +18,6 @@ interface IngestResult {
 export default function UploadBOMPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [manualPN, setManualPN] = useState('');
-  const [manualRev, setManualRev] = useState('');
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<IngestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +49,6 @@ export default function UploadBOMPage() {
     fd.append('file', file);
     fd.append('extracted_text', extractedText);
     if (partNumber) fd.append('part_number', partNumber);
-    if (manualRev.trim()) fd.append('revision', manualRev.trim());
 
     const res = await fetch('/api/upload/bom', { method: 'POST', body: fd });
     const json = await res.json();
@@ -102,17 +100,8 @@ export default function UploadBOMPage() {
         </header>
 
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 space-y-4">
-          <div>
-            <label className="flex flex-col gap-2">
-              <span className="text-sm font-semibold text-gray-700">Revision (optional)</span>
-              <input
-                type="text"
-                value={manualRev}
-                onChange={e => setManualRev(e.target.value)}
-                placeholder="e.g. A, B, REV-C"
-                className="rounded-xl border border-gray-300 px-4 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-              />
-            </label>
+          <div className="rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 text-sm text-blue-700">
+            Revision will be automatically extracted from the document content. No manual entry required.
           </div>
 
           <button

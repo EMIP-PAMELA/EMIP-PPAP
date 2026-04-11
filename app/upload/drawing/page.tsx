@@ -21,7 +21,6 @@ export default function UploadDrawingPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [drawingType, setDrawingType] = useState<DrawingType>('CUSTOMER_DRAWING');
   const [manualPN, setManualPN] = useState('');
-  const [manualRev, setManualRev] = useState('');
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<IngestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +53,6 @@ export default function UploadDrawingPage() {
     fd.append('drawing_type', drawingType);
     fd.append('extracted_text', extractedText);
     if (partNumber) fd.append('part_number', partNumber);
-    if (manualRev.trim()) fd.append('revision', manualRev.trim());
 
     const res = await fetch('/api/upload/drawing', { method: 'POST', body: fd });
     const json = await res.json();
@@ -106,7 +104,7 @@ export default function UploadDrawingPage() {
         </header>
 
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex flex-col gap-4">
             <label className="flex flex-col gap-2">
               <span className="text-sm font-semibold text-gray-700">Drawing Type</span>
               <select
@@ -118,17 +116,9 @@ export default function UploadDrawingPage() {
                 <option value="INTERNAL_DRAWING">Internal Drawing</option>
               </select>
             </label>
-
-            <label className="flex flex-col gap-2">
-              <span className="text-sm font-semibold text-gray-700">Revision (optional)</span>
-              <input
-                type="text"
-                value={manualRev}
-                onChange={e => setManualRev(e.target.value)}
-                placeholder="e.g. A, B, REV-C"
-                className="rounded-xl border border-gray-300 px-4 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-              />
-            </label>
+            <div className="rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 text-sm text-blue-700">
+              Revision will be automatically extracted from the document content. No manual entry required.
+            </div>
           </div>
 
           <button
