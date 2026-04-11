@@ -39,9 +39,8 @@ const NAVIGATION_ITEMS: NavigationItem[] = [
     path: '/sku',
     icon: '🗂️',
     children: [
-      { label: 'Upload BOM',     path: '/upload/bom',     icon: '📄' },
-      { label: 'Upload Drawing', path: '/upload/drawing', icon: '📐' },
-      { label: 'Bulk Upload (soon)', icon: '�', disabled: true },
+      { label: 'Document Vault', path: '/vault',          icon: '�️' },
+      { label: 'Bulk Upload (soon)', icon: '⚙️', disabled: true },
     ],
   },
   { label: 'BOM Repository',       path: '/bom',              icon: '📑' },

@@ -8,14 +8,8 @@ import type {
   SKURecord,
   SKUDocumentRecord,
 } from '@/src/features/harness-work-instructions/services/skuService';
-import type { DocumentDiffSummary } from '@/src/features/harness-work-instructions/utils/documentDiff';
 import type { HarnessInstructionJob } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
 import type { ProcessInstructionBundle } from '@/src/features/harness-work-instructions/types/processInstructions';
-
-interface UploadFormState {
-  type: 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
-  revision: string;
-}
 
 interface PipelineSummary {
   wires: number;
@@ -25,8 +19,6 @@ interface PipelineSummary {
   generatedAt: string;
 }
 
-type StatusTone = 'success' | 'info' | 'warning';
-
 export default function SKUDashboardPage() {
   const params = useParams<{ part_number: string }>();
   const partNumberParam = params?.part_number ? decodeURIComponent(params.part_number) : '';
@@ -34,22 +26,13 @@ export default function SKUDashboardPage() {
   const [documents, setDocuments] = useState<SKUDocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [running, setRunning] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'READY' | 'PARTIAL'>('idle');
-  const [uploadForm, setUploadForm] = useState<UploadFormState>({ type: 'BOM', revision: 'A' });
-  const [statusBanner, setStatusBanner] = useState<{ tone: StatusTone; text: string } | null>(null);
-  const [recentDiffInsight, setRecentDiffInsight] = useState<{
-    summary: DocumentDiffSummary | null;
-    documentType: string;
-    revision: string;
-  } | null>(null);
-  const [diffPanelOpen, setDiffPanelOpen] = useState(true);
   const autoRunSignature = useRef<string | null>(null);
 
   const partNumber = sku?.part_number ?? partNumberParam?.toUpperCase() ?? '';
+  const vaultLink = sku ? `/vault?sku=${encodeURIComponent(sku.part_number)}` : '/vault';
 
   async function loadSKU() {
     if (!partNumberParam) return;
@@ -90,65 +73,6 @@ export default function SKUDashboardPage() {
     }
     return map;
   }, [documents]);
-
-  async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!sku) return;
-    if (!selectedFile) {
-      setMessage('Select a file to upload');
-      return;
-    }
-    try {
-      setUploading(true);
-      setMessage(null);
-      setStatusBanner(null);
-      const formData = new FormData();
-      formData.append('sku_id', sku.id);
-      formData.append('document_type', uploadForm.type);
-      formData.append('revision', uploadForm.revision || 'UNSPECIFIED');
-      formData.append('file', selectedFile);
-
-      try {
-        const { extractTextFromPDF } = await import('@/src/features/documentEngine/utils/pdfToText');
-        const extractedText = await extractTextFromPDF(selectedFile);
-        if (extractedText && extractedText.trim().length > 0) {
-          formData.append('extracted_text', extractedText);
-        }
-      } catch (hashErr) {
-        console.warn('[HWI SKU UPLOAD] Failed to extract text for hashing (non-fatal)', hashErr);
-      }
-
-      const res = await fetch('/api/sku/upload-document', {
-        method: 'POST',
-        body: formData,
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error ?? 'Upload failed');
-      if (json.status === 'duplicate') {
-        setStatusBanner({ tone: 'info', text: json.message ?? 'Document already exists with identical content.' });
-        setRecentDiffInsight(null);
-      } else if (json.status === 'phantom_rev') {
-        setStatusBanner({ tone: 'warning', text: json.message ?? 'Possible phantom revision detected.' });
-        setRecentDiffInsight({
-          summary: (json.diff_summary as DocumentDiffSummary | undefined) ?? null,
-          documentType: json.document?.document_type ?? uploadForm.type,
-          revision: json.document?.revision ?? (uploadForm.revision || 'UNSPECIFIED'),
-        });
-        setDiffPanelOpen(true);
-      } else {
-        setStatusBanner({ tone: 'success', text: json.message ?? 'Document uploaded successfully.' });
-        setRecentDiffInsight(null);
-      }
-      setSelectedFile(null);
-      setSummary(null);
-      await loadSKU();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setMessage(msg);
-    } finally {
-      setUploading(false);
-    }
-  }
 
   async function runPipeline(trigger: 'manual' | 'auto' = 'manual') {
     if (!sku) return;
@@ -267,92 +191,23 @@ export default function SKUDashboardPage() {
           </div>
         )}
 
-        {statusBanner && (
-          <div
-            className={`rounded-2xl border px-4 py-3 text-sm ${
-              statusBanner.tone === 'warning'
-                ? 'border-amber-200 bg-amber-50 text-amber-900'
-                : statusBanner.tone === 'info'
-                  ? 'border-blue-200 bg-blue-50 text-blue-900'
-                  : 'border-emerald-200 bg-emerald-50 text-emerald-900'
-            }`}
-          >
-            {statusBanner.text}
-          </div>
-        )}
-
-        {recentDiffInsight && (
-          <div className="rounded-2xl border border-amber-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between px-4 py-3">
-              <div>
-                <p className="text-sm font-semibold text-amber-900">Possible Changes Detected</p>
-                <p className="text-xs text-amber-700">
-                  Phantom revision flagged on {sectionDescription(recentDiffInsight.documentType)} · Revision{' '}
-                  {recentDiffInsight.revision}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="text-xs font-semibold text-amber-800 hover:text-amber-900"
-                onClick={() => setDiffPanelOpen(open => !open)}
-              >
-                {diffPanelOpen ? 'Hide Summary' : 'View Summary'}
-              </button>
-            </div>
-            {recentDiffInsight.summary ? (
-              diffPanelOpen && (
-                <div className="border-t border-amber-100 px-4 py-4 text-sm text-amber-900">
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div>
-                      <p className="text-xs uppercase text-amber-600">Changed Lines</p>
-                      <p className="text-lg font-semibold">{recentDiffInsight.summary.changed_line_count}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase text-amber-600">Likely Functional Change</p>
-                      <p className="text-lg font-semibold">
-                        {recentDiffInsight.summary.likely_functional_change ? 'YES' : 'NO'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase text-amber-600">Summary</p>
-                      <p className="text-sm">{recentDiffInsight.summary.summary_message}</p>
-                    </div>
-                  </div>
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    {recentDiffInsight.summary.added_lines.length > 0 && (
-                      <div>
-                        <p className="text-xs uppercase text-amber-600">Added Lines</p>
-                        <ul className="mt-2 space-y-1 rounded-lg bg-amber-50 p-3 font-mono text-xs text-amber-900">
-                          {recentDiffInsight.summary.added_lines.map(line => (
-                            <li key={line}>{line}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {recentDiffInsight.summary.removed_lines.length > 0 && (
-                      <div>
-                        <p className="text-xs uppercase text-amber-600">Removed Lines</p>
-                        <ul className="mt-2 space-y-1 rounded-lg bg-amber-50 p-3 font-mono text-xs text-amber-900">
-                          {recentDiffInsight.summary.removed_lines.map(line => (
-                            <li key={line}>{line}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            ) : (
-              <div className="border-t border-amber-100 px-4 py-4 text-sm text-amber-800">
-                Phantom revision detected, but no text comparison was available.
-              </div>
-            )}
-          </div>
-        )}
-
         {message && (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {message}
+          </div>
+        )}
+
+        {sku && (
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-3">
+            <div className="text-sm text-gray-600 flex-1 min-w-[200px]">
+              Drop new BOMs or drawings straight into the Document Vault — this SKU will be preselected.
+            </div>
+            <Link
+              href={vaultLink}
+              className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition"
+            >
+              Upload Document to this SKU
+            </Link>
           </div>
         )}
 
@@ -451,61 +306,7 @@ export default function SKUDashboardPage() {
           })}
         </section>
 
-        <section className="grid gap-6 md:grid-cols-2">
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">Upload Document</h2>
-                <p className="text-sm text-gray-500">Set a new source of truth. Latest upload becomes current automatically.</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleUpload} className="mt-4 space-y-4">
-              <label className="flex flex-col gap-2">
-                <span className="text-sm font-medium text-gray-700">Document Type</span>
-                <select
-                  value={uploadForm.type}
-                  onChange={(e) => setUploadForm(prev => ({ ...prev, type: e.target.value as UploadFormState['type'] }))}
-                  className="rounded-xl border border-gray-300 px-4 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                >
-                  <option value="BOM">BOM</option>
-                  <option value="CUSTOMER_DRAWING">Customer Drawing</option>
-                  <option value="INTERNAL_DRAWING">Internal Drawing</option>
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-2">
-                <span className="text-sm font-medium text-gray-700">Revision</span>
-                <input
-                  type="text"
-                  value={uploadForm.revision}
-                  onChange={(e) => setUploadForm(prev => ({ ...prev, revision: e.target.value }))}
-                  className="rounded-xl border border-gray-300 px-4 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  placeholder="E.g. A1"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2">
-                <span className="text-sm font-medium text-gray-700">File</span>
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
-                  className="rounded-xl border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-600"
-                />
-              </label>
-
-              <button
-                type="submit"
-                disabled={uploading || !sku}
-                className="w-full rounded-xl bg-blue-600 py-3 text-center text-sm font-semibold text-white hover:bg-blue-700 transition disabled:opacity-60"
-              >
-                {uploading ? 'Uploading...' : 'Upload & Mark Current'}
-              </button>
-            </form>
-          </div>
-
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Pipeline</h2>
@@ -571,7 +372,6 @@ export default function SKUDashboardPage() {
                   : 'Pipeline results will appear here once both BOM and drawing are stored.'}
               </div>
             )}
-          </div>
         </section>
 
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
