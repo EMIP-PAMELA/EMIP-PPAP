@@ -1,0 +1,248 @@
+'use client';
+
+import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import type { VaultFilterState } from './VaultFilters';
+
+interface VaultDocumentRow {
+  id: string;
+  filename: string;
+  document_type: 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
+  sku: string | null;
+  revision: string;
+  status: 'CURRENT' | 'OBSOLETE' | 'UNKNOWN';
+  created_at: string;
+  pipeline_status?: string | null;
+  message?: string | null;
+  file_url?: string | null;
+  extracted_text?: string | null;
+}
+
+interface VaultDocumentTableProps {
+  filters: VaultFilterState;
+}
+
+const statusColors: Record<string, string> = {
+  CURRENT: 'bg-emerald-100 text-emerald-800',
+  OBSOLETE: 'bg-gray-100 text-gray-600',
+  UNKNOWN: 'bg-amber-100 text-amber-800',
+};
+
+function groupBySkuAndType(documents: VaultDocumentRow[]): { groupKey: string; documents: VaultDocumentRow[] }[] {
+  const map = new Map<string, VaultDocumentRow[]>();
+  for (const doc of documents) {
+    const key = `${doc.sku ?? 'UNLINKED'}-${doc.document_type}`;
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+    map.get(key)!.push(doc);
+  }
+  return Array.from(map.entries()).map(([groupKey, docs]) => ({
+    groupKey,
+    documents: docs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+  }));
+}
+
+export default function VaultDocumentTable({ filters }: VaultDocumentTableProps) {
+  const [documents, setDocuments] = useState<VaultDocumentRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function fetchDocuments() {
+      setLoading(true);
+      setError(null);
+      const params = new URLSearchParams();
+      if (filters.sku) params.set('sku', filters.sku);
+      if (filters.documentType) params.set('document_type', filters.documentType);
+      if (filters.status) params.set('status', filters.status);
+      if (filters.search) params.set('search', filters.search);
+      params.set('limit', '100');
+
+      try {
+        const res = await fetch(`/api/vault/documents?${params.toString()}`, { signal: controller.signal });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error ?? 'Failed to load documents');
+        }
+        const json = await res.json();
+        setDocuments(json.documents ?? []);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : 'Failed to load documents');
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchDocuments();
+    return () => controller.abort();
+  }, [filters.sku, filters.documentType, filters.status, filters.search]);
+
+  const groupedDocuments = useMemo(() => groupBySkuAndType(documents), [documents]);
+  const [selected, setSelected] = useState<VaultDocumentRow | null>(null);
+  const [detail, setDetail] = useState<VaultDocumentRow | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const openDetail = async (row: VaultDocumentRow) => {
+    setSelected(row);
+    setDetail(row);
+
+    if (row.extracted_text) return;
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/vault/documents?id=${row.id}&include_text=true&limit=1`);
+      if (!res.ok) throw new Error('Failed to load document');
+      const json = await res.json();
+      if (json.documents && json.documents[0]) {
+        setDetail(json.documents[0]);
+      }
+    } catch (err) {
+      console.warn('[VaultDocumentTable] detail load failed', err);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {loading && (
+        <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
+          Loading documents…
+        </div>
+      )}
+      {error && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+      {!loading && !error && documents.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500">
+          No documents found for the selected filters.
+        </div>
+      )}
+
+      {groupedDocuments.map(group => (
+        <div key={group.groupKey} className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">{group.groupKey}</p>
+              <p className="text-xs text-gray-500">{group.documents.length} document(s)</p>
+            </div>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {group.documents.map((doc, index) => {
+              const computedStatus = index === 0 ? 'CURRENT' : doc.status ?? 'UNKNOWN';
+              return (
+                <button
+                  key={doc.id}
+                  onClick={() => openDetail(doc)}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-gray-50"
+                >
+                  <div className="flex-1 min-w-[200px]">
+                    <p className="font-semibold text-gray-900">{doc.filename}</p>
+                    <p className="text-xs text-gray-500">
+                      Revision {doc.revision} · Uploaded {new Date(doc.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[computedStatus]}`}>
+                    {computedStatus}
+                  </span>
+                  <span className="text-xs text-gray-500">{doc.document_type.replace('_', ' ')}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {selected && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={() => { setSelected(null); setDetail(null); }}>
+          <div
+            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm uppercase tracking-[0.4em] text-blue-500">Document Detail</p>
+                <h2 className="text-2xl font-bold text-gray-900">{detail?.filename ?? selected.filename}</h2>
+                <p className="text-sm text-gray-500">
+                  {(detail ?? selected).document_type.replace('_', ' ')} · Revision {(detail ?? selected).revision}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setSelected(null); setDetail(null); }}
+                className="rounded-full border border-gray-200 p-2 text-gray-500 hover:bg-gray-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            <dl className="mt-6 grid gap-4 md:grid-cols-2 text-sm">
+              <div>
+                <dt className="text-xs uppercase text-gray-400">SKU</dt>
+                <dd className="font-semibold text-gray-900">{(detail ?? selected).sku ?? 'Unlinked'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-gray-400">Uploaded</dt>
+                <dd className="font-semibold text-gray-900">{new Date((detail ?? selected).created_at).toLocaleString()}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-gray-400">Status</dt>
+                <dd className="font-semibold text-gray-900">{(detail ?? selected).status}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-gray-400">Pipeline</dt>
+                <dd className="font-semibold text-gray-900">{(detail ?? selected).pipeline_status ?? '—'}</dd>
+              </div>
+            </dl>
+
+            {(detail ?? selected).message && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {(detail ?? selected).message}
+              </div>
+            )}
+
+            {detailLoading && (
+              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                Loading extracted text…
+              </div>
+            )}
+
+            {detail?.extracted_text && !detailLoading && (
+              <div className="mt-4">
+                <p className="text-xs uppercase text-gray-400 mb-1">Extracted Text</p>
+                <pre className="max-h-[200px] overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 whitespace-pre-wrap">
+                  {detail.extracted_text}
+                </pre>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap gap-3 text-sm">
+              {(detail ?? selected).sku && (
+                <Link
+                  href={`/sku/${encodeURIComponent((detail ?? selected).sku as string)}`}
+                  className="rounded-xl border border-gray-200 px-4 py-2 font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Open SKU →
+                </Link>
+              )}
+              {(detail ?? selected).file_url && (
+                <a
+                  href={(detail ?? selected).file_url as string}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-xl border border-blue-200 px-4 py-2 font-semibold text-blue-600 hover:bg-blue-50"
+                >
+                  View File →
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
