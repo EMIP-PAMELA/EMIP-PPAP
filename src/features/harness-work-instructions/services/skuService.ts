@@ -8,9 +8,30 @@ export interface SKURecord {
   id: string;
   part_number: string;
   description: string | null;
+  created_from: DocumentType | null;
   created_at: string;
   updated_at: string;
 }
+
+export interface DocumentMetadata {
+  part_number: string;
+  revision?: string | null;
+  description?: string | null;
+  sourceType: DocumentType;
+}
+
+export interface DocumentFirstIngestResult {
+  sku: SKURecord;
+  skuCreated: boolean;
+  headerUpdated: boolean;
+  uploadResult: UploadDocumentResult;
+}
+
+const SOURCE_PRIORITY: Record<DocumentType, number> = {
+  CUSTOMER_DRAWING: 3,
+  INTERNAL_DRAWING: 2,
+  BOM: 1,
+};
 
 function getTextStoragePath(storagePath: string): string {
   return `${storagePath}${TEXT_OBJECT_SUFFIX}`;
@@ -85,7 +106,7 @@ export interface UploadDocumentResult {
   document: SKUDocumentRecord;
 }
 
-function normalizeDocumentType(type: string): DocumentType {
+export function normalizeDocumentType(type: string): DocumentType {
   const normalized = type.trim().toUpperCase();
   if (normalized === 'CUSTOMER') return 'CUSTOMER_DRAWING';
   if (normalized === 'INTERNAL') return 'INTERNAL_DRAWING';
@@ -95,10 +116,15 @@ function normalizeDocumentType(type: string): DocumentType {
   throw new Error(`Unsupported document type: ${type}`);
 }
 
-export async function createSKU(partNumber: string, description?: string): Promise<SKURecord> {
+export async function createSKU(
+  partNumber: string,
+  description?: string,
+  createdFrom?: DocumentType,
+): Promise<SKURecord> {
   const payload = {
     part_number: partNumber.trim().toUpperCase(),
     description: description?.trim() || null,
+    created_from: createdFrom ?? null,
   };
 
   const { data, error } = await supabase
@@ -112,7 +138,7 @@ export async function createSKU(partNumber: string, description?: string): Promi
     throw new Error(error.message);
   }
 
-  console.log('[HWI SKU CREATED]', { part_number: payload.part_number, id: data.id });
+  console.log('[HWI SKU CREATED]', { part_number: payload.part_number, id: data.id, created_from: createdFrom ?? null });
   return data as SKURecord;
 }
 
@@ -120,7 +146,7 @@ export async function getSKU(partNumber: string): Promise<{ sku: SKURecord; docu
   const normalized = partNumber.trim().toUpperCase();
   const { data, error } = await supabase
     .from('sku')
-    .select('id, part_number, description, created_at, updated_at, sku_documents(*)')
+    .select('id, part_number, description, created_from, created_at, updated_at, sku_documents(*)')
     .eq('part_number', normalized)
     .maybeSingle();
 
@@ -141,7 +167,7 @@ export async function getSKU(partNumber: string): Promise<{ sku: SKURecord; docu
 export async function listSKUs(): Promise<SKURecord[]> {
   const { data, error } = await supabase
     .from('sku')
-    .select('id, part_number, description, created_at, updated_at')
+    .select('id, part_number, description, created_from, created_at, updated_at')
     .order('part_number', { ascending: true });
 
   if (error) {
@@ -398,4 +424,106 @@ export async function setCurrentDocument(documentId: string): Promise<SKUDocumen
   }
 
   return data as SKUDocumentRecord;
+}
+
+export async function getOrCreateSKUFromDocument(
+  meta: DocumentMetadata,
+): Promise<{ sku: SKURecord; created: boolean }> {
+  const normalizedPN = meta.part_number.trim().toUpperCase();
+
+  const existing = await getSKU(normalizedPN);
+  if (existing) {
+    console.log('[HWI SKU MATCHED]', {
+      part_number: normalizedPN,
+      sku_id: existing.sku.id,
+      sourceType: meta.sourceType,
+      revision: meta.revision ?? null,
+    });
+    return { sku: existing.sku, created: false };
+  }
+
+  const sku = await createSKU(normalizedPN, meta.description ?? undefined, meta.sourceType);
+  console.log('[HWI SKU AUTO-CREATED]', {
+    part_number: normalizedPN,
+    sku_id: sku.id,
+    sourceType: meta.sourceType,
+    revision: meta.revision ?? null,
+  });
+  return { sku, created: true };
+}
+
+export async function updateSKUHeaderIfAllowed(
+  skuId: string,
+  currentCreatedFrom: DocumentType | null,
+  incomingSource: DocumentType,
+  updates: { description?: string | null },
+): Promise<boolean> {
+  const currentPriority = currentCreatedFrom ? (SOURCE_PRIORITY[currentCreatedFrom] ?? 0) : 0;
+  const incomingPriority = SOURCE_PRIORITY[incomingSource] ?? 0;
+
+  if (incomingPriority < currentPriority) {
+    console.log('[HWI SKU HEADER SKIPPED]', {
+      sku_id: skuId,
+      reason: 'incoming_source_lower_priority',
+      current: currentCreatedFrom,
+      incoming: incomingSource,
+    });
+    return false;
+  }
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (updates.description !== undefined && updates.description !== null) {
+    patch.description = updates.description;
+  }
+  if (incomingPriority >= currentPriority) {
+    patch.created_from = incomingSource;
+  }
+
+  const { error } = await supabase.from('sku').update(patch).eq('id', skuId);
+  if (error) {
+    console.warn('[HWI SKU HEADER UPDATE FAILED]', { sku_id: skuId, error: error.message });
+    return false;
+  }
+
+  console.log('[HWI SKU HEADER UPDATED]', {
+    sku_id: skuId,
+    incoming: incomingSource,
+    fields: Object.keys(patch).filter(k => k !== 'updated_at'),
+  });
+  return true;
+}
+
+export async function ingestDocumentFirstFlow(
+  meta: DocumentMetadata,
+  file: File,
+  extractedText?: string,
+): Promise<DocumentFirstIngestResult> {
+  const { sku, created } = await getOrCreateSKUFromDocument(meta);
+
+  const headerUpdated = await updateSKUHeaderIfAllowed(
+    sku.id,
+    sku.created_from ?? null,
+    meta.sourceType,
+    { description: meta.description ?? null },
+  );
+
+  const uploadResult = await uploadDocument(
+    sku.id,
+    file,
+    meta.sourceType,
+    meta.revision ?? 'UNSPECIFIED',
+    extractedText,
+  );
+
+  console.log('[HWI DOCUMENT-FIRST INGEST]', {
+    part_number: meta.part_number,
+    sku_id: sku.id,
+    sourceType: meta.sourceType,
+    revision: meta.revision ?? 'UNSPECIFIED',
+    sku_created: created,
+    header_updated: headerUpdated,
+    upload_status: uploadResult.status,
+  });
+
+  return { sku, skuCreated: created, headerUpdated, uploadResult };
 }

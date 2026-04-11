@@ -269,7 +269,27 @@ export default function SKUDashboardPage() {
             Persist BOMs and drawings for this SKU, track revisions, and execute the Harness Work Instruction pipeline
             directly from the vault.
           </p>
+          {sku && sku.created_from && (
+            <p className="text-xs text-gray-400">
+              Auto-created from{' '}
+              <span className="font-medium">
+                {sku.created_from === 'CUSTOMER_DRAWING'
+                  ? 'Customer Drawing'
+                  : sku.created_from === 'INTERNAL_DRAWING'
+                    ? 'Internal Drawing'
+                    : 'BOM'}
+              </span>
+              {!sku.description && ' · incomplete — upload additional documents to enrich this SKU'}
+            </p>
+          )}
         </header>
+
+        {sku && !sku.description && !loading && (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+            This SKU stub was auto-created from a document upload. Add more documents to fill in the description and
+            complete the record.
+          </div>
+        )}
 
         {statusBanner && (
           <div
