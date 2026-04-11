@@ -1,5 +1,7 @@
 'use client';
 
+// NOTE: This is the ACTIVE layout. Do NOT modify src/app/layout version.
+
 /**
  * V6.1 EMIP System Shell - Global Layout
  * 
@@ -30,6 +32,7 @@ interface NavigationItem {
 const NAVIGATION_ITEMS: NavigationItem[] = [
   { label: 'Dashboard', path: '/emip-dashboard', icon: '📊' },
   { label: 'PPAP', path: '/ppap', icon: '📋' },
+  { label: 'SKU Models', path: '/sku', icon: '🗂️' },
   { label: 'BOM Repository', path: '/bom', icon: '🗂️' },
   { label: 'Copper Index', path: '/copper', icon: '🔧' },
   { label: 'Analytics', path: '/analytics', icon: '📈' },
