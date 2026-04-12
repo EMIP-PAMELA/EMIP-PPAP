@@ -21,7 +21,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import EMIPLayout from '../layout/EMIPLayout';
 import Link from 'next/link';
 import { getAllActiveBOMs } from '@/src/core/services/bomService';
-import BOMUpload from './components/BOMUpload';
 import RevisionStatusBadge from '@/src/features/revision/components/RevisionStatusBadge';
 import { useRevisionValidationMap } from '@/src/features/revision/hooks/useRevisionValidationMap';
 
@@ -128,10 +127,7 @@ export default function BOMPage() {
     return (
       <EMIPLayout>
         <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="text-4xl mb-4">⏳</div>
-            <p className="text-lg text-gray-600">Loading BOMs...</p>
-          </div>
+          <p className="text-gray-500">Loading BOMs…</p>
         </div>
       </EMIPLayout>
     );
@@ -140,27 +136,13 @@ export default function BOMPage() {
   if (error) {
     return (
       <EMIPLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="text-4xl mb-4">⚠️</div>
-            <p className="text-lg text-gray-900 mb-2">Error Loading BOMs</p>
-            <p className="text-sm text-gray-600">{error}</p>
-            <button
-              onClick={() => loadBOMs()}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Retry
-            </button>
-          </div>
+        <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {error}
+          <button onClick={() => loadBOMs()} className="ml-3 underline">Retry</button>
         </div>
       </EMIPLayout>
     );
   }
-
-  const handleUploadSuccess = () => {
-    console.log('📥 V5.5 [BOM Page] Upload successful, refreshing list');
-    loadBOMs(); // Refresh the BOM list
-  };
 
   return (
     <EMIPLayout>
@@ -169,15 +151,23 @@ export default function BOMPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">BOM Repository</h1>
-            <p className="text-gray-600 mt-1">Engineering Master Bill of Materials</p>
+            <p className="text-gray-600 mt-1">Derived read view of engineering master BOMs</p>
           </div>
-          <div className="text-sm text-gray-500">
-            {boms.length} Active BOMs
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500">{boms.length} Active BOMs</span>
+            <Link
+              href="/vault?docType=BOM&actionIntent=UPLOAD_MISSING_DOC"
+              className="rounded-xl bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition"
+            >
+              + Upload via Document Vault
+            </Link>
           </div>
         </div>
 
-        {/* Upload Component */}
-        <BOMUpload onUploadSuccess={handleUploadSuccess} />
+        <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-2.5 text-sm text-blue-800">
+          This view is read-only. BOMs are ingested and managed through the
+          {' '}<Link href="/vault" className="font-semibold underline">Document Vault</Link>.
+        </div>
 
         {/* BOM List - V6.1.3: Family Grouped */}
         {familyGroups.length > 0 ? (

@@ -41,7 +41,6 @@ export default function SKUModelsPage() {
     <EMIPLayout>
       <div className="space-y-8">
         <header className="flex flex-col gap-2">
-          <p className="text-sm uppercase tracking-widest text-blue-500">Phase HWI.13</p>
           <h1 className="text-3xl font-bold text-gray-900">SKU Vault</h1>
           <p className="text-gray-600 max-w-3xl">
             Persistent SKU registry built from uploaded documents. Upload a BOM or drawing to automatically
@@ -51,13 +50,13 @@ export default function SKUModelsPage() {
 
         <div className="flex gap-3">
           <Link
-            href="/upload/bom"
+            href="/vault?docType=BOM&actionIntent=UPLOAD_MISSING_DOC"
             className="inline-flex items-center gap-2 rounded-xl bg-blue-600 text-white font-semibold px-5 py-2.5 hover:bg-blue-700 transition text-sm"
           >
             📄 Upload BOM
           </Link>
           <Link
-            href="/upload/drawing"
+            href="/vault?docType=CUSTOMER_DRAWING&actionIntent=UPLOAD_MISSING_DOC"
             className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white font-semibold px-5 py-2.5 hover:bg-indigo-700 transition text-sm"
           >
             📐 Upload Drawing

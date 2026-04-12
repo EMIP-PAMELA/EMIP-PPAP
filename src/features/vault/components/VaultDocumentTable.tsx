@@ -86,12 +86,12 @@ const statusColors: Record<RevisionState, string> = {
 };
 
 const statusAccent: Record<DocumentClassificationStatus, { bar: string; tint: string; tag?: string | null; emphasize?: boolean }> = {
-  RESOLVED: { bar: 'bg-emerald-400', tint: 'bg-gray-50', tag: null, emphasize: false },
-  PENDING: { bar: 'bg-amber-400', tint: 'bg-amber-50/40', tag: 'Needs Input', emphasize: false },
-  PROCESSING: { bar: 'bg-blue-400', tint: 'bg-blue-50/40', tag: 'Processing', emphasize: false },
-  PARTIAL: { bar: 'bg-orange-500', tint: 'bg-orange-50/50', tag: 'Incomplete', emphasize: true },
-  PARTIAL_MISMATCH: { bar: 'bg-red-500', tint: 'bg-red-50/60', tag: 'Conflict', emphasize: true },
-  NEEDS_REVIEW: { bar: 'bg-red-600', tint: 'bg-red-50/70', tag: 'Needs Review', emphasize: true },
+  RESOLVED:         { bar: 'border-l-emerald-400', tint: 'bg-white',         tag: null,           emphasize: false },
+  PENDING:          { bar: 'border-l-amber-400',   tint: 'bg-amber-50/30',   tag: 'Needs Input',  emphasize: false },
+  PROCESSING:       { bar: 'border-l-blue-400',    tint: 'bg-blue-50/30',    tag: 'Processing',   emphasize: false },
+  PARTIAL:          { bar: 'border-l-orange-500',  tint: 'bg-orange-50/40',  tag: 'Incomplete',   emphasize: true  },
+  PARTIAL_MISMATCH: { bar: 'border-l-red-500',     tint: 'bg-red-50/40',     tag: 'Conflict',     emphasize: true  },
+  NEEDS_REVIEW:     { bar: 'border-l-red-600',     tint: 'bg-red-50/40',     tag: 'Needs Review', emphasize: true  },
 };
 
 const classificationBadges: Record<DocumentClassificationStatus, { label: string; tone: string }> = {
@@ -253,7 +253,7 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
                   key={doc.id}
                   type="button"
                   onClick={() => handleDocumentClick(doc)}
-                  className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-blue-50 cursor-pointer transition last:rounded-b-xl border-l-4 ${accent.bar} ${accent.tint} ${accent.emphasize ? 'border border-red-200 shadow-sm' : 'border border-transparent'}`}
+                  className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-blue-50 cursor-pointer transition last:rounded-b-xl border-l-4 ${accent.bar} ${accent.tint} ${accent.emphasize ? 'ring-1 ring-inset ring-red-200 shadow-sm' : ''}`}
                 >
                   <div className="flex-1 min-w-[200px] space-y-1">
                     <div className="flex items-center gap-2">
