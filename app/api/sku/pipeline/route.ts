@@ -15,13 +15,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'SKU not found' }, { status: 404 });
   }
 
-  const documents = await getCurrentDocuments(result.sku.id);
+  const { documents, revision_validation } = await getCurrentDocuments(result.sku.id);
   const pipeline = await runPipelineForSKU(result.sku, documents);
 
   return NextResponse.json({
     ok: true,
     sku: result.sku,
     documents,
+    revision_validation,
     pipeline_status: pipeline.status,
     job: pipeline.job,
     process_bundle: pipeline.processBundle,

@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServer } from '@/src/lib/supabaseServer';
 import { loadExtractedText, type DocumentClassificationStatus } from '@/src/features/harness-work-instructions/services/skuService';
 import { evaluateRevisionSet, type RevisionEvaluationInput, type RevisionState } from '@/src/utils/revisionEvaluator';
+import {
+  validateSKURevisionSet,
+  type CrossSourceRevisionStatus,
+  type RevisionDocumentInput,
+} from '@/src/utils/revisionCrossValidator';
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 25;
@@ -172,6 +177,7 @@ export async function GET(request: NextRequest) {
       revision: doc.revision,
       normalized_revision: doc.normalized_revision ?? null,
       uploaded_at: doc.uploaded_at,
+      is_current: Boolean(doc.is_current),
       pipeline_status: doc.phantom_rev_flag ? 'PARTIAL' : 'UNKNOWN',
       message: doc.phantom_rev_note ?? null,
       file_url: doc.file_url ?? null,
@@ -187,6 +193,7 @@ export async function GET(request: NextRequest) {
       conflict_flag: false,
       storage_path: doc.storage_path as string | null,
       extracted_text: null as string | null,
+      sku_revision_status: null as CrossSourceRevisionStatus | null,
       linked_documents: undefined as
         | {
             document_id: string;
@@ -230,10 +237,53 @@ export async function GET(request: NextRequest) {
     evaluations.forEach(result => revisionStateMap.set(result.documentId, result.state));
   });
 
+  baseRecords = baseRecords.map(record => {
+    const state = revisionStateMap.get(record.id) ?? 'UNKNOWN';
+    return {
+      ...record,
+      status: state,
+      revision_state: state,
+    };
+  });
+
+  const skuIds = Array.from(new Set(baseRecords.map(record => record.sku_id).filter((id): id is string => Boolean(id))));
+  const skuRevisionStatusMap = new Map<string, CrossSourceRevisionStatus>();
+
+  if (skuIds.length > 0) {
+    const { data: currentRows, error: currentError } = await supabase
+      .from('sku_documents')
+      .select('id, sku_id, document_type, revision, normalized_revision')
+      .in('sku_id', skuIds)
+      .eq('is_current', true);
+
+    if (currentError) {
+      console.warn('[REVISION VALIDATION] Failed to load current docs for SKU status', currentError.message);
+    } else {
+      const docsBySku = new Map<string, RevisionDocumentInput[]>();
+      (currentRows ?? []).forEach(row => {
+        if (!row.sku_id) return;
+        if (!docsBySku.has(row.sku_id)) {
+          docsBySku.set(row.sku_id, []);
+        }
+        docsBySku.get(row.sku_id)!.push({
+          id: row.id,
+          document_type: row.document_type,
+          revision: row.revision,
+          normalized_revision: row.normalized_revision ?? null,
+          revision_state: 'CURRENT',
+        });
+      });
+
+      docsBySku.forEach((docs, skuId) => {
+        const result = validateSKURevisionSet(docs);
+        skuRevisionStatusMap.set(skuId, result.status);
+      });
+    }
+  }
+
   baseRecords = baseRecords.map(record => ({
     ...record,
-    status: revisionStateMap.get(record.id) ?? 'UNKNOWN',
-    revision_state: revisionStateMap.get(record.id) ?? 'UNKNOWN',
+    sku_revision_status: record.sku_id ? skuRevisionStatusMap.get(record.sku_id) ?? null : null,
   }));
 
   if (includeText) {
@@ -366,7 +416,13 @@ export async function GET(request: NextRequest) {
 
   const documents = baseRecords.map(record => {
     const stat = linkStats.get(record.id);
-    const { storage_path, normalized_revision: _normalizedRevision, linked_documents: _linked, ...rest } = record;
+    const {
+      storage_path,
+      normalized_revision: _normalizedRevision,
+      linked_documents: _linked,
+      is_current: _isCurrent,
+      ...rest
+    } = record;
     const response: any = {
       ...rest,
       linked_documents_count: stat?.count ?? 0,

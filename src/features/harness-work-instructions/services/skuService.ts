@@ -5,6 +5,10 @@ import {
   type RevisionEvaluationResult,
   type RevisionState,
 } from '@/src/utils/revisionEvaluator';
+import {
+  validateSKURevisionSet,
+  type CrossSourceValidationResult,
+} from '@/src/utils/revisionCrossValidator';
 import { hashBuffer, hashText } from '../utils/documentHash';
 import { summarizeLineDiff, type DocumentDiffSummary } from '../utils/documentDiff';
 
@@ -17,6 +21,7 @@ export interface SKURecord {
   created_from: DocumentType | null;
   created_at: string;
   updated_at: string;
+  revision_validation?: CrossSourceValidationResult;
 }
 
 export interface DocumentMetadata {
@@ -31,6 +36,11 @@ export interface DocumentFirstIngestResult {
   skuCreated: boolean;
   headerUpdated: boolean;
   uploadResult: UploadDocumentResult;
+}
+
+export interface CurrentDocumentsResponse {
+  documents: SKUDocumentRecord[];
+  revision_validation: CrossSourceValidationResult;
 }
 
 const SOURCE_PRIORITY: Record<DocumentType, number> = {
@@ -179,7 +189,11 @@ export async function createSKU(
   return data as SKURecord;
 }
 
-export async function getSKU(partNumber: string): Promise<{ sku: SKURecord; documents: SKUDocumentRecord[] } | null> {
+export async function getSKU(partNumber: string): Promise<{
+  sku: SKURecord;
+  documents: SKUDocumentRecord[];
+  revision_validation: CrossSourceValidationResult;
+} | null> {
   const supabase = createSupabaseAdmin();
   const normalized = partNumber.trim().toUpperCase();
   const { data, error } = await supabase
@@ -197,9 +211,26 @@ export async function getSKU(partNumber: string): Promise<{ sku: SKURecord; docu
 
   const { sku_documents, ...rest } = data as SKURecord & { sku_documents?: SKUDocumentRecord[] };
   const documents = attachRevisionStates((sku_documents ?? []) as SKUDocumentRecord[]);
+  const revision_validation = validateSKURevisionSet(documents);
+
+  const skuWithValidation: SKURecord = {
+    ...rest,
+    revision_validation,
+  };
+
+  console.log('[REVISION VALIDATION]', {
+    sku_id: skuWithValidation.id,
+    part_number: skuWithValidation.part_number,
+    status: revision_validation.status,
+    bom_revision: revision_validation.bom_revision,
+    customer_revision: revision_validation.customer_revision,
+    internal_revision: revision_validation.internal_revision,
+  });
+
   return {
-    sku: rest,
+    sku: skuWithValidation,
     documents,
+    revision_validation,
   };
 }
 
@@ -497,7 +528,7 @@ export async function uploadDocument(
   };
 }
 
-export async function getCurrentDocuments(skuId: string): Promise<SKUDocumentRecord[]> {
+export async function getCurrentDocuments(skuId: string): Promise<CurrentDocumentsResponse> {
   const supabase = createSupabaseAdmin();
   const { data, error } = await supabase
     .from('sku_documents')
@@ -518,7 +549,18 @@ export async function getCurrentDocuments(skuId: string): Promise<SKUDocumentRec
     types: records.map(d => d.document_type),
     revisions: records.map(d => d.revision),
   });
-  return attachRevisionStates(records);
+  const documents = attachRevisionStates(records);
+  const revision_validation = validateSKURevisionSet(documents);
+
+  console.log('[REVISION VALIDATION]', {
+    sku_id: skuId,
+    status: revision_validation.status,
+    bom_revision: revision_validation.bom_revision,
+    customer_revision: revision_validation.customer_revision,
+    internal_revision: revision_validation.internal_revision,
+  });
+
+  return { documents, revision_validation };
 }
 
 export async function setCurrentDocument(documentId: string): Promise<SKUDocumentRecord | null> {
