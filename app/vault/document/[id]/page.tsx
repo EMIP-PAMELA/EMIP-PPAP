@@ -1,11 +1,16 @@
 import Link from 'next/link';
 import { getSupabaseServer } from '@/src/lib/supabaseServer';
+import type { DocumentClassificationStatus } from '@/src/features/harness-work-instructions/services/skuService';
+import { VaultCorrectionPanel } from '@/src/features/vault/components/VaultCorrectionPanel';
 
 interface DocumentDetail {
   id: string;
   file_name: string;
   document_type: string;
-  classification_status: string;
+  classification_status: DocumentClassificationStatus;
+  classification_confidence: number | null;
+  classification_notes: string | null;
+  sku_id: string | null;
   inferred_part_number: string | null;
   drawing_number: string | null;
   sku_part_number: string | null;
@@ -20,6 +25,9 @@ async function loadDocument(id: string): Promise<DocumentDetail | null> {
        file_name,
        document_type,
        classification_status,
+       classification_confidence,
+       classification_notes,
+       sku_id,
        inferred_part_number,
        drawing_number,
        sku:sku_id (part_number)
@@ -43,7 +51,10 @@ async function loadDocument(id: string): Promise<DocumentDetail | null> {
     id: data.id,
     file_name: data.file_name,
     document_type: data.document_type,
-    classification_status: data.classification_status ?? 'PENDING',
+    classification_status: (data.classification_status ?? 'PENDING') as DocumentClassificationStatus,
+    classification_confidence: data.classification_confidence ?? null,
+    classification_notes: data.classification_notes ?? null,
+    sku_id: data.sku_id ?? null,
     inferred_part_number: data.inferred_part_number ?? null,
     drawing_number: data.drawing_number ?? null,
     sku_part_number: skuRel?.part_number ?? null,
@@ -72,6 +83,20 @@ export default async function VaultDocumentDetailPage({ params }: { params: { id
     );
   }
 
+  const callouts: string[] = [];
+  if (!document.inferred_part_number && !document.sku_part_number) {
+    callouts.push('Missing part number');
+  }
+  if (!document.drawing_number) {
+    callouts.push('Missing drawing number');
+  }
+  if (!document.sku_part_number) {
+    callouts.push('Document not linked to SKU');
+  }
+  if (document.classification_status === 'NEEDS_REVIEW') {
+    callouts.push('Manual review required');
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-8 py-10">
       <div className="space-y-2">
@@ -86,6 +111,9 @@ export default async function VaultDocumentDetailPage({ params }: { params: { id
         <div>
           <p className="text-xs uppercase text-gray-400">Classification</p>
           <p className="text-lg font-semibold text-gray-900">{document.classification_status}</p>
+          {document.classification_confidence !== null && (
+            <p className="text-sm text-gray-500">Confidence {document.classification_confidence.toFixed(2)}</p>
+          )}
         </div>
         <div>
           <p className="text-xs uppercase text-gray-400">SKU</p>
@@ -101,13 +129,30 @@ export default async function VaultDocumentDetailPage({ params }: { params: { id
         </div>
       </div>
 
-      <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-600">
-        <p className="font-semibold text-gray-800">Manual linking tools coming next phase</p>
-        <p className="mt-2 text-gray-600">
-          This placeholder keeps the navigation functional while we build the assisted linking workspace. Use the SKU
-          dashboard for now to review canonical documents.
-        </p>
+      <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-600 space-y-3">
+        <div className="flex flex-wrap gap-2">
+          {callouts.length === 0 && <span className="text-xs text-emerald-600">No outstanding issues detected.</span>}
+          {callouts.map(item => (
+            <span key={item} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-700">
+              {item}
+            </span>
+          ))}
+        </div>
+        {document.classification_notes && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Latest notes</p>
+            <p className="text-sm text-gray-700 whitespace-pre-line">{document.classification_notes}</p>
+          </div>
+        )}
       </div>
+
+      <VaultCorrectionPanel
+        documentId={document.id}
+        classificationStatus={document.classification_status}
+        inferredPartNumber={document.inferred_part_number}
+        drawingNumber={document.drawing_number}
+        skuPartNumber={document.sku_part_number}
+      />
 
       {document.sku_part_number && (
         <Link
