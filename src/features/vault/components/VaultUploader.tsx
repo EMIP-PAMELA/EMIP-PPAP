@@ -19,6 +19,7 @@ interface VaultUploaderProps {
   expectedRevisionHint?: string | null;
   actionIntent?: ActionIntent | null;
   canonicalSourceHint?: string | null;
+  onUploadComplete?: () => void;
 }
 
 type UploadStatus =
@@ -99,7 +100,7 @@ const createValidationAuditMetadata = (
   revision_validated_at: validation.validatedAt ?? new Date().toISOString(),
 });
 
-export default function VaultUploader({ preselectedSku, docTypeHint, expectedRevisionHint, actionIntent, canonicalSourceHint }: VaultUploaderProps) {
+export default function VaultUploader({ preselectedSku, docTypeHint, expectedRevisionHint, actionIntent, canonicalSourceHint, onUploadComplete }: VaultUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -169,6 +170,7 @@ export default function VaultUploader({ preselectedSku, docTypeHint, expectedRev
             message: json.uploadResult?.message ?? json.message,
           },
         });
+        onUploadComplete?.();
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Upload failed';
         updateItem(itemId, { status: 'error', error: errorMessage, message: undefined });
@@ -228,7 +230,7 @@ export default function VaultUploader({ preselectedSku, docTypeHint, expectedRev
           comparison: 'NO_EXPECTED',
           extractedRevision,
           expectedRevision: null,
-          message: 'No revision validation available for this upload.',
+          message: 'No revision detected in document (likely missing text layer or unsupported format).',
           requiresOverride: false,
           docType,
           canonicalSource: canonicalSourceHint ?? undefined,

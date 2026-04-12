@@ -115,6 +115,8 @@ export default function VaultPageClient({ initialSearchParams }: VaultPageClient
     sku: skuParam?.toUpperCase(),
     documentType: docTypeParam,
   }));
+  const [viewMode, setViewMode] = useState<'grid' | 'compact'>('grid');
+  const [refreshToken, setRefreshToken] = useState(0);
   const [showUploader, setShowUploader] = useState<boolean>(() => Boolean(issueType === 'missing' || actionIntent === 'UPLOAD_MISSING_DOC'));
   const autoOpenUploader = actionIntent === 'UPLOAD_MISSING_DOC' || issueType === 'missing';
 
@@ -197,6 +199,7 @@ export default function VaultPageClient({ initialSearchParams }: VaultPageClient
             expectedRevisionHint={expectedRevisionHint}
             actionIntent={actionIntent}
             canonicalSourceHint={canonicalSourceHint}
+            onUploadComplete={() => setRefreshToken(prev => prev + 1)}
           />
         )}
 
@@ -204,6 +207,25 @@ export default function VaultPageClient({ initialSearchParams }: VaultPageClient
           <p className="text-xs font-semibold text-blue-700">Filters prefilled from corrective workflow — adjust if needed.</p>
         )}
         <VaultFilters value={filters} onChange={setFilters} />
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <span>View Mode</span>
+          <div className="flex items-center gap-1 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`rounded-full px-3 py-1 font-semibold ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+            >
+              Grid
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('compact')}
+              className={`rounded-full px-3 py-1 font-semibold ${viewMode === 'compact' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+            >
+              Compact
+            </button>
+          </div>
+        </div>
         <VaultDocumentTable
           filters={filters}
           issueContext={issueContext}
@@ -212,6 +234,8 @@ export default function VaultPageClient({ initialSearchParams }: VaultPageClient
             expectedRevision: expectedRevisionHint,
             actionIntent,
           } : undefined}
+          viewMode={viewMode}
+          refreshToken={refreshToken}
         />
       </div>
     </EMIPLayout>

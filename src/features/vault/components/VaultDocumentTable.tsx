@@ -29,6 +29,7 @@ interface VaultDocumentRow {
   document_type: 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
   sku: string | null;
   revision: string;
+  normalized_revision?: string | null;
   revision_state: RevisionState;
   sku_revision_status?: CrossSourceRevisionStatus | null;
   sku_readiness_status?: ReadinessStatus | null;
@@ -47,6 +48,8 @@ interface VaultDocumentRow {
   linked_documents_count: number;
   highest_confidence_link: { link_type: string; confidence_score: number } | null;
   conflict_flag: boolean;
+  phantom_rev_flag?: boolean;
+  phantom_rev_note?: string | null;
   linked_documents?: {
     document_id: string;
     filename: string;
@@ -76,6 +79,8 @@ interface VaultDocumentTableProps {
   filters: VaultFilterState;
   issueContext?: IssueContext;
   prefillContext?: PrefillContext;
+  viewMode: 'grid' | 'compact';
+  refreshToken?: number;
 }
 
 const statusColors: Record<RevisionState, string> = {
@@ -83,6 +88,20 @@ const statusColors: Record<RevisionState, string> = {
   SUPERSEDED: 'bg-gray-100 text-gray-600',
   CONFLICT: 'bg-red-100 text-red-700',
   UNKNOWN: 'bg-amber-100 text-amber-800',
+};
+
+type ExtractionStatus = 'parsed' | 'weak' | 'failed';
+
+const extractionStatusBadge: Record<ExtractionStatus, { label: string; tone: string }> = {
+  parsed: { label: '🟢 Parsed', tone: 'bg-emerald-50 text-emerald-700 border border-emerald-100' },
+  weak: { label: '🟡 Weak', tone: 'bg-amber-50 text-amber-700 border border-amber-100' },
+  failed: { label: '🔴 Failed', tone: 'bg-red-50 text-red-700 border border-red-100' },
+};
+
+const extractorLabel: Record<VaultDocumentRow['document_type'], string> = {
+  BOM: 'BOM extractor',
+  CUSTOMER_DRAWING: 'Rheem extractor',
+  INTERNAL_DRAWING: 'Apogee extractor',
 };
 
 const statusAccent: Record<DocumentClassificationStatus, { bar: string; tint: string; tag?: string | null; emphasize?: boolean }> = {
@@ -131,11 +150,12 @@ function groupBySkuAndType(documents: VaultDocumentRow[]): { groupKey: string; d
   }));
 }
 
-export default function VaultDocumentTable({ filters, issueContext, prefillContext }: VaultDocumentTableProps) {
+export default function VaultDocumentTable({ filters, issueContext, prefillContext, viewMode, refreshToken = 0 }: VaultDocumentTableProps) {
   const router = useRouter();
   const [documents, setDocuments] = useState<VaultDocumentRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isDevelopment = process.env.NODE_ENV === 'development';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -170,9 +190,14 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
 
     fetchDocuments();
     return () => controller.abort();
-  }, [filters.sku, filters.documentType, filters.status, filters.search, filters.classificationStatus]);
+  }, [filters.sku, filters.documentType, filters.status, filters.search, filters.classificationStatus, refreshToken]);
 
   const groupedDocuments = useMemo(() => groupBySkuAndType(documents), [documents]);
+  const compactDocuments = useMemo(
+    () =>
+      [...documents].sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()),
+    [documents],
+  );
 
   const handleDocumentClick = (row: VaultDocumentRow) => {
     let destination = `/vault/document/${row.id}`;
@@ -192,6 +217,139 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
       destination,
     });
     router.push(destination);
+  };
+
+  const expectedRevision = prefillContext?.expectedRevision ?? issueContext?.expectedRevision ?? null;
+
+  const renderDocumentRow = (doc: VaultDocumentRow, options?: { compact?: boolean }) => {
+    const compact = options?.compact ?? false;
+    const revisionState = doc.revision_state ?? 'UNKNOWN';
+    const accent = statusAccent[doc.classification_status];
+    const partLabel = doc.sku ?? doc.inferred_part_number ?? '—';
+    const revisionLabel = doc.revision && doc.revision.trim().length > 0 ? doc.revision : '—';
+    const extractionStatus: ExtractionStatus = doc.revision && doc.revision.trim().length > 0
+      ? doc.phantom_rev_flag
+        ? 'weak'
+        : 'parsed'
+      : 'failed';
+    const extractionBadgeTone = extractionStatusBadge[extractionStatus];
+    const extractionSource = extractorLabel[doc.document_type] ?? 'Generic fallback';
+    const debugPayload = isDevelopment
+      ? {
+          extracted_revision: doc.revision ?? null,
+          normalized_revision: doc.normalized_revision ?? null,
+          expected_revision: expectedRevision ?? null,
+          validation_status: doc.sku_revision_status ?? 'UNKNOWN',
+          extractor: extractionSource,
+          confidence: doc.classification_confidence ?? null,
+          extraction_status: extractionStatus,
+          classification_status: doc.classification_status,
+        }
+      : null;
+
+    return (
+      <button
+        key={doc.id}
+        type="button"
+        onClick={() => handleDocumentClick(doc)}
+        className={`flex w-full flex-col gap-3 text-left transition hover:bg-blue-50 ${compact ? 'px-3 py-2' : 'px-3 py-3'} cursor-pointer last:rounded-b-xl border-l-4 ${accent.bar} ${accent.tint} ${accent.emphasize ? 'ring-1 ring-inset ring-red-200 shadow-sm' : ''}`}
+      >
+        <div className={`flex w-full ${compact ? 'flex-col gap-3 md:flex-row md:items-center' : 'flex-col gap-3 lg:flex-row lg:items-center'}`}>
+          <div className="flex-1 min-w-[220px] space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className={`font-semibold ${accent.emphasize ? 'text-gray-900' : 'text-gray-800'}`}>{doc.filename}</p>
+              {accent.tag && (
+                <span className="text-[10px] uppercase tracking-wide text-gray-600 bg-white/70 px-2 py-0.5 rounded-full">
+                  {accent.tag}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+              <span className="font-semibold text-gray-700">Part:</span>
+              <span>{partLabel}</span>
+              <span className="font-semibold text-gray-700">Rev:</span>
+              <span>{revisionLabel}</span>
+              {expectedRevision && (
+                <span>
+                  <span className="font-semibold text-gray-700">Expected:</span> {expectedRevision}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 font-semibold ${extractionBadgeTone.tone}`}>
+                {extractionStatusBadge[extractionStatus].label}
+              </span>
+              <span className="text-gray-500">{extractionSource}</span>
+              <span className="text-gray-400">· Uploaded {new Date(doc.uploaded_at).toLocaleString()}</span>
+            </div>
+            {!doc.revision?.trim() && (
+              <p className="text-[11px] font-semibold text-red-600">
+                No revision detected in document (missing text layer or unsupported format).
+              </p>
+            )}
+            <p className="text-[11px] text-gray-600">State: {revisionState}</p>
+            <div className="text-[11px] text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
+              {doc.inferred_part_number && <span>PN: {doc.inferred_part_number}</span>}
+              {doc.drawing_number && <span>DRW: {doc.drawing_number}</span>}
+              {Number.isFinite(doc.classification_confidence) && <span>Confidence: {doc.classification_confidence?.toFixed(2)}</span>}
+              {doc.classification_attempts > 0 && <span>Attempts: {doc.classification_attempts}</span>}
+            </div>
+            <p className="text-[11px] text-gray-500 font-medium">
+              {doc.classification_status === 'PENDING' && 'Awaiting classification'}
+              {doc.classification_status === 'PROCESSING' && 'Classification in progress'}
+              {doc.classification_status === 'PARTIAL' && 'Partial match — missing signals'}
+              {doc.classification_status === 'PARTIAL_MISMATCH' && 'Conflicting signals detected'}
+              {doc.classification_status === 'RESOLVED' && 'Classification resolved'}
+              {doc.classification_status === 'NEEDS_REVIEW' && 'Manual review required'}
+            </p>
+            {doc.message && (
+              <p className="text-[11px] text-amber-600 font-semibold">
+                {doc.message}
+              </p>
+            )}
+            {doc.classification_notes && (
+              <p className="text-[11px] italic text-gray-400 line-clamp-2">{doc.classification_notes}</p>
+            )}
+            {doc.sku_revision_status && (
+              <RevisionStatusBadge status={doc.sku_revision_status} showLabel={false} className="text-[11px]" />
+            )}
+            {doc.sku_readiness_status && doc.sku_readiness_status !== 'READY' && (
+              <p className="text-[11px] text-amber-700 font-semibold">
+                Readiness {readinessLabel[doc.sku_readiness_status]}
+              </p>
+            )}
+            {isDevelopment && debugPayload && (
+              <details className="rounded-lg bg-gray-900/80 p-2 text-[11px] text-emerald-200">
+                <summary className="cursor-pointer font-semibold">Extraction Debug</summary>
+                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(debugPayload, null, 2)}</pre>
+              </details>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[revisionState]}`}>
+              {revisionState}
+            </span>
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${classificationBadges[doc.classification_status].tone}`}>
+              {classificationBadges[doc.classification_status].label}
+            </span>
+            {doc.sku_readiness_status && (
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${readinessBadgeTone[doc.sku_readiness_status]}`}>
+                Readiness {readinessLabel[doc.sku_readiness_status]}
+              </span>
+            )}
+            {doc.linked_documents_count > 0 && (
+              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                🔗 {doc.linked_documents_count}
+              </span>
+            )}
+            {doc.conflict_flag && (
+              <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">⚠️ Conflict</span>
+            )}
+            <span className="text-xs text-gray-500">{doc.document_type.replace('_', ' ')}</span>
+          </div>
+        </div>
+      </button>
+    );
   };
 
   return (
@@ -236,101 +394,27 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
         </div>
       )}
 
-      {groupedDocuments.map(group => (
-        <div key={group.groupKey} className="rounded-xl border border-gray-300 bg-gray-50 shadow-sm">
-          <div className="flex items-center justify-between border-b border-gray-200 bg-white px-3 py-2 rounded-t-xl">
-            <div className="flex items-center gap-3">
-              <p className="text-sm font-semibold text-gray-900">{group.groupKey}</p>
-              <p className="text-xs text-gray-400">{group.documents.length} doc{group.documents.length === 1 ? '' : 's'}</p>
-            </div>
-          </div>
+      {viewMode === 'compact' ? (
+        <div className="rounded-xl border border-gray-300 bg-gray-50 shadow-sm">
           <div className="divide-y divide-gray-200">
-            {group.documents.map(doc => {
-              const revisionState = doc.revision_state ?? 'UNKNOWN';
-              const accent = statusAccent[doc.classification_status];
-              return (
-                <button
-                  key={doc.id}
-                  type="button"
-                  onClick={() => handleDocumentClick(doc)}
-                  className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-blue-50 cursor-pointer transition last:rounded-b-xl border-l-4 ${accent.bar} ${accent.tint} ${accent.emphasize ? 'ring-1 ring-inset ring-red-200 shadow-sm' : ''}`}
-                >
-                  <div className="flex-1 min-w-[200px] space-y-1">
-                    <div className="flex items-center gap-2">
-                      <p className={`font-semibold ${accent.emphasize ? 'text-gray-900' : 'text-gray-800'}`}>{doc.filename}</p>
-                      {accent.tag && (
-                        <span className="text-[10px] uppercase tracking-wide text-gray-600 bg-white/70 px-2 py-0.5 rounded-full">
-                          {accent.tag}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      Revision {doc.revision} · Uploaded {new Date(doc.uploaded_at).toLocaleString()}
-                    </p>
-                    <p className="text-[11px] font-semibold text-gray-600">State: {revisionState}</p>
-                    <div className="text-[11px] text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
-                      {doc.inferred_part_number && <span>PN: {doc.inferred_part_number}</span>}
-                      {doc.drawing_number && <span>DRW: {doc.drawing_number}</span>}
-                      {Number.isFinite(doc.classification_confidence) && (
-                        <span>Confidence: {doc.classification_confidence?.toFixed(2)}</span>
-                      )}
-                      {doc.classification_attempts > 0 && <span>Attempts: {doc.classification_attempts}</span>}
-                    </div>
-                    <p className="text-[11px] text-gray-500 font-medium">
-                      {doc.classification_status === 'PENDING' && 'Awaiting classification'}
-                      {doc.classification_status === 'PROCESSING' && 'Classification in progress'}
-                      {doc.classification_status === 'PARTIAL' && 'Partial match — missing signals'}
-                      {doc.classification_status === 'PARTIAL_MISMATCH' && 'Conflicting signals detected'}
-                      {doc.classification_status === 'RESOLVED' && 'Classification resolved'}
-                      {doc.classification_status === 'NEEDS_REVIEW' && 'Manual review required'}
-                    </p>
-                    {doc.sku_revision_status && (
-                      <RevisionStatusBadge
-                        status={doc.sku_revision_status}
-                        showLabel={false}
-                        className="text-[11px]"
-                      />
-                    )}
-                    {doc.sku_readiness_status && doc.sku_readiness_status !== 'READY' && (
-                      <p className="text-[11px] text-amber-700 font-semibold">
-                        Readiness {readinessLabel[doc.sku_readiness_status]}
-                      </p>
-                    )}
-                    {doc.classification_notes && (
-                      <p className="text-[11px] italic text-gray-400 line-clamp-2">
-                        {doc.classification_notes}
-                      </p>
-                    )}
-                  </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[revisionState]}`}>
-                    {revisionState}
-                  </span>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${classificationBadges[doc.classification_status].tone}`}>
-                    {classificationBadges[doc.classification_status].label}
-                  </span>
-                  {doc.sku_revision_status && <RevisionStatusBadge status={doc.sku_revision_status} showLabel={false} />}
-                  {doc.sku_readiness_status && (
-                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${readinessBadgeTone[doc.sku_readiness_status]}`}>
-                      Readiness {readinessLabel[doc.sku_readiness_status]}
-                    </span>
-                  )}
-                  {doc.linked_documents_count > 0 && (
-                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
-                      🔗 {doc.linked_documents_count}
-                    </span>
-                  )}
-                  {doc.conflict_flag && (
-                    <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
-                      ⚠️ Conflict
-                    </span>
-                  )}
-                  <span className="text-xs text-gray-500">{doc.document_type.replace('_', ' ')}</span>
-                </button>
-              );
-            })}
+            {compactDocuments.map(doc => renderDocumentRow(doc, { compact: true }))}
           </div>
         </div>
-      ))}
+      ) : (
+        groupedDocuments.map(group => (
+          <div key={group.groupKey} className="rounded-xl border border-gray-300 bg-gray-50 shadow-sm">
+            <div className="flex items-center justify-between border-b border-gray-200 bg-white px-3 py-2 rounded-t-xl">
+              <div className="flex items-center gap-3">
+                <p className="text-sm font-semibold text-gray-900">{group.groupKey}</p>
+                <p className="text-xs text-gray-400">{group.documents.length} doc{group.documents.length === 1 ? '' : 's'}</p>
+              </div>
+            </div>
+            <div className="divide-y divide-gray-200">
+              {group.documents.map(doc => renderDocumentRow(doc))}
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }
