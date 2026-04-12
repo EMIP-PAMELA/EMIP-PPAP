@@ -1,4 +1,10 @@
 import { getSupabaseServer } from '@/src/lib/supabaseServer';
+import {
+  evaluateRevisionSet,
+  type RevisionEvaluationInput,
+  type RevisionEvaluationResult,
+  type RevisionState,
+} from '@/src/utils/revisionEvaluator';
 import { hashBuffer, hashText } from '../utils/documentHash';
 import { summarizeLineDiff, type DocumentDiffSummary } from '../utils/documentDiff';
 
@@ -92,6 +98,7 @@ export interface SKUDocumentRecord {
   sku_id: string;
   document_type: DocumentType;
   revision: string;
+  normalized_revision?: string | null;
   file_url: string;
   file_name: string;
   storage_path: string;
@@ -110,6 +117,7 @@ export interface SKUDocumentRecord {
   classification_notes: string | null;
   inferred_part_number?: string | null;
   drawing_number?: string | null;
+  revision_state?: RevisionState;
 }
 
 const SKU_BUCKET = 'sku-documents';
@@ -188,9 +196,10 @@ export async function getSKU(partNumber: string): Promise<{ sku: SKURecord; docu
   if (!data) return null;
 
   const { sku_documents, ...rest } = data as SKURecord & { sku_documents?: SKUDocumentRecord[] };
+  const documents = attachRevisionStates((sku_documents ?? []) as SKUDocumentRecord[]);
   return {
     sku: rest,
-    documents: sku_documents ?? [],
+    documents,
   };
 }
 
@@ -209,21 +218,84 @@ export async function listSKUs(): Promise<SKURecord[]> {
   return data as SKURecord[];
 }
 
-async function markDocumentsNonCurrent(skuId: string, type: DocumentType): Promise<void> {
+async function recomputeRevisionStates(
+  skuId: string,
+  type: DocumentType,
+): Promise<Map<string, RevisionEvaluationResult>> {
   const supabase = createSupabaseAdmin();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('sku_documents')
-    .update({ is_current: false })
+    .select('id, revision, normalized_revision, uploaded_at')
     .eq('sku_id', skuId)
     .eq('document_type', type);
 
   if (error) {
-    console.warn('[HWI SKU DOC FLAG] Failed to reset current flags', {
+    console.warn('[HWI REVISION STATE] Failed to load family', {
       sku_id: skuId,
       document_type: type,
       error: error.message,
     });
+    return new Map();
   }
+
+  const inputs: RevisionEvaluationInput[] = (data ?? []).map(row => ({
+    documentId: row.id,
+    revision: (row.revision as string | null) ?? null,
+    normalizedRevision: (row.normalized_revision as string | null) ?? null,
+    uploadedAt: (row.uploaded_at as string | null) ?? null,
+  }));
+
+  const evaluations = evaluateRevisionSet(inputs, {
+    log: true,
+    context: { sku_id: skuId, document_type: type },
+  });
+
+  await Promise.all(
+    evaluations.map(evaluation =>
+      supabase
+        .from('sku_documents')
+        .update({ is_current: evaluation.state === 'CURRENT' })
+        .eq('id', evaluation.documentId),
+    ),
+  );
+
+  return new Map(evaluations.map(evaluation => [evaluation.documentId, evaluation]));
+}
+
+function attachRevisionStates(documents: SKUDocumentRecord[]): SKUDocumentRecord[] {
+  if (documents.length === 0) {
+    return [];
+  }
+
+  const stateMap = new Map<string, RevisionState>();
+  const groups = new Map<string, RevisionEvaluationInput[]>();
+
+  for (const doc of documents) {
+    const key = `${doc.sku_id ?? `UNLINKED-${doc.id}`}-${doc.document_type}`;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push({
+      documentId: doc.id,
+      revision: doc.revision,
+      normalizedRevision: doc.normalized_revision ?? null,
+      uploadedAt: doc.uploaded_at,
+    });
+  }
+
+  groups.forEach((inputs, key) => {
+    const evaluations = evaluateRevisionSet(inputs, { context: { family: key } });
+    evaluations.forEach(result => stateMap.set(result.documentId, result.state));
+  });
+
+  return documents.map(doc => {
+    const revisionState = stateMap.get(doc.id) ?? doc.revision_state ?? 'UNKNOWN';
+    return {
+      ...doc,
+      revision_state: revisionState,
+      is_current: revisionState === 'CURRENT',
+    };
+  });
 }
 
 export async function uploadDocument(
@@ -354,12 +426,11 @@ export async function uploadDocument(
     }
   }
 
-  await markDocumentsNonCurrent(skuId, documentType);
-
   const payload = {
     sku_id:        skuId,
     document_type: documentType,
     revision:      normalizedRevision,
+    normalized_revision: normalizedRevision,
     file_url:      publicUrl,
     file_name:     file.name,
     storage_path:  storagePath,
@@ -399,6 +470,15 @@ export async function uploadDocument(
     });
   }
 
+  const evaluationMap = await recomputeRevisionStates(skuId, documentType);
+  const evaluation = evaluationMap.get((data as SKUDocumentRecord).id);
+  const revisionState = evaluation?.state ?? 'UNKNOWN';
+  const documentRecord: SKUDocumentRecord = {
+    ...(data as SKUDocumentRecord),
+    revision_state: revisionState,
+    is_current: revisionState === 'CURRENT',
+  };
+
   console.log('[HWI DOCUMENT UPLOADED]', {
     sku_id: skuId,
     document_type: documentType,
@@ -413,7 +493,7 @@ export async function uploadDocument(
       ? '⚠️ Possible Phantom Revision Detected — same revision, different content uploaded. Review for undocumented functional changes.'
       : 'Document uploaded and marked as current source of truth.',
     diff_summary: diffSummary,
-    document: data as SKUDocumentRecord,
+    document: documentRecord,
   };
 }
 
@@ -438,7 +518,7 @@ export async function getCurrentDocuments(skuId: string): Promise<SKUDocumentRec
     types: records.map(d => d.document_type),
     revisions: records.map(d => d.revision),
   });
-  return records;
+  return attachRevisionStates(records);
 }
 
 export async function setCurrentDocument(documentId: string): Promise<SKUDocumentRecord | null> {
@@ -454,21 +534,20 @@ export async function setCurrentDocument(documentId: string): Promise<SKUDocumen
     throw new Error(fetchError.message);
   }
 
-  await markDocumentsNonCurrent(doc.sku_id, doc.document_type as DocumentType);
+  await recomputeRevisionStates(doc.sku_id, doc.document_type as DocumentType);
 
   const { data, error } = await supabase
     .from('sku_documents')
-    .update({ is_current: true })
+    .select('*')
     .eq('id', documentId)
-    .select()
     .single();
 
   if (error) {
-    console.error('[HWI DOC CURRENT] Failed to set current', { document_id: documentId, error: error.message });
+    console.error('[HWI DOC CURRENT] Failed to refresh document', { document_id: documentId, error: error.message });
     throw new Error(error.message);
   }
 
-  return data as SKUDocumentRecord;
+  return attachRevisionStates([data as SKUDocumentRecord])[0];
 }
 
 export async function getOrCreateSKUFromDocument(

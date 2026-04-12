@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ingestAndProcessDocument } from '@/src/features/harness-work-instructions/services/unifiedIngestionService';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
+import type { RevisionState } from '@/src/utils/revisionEvaluator';
 import { detectDocumentType, materializeDocumentType, type VaultDocumentClassification } from '@/src/features/vault/utils/documentSignals';
 import { classifyDocument } from '@/src/services/classificationService';
 
 function computeDocumentStatus(
   classification: VaultDocumentClassification,
   uploadResultStatus: string,
-  documentIsCurrent: boolean,
-): 'CURRENT' | 'OBSOLETE' | 'UNKNOWN' {
+  revisionState: RevisionState | undefined,
+): RevisionState {
   if (classification.detected === 'UNKNOWN') return 'UNKNOWN';
-  if (uploadResultStatus === 'duplicate' || !documentIsCurrent) return 'OBSOLETE';
-  return 'CURRENT';
+  if (uploadResultStatus === 'duplicate') return 'SUPERSEDED';
+  return revisionState ?? 'UNKNOWN';
 }
 
 export async function POST(request: NextRequest) {
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
     const documentStatus = computeDocumentStatus(
       classification,
       ingestionResult.uploadResult.status,
-      ingestionResult.uploadResult.document.is_current,
+      ingestionResult.uploadResult.document.revision_state,
     );
 
     return NextResponse.json({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServer } from '@/src/lib/supabaseServer';
 import { loadExtractedText, type DocumentClassificationStatus } from '@/src/features/harness-work-instructions/services/skuService';
+import { evaluateRevisionSet, type RevisionEvaluationInput, type RevisionState } from '@/src/utils/revisionEvaluator';
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 25;
@@ -85,6 +86,7 @@ export async function GET(request: NextRequest) {
        file_name,
        document_type,
        revision,
+       normalized_revision,
        sku_id,
        uploaded_at,
        is_current,
@@ -168,7 +170,7 @@ export async function GET(request: NextRequest) {
       document_type: doc.document_type,
       sku: skuRel?.part_number ?? null,
       revision: doc.revision,
-      status: doc.is_current ? 'CURRENT' : 'OBSOLETE',
+      normalized_revision: doc.normalized_revision ?? null,
       uploaded_at: doc.uploaded_at,
       pipeline_status: doc.phantom_rev_flag ? 'PARTIAL' : 'UNKNOWN',
       message: doc.phantom_rev_note ?? null,
@@ -207,6 +209,32 @@ export async function GET(request: NextRequest) {
       });
     }
   }
+
+  const revisionGroups = new Map<string, RevisionEvaluationInput[]>();
+  for (const record of baseRecords) {
+    const key = `${record.sku_id ?? `UNLINKED-${record.id}`}-${record.document_type}`;
+    if (!revisionGroups.has(key)) {
+      revisionGroups.set(key, []);
+    }
+    revisionGroups.get(key)!.push({
+      documentId: record.id,
+      revision: record.revision,
+      normalizedRevision: record.normalized_revision ?? null,
+      uploadedAt: record.uploaded_at,
+    });
+  }
+
+  const revisionStateMap = new Map<string, RevisionState>();
+  revisionGroups.forEach((inputs, key) => {
+    const evaluations = evaluateRevisionSet(inputs, { context: { family: key } });
+    evaluations.forEach(result => revisionStateMap.set(result.documentId, result.state));
+  });
+
+  baseRecords = baseRecords.map(record => ({
+    ...record,
+    status: revisionStateMap.get(record.id) ?? 'UNKNOWN',
+    revision_state: revisionStateMap.get(record.id) ?? 'UNKNOWN',
+  }));
 
   if (includeText) {
     for (const record of baseRecords) {
@@ -338,7 +366,7 @@ export async function GET(request: NextRequest) {
 
   const documents = baseRecords.map(record => {
     const stat = linkStats.get(record.id);
-    const { storage_path, linked_documents: _linked, ...rest } = record;
+    const { storage_path, normalized_revision: _normalizedRevision, linked_documents: _linked, ...rest } = record;
     const response: any = {
       ...rest,
       linked_documents_count: stat?.count ?? 0,

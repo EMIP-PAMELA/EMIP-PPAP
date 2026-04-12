@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { VaultFilterState } from './VaultFilters';
 import type { DocumentClassificationStatus } from '@/src/features/harness-work-instructions/services/skuService';
+import type { RevisionState } from '@/src/utils/revisionEvaluator';
 
 interface VaultDocumentRow {
   id: string;
@@ -12,7 +13,7 @@ interface VaultDocumentRow {
   document_type: 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
   sku: string | null;
   revision: string;
-  status: 'CURRENT' | 'OBSOLETE' | 'UNKNOWN';
+  revision_state: RevisionState;
   uploaded_at: string;
   pipeline_status?: string | null;
   message?: string | null;
@@ -43,9 +44,10 @@ interface VaultDocumentTableProps {
   filters: VaultFilterState;
 }
 
-const statusColors: Record<string, string> = {
+const statusColors: Record<RevisionState, string> = {
   CURRENT: 'bg-emerald-100 text-emerald-800',
-  OBSOLETE: 'bg-gray-100 text-gray-600',
+  SUPERSEDED: 'bg-gray-100 text-gray-600',
+  CONFLICT: 'bg-red-100 text-red-700',
   UNKNOWN: 'bg-amber-100 text-amber-800',
 };
 
@@ -183,8 +185,8 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
             </div>
           </div>
           <div className="divide-y divide-gray-200">
-            {group.documents.map((doc, index) => {
-              const computedStatus = index === 0 ? 'CURRENT' : 'UNKNOWN';
+            {group.documents.map(doc => {
+              const revisionState = doc.revision_state ?? 'UNKNOWN';
               const accent = statusAccent[doc.classification_status];
               return (
                 <button
@@ -205,6 +207,7 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                     <p className="text-xs text-gray-500">
                       Revision {doc.revision} · Uploaded {new Date(doc.uploaded_at).toLocaleString()}
                     </p>
+                    <p className="text-[11px] font-semibold text-gray-600">State: {revisionState}</p>
                     <div className="text-[11px] text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
                       {doc.inferred_part_number && <span>PN: {doc.inferred_part_number}</span>}
                       {doc.drawing_number && <span>DRW: {doc.drawing_number}</span>}
@@ -227,8 +230,8 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                       </p>
                     )}
                   </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[computedStatus]}`}>
-                    {computedStatus}
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[revisionState]}`}>
+                    {revisionState}
                   </span>
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${classificationBadges[doc.classification_status].tone}`}>
                     {classificationBadges[doc.classification_status].label}

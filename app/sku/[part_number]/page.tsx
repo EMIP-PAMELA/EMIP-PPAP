@@ -1,5 +1,19 @@
 'use client';
 
+const revisionStateTone: Record<RevisionState, string> = {
+  CURRENT: 'bg-emerald-50 text-emerald-700',
+  SUPERSEDED: 'bg-gray-100 text-gray-600',
+  CONFLICT: 'bg-red-50 text-red-700',
+  UNKNOWN: 'bg-amber-50 text-amber-700',
+};
+
+const revisionStateLabel: Record<RevisionState, string> = {
+  CURRENT: 'Current',
+  SUPERSEDED: 'Superseded',
+  CONFLICT: 'Conflict',
+  UNKNOWN: 'Unknown',
+};
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -8,6 +22,7 @@ import type {
   SKURecord,
   SKUDocumentRecord,
 } from '@/src/features/harness-work-instructions/services/skuService';
+import type { RevisionState } from '@/src/utils/revisionEvaluator';
 import type { HarnessInstructionJob } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
 import type { ProcessInstructionBundle } from '@/src/features/harness-work-instructions/types/processInstructions';
 
@@ -67,7 +82,7 @@ export default function SKUDashboardPage() {
       INTERNAL_DRAWING: null,
     };
     for (const doc of documents) {
-      if (doc.is_current) {
+      if (doc.revision_state === 'CURRENT') {
         map[doc.document_type] = doc;
       }
     }
@@ -223,15 +238,11 @@ export default function SKUDashboardPage() {
                     <p className="text-sm text-gray-600">{doc.file_name}</p>
                     <p className="text-xs text-gray-400">Uploaded {new Date(doc.uploaded_at).toLocaleString()}</p>
                     <div className="flex flex-wrap items-center gap-2">
-                      {doc.is_current ? (
-                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                          Current
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-500">
-                          Archived
-                        </span>
-                      )}
+                      <span
+                        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${revisionStateTone[doc.revision_state ?? 'UNKNOWN']}`}
+                      >
+                        {revisionStateLabel[doc.revision_state ?? 'UNKNOWN']}
+                      </span>
                       {doc.phantom_rev_flag && (
                         <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
                           PHANTOM REV
@@ -405,15 +416,11 @@ export default function SKUDashboardPage() {
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap gap-2">
-                        {doc.is_current ? (
-                          <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                            Current
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-500">
-                            Archived
-                          </span>
-                        )}
+                        <span
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${revisionStateTone[doc.revision_state ?? 'UNKNOWN']}`}
+                        >
+                          {revisionStateLabel[doc.revision_state ?? 'UNKNOWN']}
+                        </span>
                         {doc.phantom_rev_flag && (
                           <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
                             PHANTOM REV
