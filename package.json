@@ -8,7 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "diagnostics:copper": "node scripts/runCopperDiagnostics.js",
-    "classification:ai": "node scripts/runAIClassificationPass.js"
+    "classification:ai": "node scripts/runAIClassificationPass.js",
+    "db:migration:list": "supabase migration list",
+    "db:push:dry": "supabase db push --dry-run",
+    "db:push": "supabase db push",
+    "db:types": "supabase gen types typescript src/types/database.types.ts --local"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.3",
@@ -30,6 +34,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "cross-env": "^10.1.0",
+    "supabase": "^1.203.4",
     "eslint": "^9",
     "eslint-config-next": "16.2.0",
     "tailwindcss": "^4",
