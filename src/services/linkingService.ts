@@ -23,7 +23,7 @@ interface DocumentRow {
   drawing_number: string | null;
   extracted_text_hash: string | null;
   phantom_rev_flag: boolean;
-  created_at: string;
+  uploaded_at: string;
   classification_status: string;
 }
 
@@ -69,7 +69,7 @@ async function fetchDocument(documentId: string, supabase = getSupabaseServer())
     .select(
       `id, sku_id, document_type, file_name, storage_path,
        inferred_part_number, drawing_number, extracted_text_hash,
-       phantom_rev_flag, created_at, classification_status`
+       phantom_rev_flag, uploaded_at, classification_status`
     )
     .eq('id', documentId)
     .maybeSingle();
@@ -91,10 +91,10 @@ async function fetchCandidates(target: DocumentRow, supabase = getSupabaseServer
     .select(
       `id, sku_id, document_type, file_name, storage_path,
        inferred_part_number, drawing_number, extracted_text_hash,
-       phantom_rev_flag, created_at, classification_status`
+       phantom_rev_flag, uploaded_at, classification_status`
     )
     .neq('id', target.id)
-    .order('created_at', { ascending: false })
+    .order('uploaded_at', { ascending: false })
     .limit(MAX_CANDIDATES);
 
   const orClauses: string[] = [];
@@ -191,8 +191,8 @@ async function computeSignals(
     signals.push('text_hash_match');
   }
 
-  const createdAtTarget = new Date(target.created_at).getTime();
-  const createdAtCandidate = new Date(candidate.created_at).getTime();
+  const createdAtTarget = new Date(target.uploaded_at).getTime();
+  const createdAtCandidate = new Date(candidate.uploaded_at).getTime();
   const diffDays = Math.abs(createdAtTarget - createdAtCandidate) / (1000 * 60 * 60 * 24);
   if (diffDays <= RECENT_WINDOW_DAYS) {
     score += 1;

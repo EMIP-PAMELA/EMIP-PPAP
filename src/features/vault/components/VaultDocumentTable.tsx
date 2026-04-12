@@ -12,7 +12,7 @@ interface VaultDocumentRow {
   sku: string | null;
   revision: string;
   status: 'CURRENT' | 'OBSOLETE' | 'UNKNOWN';
-  created_at: string;
+  uploaded_at: string;
   pipeline_status?: string | null;
   message?: string | null;
   file_url?: string | null;
@@ -66,7 +66,7 @@ function groupBySkuAndType(documents: VaultDocumentRow[]): { groupKey: string; d
   }
   return Array.from(map.entries()).map(([groupKey, docs]) => ({
     groupKey,
-    documents: docs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    documents: docs.sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()),
   }));
 }
 
@@ -171,7 +171,7 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                   <div className="flex-1 min-w-[200px]">
                     <p className="font-semibold text-gray-900">{doc.filename}</p>
                     <p className="text-xs text-gray-500">
-                      Revision {doc.revision} · Uploaded {new Date(doc.created_at).toLocaleString()}
+                      Revision {doc.revision} · Uploaded {new Date(doc.uploaded_at).toLocaleString()}
                     </p>
                   </div>
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[computedStatus]}`}>
@@ -228,7 +228,7 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
               </div>
               <div>
                 <dt className="text-xs uppercase text-gray-400">Uploaded</dt>
-                <dd className="font-semibold text-gray-900">{new Date((detail ?? selected).created_at).toLocaleString()}</dd>
+<dd className="font-semibold text-gray-900">{new Date((detail ?? selected).uploaded_at).toLocaleString()}</dd>
               </div>
               <div>
                 <dt className="text-xs uppercase text-gray-400">Status</dt>

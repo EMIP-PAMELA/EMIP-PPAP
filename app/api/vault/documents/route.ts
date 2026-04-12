@@ -153,7 +153,7 @@ export async function GET(request: NextRequest) {
       sku: skuRel?.part_number ?? null,
       revision: doc.revision,
       status: doc.is_current ? 'CURRENT' : 'OBSOLETE',
-      created_at: doc.uploaded_at,
+      uploaded_at: doc.uploaded_at,
       pipeline_status: doc.phantom_rev_flag ? 'PARTIAL' : 'UNKNOWN',
       message: doc.phantom_rev_note ?? null,
       file_url: doc.file_url ?? null,
