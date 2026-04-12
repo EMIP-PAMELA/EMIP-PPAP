@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import EMIPLayout from '../../layout/EMIPLayout';
@@ -57,17 +57,19 @@ const readinessStatusLabel: Record<ReadinessStatus, string> = {
   BLOCKED: 'Blocked',
 };
 
-const outputStatusTone: Record<ReadinessStatus, string> = {
-  READY: 'bg-emerald-100 text-emerald-800',
-  PARTIAL: 'bg-amber-100 text-amber-800',
-  BLOCKED: 'bg-red-100 text-red-700',
-};
+type SupportedDocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
+type DocumentPresenceKey = 'bom' | 'customerDrawing' | 'internalDrawing';
 
-const readinessOutputs = [
-  { key: 'work_instructions', label: 'Work Instructions' },
-  { key: 'traveler_package', label: 'Traveler Package' },
-  { key: 'komax_cut_sheet', label: 'Komax / Cut Sheet' },
-] as const;
+const DOCUMENT_DEFINITIONS: Array<{
+  type: SupportedDocumentType;
+  label: string;
+  description: string;
+  presenceKey: DocumentPresenceKey;
+}> = [
+  { type: 'BOM', label: 'BOM', description: 'Bill of Materials', presenceKey: 'bom' },
+  { type: 'CUSTOMER_DRAWING', label: 'Customer Drawing', description: 'Customer-supplied drawing', presenceKey: 'customerDrawing' },
+  { type: 'INTERNAL_DRAWING', label: 'Internal Drawing', description: 'Internal / Apogee drawing', presenceKey: 'internalDrawing' },
+];
 
 interface PipelineSummary {
   wires: number;
@@ -142,6 +144,16 @@ export default function SKUDashboardPage() {
     }
     return 'All downstream outputs are clear to proceed.';
   })();
+
+  const readinessReasons = useMemo(() => {
+    if (readinessBlockers.length > 0) {
+      return readinessBlockers.slice(0, 2);
+    }
+    if (readinessWarnings.length > 0) {
+      return readinessWarnings.slice(0, 2);
+    }
+    return readiness?.issues?.slice(0, 2).map(issue => issue.message) ?? [];
+  }, [readinessBlockers, readinessWarnings, readiness?.issues]);
 
   async function loadSKU() {
     if (!partNumberParam) return;
@@ -232,6 +244,19 @@ export default function SKUDashboardPage() {
 
   const hasAnyDrawing = documentPresence.customerDrawing || documentPresence.internalDrawing;
   const pipelineRequirementsMet = documentPresence.bom && hasAnyDrawing;
+
+  const buildUploadLink = useCallback(
+    (docType: SupportedDocumentType) => {
+      const params = new URLSearchParams();
+      params.set('docType', docType);
+      params.set('actionIntent', 'UPLOAD_MISSING_DOC');
+      if (partNumber) {
+        params.set('part', partNumber);
+      }
+      return `/vault?${params.toString()}`;
+    },
+    [partNumber],
+  );
 
   async function runPipeline(trigger: 'manual' | 'auto' = 'manual') {
     if (!sku) return;
@@ -346,77 +371,146 @@ export default function SKUDashboardPage() {
           />
         )}
 
-        {!loading && sku && readiness && overallReadinessStatus && (
-          <section
-            id="sku-readiness"
-            ref={readinessSectionRef}
-            className={`rounded-2xl border px-5 py-5 space-y-5 ${readinessStatusTone[overallReadinessStatus].container} ${readinessHighlightActive ? 'ring-2 ring-blue-300 shadow-lg shadow-blue-100' : ''}`}
-          >
-            <div className="flex flex-wrap items-start gap-4">
-              <span className="text-2xl" aria-hidden>
-                {readinessStatusTone[overallReadinessStatus].icon}
-              </span>
-              <div className="flex-1 min-w-[240px] space-y-1">
-                <p className="text-xs uppercase tracking-[0.4em] text-gray-500">SKU Readiness</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-xl font-semibold text-gray-900">{readinessStatusLabel[overallReadinessStatus]}</h2>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${readinessStatusTone[overallReadinessStatus].badge}`}>
-                    {readinessStatusLabel[overallReadinessStatus]}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-700">{readinessNextAction}</p>
-                {readinessHighlightActive && (
-                  <p className="text-xs font-semibold text-blue-700">Opened from corrective action.</p>
-                )}
+        <section id="sku-documents" className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-2 min-w-[220px]">
+              <h2 className="text-xl font-semibold text-gray-900">Documents for this SKU</h2>
+              <p className="text-sm text-gray-600">These are the authoritative sources for revision validation and readiness.</p>
+              <div className="flex flex-wrap gap-2">
+                {DOCUMENT_DEFINITIONS.map(def => {
+                  const present = documentPresence[def.presenceKey];
+                  return (
+                    <span
+                      key={def.type}
+                      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                        present
+                          ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                          : 'border-gray-200 bg-gray-100 text-gray-500'
+                      }`}
+                    >
+                      {present ? '✓' : '✗'} {def.label}
+                    </span>
+                  );
+                })}
               </div>
             </div>
+            {sku && (
+              <Link
+                href={vaultLink}
+                className="inline-flex items-center rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+              >
+                Open in Document Vault →
+              </Link>
+            )}
+          </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-              {readinessOutputs.map(def => {
-                const output = readiness[def.key];
-                const primaryIssue = output.blockers[0] ?? output.warnings[0] ?? 'No outstanding issues.';
-                return (
-                  <div key={def.key} className="rounded-xl bg-white/70 p-4 shadow-sm border border-white">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-gray-800">{def.label}</p>
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${outputStatusTone[output.status]}`}>
-                        {readinessStatusLabel[output.status]}
-                      </span>
+          <div className="grid gap-6 lg:grid-cols-3">
+            {DOCUMENT_DEFINITIONS.map(def => {
+              const doc = docByType[def.type];
+              const present = documentPresence[def.presenceKey];
+              return (
+                <div key={def.type} className="rounded-2xl border border-gray-200 bg-white/80 p-5 shadow-sm">
+                  <p className="text-sm uppercase tracking-widest text-gray-500">{def.label}</p>
+                  <p className="text-xs text-gray-500">{def.description}</p>
+                  {present && doc ? (
+                    <div className="mt-4 space-y-2">
+                      <p className="text-lg font-semibold text-gray-900">Revision {doc.revision}</p>
+                      <p className="text-sm text-gray-600">{doc.file_name}</p>
+                      <p className="text-xs text-gray-400">Uploaded {new Date(doc.uploaded_at).toLocaleString()}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${revisionStateTone[doc.revision_state ?? 'UNKNOWN']}`}
+                        >
+                          {revisionStateLabel[doc.revision_state ?? 'UNKNOWN']}
+                        </span>
+                        {doc.phantom_rev_flag && (
+                          <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
+                            PHANTOM REV
+                          </span>
+                        )}
+                        {doc.phantom_diff_summary && (
+                          <span
+                            className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ${
+                              doc.phantom_diff_summary.likely_functional_change
+                                ? 'bg-red-50 text-red-700'
+                                : 'bg-blue-50 text-blue-700'
+                            }`}
+                          >
+                            {doc.phantom_diff_summary.likely_functional_change
+                              ? 'Functional Change Likely'
+                              : 'Minor/Unclear Change'}
+                          </span>
+                        )}
+                      </div>
+                      {doc.phantom_rev_flag && doc.phantom_rev_note && (
+                        <p className="text-xs text-amber-600">{doc.phantom_rev_note}</p>
+                      )}
+                      {doc.phantom_rev_flag && !doc.phantom_diff_summary && (
+                        <p className="text-xs text-amber-600">Diff summary unavailable for this upload.</p>
+                      )}
+                      {doc.phantom_diff_summary && (
+                        <details className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+                          <summary className="cursor-pointer font-semibold">View summary</summary>
+                          <p className="mt-1 text-amber-800">{doc.phantom_diff_summary.summary_message}</p>
+                          <p className="mt-1 text-amber-800">
+                            Δ Lines: {doc.phantom_diff_summary.changed_line_count} · Functional change:{' '}
+                            {doc.phantom_diff_summary.likely_functional_change ? 'YES' : 'NO'}
+                          </p>
+                          <div className="mt-2 grid gap-2 md:grid-cols-2">
+                            {doc.phantom_diff_summary.added_lines.length > 0 && (
+                              <div>
+                                <p className="text-[11px] uppercase text-amber-600">Added</p>
+                                <ul className="mt-1 space-y-1 font-mono text-[11px]">
+                                  {doc.phantom_diff_summary.added_lines.map(line => (
+                                    <li key={line}>{line}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {doc.phantom_diff_summary.removed_lines.length > 0 && (
+                              <div>
+                                <p className="text-[11px] uppercase text-amber-600">Removed</p>
+                                <ul className="mt-1 space-y-1 font-mono text-[11px]">
+                                  {doc.phantom_diff_summary.removed_lines.map(line => (
+                                    <li key={line}>{line}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      )}
+                      <a
+                        href={doc.file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
+                      >
+                        View document →
+                      </a>
                     </div>
-                    <p className="mt-2 text-sm text-gray-600 line-clamp-2">{primaryIssue}</p>
-                    <p className="mt-2 text-xs font-semibold text-gray-500">Next: {output.recommended_action}</p>
-                  </div>
-                );
-              })}
-            </div>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      <p className="text-sm text-gray-500">No {def.label.toLowerCase()} uploaded yet.</p>
+                      <Link
+                        href={buildUploadLink(def.type)}
+                        className="inline-flex items-center rounded-lg border border-dashed border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                      >
+                        Upload {def.label}
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">Critical blockers</p>
-                {readinessBlockers.length > 0 ? (
-                  <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 space-y-1">
-                    {readinessBlockers.slice(0, 5).map(item => (
-                      <li key={`blocker-${item}`}>{item}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-2 text-sm text-gray-500">No blocking issues detected.</p>
-                )}
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">Warnings</p>
-                {readinessWarnings.length > 0 ? (
-                  <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 space-y-1">
-                    {readinessWarnings.slice(0, 5).map(item => (
-                      <li key={`warning-${item}`}>{item}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-2 text-sm text-gray-500">No warnings at this time.</p>
-                )}
-              </div>
-            </div>
-          </section>
+        {sku && !sku.description && !loading && (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+            This SKU stub was auto-created from a document upload. Add more documents to fill in the description and
+            complete the record.
+          </div>
         )}
 
         {!loading && sku && (
@@ -443,149 +537,41 @@ export default function SKUDashboardPage() {
           </div>
         )}
 
-        {!loading && sku && (
-          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 flex flex-wrap items-center gap-4">
-            <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Source Checklist</span>
-            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${documentPresence.bom ? 'text-emerald-700' : 'text-red-600'}`}>
-              {documentPresence.bom ? '✓' : '✗'} BOM
-            </span>
-            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${documentPresence.customerDrawing ? 'text-emerald-700' : 'text-red-600'}`}>
-              {documentPresence.customerDrawing ? '✓' : '✗'} Customer Drawing
-            </span>
-            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${documentPresence.internalDrawing ? 'text-emerald-700' : 'text-red-600'}`}>
-              {documentPresence.internalDrawing ? '✓' : '✗'} Internal Drawing
-            </span>
-            <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${
-              pipelineStatus === 'READY'
-                ? 'bg-emerald-100 text-emerald-700'
-                : pipelineStatus === 'PARTIAL'
-                  ? 'bg-amber-100 text-amber-800'
-                  : 'bg-gray-100 text-gray-500'
-            }`}>
-              {pipelineStatus === 'READY' ? 'PIPELINE READY' : pipelineStatus === 'PARTIAL' ? 'INCOMPLETE' : '…'}
-            </span>
-          </div>
-        )}
-
-        {sku && !sku.description && !loading && (
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-            This SKU stub was auto-created from a document upload. Add more documents to fill in the description and
-            complete the record.
-          </div>
-        )}
-
-        {message && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {message}
-          </div>
-        )}
-
-        {sku && (
-          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-3">
-            <div className="text-sm text-gray-600 flex-1 min-w-[200px]">
-              Drop new BOMs or drawings straight into the Document Vault — this SKU will be preselected.
-            </div>
-            <Link
-              href={vaultLink}
-              className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition"
-            >
-              Upload Document to this SKU
-            </Link>
-          </div>
-        )}
-
-        <section className="grid gap-6 lg:grid-cols-3">
-          {(['BOM', 'CUSTOMER_DRAWING', 'INTERNAL_DRAWING'] as const).map(type => {
-            const doc = docByType[type];
-            return (
-              <div key={type} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <p className="text-sm uppercase tracking-widest text-gray-500">{sectionDescription(type)}</p>
-                {doc ? (
-                  <div className="mt-4 space-y-2">
-                    <p className="text-lg font-semibold text-gray-900">Revision {doc.revision}</p>
-                    <p className="text-sm text-gray-600">{doc.file_name}</p>
-                    <p className="text-xs text-gray-400">Uploaded {new Date(doc.uploaded_at).toLocaleString()}</p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${revisionStateTone[doc.revision_state ?? 'UNKNOWN']}`}
-                      >
-                        {revisionStateLabel[doc.revision_state ?? 'UNKNOWN']}
-                      </span>
-                      {doc.phantom_rev_flag && (
-                        <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
-                          PHANTOM REV
-                        </span>
-                      )}
-                      {doc.phantom_diff_summary && (
-                        <span
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ${
-                            doc.phantom_diff_summary.likely_functional_change
-                              ? 'bg-red-50 text-red-700'
-                              : 'bg-blue-50 text-blue-700'
-                          }`}
-                        >
-                          {doc.phantom_diff_summary.likely_functional_change
-                            ? 'Functional Change Likely'
-                            : 'Minor/Unclear Change'}
-                        </span>
-                      )}
-                    </div>
-                    {doc.phantom_rev_flag && doc.phantom_rev_note && (
-                      <p className="text-xs text-amber-600">{doc.phantom_rev_note}</p>
-                    )}
-                    {doc.phantom_rev_flag && !doc.phantom_diff_summary && (
-                      <p className="text-xs text-amber-600">Diff summary unavailable for this upload.</p>
-                    )}
-                    {doc.phantom_diff_summary && (
-                      <details className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
-                        <summary className="cursor-pointer font-semibold">View summary</summary>
-                        <p className="mt-1 text-amber-800">{doc.phantom_diff_summary.summary_message}</p>
-                        <p className="mt-1 text-amber-800">
-                          Δ Lines: {doc.phantom_diff_summary.changed_line_count} · Functional change:{' '}
-                          {doc.phantom_diff_summary.likely_functional_change ? 'YES' : 'NO'}
-                        </p>
-                        <div className="mt-2 grid gap-2 md:grid-cols-2">
-                          {doc.phantom_diff_summary.added_lines.length > 0 && (
-                            <div>
-                              <p className="text-[11px] uppercase text-amber-600">Added</p>
-                              <ul className="mt-1 space-y-1 font-mono text-[11px]">
-                                {doc.phantom_diff_summary.added_lines.map(line => (
-                                  <li key={line}>{line}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {doc.phantom_diff_summary.removed_lines.length > 0 && (
-                            <div>
-                              <p className="text-[11px] uppercase text-amber-600">Removed</p>
-                              <ul className="mt-1 space-y-1 font-mono text-[11px]">
-                                {doc.phantom_diff_summary.removed_lines.map(line => (
-                                  <li key={line}>{line}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      </details>
-                    )}
-                    <a
-                      href={doc.file_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
-                    >
-                      View document →
-                    </a>
-                  </div>
-                ) : (
-                  <p className="mt-4 text-sm text-gray-500">No document uploaded yet.</p>
-                )}
+        {!loading && sku && readiness && overallReadinessStatus && (
+          <section
+            id="sku-readiness"
+            ref={readinessSectionRef}
+            className={`rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-4 ${readinessHighlightActive ? 'ring-2 ring-blue-100 shadow-lg shadow-blue-50' : ''}`}
+          >
+            <div className="flex flex-wrap items-start gap-4">
+              <span className="text-2xl" aria-hidden>
+                {readinessStatusTone[overallReadinessStatus].icon}
+              </span>
+              <div className="flex-1 min-w-[240px] space-y-1">
+                <p className="text-xs uppercase tracking-[0.4em] text-gray-500">SKU Readiness</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-semibold text-gray-900">{readinessStatusLabel[overallReadinessStatus]}</h2>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${readinessStatusTone[overallReadinessStatus].badge}`}>
+                    {readinessStatusLabel[overallReadinessStatus]}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-700">{readinessNextAction}</p>
               </div>
-            );
-          })}
-        </section>
+            </div>
+            {readinessReasons.length > 0 ? (
+              <ul className="list-disc pl-5 text-sm text-gray-700 space-y-1">
+                {readinessReasons.map(reason => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-500">No outstanding blockers or warnings.</p>
+            )}
+            <p className="text-xs text-gray-400">Readiness updates automatically after new documents are processed.</p>
+          </section>
+        )}
 
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
+        <section className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5 space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Pipeline</h2>
@@ -658,6 +644,12 @@ export default function SKUDashboardPage() {
               </div>
             )}
         </section>
+
+        {message && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {message}
+          </div>
+        )}
 
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
