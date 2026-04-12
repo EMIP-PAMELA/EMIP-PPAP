@@ -4,9 +4,10 @@ import { detectDocumentType } from '@/src/features/vault/utils/documentSignals';
 import { resolveAliasFromDB, storeAliasMapping } from '@/src/features/harness-work-instructions/services/aliasService';
 import { resolvePartNumberFromDrawing } from '@/src/features/harness-work-instructions/services/drawingLookupService';
 import { linkDocument } from '@/src/services/linkingService';
+import { extractPartNumberFromText } from '@/src/utils/extractPartNumber';
+import { extractDrawingNumberFromText } from '@/src/utils/extractDrawingNumber';
 
-const MAX_ATTEMPTS = 3;
-const RETRY_DELAY_MS = 1500;
+export const MAX_ATTEMPTS = 3;
 
 type ClassificationOutcome = {
   status: DocumentClassificationStatus;
@@ -17,6 +18,7 @@ type ClassificationOutcome = {
 
 type RawDocument = {
   id: string;
+  sku_id: string | null;
   file_name: string;
   document_type: string;
   storage_path: string | null;
@@ -29,40 +31,6 @@ type SignalContext = {
   drawingNumber: string | null;
   aliasResolution: string | null;
 };
-
-const PART_NUMBER_PATTERNS = [
-  /\b(\d{3}-\d{4,5}-\d{3,4}[A-Z]?)\b/, // 123-45678-123
-  /\b([A-Z]{2,6}-\d{4,6}(?:-[A-Z0-9]{1,5})?)\b/, // NH45-110858-01
-  /part\s*(?:number|no\.?|#)\s*[:\s]+([A-Z0-9]{2}[A-Z0-9\-]{4,})/i,
-];
-
-function extractPartNumber(text: string | null): string | null {
-  if (!text) return null;
-  const lines = text.split(/\r?\n/).slice(0, 100);
-  for (const line of lines) {
-    for (const pattern of PART_NUMBER_PATTERNS) {
-      const match = line.match(pattern);
-      if (match) {
-        const candidate = match[1]?.trim().toUpperCase();
-        if (candidate && candidate.length >= 6 && candidate.length <= 40) {
-          return candidate;
-        }
-      }
-    }
-  }
-  return null;
-}
-
-function extractDrawingNumber(text: string | null): string | null {
-  if (!text) return null;
-  const lines = text.split(/\r?\n/).slice(0, 80);
-  const regex = /\b\d{3}-\d{4}-\d{3}\b/;
-  for (const line of lines) {
-    const match = line.match(regex);
-    if (match) return match[0];
-  }
-  return null;
-}
 
 function deterministicPass(document: RawDocument, context: SignalContext): ClassificationOutcome | null {
   if (context.partNumber) {
@@ -100,7 +68,7 @@ function heuristicPass(document: RawDocument, extractedText: string | null): Cla
   if (classification.detected !== 'UNKNOWN') {
     const matchesDeclared = classification.detected === document.document_type;
     return {
-      status: matchesDeclared ? 'PARTIAL' : 'PARTIAL',
+      status: matchesDeclared ? 'PARTIAL' : 'PARTIAL_MISMATCH',
       confidence: matchesDeclared ? 0.7 : 0.4,
       notes: matchesDeclared
         ? 'Heuristic pass: structure matches stored document type.'
@@ -139,7 +107,6 @@ async function runClassificationPasses(
   if (deterministic) return deterministic;
 
   const heuristic = heuristicPass(document, extractedText);
-  if (heuristic && heuristic.status === 'RESOLVED') return heuristic;
 
   const aiFallback = aiStubPass();
 
@@ -156,6 +123,7 @@ export async function classifyDocument(documentId: string): Promise<void> {
     .from('sku_documents')
     .select(
       `id,
+       sku_id,
        file_name,
        document_type,
        storage_path,
@@ -203,14 +171,10 @@ export async function classifyDocument(documentId: string): Promise<void> {
   const nextAttempts = attempts + 1;
   const outcome = await runClassificationPasses(document as RawDocument, extractedText, signalContext);
   let statusToPersist: DocumentClassificationStatus = outcome.status;
-  let shouldRetry = outcome.retry;
 
   if (statusToPersist !== 'RESOLVED') {
-    if (shouldRetry && nextAttempts < MAX_ATTEMPTS) {
-      statusToPersist = 'PENDING';
-    } else if (nextAttempts >= MAX_ATTEMPTS) {
+    if (nextAttempts >= MAX_ATTEMPTS) {
       statusToPersist = 'NEEDS_REVIEW';
-      shouldRetry = false;
     }
   }
 
@@ -229,19 +193,80 @@ export async function classifyDocument(documentId: string): Promise<void> {
     })
     .eq('id', documentId);
 
-  linkDocument(documentId).catch(err => {
-    console.error('[LINKING] async trigger failed', err);
-  });
+  if (inferredPartNumber) {
+    await resolveProvisionalSku(documentId, document.sku_id, inferredPartNumber, supabase);
+  }
 
-  if (shouldRetry && statusToPersist === 'PENDING') {
-    const timer = setTimeout(() => {
-      classifyDocument(documentId).catch(err => {
-        console.error('[CLASSIFICATION] Retry failed', err);
+  const hasLinkableSignals = Boolean(
+    signalContext.partNumber ?? signalContext.aliasResolution ?? signalContext.drawingNumber,
+  );
+  if (statusToPersist === 'RESOLVED' || hasLinkableSignals) {
+    linkDocument(documentId).catch(err => {
+      console.error('[LINKING] async trigger failed', err);
+    });
+  }
+}
+
+async function resolveProvisionalSku(
+  documentId: string,
+  currentSkuId: string | null,
+  inferredPartNumber: string,
+  supabase: ReturnType<typeof getSupabaseServer>,
+): Promise<void> {
+  if (!currentSkuId) return;
+
+  const { data: currentSku } = await supabase
+    .from('sku')
+    .select('id, part_number')
+    .eq('id', currentSkuId)
+    .maybeSingle();
+
+  if (!currentSku?.part_number?.startsWith('PENDING-')) return;
+
+  const normalized = inferredPartNumber.trim().toUpperCase();
+
+  const { data: existing } = await supabase
+    .from('sku')
+    .select('id')
+    .eq('part_number', normalized)
+    .maybeSingle();
+
+  let realSkuId = existing?.id ?? null;
+
+  if (!realSkuId) {
+    const { data: created, error } = await supabase
+      .from('sku')
+      .insert({ part_number: normalized })
+      .select('id')
+      .single();
+    if (error) {
+      console.warn('[CLASSIFICATION] Provisional SKU resolve: failed to create real SKU', {
+        documentId,
+        part_number: normalized,
+        error: error.message,
       });
-    }, RETRY_DELAY_MS);
-    if (typeof timer === 'object' && typeof (timer as NodeJS.Timeout).unref === 'function') {
-      (timer as NodeJS.Timeout).unref();
+      return;
     }
+    realSkuId = created.id;
+  }
+
+  const { error: reassignError } = await supabase
+    .from('sku_documents')
+    .update({ sku_id: realSkuId })
+    .eq('id', documentId);
+
+  if (reassignError) {
+    console.warn('[CLASSIFICATION] Provisional SKU resolve: failed to reassign document', {
+      documentId,
+      realSkuId,
+      error: reassignError.message,
+    });
+  } else {
+    console.log('[CLASSIFICATION] Provisional SKU resolved', {
+      documentId,
+      part_number: normalized,
+      realSkuId,
+    });
   }
 }
 
@@ -254,8 +279,8 @@ async function buildSignalContext(extractedText: string | null): Promise<SignalC
     };
   }
 
-  const partNumber = extractPartNumber(extractedText);
-  const drawingNumber = extractDrawingNumber(extractedText);
+  const partNumber = extractPartNumberFromText(extractedText);
+  const drawingNumber = extractDrawingNumberFromText(extractedText);
   let aliasResolution: string | null = null;
 
   if (!partNumber && drawingNumber) {

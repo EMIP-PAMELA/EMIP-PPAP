@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ingestAndProcessDocument, UnifiedIngestionError } from '@/src/features/harness-work-instructions/services/unifiedIngestionService';
+import { ingestAndProcessDocument } from '@/src/features/harness-work-instructions/services/unifiedIngestionService';
+import { classifyDocument } from '@/src/services/classificationService';
 
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
@@ -13,17 +14,19 @@ export async function POST(request: NextRequest) {
   }
 
   const extractedText = typeof extractedTextField === 'string' ? extractedTextField : undefined;
-  if (!extractedText || !extractedText.trim()) {
-    return NextResponse.json({ ok: false, error: 'extracted_text is required' }, { status: 400 });
-  }
+  const normalizedText = extractedText && extractedText.trim().length > 0 ? extractedText : undefined;
 
   try {
     const result = await ingestAndProcessDocument({
       file,
       documentType: 'BOM',
-      extractedText,
+      extractedText: normalizedText,
       partNumberOverride: typeof manualPartNumber === 'string' ? manualPartNumber : undefined,
       revisionOverride: typeof manualRevision === 'string' ? manualRevision : undefined,
+    });
+
+    classifyDocument(result.uploadResult.document.id).catch(err => {
+      console.error('[CLASSIFICATION] async trigger failed', err);
     });
     return NextResponse.json({
       ok: true,
@@ -41,17 +44,6 @@ export async function POST(request: NextRequest) {
       process_bundle: result.pipeline.processBundle,
     });
   } catch (err) {
-    if (err instanceof UnifiedIngestionError) {
-      if (err.code === 'MISSING_PART_NUMBER') {
-        return NextResponse.json(
-          { ok: false, error: err.message, needs_manual_part_number: true },
-          { status: 422 },
-        );
-      }
-      if (err.code === 'MISSING_TEXT') {
-        return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
-      }
-    }
     const message = err instanceof Error ? err.message : 'BOM ingest failed';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }

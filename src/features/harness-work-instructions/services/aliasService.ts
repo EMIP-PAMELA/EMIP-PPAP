@@ -49,7 +49,7 @@ export async function resolveAliasFromDB(drawingNumber: string): Promise<string 
     .from('sku_aliases')
     .select('part_number')
     .eq('alias_value', normalized)
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.warn('[HWI ALIAS DB ERROR]', { drawing_number: normalized, error: error.message });

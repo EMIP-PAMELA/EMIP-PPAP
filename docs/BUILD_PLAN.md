@@ -9,6 +9,57 @@
 
 ---
 
+## CURRENT PHASE
+
+HWI.15.4.1 — System Stabilization
+
+---
+
+## CURRENT SYSTEM STATE
+
+- **Vault intake:** store-first, non-blocking uploads for every document class
+- **Classification engine:** asynchronous multi-pass service (deterministic → heuristic → AI scaffold)
+- **Alias system:** drawing ↔ part mapping through lookup + learned hints
+- **Linking engine:** multi-signal inference guarded by signal presence + confidence thresholds
+
+---
+
+## ACTIVE OBJECTIVES
+
+- enforce store-first ingestion
+- stabilize classification lifecycle
+- prevent invalid linking
+- fix retry mechanism
+- eliminate data corruption paths
+
+---
+
+## KNOWN ISSUES (FROM AUDIT)
+
+- retry engine not yet implemented (status-based retries lack scheduler)
+- `PARTIAL_MISMATCH` persistence bug
+- provisional SKU cleanup missing
+- UNKNOWN document type misclassification via fallback materialization
+- documentation drift vs implementation
+
+---
+
+## NEXT PHASES
+
+- HWI.15.4.1 — Stabilization *(current)*
+- HWI.15.5 — Revision Intelligence
+- HWI.15.6 — Component Graph
+
+---
+
+## DEFERRED WORK
+
+- full AI classification
+- graph visualization
+- automated SKU merging
+
+---
+
 ## V5.0 ARCHITECTURE REALIGNMENT (2026-04-07)
 
 ### System Architecture - Three Layers

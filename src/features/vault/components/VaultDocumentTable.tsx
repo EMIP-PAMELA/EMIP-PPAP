@@ -50,6 +50,7 @@ const classificationBadges: Record<DocumentClassificationStatus, { label: string
   PENDING: { label: '🟡 Pending', tone: 'bg-amber-50 text-amber-800 border border-amber-100' },
   PROCESSING: { label: '🔵 Processing', tone: 'bg-blue-50 text-blue-700 border border-blue-100' },
   PARTIAL: { label: '🟠 Partial', tone: 'bg-orange-50 text-orange-800 border border-orange-100' },
+  PARTIAL_MISMATCH: { label: '🟠 Type Mismatch', tone: 'bg-orange-100 text-orange-900 border border-orange-200' },
   NEEDS_REVIEW: { label: '🔴 Needs Review', tone: 'bg-red-50 text-red-800 border border-red-100' },
   RESOLVED: { label: '🟢 Resolved', tone: 'bg-emerald-50 text-emerald-800 border border-emerald-100' },
 };
@@ -107,7 +108,7 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
 
     fetchDocuments();
     return () => controller.abort();
-  }, [filters.sku, filters.documentType, filters.status, filters.search]);
+  }, [filters.sku, filters.documentType, filters.status, filters.search, filters.classificationStatus]);
 
   const groupedDocuments = useMemo(() => groupBySkuAndType(documents), [documents]);
   const [selected, setSelected] = useState<VaultDocumentRow | null>(null);

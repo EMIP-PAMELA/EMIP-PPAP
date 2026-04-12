@@ -9,6 +9,7 @@ import { resolveAliasFromDB } from '@/src/features/harness-work-instructions/ser
 const MAX_CANDIDATES = 50;
 const SAME_SKU_THRESHOLD = 5;
 const RECENT_WINDOW_DAYS = 7;
+const SKU_CREATION_CONFIDENCE_THRESHOLD = 6;
 
 type LinkType = 'SAME_SKU' | 'RELATED' | 'CONFLICT';
 
@@ -107,9 +108,11 @@ async function fetchCandidates(target: DocumentRow, supabase = getSupabaseServer
     orClauses.push(`sku_id.eq.${target.sku_id}`);
   }
 
-  if (orClauses.length > 0) {
-    selector.or(orClauses.join(','));
+  if (orClauses.length === 0) {
+    return [];
   }
+
+  selector.or(orClauses.join(','));
 
   const { data, error } = await selector;
 
@@ -223,7 +226,11 @@ async function computeSignals(
   };
 }
 
-async function ensureSku(partNumber: string, sourceType: DocumentType): Promise<string | null> {
+async function ensureSku(
+  partNumber: string,
+  sourceType: DocumentType,
+  confidenceScore: number,
+): Promise<string | null> {
   const normalized = partNumber.trim().toUpperCase();
   try {
     const existing = await getSKU(normalized);
@@ -232,6 +239,14 @@ async function ensureSku(partNumber: string, sourceType: DocumentType): Promise<
     }
   } catch (err) {
     console.warn('[LINKING] getSKU failed', err);
+  }
+
+  if (confidenceScore < SKU_CREATION_CONFIDENCE_THRESHOLD) {
+    console.warn('[LINKING] SKU CREATION SKIPPED — LOW CONFIDENCE', {
+      part_number: normalized,
+      confidenceScore,
+    });
+    return null;
   }
 
   try {
@@ -265,7 +280,7 @@ async function attachDocumentsToSKU(
 
   let targetSkuId = document.sku_id ?? candidate.sku_id ?? null;
   if (!targetSkuId) {
-    targetSkuId = await ensureSku(partNumber, document.document_type);
+    targetSkuId = await ensureSku(partNumber, document.document_type, evaluation.score);
   }
 
   if (!targetSkuId) return;
@@ -295,6 +310,9 @@ export async function linkDocument(documentId: string): Promise<void> {
   const supabase = getSupabaseServer();
   const document = await fetchDocument(documentId, supabase);
   if (!document) return;
+  if (!document.inferred_part_number && !document.drawing_number) {
+    return;
+  }
 
   const aliasCache = new Map<string, string | null>();
   const candidates = await fetchCandidates(document, supabase);

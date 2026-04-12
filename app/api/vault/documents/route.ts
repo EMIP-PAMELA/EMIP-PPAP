@@ -26,7 +26,14 @@ function parseStatus(value: string | null): 'CURRENT' | 'OBSOLETE' | 'UNKNOWN' |
 function parseClassificationStatus(value: string | null): DocumentClassificationStatus | null {
   if (!value) return null;
   const normalized = value.trim().toUpperCase();
-  const allowed: DocumentClassificationStatus[] = ['PENDING', 'PROCESSING', 'RESOLVED', 'PARTIAL', 'NEEDS_REVIEW'];
+  const allowed: DocumentClassificationStatus[] = [
+    'PENDING',
+    'PROCESSING',
+    'RESOLVED',
+    'PARTIAL',
+    'PARTIAL_MISMATCH',
+    'NEEDS_REVIEW',
+  ];
   return allowed.includes(normalized as DocumentClassificationStatus)
     ? (normalized as DocumentClassificationStatus)
     : null;

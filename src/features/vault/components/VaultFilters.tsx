@@ -6,7 +6,7 @@ export type VaultFilterState = {
   sku?: string;
   documentType?: 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING' | '';
   status?: 'CURRENT' | 'OBSOLETE' | 'UNKNOWN' | '';
-  classificationStatus?: 'PENDING' | 'PROCESSING' | 'PARTIAL' | 'NEEDS_REVIEW' | 'RESOLVED' | '';
+  classificationStatus?: 'PENDING' | 'PROCESSING' | 'PARTIAL' | 'PARTIAL_MISMATCH' | 'NEEDS_REVIEW' | 'RESOLVED' | '';
   search?: string;
 };
 
@@ -73,6 +73,7 @@ export default function VaultFilters({ value, onChange }: VaultFiltersProps) {
             <option value="PENDING">Pending</option>
             <option value="PROCESSING">Processing</option>
             <option value="PARTIAL">Partial</option>
+            <option value="PARTIAL_MISMATCH">Partial (Mismatch)</option>
             <option value="NEEDS_REVIEW">Needs Review</option>
             <option value="RESOLVED">Resolved</option>
           </select>

@@ -53,5 +53,6 @@ export function detectDocumentType(extractedText: string, fileName: string): Vau
 export function materializeDocumentType(classification: DocumentType | 'UNKNOWN'): DocumentType {
   if (classification === 'BOM') return 'BOM';
   if (classification === 'INTERNAL_DRAWING') return 'INTERNAL_DRAWING';
-  return 'CUSTOMER_DRAWING';
+  if (classification === 'CUSTOMER_DRAWING') return 'CUSTOMER_DRAWING';
+  return 'UNKNOWN';
 }

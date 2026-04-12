@@ -11,26 +11,10 @@ import type { HarnessInstructionJob } from '../types/harnessInstruction.schema';
 import type { CanonicalDrawingDraft } from '../types/drawingDraft';
 import type { ProcessInstructionBundle } from '../types/processInstructions';
 import type { UploadDocumentResult } from './skuService';
+import { extractPartNumberFromText } from '@/src/utils/extractPartNumber';
+import { extractDrawingNumberFromText } from '@/src/utils/extractDrawingNumber';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
-
-export class UnifiedIngestionError extends Error {
-  constructor(public code: 'MISSING_PART_NUMBER' | 'MISSING_TEXT', message: string) {
-    super(message);
-  }
-}
-
-function extractDrawingNumber(text: string): string | null {
-  const lines = text.split('\n').slice(0, 50);
-  const regex = /\b\d{3}-\d{4}-\d{3}\b/;
-
-  for (const line of lines) {
-    const match = line.match(regex);
-    if (match) return match[0];
-  }
-
-  return null;
-}
 
 interface IngestAndProcessParams {
   file: File;
@@ -54,37 +38,6 @@ export interface UnifiedIngestionResult {
   skuCreated: boolean;
   headerUpdated: boolean;
   pipeline: PipelineResult;
-}
-
-const WEAK_PN_TOKENS = new Set([
-  'REV', 'DWG', 'DRW', 'NOTE', 'ITEM', 'DOC', 'PAGE', 'SHEET', 'DATE',
-  'APP', 'CHK', 'ENG', 'TITLE', 'SIZE', 'SCALE', 'ZONE', 'CAGE', 'FSCM',
-]);
-
-function derivePartNumberFromBOM(text: string): string | null {
-  const lines = text
-    .split(/\r?\n/)
-    .map(l => l.trim())
-    .filter(l => l.length > 0 && l.length < 200);
-
-  const patterns: RegExp[] = [
-    /\b(\d{3}-\d{4,5}-\d{3,4}[A-Z]?)\b/,
-    /\b([A-Z]{2,6}-\d{4,6}(?:-[A-Z0-9]{1,5})?)\b/,
-    /part\s*(?:number|no\.?|#)\s*[:\s]+([A-Z0-9]{2}[A-Z0-9\-]{4,})/i,
-  ];
-
-  for (const line of lines.slice(0, 50)) {
-    for (const pattern of patterns) {
-      const match = line.match(pattern);
-      if (!match) continue;
-      const candidate = match[1].trim().toUpperCase();
-      if (candidate.length < 6) continue;
-      if (WEAK_PN_TOKENS.has(candidate)) continue;
-      if (/^[A-Z]-/i.test(candidate)) continue;
-      return candidate;
-    }
-  }
-  return null;
 }
 
 function deriveRevisionFromBOM(text: string): string | null {
@@ -116,11 +69,21 @@ function deriveDescriptionFromBOM(text: string): string | null {
   return null;
 }
 
-function ensurePartNumber(partNumber: string | null | undefined): string {
-  if (!partNumber || !partNumber.trim()) {
-    throw new UnifiedIngestionError('MISSING_PART_NUMBER', 'Unable to derive part number from document');
-  }
-  return partNumber.trim().toUpperCase();
+function normalizeOptionalString(value?: string | null): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function generateProvisionalPartNumber(fileName: string): string {
+  const base = fileName
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^A-Z0-9]/gi, '')
+    .toUpperCase()
+    .slice(0, 6);
+  const suffix = Date.now().toString(36).toUpperCase();
+  const random = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `PENDING-${base || 'DOC'}-${suffix}${random}`;
 }
 
 async function buildPipelineFromDocuments(
@@ -167,63 +130,80 @@ async function buildPipelineFromDocuments(
 export async function ingestAndProcessDocument(params: IngestAndProcessParams): Promise<UnifiedIngestionResult> {
   const { file, documentType, extractedText, partNumberOverride, revisionOverride } = params;
 
-  if (!extractedText || extractedText.trim().length === 0) {
-    throw new UnifiedIngestionError('MISSING_TEXT', 'Extracted text is required for ingestion');
-  }
-
   const normalizedType = documentType;
-  let partNumber: string | null = partNumberOverride ?? null;
-  let revision: string | null = revisionOverride ?? null;
+  const normalizedText = normalizeOptionalString(extractedText);
+  let partNumber = normalizeOptionalString(partNumberOverride);
+  let revision = normalizeOptionalString(revisionOverride);
   let description: string | null = null;
 
-  if (normalizedType === 'BOM') {
-    if (!partNumber) partNumber = derivePartNumberFromBOM(extractedText);
-    if (!revision) revision = deriveRevisionFromBOM(extractedText);
-    if (!description) description = deriveDescriptionFromBOM(extractedText);
-  } else {
-    const draft = ingestDrawingPdf({ drawingText: extractedText, fileName: file.name });
+  if (normalizedType === 'BOM' && normalizedText) {
+    const derivedPN = extractPartNumberFromText(normalizedText);
+    if (!partNumber && derivedPN) partNumber = derivedPN;
+    if (!revision) revision = deriveRevisionFromBOM(normalizedText);
+    if (!description) description = deriveDescriptionFromBOM(normalizedText);
+  } else if (normalizedText && normalizedType !== 'UNKNOWN') {
+    const draft = ingestDrawingPdf({ drawingText: normalizedText, fileName: file.name });
     if (!partNumber && draft.drawing_number) partNumber = draft.drawing_number;
     if (!revision && draft.revision) revision = draft.revision;
     if (!description && draft.title) description = draft.title;
   }
 
-  if (!partNumber) {
-    const drawingNumber = extractDrawingNumber(extractedText);
-    if (drawingNumber) {
-      let resolved: string | null = null;
-      try {
-        resolved = await resolveAliasFromDB(drawingNumber);
-      } catch (err) {
-        console.warn('[HWI ALIAS DB LOOKUP ERROR]', err);
-      }
+  if (!partNumber && normalizedText) {
+    const derivedPN = extractPartNumberFromText(normalizedText);
+    if (derivedPN) partNumber = derivedPN;
+  }
 
-      if (!resolved) {
-        resolved = resolvePartNumberFromDrawing(drawingNumber);
-      }
+  const drawingNumber = normalizedText ? extractDrawingNumberFromText(normalizedText) : null;
 
-      if (resolved) {
-        partNumber = resolved;
-        console.log('[HWI RESOLUTION SUCCESS]', drawingNumber, '→', resolved);
-        storeAliasMapping(drawingNumber, resolved).catch(err => {
-          console.warn('[HWI ALIAS STORE ERROR]', err);
-        });
-      } else {
-        console.warn('[HWI UNRESOLVED DRAWING NUMBER]', drawingNumber);
-      }
+  if (!partNumber && drawingNumber) {
+    let resolved: string | null = null;
+    try {
+      resolved = await resolveAliasFromDB(drawingNumber);
+    } catch (err) {
+      console.warn('[HWI ALIAS DB LOOKUP ERROR]', err);
+    }
+
+    if (!resolved) {
+      resolved = resolvePartNumberFromDrawing(drawingNumber);
+    }
+
+    if (resolved) {
+      partNumber = resolved;
+      console.log('[HWI RESOLUTION SUCCESS]', drawingNumber, '→', resolved);
+      storeAliasMapping(drawingNumber, resolved).catch(err => {
+        console.warn('[HWI ALIAS STORE ERROR]', err);
+      });
+    } else {
+      console.warn('[HWI UNRESOLVED DRAWING NUMBER]', drawingNumber);
     }
   }
 
-  const ensuredPartNumber = ensurePartNumber(partNumber);
+  let usedFallback = false;
+  if (!partNumber) {
+    partNumber = generateProvisionalPartNumber(file.name);
+    usedFallback = true;
+  }
+
+  if (!description) {
+    description = usedFallback ? `Pending classification for ${file.name}` : null;
+  }
+
+  if (usedFallback) {
+    console.warn('[HWI INGEST FALLBACK PN]', {
+      file_name: file.name,
+      provisional_part_number: partNumber,
+    });
+  }
 
   const ingestResult = await ingestDocumentFirstFlow(
     {
-      part_number: ensuredPartNumber,
+      part_number: partNumber,
       revision,
       description,
       sourceType: normalizedType,
     },
     file,
-    extractedText,
+    normalizedText ?? undefined,
   );
 
   const documents = await getCurrentDocuments(ingestResult.sku.id);

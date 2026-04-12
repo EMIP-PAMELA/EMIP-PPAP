@@ -2,7 +2,7 @@ import { getSupabaseServer } from '@/src/lib/supabaseServer';
 import { hashBuffer, hashText } from '../utils/documentHash';
 import { summarizeLineDiff, type DocumentDiffSummary } from '../utils/documentDiff';
 
-export type DocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
+export type DocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING' | 'UNKNOWN';
 
 export interface SKURecord {
   id: string;
@@ -31,6 +31,7 @@ const SOURCE_PRIORITY: Record<DocumentType, number> = {
   CUSTOMER_DRAWING: 3,
   INTERNAL_DRAWING: 2,
   BOM: 1,
+  UNKNOWN: 0,
 };
 
 function getTextStoragePath(storagePath: string): string {
@@ -83,6 +84,7 @@ export type DocumentClassificationStatus =
   | 'PROCESSING'
   | 'RESOLVED'
   | 'PARTIAL'
+  | 'PARTIAL_MISMATCH'
   | 'NEEDS_REVIEW';
 
 export interface SKUDocumentRecord {
@@ -131,7 +133,12 @@ export function normalizeDocumentType(type: string): DocumentType {
   const normalized = type.trim().toUpperCase();
   if (normalized === 'CUSTOMER') return 'CUSTOMER_DRAWING';
   if (normalized === 'INTERNAL') return 'INTERNAL_DRAWING';
-  if (normalized === 'BOM' || normalized === 'CUSTOMER_DRAWING' || normalized === 'INTERNAL_DRAWING') {
+  if (
+    normalized === 'BOM' ||
+    normalized === 'CUSTOMER_DRAWING' ||
+    normalized === 'INTERNAL_DRAWING' ||
+    normalized === 'UNKNOWN'
+  ) {
     return normalized as DocumentType;
   }
   throw new Error(`Unsupported document type: ${type}`);
@@ -146,7 +153,7 @@ export async function createSKU(
   const payload = {
     part_number: partNumber.trim().toUpperCase(),
     description: description?.trim() || null,
-    created_from: createdFrom ?? null,
+    created_from: (createdFrom && createdFrom !== 'UNKNOWN') ? createdFrom : null,
   };
 
   const { data, error } = await supabase
@@ -363,6 +370,7 @@ export async function uploadDocument(
     phantom_rev_note:    phantomNote,
     phantom_diff_summary: diffSummary,
     compared_to_document_id: comparedDocumentId,
+    classification_status: 'PENDING' as DocumentClassificationStatus,
   };
 
   const { data, error } = await supabase
@@ -513,7 +521,7 @@ export async function updateSKUHeaderIfAllowed(
   if (updates.description !== undefined && updates.description !== null) {
     patch.description = updates.description;
   }
-  if (incomingPriority >= currentPriority) {
+  if (incomingPriority >= currentPriority && incomingSource !== 'UNKNOWN') {
     patch.created_from = incomingSource;
   }
 

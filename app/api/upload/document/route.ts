@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ingestAndProcessDocument, UnifiedIngestionError } from '@/src/features/harness-work-instructions/services/unifiedIngestionService';
+import { ingestAndProcessDocument } from '@/src/features/harness-work-instructions/services/unifiedIngestionService';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
 import { detectDocumentType, materializeDocumentType, type VaultDocumentClassification } from '@/src/features/vault/utils/documentSignals';
 import { classifyDocument } from '@/src/services/classificationService';
@@ -26,11 +26,11 @@ export async function POST(request: NextRequest) {
   }
 
   const extractedText = typeof extractedTextField === 'string' ? extractedTextField : undefined;
-  if (!extractedText || !extractedText.trim()) {
-    return NextResponse.json({ ok: false, error: 'extracted_text is required' }, { status: 400 });
-  }
+  const normalizedText = extractedText && extractedText.trim().length > 0 ? extractedText : undefined;
 
-  const classification = detectDocumentType(extractedText, file.name);
+  const classification = normalizedText
+    ? detectDocumentType(normalizedText, file.name)
+    : { detected: 'UNKNOWN', signals: ['NO_TEXT_AVAILABLE'] } satisfies VaultDocumentClassification;
   const documentType = materializeDocumentType(classification.detected);
 
   console.log('[HWI DOC TYPE DETECTED]', {
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     const ingestionResult = await ingestAndProcessDocument({
       file,
       documentType,
-      extractedText,
+      extractedText: normalizedText,
       partNumberOverride:
         typeof partNumberOverride === 'string' && partNumberOverride.trim().length > 0
           ? partNumberOverride
@@ -76,17 +76,6 @@ export async function POST(request: NextRequest) {
       signals: classification.signals,
     });
   } catch (err) {
-    if (err instanceof UnifiedIngestionError) {
-      if (err.code === 'MISSING_PART_NUMBER') {
-        return NextResponse.json(
-          { ok: false, error: err.message, needs_manual_part_number: true },
-          { status: 422 },
-        );
-      }
-      if (err.code === 'MISSING_TEXT') {
-        return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
-      }
-    }
     const message = err instanceof Error ? err.message : 'Unified ingest failed';
     console.error('[HWI VAULT UPLOAD ERROR]', message);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

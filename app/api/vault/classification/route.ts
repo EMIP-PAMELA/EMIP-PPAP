@@ -6,6 +6,7 @@ const PRIORITY: Record<string, number> = {
   PENDING: 1,
   PROCESSING: 2,
   PARTIAL: 3,
+  PARTIAL_MISMATCH: 3,
   RESOLVED: 4,
 };
 
