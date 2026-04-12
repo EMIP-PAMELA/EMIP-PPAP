@@ -170,11 +170,32 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                   onClick={() => handleDocumentClick(doc)}
                   className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-blue-50 cursor-pointer transition bg-white last:rounded-b-xl"
                 >
-                  <div className="flex-1 min-w-[200px]">
+                  <div className="flex-1 min-w-[200px] space-y-1">
                     <p className="font-semibold text-gray-900">{doc.filename}</p>
                     <p className="text-xs text-gray-500">
                       Revision {doc.revision} · Uploaded {new Date(doc.uploaded_at).toLocaleString()}
                     </p>
+                    <div className="text-[11px] text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
+                      {doc.inferred_part_number && <span>PN: {doc.inferred_part_number}</span>}
+                      {doc.drawing_number && <span>DRW: {doc.drawing_number}</span>}
+                      {Number.isFinite(doc.classification_confidence) && (
+                        <span>Confidence: {doc.classification_confidence?.toFixed(2)}</span>
+                      )}
+                      {doc.classification_attempts > 0 && <span>Attempts: {doc.classification_attempts}</span>}
+                    </div>
+                    <p className="text-[11px] text-gray-500 font-medium">
+                      {doc.classification_status === 'PENDING' && 'Awaiting classification'}
+                      {doc.classification_status === 'PROCESSING' && 'Classification in progress'}
+                      {doc.classification_status === 'PARTIAL' && 'Partial match — missing signals'}
+                      {doc.classification_status === 'PARTIAL_MISMATCH' && 'Conflicting signals detected'}
+                      {doc.classification_status === 'RESOLVED' && 'Classification resolved'}
+                      {doc.classification_status === 'NEEDS_REVIEW' && 'Manual review required'}
+                    </p>
+                    {doc.classification_notes && (
+                      <p className="text-[11px] italic text-gray-400 line-clamp-2">
+                        {doc.classification_notes}
+                      </p>
+                    )}
                   </div>
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[computedStatus]}`}>
                     {computedStatus}
