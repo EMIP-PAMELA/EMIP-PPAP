@@ -117,6 +117,8 @@ export interface SKUDocumentRecord {
   document_type: DocumentType;
   revision: string;
   normalized_revision?: string | null;
+  revision_source?: RevisionSource | null;
+  revision_confidence?: number | null;
   file_url: string;
   file_name: string;
   storage_path: string;
