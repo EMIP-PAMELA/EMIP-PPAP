@@ -8,14 +8,16 @@ import { isPreAckReady, isPostAckReady } from '../utils/validationHelpers';
 import { Validation } from '../types/validation';
 import { updatePPAPState } from '../utils/updatePPAPState';
 import { PPAPStatus } from '@/src/types/database.types';
+import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 
 interface Props {
   ppapId: string;
   ppapState: string;
   validations: Validation[];
+  readiness?: SKUReadinessResult | null;
 }
 
-export default function PPAPActionBar({ ppapId, ppapState, validations }: Props) {
+export default function PPAPActionBar({ ppapId, ppapState, validations, readiness }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,18 +25,44 @@ export default function PPAPActionBar({ ppapId, ppapState, validations }: Props)
   const preAckReady = isPreAckReady(validations);
   const postAckReady = isPostAckReady(validations);
 
+  const readinessBlockersWI = readiness?.work_instructions.blockers ?? [];
+  const readinessBlockersTraveler = readiness?.traveler_package.blockers ?? [];
+  const readinessBlockersKomax = readiness?.komax_cut_sheet.blockers ?? [];
+  const ackReadinessBlocked = readiness?.work_instructions.status === 'BLOCKED';
+  const submitReadinessBlocked =
+    readiness?.traveler_package.status === 'BLOCKED' || readiness?.komax_cut_sheet.status === 'BLOCKED';
+  const readinessOverallBlocked = readiness?.overall_status === 'BLOCKED';
+  const ackBlockerMessage = readinessBlockersWI[0] || readiness?.work_instructions.revision_gate_reason || null;
+  const submitBlockerMessage =
+    readinessBlockersTraveler[0] ||
+    readinessBlockersKomax[0] ||
+    readiness?.traveler_package.revision_gate_reason ||
+    readiness?.komax_cut_sheet.revision_gate_reason ||
+    null;
+
   const showAssign = canAssignPPAP(currentUser.role);
   // V3.3A: compare directly against PPAPStatus values
   const showAcknowledge = ppapState === 'READY_TO_ACKNOWLEDGE';
   const showSubmit = ppapState === 'AWAITING_SUBMISSION';
 
-  const canAcknowledge = canAcknowledgePPAP(currentUser.role, ppapState) && preAckReady;
-  const canSubmit = canSubmitPPAP(currentUser.role, ppapState) && postAckReady;
+  const canAcknowledge =
+    canAcknowledgePPAP(currentUser.role, ppapState) &&
+    preAckReady &&
+    !ackReadinessBlocked &&
+    !readinessOverallBlocked;
+  const canSubmit =
+    canSubmitPPAP(currentUser.role, ppapState) &&
+    postAckReady &&
+    !submitReadinessBlocked &&
+    !readinessOverallBlocked;
 
   const getAcknowledgeTooltip = () => {
     if (!showAcknowledge) return '';
     if (!canAcknowledgePPAP(currentUser.role, ppapState)) {
       return 'Only Coordinator/Admin can acknowledge';
+    }
+    if (ackReadinessBlocked || readinessOverallBlocked) {
+      return ackBlockerMessage ?? 'Blocked by SKU readiness';
     }
     if (!preAckReady) {
       return 'Complete all pre-ack validations';
@@ -46,6 +74,9 @@ export default function PPAPActionBar({ ppapId, ppapState, validations }: Props)
     if (!showSubmit) return '';
     if (!canSubmitPPAP(currentUser.role, ppapState)) {
       return 'Only Engineer/Admin can submit';
+    }
+    if (submitReadinessBlocked || readinessOverallBlocked) {
+      return submitBlockerMessage ?? 'Blocked by SKU readiness';
     }
     if (!postAckReady) {
       return 'All validations must be approved';

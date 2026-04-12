@@ -11,7 +11,7 @@
  * Document generation is gated: only accessible after ACKNOWLEDGED.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { PPAPRecord, PPAPStatus } from '@/src/types/database.types';
 import { Validation } from '../types/validation';
@@ -28,6 +28,8 @@ import { PPAPHeader } from './PPAPHeader';
 import { currentUser } from '@/src/lib/mockUser';
 import PPAPActivityFeed from './PPAPActivityFeed';
 import { PPAPActivityPanel } from './PPAPActivityPanel';
+import PPAPStatusBanner from './PPAPStatusBanner';
+import { useSkuReadiness } from '../hooks/useSkuReadiness';
 
 // Post-ack states: Copilot and document generation are available
 const POST_ACK_STATUSES: PPAPStatus[] = [
@@ -60,6 +62,20 @@ export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPA
   const isCoordinator = role === 'coordinator' || role === 'admin';
   const isEngineer = role === 'engineer';
   const postAck = isPostAckStatus(ppap.status);
+  const { readiness, revisionValidation, loading: readinessLoading, error: readinessError } = useSkuReadiness(ppap.part_number);
+
+  const documentGateInfo = useMemo(() => {
+    if (!readiness) {
+      return { blocked: false, warning: false, blockerMessage: null as string | null, warningMessage: null as string | null };
+    }
+    const traveler = readiness.traveler_package;
+    const komax = readiness.komax_cut_sheet;
+    const blocked = traveler.status === 'BLOCKED' || komax.status === 'BLOCKED';
+    const warning = !blocked && (traveler.status === 'PARTIAL' || komax.status === 'PARTIAL');
+    const blockerMessage = traveler.blockers[0] || komax.blockers[0] || null;
+    const warningMessage = traveler.warnings[0] || komax.warnings[0] || null;
+    return { blocked, warning, blockerMessage, warningMessage };
+  }, [readiness]);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
@@ -77,6 +93,14 @@ export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPA
           <PPAPHeader ppap={ppap} />
           <DeletePPAPButton ppapId={ppap.id} ppapNumber={ppap.ppap_number} />
         </div>
+
+        <PPAPStatusBanner
+          partNumber={ppap.part_number}
+          readiness={readiness}
+          revisionValidation={revisionValidation}
+          loading={readinessLoading}
+          error={readinessError}
+        />
 
         {/* V3.3A.10: Floating Activity Panel */}
         <PPAPActivityPanel ppapId={ppap.id} />
@@ -114,7 +138,12 @@ export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPA
                 {isCoordinator && (
                   <>
                     <PPAPSummaryHeader ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
-                    <PPAPActionBar ppapId={ppap.id} ppapState={ppap.status} validations={TRANE_VALIDATIONS} />
+                    <PPAPActionBar
+                      ppapId={ppap.id}
+                      ppapState={ppap.status}
+                      validations={TRANE_VALIDATIONS}
+                      readiness={readiness}
+                    />
                     <PPAPAcknowledgementBanner ppapStatus={ppap.status} validations={TRANE_VALIDATIONS} />
                   </>
                 )}
@@ -140,6 +169,18 @@ export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPA
               <div className="space-y-6">
                 {postAck ? (
                   <>
+                    {documentGateInfo.blocked && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+                        <p className="font-semibold">Document generation blocked</p>
+                        <p className="mt-1">{documentGateInfo.blockerMessage ?? 'Resolve traveler/Komax readiness blockers before generating PPAP documents.'}</p>
+                      </div>
+                    )}
+                    {!documentGateInfo.blocked && documentGateInfo.warning && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                        <p className="font-semibold">Document readiness warning</p>
+                        <p className="mt-1">{documentGateInfo.warningMessage ?? 'Traveler package readiness is partial — verify revisions before generating documents.'}</p>
+                      </div>
+                    )}
                     {/* Copilot entry — GATED to post-ack */}
                     <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-lg p-5">
                       <div className="flex items-center justify-between">
@@ -152,19 +193,30 @@ export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPA
                             </p>
                           </div>
                         </div>
-                        <Link
-                          href={`/ppap/${ppap.id}/copilot`}
-                          className="px-5 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold text-sm shadow"
-                        >
-                          Open Copilot →
-                        </Link>
+                        {documentGateInfo.blocked ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="px-5 py-2 bg-gray-300 text-gray-600 rounded-lg font-semibold text-sm cursor-not-allowed"
+                            title={documentGateInfo.blockerMessage ?? 'Resolve readiness blockers first'}
+                          >
+                            Open Copilot →
+                          </button>
+                        ) : (
+                          <Link
+                            href={`/ppap/${ppap.id}/copilot`}
+                            className="px-5 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold text-sm shadow"
+                          >
+                            Open Copilot →
+                          </Link>
+                        )}
                       </div>
                     </div>
 
                     <DocumentationForm
                       ppapId={ppap.id}
                       partNumber={ppap.part_number || ''}
-                      isReadOnly={false}
+                      isReadOnly={documentGateInfo.blocked}
                       currentPhase="post-ack"
                     />
                   </>
