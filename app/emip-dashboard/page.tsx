@@ -6,6 +6,7 @@ import EMIPLayout from '../layout/EMIPLayout';
 import { getAllActiveBOMs } from '@/src/core/services/bomService';
 import { getCopperUsageAcrossParts } from '@/src/features/copper-index/services/copperService';
 import { useDashboardReadiness, type SKUReadinessSummary } from '@/src/features/dashboard/hooks/useDashboardReadiness';
+import DecisionCard from '@/src/features/dashboard/components/DecisionCard';
 import { useDashboardUserContext } from '@/src/features/dashboard/hooks/useDashboardUserContext';
 import { isContextStale, relativeTime } from '@/src/features/dashboard/userContext';
 import type { ReadinessTier } from '@/src/utils/skuReadinessEvaluator';
@@ -327,65 +328,25 @@ export default function EMIPDashboardPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {/* Primary resume card */}
-                {(() => {
-                  const s = summaries[resumePrimary];
-                  const topIssue = s?.issues?.find(i => i.severity === 'critical') ?? s?.issues?.[0] ?? null;
-                  return (
-                    <Link
-                      href={`/sku/${encodeURIComponent(resumePrimary)}?from=resume`}
-                      className="flex items-start justify-between gap-4 rounded-xl border border-blue-200 bg-white p-4 hover:border-blue-300 hover:shadow-sm transition group"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700">{resumePrimary}</p>
-                          {userCtx.lastViewedAt && (
-                            <span className="text-[10px] text-gray-400">{relativeTime(userCtx.lastViewedAt)}</span>
-                          )}
-                          {userCtx.pendingWorkflowIntent && (
-                            <span className="text-[10px] rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 font-semibold">
-                              {userCtx.pendingWorkflowIntent.replace(/_/g, ' ')}
-                            </span>
-                          )}
-                        </div>
-                        {s && !s.loading && s.description && (
-                          <p className="text-xs text-gray-500 truncate mt-0.5">{s.description}</p>
-                        )}
-                        {s && !s.loading && topIssue && (
-                          <p className="text-xs text-gray-600 mt-0.5 truncate">{topIssue.message}</p>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        {s && !s.loading ? (
-                          <>
-                            <span className={`text-[10px] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap ${TIER_BADGE[s.readiness_tier]}`}>
-                              {TIER_LABEL[s.readiness_tier]}
-                            </span>
-                            <span className="text-[10px] text-gray-500">
-                              {confidenceDot(s.confidence_score)} {s.confidence_score}%
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-xs text-gray-400 animate-pulse">Loading…</span>
-                        )}
-                        <span className="mt-1 text-xs font-semibold text-blue-600 group-hover:underline">
-                          Resume →
-                        </span>
-                      </div>
-                    </Link>
-                  );
-                })()}
+                {/* Primary Decision Card — inline corrective actions derived from readiness + revision validation */}
+                <DecisionCard
+                  partNumber={resumePrimary}
+                  summary={summaries[resumePrimary]}
+                  relativeTimeStr={userCtx.lastViewedAt ? relativeTime(userCtx.lastViewedAt) : undefined}
+                  pendingWorkflowIntent={userCtx.pendingWorkflowIntent}
+                />
 
-                {/* Recent secondary list */}
+                {/* Secondary recent SKU chips */}
                 {resumeRecentList.length > 0 && (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {resumeRecentList.map(pn => {
                       const s = summaries[pn];
+                      const hasIssues = s && !s.loading && s.readiness_tier !== 'READY';
                       return (
                         <Link
                           key={pn}
                           href={`/sku/${encodeURIComponent(pn)}?from=resume`}
-                          className="flex flex-col gap-1 rounded-xl border border-gray-200 bg-white px-3 py-2.5 hover:border-blue-200 hover:bg-blue-50/40 transition group"
+                          className="flex flex-col gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2.5 hover:border-blue-200 hover:bg-blue-50/40 transition group"
                         >
                           <p className="text-xs font-semibold text-gray-800 group-hover:text-blue-700 truncate">{pn}</p>
                           {s && !s.loading ? (
@@ -395,6 +356,11 @@ export default function EMIPDashboardPage() {
                           ) : (
                             <span className="text-[10px] text-gray-300 animate-pulse">…</span>
                           )}
+                          <span className={`self-end text-[10px] font-semibold mt-auto ${
+                            hasIssues ? 'text-amber-600' : 'text-blue-500'
+                          }`}>
+                            {hasIssues ? 'Fix →' : 'Continue →'}
+                          </span>
                         </Link>
                       );
                     })}

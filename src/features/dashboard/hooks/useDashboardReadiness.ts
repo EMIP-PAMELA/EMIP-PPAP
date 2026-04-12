@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { ReadinessTier, ReadinessIssue } from '@/src/utils/skuReadinessEvaluator';
+import type { ReadinessTier, ReadinessIssue, SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
+import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 
 export interface SKUReadinessSummary {
   part_number: string;
@@ -10,6 +11,10 @@ export interface SKUReadinessSummary {
   readiness_tier: ReadinessTier;
   confidence_score: number;
   issues: ReadinessIssue[];
+  /** Full SKUReadinessResult — passed to useRecommendedFixActions in DecisionCard */
+  readiness_full: SKUReadinessResult | null;
+  /** Revision cross-source validation result — passed to useRecommendedFixActions in DecisionCard */
+  revision_validation: CrossSourceValidationResult | null;
   loading: boolean;
   error: string | null;
 }
@@ -50,6 +55,8 @@ export function useDashboardReadiness(partNumbers: string[]): {
             readiness_tier: 'INCOMPLETE',
             confidence_score: 0,
             issues: [],
+            readiness_full: null,
+            revision_validation: null,
             loading: true,
             error: null,
           };
@@ -79,6 +86,8 @@ export function useDashboardReadiness(partNumbers: string[]): {
                   readiness_tier: (json.readiness?.readiness_tier ?? 'INCOMPLETE') as ReadinessTier,
                   confidence_score: json.readiness?.confidence_score ?? 0,
                   issues: json.readiness?.issues ?? [],
+                  readiness_full: (json.readiness as SKUReadinessResult) ?? null,
+                  revision_validation: (json.sku?.revision_validation as CrossSourceValidationResult) ?? null,
                   loading: false,
                   error: res.ok && json.ok !== false ? null : (json.error ?? 'Load failed'),
                 },
