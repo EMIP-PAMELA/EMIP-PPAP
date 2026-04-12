@@ -282,7 +282,7 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     }
 
     if (!resolved) {
-      resolved = resolvePartNumberFromDrawing(drawingNumber);
+      resolved = await resolvePartNumberFromDrawing(drawingNumber);
     }
 
     if (resolved) {

@@ -105,6 +105,7 @@ export default function SKUDashboardPage() {
   const partNumber = sku?.part_number ?? partNumberParam?.toUpperCase() ?? '';
   const vaultLink = sku ? `/vault?sku=${encodeURIComponent(sku.part_number)}` : '/vault';
   const revisionValidation = sku?.revision_validation ?? null;
+  const expectedDrawings = sku?.expected_drawings ?? null;
   const revisionRisk = sku?.revision_risk ?? null;
   const readiness = sku?.readiness ?? null;
   const overallReadinessStatus: ReadinessStatus | null = readiness?.overall_status ?? null;
@@ -404,6 +405,8 @@ export default function SKUDashboardPage() {
               actionIntent={actionIntent}
               defaultExpanded={Boolean(revisionIntentActive)}
               riskSummary={revisionRisk}
+              expectedDrawings={expectedDrawings}
+              readinessTier={sku.readiness?.readiness_tier ?? null}
             />
 
             <div className="mt-4">

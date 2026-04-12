@@ -285,17 +285,14 @@ async function buildSignalContext(extractedText: string | null): Promise<SignalC
 
   if (!partNumber && drawingNumber) {
     try {
-      aliasResolution = (await resolveAliasFromDB(drawingNumber)) ?? resolvePartNumberFromDrawing(drawingNumber);
+      aliasResolution = (await resolveAliasFromDB(drawingNumber)) ?? (await resolvePartNumberFromDrawing(drawingNumber));
       if (!aliasResolution) {
         aliasResolution = null;
       } else if (aliasResolution && aliasResolution.length > 0) {
-        storeAliasMapping(drawingNumber, aliasResolution).catch(err => {
-          console.warn('[CLASSIFICATION] Alias save failed', err);
-        });
+        await storeAliasMapping(drawingNumber, aliasResolution);
       }
     } catch (err) {
-      console.warn('[CLASSIFICATION] Alias lookup failed', err);
-      aliasResolution = null;
+      console.warn('[CLASSIFICATION] Drawing alias resolution failed', err);
     }
   }
 

@@ -13,6 +13,15 @@ type DocumentClassificationStatus =
 
 export type ReadinessStatus = 'READY' | 'PARTIAL' | 'BLOCKED';
 
+export type ReadinessTier = 'READY' | 'READY_WITH_WARNINGS' | 'INCOMPLETE' | 'BLOCKED';
+
+export interface ReadinessIssue {
+  code: string;
+  severity: 'warning' | 'critical';
+  message: string;
+  source?: string;
+}
+
 export interface OutputReadiness {
   status: ReadinessStatus;
   blockers: string[];
@@ -30,6 +39,8 @@ export interface SKUReadinessResult {
   traveler_package: OutputReadiness;
   komax_cut_sheet: OutputReadiness;
   summary: string[];
+  readiness_tier: ReadinessTier;
+  issues: ReadinessIssue[];
 }
 
 export interface ReadinessDocument {
@@ -199,6 +210,62 @@ function applyRevisionGate(
   return null;
 }
 
+interface TierParams {
+  revisionStatus: CrossSourceRevisionStatus;
+  hasBOM: boolean;
+  hasCustomerDrawing: boolean;
+  hasApogeeDrawing: boolean;
+  hasTrustedBOM: boolean;
+  hasTrustedDrawing: boolean;
+}
+
+function buildReadinessIssues(p: TierParams): ReadinessIssue[] {
+  const issues: ReadinessIssue[] = [];
+
+  if (p.revisionStatus === 'CONFLICT') {
+    issues.push({ code: 'REVISION_CONFLICT', severity: 'critical', message: 'Revision mismatch between sources' });
+  }
+  if (p.revisionStatus === 'OUT_OF_SYNC') {
+    issues.push({ code: 'REVISION_OUT_OF_SYNC', severity: 'critical', message: 'BOM and drawing revisions do not match' });
+  }
+  if (!p.hasBOM) {
+    issues.push({ code: 'MISSING_BOM', severity: 'warning', message: 'BOM document is missing — required for all outputs' });
+  }
+  if (!p.hasCustomerDrawing) {
+    issues.push({ code: 'MISSING_CUSTOMER_DRAWING', severity: 'warning', message: 'Customer drawing is missing — required early in lifecycle' });
+  }
+  if (!p.hasApogeeDrawing) {
+    issues.push({ code: 'MISSING_APOGEE_DRAWING', severity: 'warning', message: 'Internal Apogee drawing not yet created' });
+  }
+  if (p.hasBOM && !p.hasTrustedBOM) {
+    issues.push({ code: 'UNTRUSTED_BOM', severity: 'warning', message: 'BOM classification is not fully trusted' });
+  }
+  if ((p.hasCustomerDrawing || p.hasApogeeDrawing) && !p.hasTrustedDrawing) {
+    issues.push({ code: 'UNTRUSTED_DRAWING', severity: 'warning', message: 'Drawing classification requires review' });
+  }
+  if (p.revisionStatus === 'INCOMPLETE') {
+    issues.push({ code: 'REVISION_INCOMPLETE', severity: 'warning', message: 'Revision data is incomplete — add missing revision sources' });
+  }
+  if (p.revisionStatus === 'INCOMPARABLE') {
+    issues.push({ code: 'REVISION_INCOMPARABLE', severity: 'warning', message: 'Revisions cannot be compared — normalize formats' });
+  }
+
+  return issues;
+}
+
+function deriveReadinessTier(p: TierParams): ReadinessTier {
+  if (p.revisionStatus === 'CONFLICT' || p.revisionStatus === 'OUT_OF_SYNC') {
+    return 'BLOCKED';
+  }
+  if (!p.hasBOM || !p.hasCustomerDrawing || p.revisionStatus === 'INCOMPLETE') {
+    return 'INCOMPLETE';
+  }
+  if (!p.hasApogeeDrawing || !p.hasTrustedBOM || !p.hasTrustedDrawing || p.revisionStatus === 'INCOMPARABLE') {
+    return 'READY_WITH_WARNINGS';
+  }
+  return 'READY';
+}
+
 export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResult {
   const { documents, revisionValidation } = input;
   const currentDocs = documents.filter(doc => doc.revision_state === 'CURRENT');
@@ -345,11 +412,26 @@ export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResu
     `Komax / Cut Sheet: ${komaxCutSheet.status}`,
   ];
 
+  const hasCustomerDrawing = customerDrawings.length > 0;
+  const hasApogeeDrawing = internalDrawings.length > 0;
+  const tierParams: TierParams = {
+    revisionStatus: revisionValidation.status,
+    hasBOM,
+    hasCustomerDrawing,
+    hasApogeeDrawing,
+    hasTrustedBOM,
+    hasTrustedDrawing,
+  };
+  const readiness_tier = deriveReadinessTier(tierParams);
+  const issues = buildReadinessIssues(tierParams);
+
   return {
     overall_status,
     work_instructions: workInstructions,
     traveler_package: travelerPackage,
     komax_cut_sheet: komaxCutSheet,
     summary,
+    readiness_tier,
+    issues,
   };
 }

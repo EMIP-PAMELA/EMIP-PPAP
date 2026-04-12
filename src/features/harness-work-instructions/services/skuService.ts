@@ -19,8 +19,20 @@ import {
   analyzeRevisionValidationRisk,
   type RevisionRiskSummary,
 } from '@/src/utils/revisionRiskAnalyzer';
+import { resolveDrawingForPart } from '@/src/features/harness-work-instructions/services/drawingLookupService';
 
 export type DocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING' | 'UNKNOWN';
+
+export type ExpectedDrawingSource = 'drawing_lookup' | 'sku_documents' | 'fallback';
+
+export interface ExpectedDrawingInfo {
+  drawing_number: string | null;
+  source: ExpectedDrawingSource;
+}
+
+export interface ExpectedDrawingSummary {
+  apogee: ExpectedDrawingInfo;
+}
 
 export interface SKURecord {
   id: string;
@@ -32,6 +44,7 @@ export interface SKURecord {
   revision_validation?: CrossSourceValidationResult;
   readiness?: SKUReadinessResult;
   revision_risk?: RevisionRiskSummary;
+  expected_drawings?: ExpectedDrawingSummary;
 }
 
 export interface DocumentMetadata {
@@ -220,6 +233,7 @@ export async function getSKU(partNumber: string): Promise<{
   revision_validation: CrossSourceValidationResult;
   readiness: SKUReadinessResult;
   revision_risk: RevisionRiskSummary;
+  expected_drawings: ExpectedDrawingSummary;
 } | null> {
   const supabase = createSupabaseAdmin();
   const normalized = partNumber.trim().toUpperCase();
@@ -241,12 +255,14 @@ export async function getSKU(partNumber: string): Promise<{
   const revision_validation = validateSKURevisionSet(documents);
   const readiness = evaluateSKUReadiness({ documents, revisionValidation: revision_validation });
   const revision_risk = analyzeRevisionValidationRisk(documents);
+  const expected_drawings = await buildExpectedDrawingSummary(normalized, documents);
 
   const skuWithValidation: SKURecord = {
     ...rest,
     revision_validation,
     readiness,
     revision_risk,
+    expected_drawings,
   };
 
   console.log('[REVISION VALIDATION]', {
@@ -280,6 +296,7 @@ export async function getSKU(partNumber: string): Promise<{
     revision_validation,
     readiness,
     revision_risk,
+    expected_drawings,
   };
 }
 
@@ -376,6 +393,42 @@ function attachRevisionStates(documents: SKUDocumentRecord[]): SKUDocumentRecord
       is_current: revisionState === 'CURRENT',
     };
   });
+}
+
+async function buildExpectedDrawingSummary(
+  partNumber: string,
+  documents: SKUDocumentRecord[],
+): Promise<ExpectedDrawingSummary> {
+  const lookupDrawing = await resolveDrawingForPart(partNumber);
+  if (lookupDrawing) {
+    return {
+      apogee: {
+        drawing_number: lookupDrawing,
+        source: 'drawing_lookup',
+      },
+    };
+  }
+
+  const candidates = documents
+    .filter(doc => Boolean(doc.drawing_number))
+    .sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime());
+
+  const preferred = candidates.find(doc => doc.document_type === 'INTERNAL_DRAWING') ?? candidates[0];
+  if (preferred?.drawing_number) {
+    return {
+      apogee: {
+        drawing_number: preferred.drawing_number,
+        source: 'sku_documents',
+      },
+    };
+  }
+
+  return {
+    apogee: {
+      drawing_number: null,
+      source: 'fallback',
+    },
+  };
 }
 
 export async function uploadDocument(

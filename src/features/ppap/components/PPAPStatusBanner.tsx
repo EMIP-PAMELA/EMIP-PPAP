@@ -1,11 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
+import type { SKUReadinessResult, ReadinessTier } from '@/src/utils/skuReadinessEvaluator';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 import type { RevisionRiskSummary } from '@/src/utils/revisionRiskAnalyzer';
 import RevisionSummaryCard from '@/src/features/revision/components/RevisionSummaryCard';
 import { useRecommendedFixActions } from '@/src/features/revision/hooks/useRecommendedFixActions';
+import type { ExpectedDrawingSummary } from '@/src/features/harness-work-instructions/services/skuService';
 
 interface IssueEntry {
   scope: string;
@@ -52,6 +53,7 @@ interface PPAPStatusBannerProps {
   readiness: SKUReadinessResult | null;
   revisionValidation: CrossSourceValidationResult | null;
   revisionRisk?: RevisionRiskSummary | null;
+  expectedDrawings?: ExpectedDrawingSummary | null;
   loading: boolean;
   error: string | null;
 }
@@ -83,6 +85,20 @@ const TONE = {
   },
 };
 
+const TIER_LABEL: Record<ReadinessTier, string> = {
+  READY: 'Ready',
+  READY_WITH_WARNINGS: 'Ready with warnings',
+  INCOMPLETE: 'Incomplete — missing required inputs',
+  BLOCKED: 'Blocked — revision conflict',
+};
+
+const TIER_BADGE: Record<ReadinessTier, string> = {
+  READY: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  READY_WITH_WARNINGS: 'bg-amber-50 text-amber-700 border border-amber-200',
+  INCOMPLETE: 'bg-yellow-50 text-yellow-800 border border-yellow-200',
+  BLOCKED: 'bg-red-50 text-red-700 border border-red-200',
+};
+
 function collectIssues(readiness: SKUReadinessResult | null): { blockers: IssueEntry[]; warnings: IssueEntry[] } {
   if (!readiness) return { blockers: [], warnings: [] };
 
@@ -109,6 +125,7 @@ export default function PPAPStatusBanner({
   readiness,
   revisionValidation,
   revisionRisk,
+  expectedDrawings,
   loading,
   error,
 }: PPAPStatusBannerProps) {
@@ -124,10 +141,18 @@ export default function PPAPStatusBanner({
   const statusTone = (() => {
     if (loading) return TONE.unknown;
     if (error || !readiness) return TONE.unknown;
+    const tier = readiness.readiness_tier;
+    if (tier === 'BLOCKED') return TONE.blocked;
+    if (tier === 'INCOMPLETE' || tier === 'READY_WITH_WARNINGS') return TONE.risk;
+    if (tier === 'READY') return TONE.ready;
     if (blockers.length > 0 || readiness.overall_status === 'BLOCKED') return TONE.blocked;
     if (warnings.length > 0 || readiness.overall_status === 'PARTIAL') return TONE.risk;
     return TONE.ready;
   })();
+
+  const tierIssues = readiness?.issues ?? [];
+  const criticalIssues = tierIssues.filter(i => i.severity === 'critical');
+  const warningIssues = tierIssues.filter(i => i.severity === 'warning');
 
   const recommendedAction = primaryIssue?.recommended
     || readiness?.traveler_package.recommended_action
@@ -184,6 +209,11 @@ export default function PPAPStatusBanner({
             </span>
             <span className="text-xs uppercase tracking-[0.3em] text-gray-500">PPAP Readiness</span>
           </div>
+          {readiness?.readiness_tier && (
+            <span className={`inline-block rounded px-2 py-0.5 text-[11px] font-semibold ${TIER_BADGE[readiness.readiness_tier]}`}>
+              {TIER_LABEL[readiness.readiness_tier]}
+            </span>
+          )}
           {primaryIssue ? (
             <p className="text-sm text-gray-900 font-semibold">
               {primaryIssue.scope}: {primaryIssue.message}
@@ -224,6 +254,23 @@ export default function PPAPStatusBanner({
 
       {showDetails && (
         <div className="space-y-4 text-sm text-gray-800">
+          {tierIssues.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Readiness issues</p>
+              {criticalIssues.map(issue => (
+                <div key={issue.code} className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-800">
+                  <span className="font-semibold shrink-0">Critical</span>
+                  <span>{issue.message}</span>
+                </div>
+              ))}
+              {warningIssues.map(issue => (
+                <div key={issue.code} className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+                  <span className="font-semibold shrink-0">Warning</span>
+                  <span>{issue.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div>
             <p className="text-xs uppercase tracking-wide text-gray-500">Blockers</p>
             {blockers.length > 0 ? (
@@ -254,7 +301,7 @@ export default function PPAPStatusBanner({
           </div>
           {revisionValidation && (
             <div className="border-t border-gray-200 pt-4">
-              <RevisionSummaryCard validation={revisionValidation} partNumber={partNumber} riskSummary={revisionRisk} />
+              <RevisionSummaryCard validation={revisionValidation} partNumber={partNumber} riskSummary={revisionRisk} expectedDrawings={expectedDrawings} readinessTier={readiness?.readiness_tier ?? null} />
             </div>
           )}
         </div>

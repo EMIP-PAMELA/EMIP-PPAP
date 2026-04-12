@@ -290,6 +290,68 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
   return [base];
 }
 
+function mapTierIssuesToActions(input: CorrectionInput): RecommendedFixAction[] {
+  const { readiness, partNumber } = input;
+  if (!readiness?.issues?.length) return [];
+
+  const actions: RecommendedFixAction[] = [];
+
+  for (const issue of readiness.issues) {
+    if (issue.code === 'MISSING_CUSTOMER_DRAWING') {
+      actions.push({
+        id: 'upload-customer-drawing',
+        label: 'Upload customer drawing',
+        description: issue.message,
+        actionType: 'UPLOAD_DOCUMENT',
+        href: buildVaultRoute(partNumber, {
+          issue: 'missing',
+          docType: 'CUSTOMER_DRAWING',
+          actionIntent: 'UPLOAD_MISSING_DOC',
+        }),
+        severity: 'warning',
+        intent: 'UPLOAD_MISSING_DOC',
+        context: { partNumber, documentType: 'CUSTOMER_DRAWING' },
+      });
+    }
+    if (issue.code === 'MISSING_APOGEE_DRAWING') {
+      actions.push({
+        id: 'upload-internal-drawing',
+        label: 'Upload internal drawing',
+        description: issue.message,
+        actionType: 'UPLOAD_DOCUMENT',
+        href: buildVaultRoute(partNumber, {
+          issue: 'missing',
+          docType: 'INTERNAL_DRAWING',
+          actionIntent: 'UPLOAD_MISSING_DOC',
+        }),
+        severity: 'warning',
+        intent: 'UPLOAD_MISSING_DOC',
+        context: { partNumber, documentType: 'INTERNAL_DRAWING' },
+      });
+    }
+    if (issue.code === 'REVISION_CONFLICT') {
+      actions.push({
+        id: 'resolve-tier-conflict',
+        label: 'Resolve revision conflict',
+        description: issue.message,
+        actionType: 'MANUAL_REVIEW',
+        href: buildSkuRoute(partNumber, {
+          tab: 'revision',
+          focus: 'conflict',
+          highlight: 'revision',
+          anchor: 'revision-summary',
+          actionIntent: 'RESOLVE_CONFLICT',
+        }),
+        severity: 'danger',
+        intent: 'RESOLVE_CONFLICT',
+        context: { partNumber },
+      });
+    }
+  }
+
+  return actions;
+}
+
 function mapReadinessToActions(input: CorrectionInput): RecommendedFixAction[] {
   const { readiness, partNumber } = input;
   if (!readiness) return [];
@@ -378,9 +440,10 @@ export function useRecommendedFixActions(input: CorrectionInput): RecommendedFix
   return useMemo(() => {
     const revisionActions = mapRevisionStatusToActions(input);
     const readinessActions = mapReadinessToActions(input);
+    const tierActions = mapTierIssuesToActions(input);
 
     const deduped = new Map<string, RecommendedFixAction>();
-    [...revisionActions, ...readinessActions].forEach(action => {
+    [...revisionActions, ...readinessActions, ...tierActions].forEach(action => {
       if (!deduped.has(action.id)) {
         deduped.set(action.id, action);
       }

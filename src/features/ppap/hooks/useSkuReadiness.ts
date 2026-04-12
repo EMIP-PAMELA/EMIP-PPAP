@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
+import type { ExpectedDrawingSummary } from '@/src/features/harness-work-instructions/services/skuService';
 import type { RevisionRiskSummary } from '@/src/utils/revisionRiskAnalyzer';
 
 interface UseSkuReadinessResult {
   readiness: SKUReadinessResult | null;
   revisionValidation: CrossSourceValidationResult | null;
+  expectedDrawings: ExpectedDrawingSummary | null;
   revisionRisk: RevisionRiskSummary | null;
   loading: boolean;
   error: string | null;
@@ -21,6 +23,7 @@ export function useSkuReadiness(partNumber?: string | null): UseSkuReadinessResu
   const [state, setState] = useState<UseSkuReadinessResult>({
     readiness: null,
     revisionValidation: null,
+    expectedDrawings: null,
     revisionRisk: null,
     loading: Boolean(normalizedPart),
     error: null,
@@ -28,7 +31,7 @@ export function useSkuReadiness(partNumber?: string | null): UseSkuReadinessResu
 
   useEffect(() => {
     if (!normalizedPart) {
-      setState({ readiness: null, revisionValidation: null, revisionRisk: null, loading: false, error: null });
+      setState({ readiness: null, revisionValidation: null, expectedDrawings: null, revisionRisk: null, loading: false, error: null });
       return;
     }
 
@@ -47,13 +50,14 @@ export function useSkuReadiness(partNumber?: string | null): UseSkuReadinessResu
         setState({
           readiness: json.readiness ?? json.sku?.readiness ?? null,
           revisionValidation: json.revision_validation ?? json.sku?.revision_validation ?? null,
+          expectedDrawings: json.expected_drawings ?? json.sku?.expected_drawings ?? null,
           revisionRisk: json.revision_risk ?? json.sku?.revision_risk ?? null,
           loading: false,
           error: null,
         });
       } catch (err) {
         if (controller.signal.aborted) return;
-        setState({ readiness: null, revisionValidation: null, revisionRisk: null, loading: false, error: err instanceof Error ? err.message : String(err) });
+        setState({ readiness: null, revisionValidation: null, expectedDrawings: null, revisionRisk: null, loading: false, error: err instanceof Error ? err.message : String(err) });
       }
     })();
 

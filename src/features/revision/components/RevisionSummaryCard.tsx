@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 import type { RevisionRiskSummary } from '@/src/utils/revisionRiskAnalyzer';
+import type { ExpectedDrawingSummary } from '@/src/features/harness-work-instructions/services/skuService';
+import type { ReadinessTier } from '@/src/utils/skuReadinessEvaluator';
 import RevisionStatusBadge from './RevisionStatusBadge';
 import { useRecommendedFixActions } from '@/src/features/revision/hooks/useRecommendedFixActions';
 import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
@@ -27,6 +29,26 @@ const FOCUS_LABELS: Record<string, { title: string; description: string }> = {
   review: { title: 'Manual review focus', description: 'Normalize incomparable revisions or escalate for manual review.' },
 };
 
+const READINESS_TIER_LABEL: Record<ReadinessTier, string> = {
+  READY: 'Ready',
+  READY_WITH_WARNINGS: 'Ready with warnings',
+  INCOMPLETE: 'Incomplete — missing required inputs',
+  BLOCKED: 'Blocked — revision conflict',
+};
+
+const READINESS_TIER_STYLE: Record<ReadinessTier, string> = {
+  READY: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  READY_WITH_WARNINGS: 'bg-amber-50 text-amber-700 border-amber-200',
+  INCOMPLETE: 'bg-yellow-50 text-yellow-800 border-yellow-200',
+  BLOCKED: 'bg-red-50 text-red-700 border-red-200',
+};
+
+const DRAWING_SOURCE_LABEL: Record<string, string> = {
+  drawing_lookup: 'Drawing lookup (CSV)',
+  sku_documents: 'Vault documents',
+  fallback: 'Not available',
+};
+
 const RISK_BADGE: Record<string, string> = {
   HIGH: 'bg-red-50 text-red-700 border border-red-200',
   MEDIUM: 'bg-amber-50 text-amber-700 border border-amber-200',
@@ -45,6 +67,8 @@ interface Props {
   actionIntent?: ActionIntent | null;
   defaultExpanded?: boolean;
   riskSummary?: RevisionRiskSummary | null;
+  expectedDrawings?: ExpectedDrawingSummary | null;
+  readinessTier?: ReadinessTier | null;
 }
 
 export default function RevisionSummaryCard({
@@ -58,6 +82,8 @@ export default function RevisionSummaryCard({
   actionIntent,
   defaultExpanded = false,
   riskSummary,
+  expectedDrawings,
+  readinessTier,
 }: Props) {
   const [showDetails, setShowDetails] = useState(Boolean(defaultExpanded));
 
@@ -96,12 +122,21 @@ export default function RevisionSummaryCard({
   const riskLevel = riskSummary?.aggregate_level ?? 'NONE';
   const showRiskBadge = Boolean(riskSummary && riskSummary.aggregate_level && riskSummary.aggregate_level !== 'NONE');
   const primaryRiskSignal = riskSummary?.signals?.[0];
+  const expectedApogeeDrawing = expectedDrawings?.apogee?.drawing_number ?? null;
+  const expectedDrawingSource = expectedDrawings?.apogee?.source ?? null;
+  const tierLabel = readinessTier ? READINESS_TIER_LABEL[readinessTier] : null;
+  const tierStyle = readinessTier ? READINESS_TIER_STYLE[readinessTier] : null;
 
   return (
     <section className={`rounded-2xl border bg-white p-5 shadow-sm space-y-4 ${highlightClasses} ${className}`}>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[200px]">
           <p className="text-xs uppercase tracking-[0.4em] text-gray-500">Revision Validation</p>
+          {tierLabel && tierStyle && (
+            <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold mb-1 ${tierStyle}`}>
+              {tierLabel}
+            </span>
+          )}
           <h2 className="text-xl font-semibold text-gray-900">Canonical Revision {canonical_revision ?? '—'}</h2>
           <p className="text-sm text-gray-600">
             {canonical_source ? `Source: ${SOURCE_LABEL[canonical_source]?.title ?? canonical_source}` : 'No canonical source selected'}
@@ -150,6 +185,16 @@ export default function RevisionSummaryCard({
           <p className="mt-0.5 text-amber-900/90">{primaryRiskSignal.rationale}</p>
         </div>
       )}
+
+      <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800">
+        <p className="font-semibold">Expected Apogee Drawing</p>
+        <p className="mt-0.5 text-sm text-gray-900">{expectedApogeeDrawing ?? 'Not available'}</p>
+        {expectedDrawingSource && (
+          <p className="text-[11px] text-gray-500">
+            Source: {DRAWING_SOURCE_LABEL[expectedDrawingSource] ?? expectedDrawingSource}
+          </p>
+        )}
+      </div>
 
       {actions.length > 0 && (
         <div className="flex flex-wrap gap-2">
