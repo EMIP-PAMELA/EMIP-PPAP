@@ -199,29 +199,11 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  const missingSkuIds = baseRecords
-    .filter(record => record.sku_id && !record.sku)
-    .map(record => record.sku_id!)
-    .filter((skuId, index, self) => self.indexOf(skuId) === index);
-
-  if (missingSkuIds.length > 0) {
-    const { data: skuRows, error: skuLookupError } = await supabase
-      .from('sku')
-      .select('id, part_number')
-      .in('id', missingSkuIds);
-
-    if (skuLookupError) {
-      console.error('[VAULT DOCUMENTS] Failed to backfill SKU part numbers', skuLookupError.message);
-    } else {
-      const skuMap = new Map<string, string | null>();
-      for (const row of skuRows ?? []) {
-        skuMap.set(row.id, row.part_number ?? null);
-      }
-      baseRecords = baseRecords.map(record => {
-        if (record.sku_id && !record.sku && skuMap.has(record.sku_id)) {
-          return { ...record, sku: skuMap.get(record.sku_id) ?? null };
-        }
-        return record;
+  for (const record of baseRecords) {
+    if (record.sku_id && !record.sku) {
+      console.error('[API ERROR] sku_id without part_number', {
+        documentId: record.id,
+        sku_id: record.sku_id,
       });
     }
   }
