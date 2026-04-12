@@ -221,6 +221,18 @@ export default function SKUDashboardPage() {
     return map;
   }, [documents]);
 
+  const documentPresence = useMemo(
+    () => ({
+      bom: Boolean(docByType.BOM),
+      customerDrawing: Boolean(docByType.CUSTOMER_DRAWING),
+      internalDrawing: Boolean(docByType.INTERNAL_DRAWING),
+    }),
+    [docByType],
+  );
+
+  const hasAnyDrawing = documentPresence.customerDrawing || documentPresence.internalDrawing;
+  const pipelineRequirementsMet = documentPresence.bom && hasAnyDrawing;
+
   async function runPipeline(trigger: 'manual' | 'auto' = 'manual') {
     if (!sku) return;
     try {
@@ -434,11 +446,14 @@ export default function SKUDashboardPage() {
         {!loading && sku && (
           <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 flex flex-wrap items-center gap-4">
             <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Source Checklist</span>
-            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${docByType.BOM ? 'text-emerald-700' : 'text-red-600'}`}>
-              {docByType.BOM ? '✓' : '✗'} BOM
+            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${documentPresence.bom ? 'text-emerald-700' : 'text-red-600'}`}>
+              {documentPresence.bom ? '✓' : '✗'} BOM
             </span>
-            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${(docByType.CUSTOMER_DRAWING || docByType.INTERNAL_DRAWING) ? 'text-emerald-700' : 'text-red-600'}`}>
-              {(docByType.CUSTOMER_DRAWING || docByType.INTERNAL_DRAWING) ? '✓' : '✗'} Drawing
+            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${documentPresence.customerDrawing ? 'text-emerald-700' : 'text-red-600'}`}>
+              {documentPresence.customerDrawing ? '✓' : '✗'} Customer Drawing
+            </span>
+            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${documentPresence.internalDrawing ? 'text-emerald-700' : 'text-red-600'}`}>
+              {documentPresence.internalDrawing ? '✓' : '✗'} Internal Drawing
             </span>
             <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${
               pipelineStatus === 'READY'
@@ -589,14 +604,20 @@ export default function SKUDashboardPage() {
                 <p className="text-sm text-gray-500 mt-1">
                   {pipelineStatus === 'READY'
                     ? 'Latest documents have generated a full harness instruction job.'
-                    : 'Upload both a BOM and drawing for this SKU to build instructions automatically.'}
+                    : !documentPresence.bom && !hasAnyDrawing
+                      ? 'Upload a BOM and at least one drawing to build instructions automatically.'
+                      : !documentPresence.bom
+                        ? 'Upload a BOM to unlock the pipeline for this SKU.'
+                        : !hasAnyDrawing
+                          ? 'Upload a customer or internal drawing to unlock the pipeline for this SKU.'
+                          : 'Documents are syncing — rerun the pipeline once status shows READY.'}
                 </p>
               </div>
 
               <div className="flex flex-col gap-2 w-full lg:w-64">
                 <button
                   onClick={() => runPipeline('manual')}
-                  disabled={running || loading || !sku}
+                  disabled={running || loading || !sku || !pipelineRequirementsMet}
                   className="rounded-xl bg-emerald-600 py-2.5 text-center text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-60"
                 >
                   {running ? 'Refreshing…' : '🔄 Generate / Refresh'}
