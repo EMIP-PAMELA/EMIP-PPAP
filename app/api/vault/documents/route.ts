@@ -157,7 +157,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const baseRecords = (data ?? []).map(doc => {
+  let baseRecords = (data ?? []).map(doc => {
     const skuRel = Array.isArray(doc.sku)
       ? doc.sku[0]
       : (doc.sku as { part_number?: string } | null);
@@ -198,6 +198,33 @@ export async function GET(request: NextRequest) {
         | undefined,
     };
   });
+
+  const missingSkuIds = baseRecords
+    .filter(record => record.sku_id && !record.sku)
+    .map(record => record.sku_id!)
+    .filter((skuId, index, self) => self.indexOf(skuId) === index);
+
+  if (missingSkuIds.length > 0) {
+    const { data: skuRows, error: skuLookupError } = await supabase
+      .from('sku')
+      .select('id, part_number')
+      .in('id', missingSkuIds);
+
+    if (skuLookupError) {
+      console.error('[VAULT DOCUMENTS] Failed to backfill SKU part numbers', skuLookupError.message);
+    } else {
+      const skuMap = new Map<string, string | null>();
+      for (const row of skuRows ?? []) {
+        skuMap.set(row.id, row.part_number ?? null);
+      }
+      baseRecords = baseRecords.map(record => {
+        if (record.sku_id && !record.sku && skuMap.has(record.sku_id)) {
+          return { ...record, sku: skuMap.get(record.sku_id) ?? null };
+        }
+        return record;
+      });
+    }
+  }
 
   if (includeText) {
     for (const record of baseRecords) {

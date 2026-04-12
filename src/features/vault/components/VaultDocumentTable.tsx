@@ -117,7 +117,17 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
   const groupedDocuments = useMemo(() => groupBySkuAndType(documents), [documents]);
 
   const handleDocumentClick = (row: VaultDocumentRow) => {
-    const destination = row.sku_id && row.sku ? `/sku/${encodeURIComponent(row.sku)}` : `/vault/document/${row.id}`;
+    let destination = `/vault/document/${row.id}`;
+    if (row.sku_id) {
+      if (!row.sku) {
+        console.error('[ROUTING ERROR] sku_id without part_number', {
+          documentId: row.id,
+          sku_id: row.sku_id,
+        });
+        return;
+      }
+      destination = `/sku/${encodeURIComponent(row.sku)}`;
+    }
     console.log('[ROUTING] Document click', {
       documentId: row.id,
       sku_id: row.sku_id,
