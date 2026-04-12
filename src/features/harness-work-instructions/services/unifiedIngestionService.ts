@@ -19,6 +19,7 @@ import { extractDrawingNumberFromText } from '@/src/utils/extractDrawingNumber';
 import { extractEngineeringMasterIdentifiers, type EngineeringMasterIdentifiers } from '@/src/utils/extractEngineeringMasterIdentifiers';
 import { extractEngineeringMasterRevision } from '@/src/utils/extractEngineeringMasterRevision';
 import { extractRheemDrawingRevision } from '@/src/utils/extractRheemDrawingRevision';
+import { extractApogeeDrawingRevision } from '@/src/utils/extractApogeeDrawingRevision';
 import type { RevisionSource } from '@/src/utils/revisionParser';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
@@ -224,17 +225,31 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     if (!description && draft.title) description = draft.title;
 
     if (!revision) {
-      // Rheem drawings store revision in the title block using 'REV PART NO.' structure.
-      // Revision is tied to the part number, not a standalone REV label.
-      // Only attempt when a 45-* Rheem part number is present in the document.
-      const hasRheemPN = /\b45-\d{5,6}-\d{2,4}\b/.test(normalizedText);
-      if (hasRheemPN) {
+      const hasApogeePN = /\b527-\d{4}-010\b/.test(normalizedText);
+      const hasRheemPN  = /\b45-\d{5,6}-\d{2,4}\b/.test(normalizedText);
+
+      if (hasApogeePN) {
+        // Apogee drawings store revision in the upper-right revision record box.
+        // 527-XXXX-010 is the internal drawing number, not revision.
+        // 45-* may appear as customer/Rheem number in the title area — never a revision.
+        // Apogee revisions may be numeric (00–02) or alphabetic (A, B, LL).
+        const apogeeRev = extractApogeeDrawingRevision(normalizedText);
+        if (apogeeRev.isApogeeDrawing && apogeeRev.revision) {
+          revision = apogeeRev.revision;
+          revisionSource = 'REVISION_BOX_APOGEE';
+        }
+      } else if (hasRheemPN) {
+        // Rheem drawings store revision in the title block using 'REV PART NO.' structure.
+        // Revision is tied to the part number, not a standalone REV label.
+        // Rheem path is skipped when Apogee (527-*) is detected, since Apogee drawings
+        // also contain 45-* customer numbers that must not trigger the Rheem path.
         const rheemRev = extractRheemDrawingRevision(normalizedText);
         if (rheemRev.isRheemTitleBlock && rheemRev.revision) {
           revision = rheemRev.revision;
           revisionSource = 'TITLE_BLOCK_RHEEM';
         }
       }
+
       // Fallback to generic drawing ingestion revision (revision_source remains null → TEXT)
       if (!revision && draft.revision) revision = draft.revision;
     }

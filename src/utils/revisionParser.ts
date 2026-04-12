@@ -1,5 +1,5 @@
 export type RevisionKind = 'ALPHA' | 'NUMERIC' | 'MIXED' | 'UNKNOWN';
-export type RevisionSource = 'TEXT' | 'FILENAME' | 'MANUAL' | 'FALLBACK' | 'HEADER_EXPLICIT' | 'TITLE_BLOCK_RHEEM' | 'UNKNOWN';
+export type RevisionSource = 'TEXT' | 'FILENAME' | 'MANUAL' | 'FALLBACK' | 'HEADER_EXPLICIT' | 'TITLE_BLOCK_RHEEM' | 'REVISION_BOX_APOGEE' | 'UNKNOWN';
 
 export interface NormalizedRevisionValue {
   raw: string | null;
