@@ -247,7 +247,39 @@ export default function SKUDashboardPage() {
     return map;
   }, [documents]);
 
+  const isDevelopment = process.env.NODE_ENV === 'development';
+
   const documentPresence = useMemo<DocumentPresence>(() => deriveDocumentPresence(docByType), [docByType]);
+
+  if (isDevelopment) {
+    if (documentPresence.hasBOM && !docByType.BOM) {
+      console.warn('DOCUMENT CONTRACT VIOLATION: BOM presence mismatch');
+    }
+    if (
+      documentPresence.hasAnyDrawing &&
+      !(docByType.CUSTOMER_DRAWING || docByType.INTERNAL_DRAWING)
+    ) {
+      console.warn('DOCUMENT CONTRACT VIOLATION: Drawing presence mismatch');
+    }
+  }
+
+  const documentDebug = isDevelopment
+    ? {
+        totalDocuments: documents.length,
+        docTypesPresent: Object.keys(docByType),
+        presence: documentPresence,
+      }
+    : null;
+
+  const documentConfidence = useMemo(() => {
+    if (documentPresence.hasBOM && documentPresence.hasAnyDrawing) {
+      return { icon: '🟢', label: 'Documents Verified', tone: 'text-emerald-700' };
+    }
+    if (documentPresence.hasBOM || documentPresence.hasAnyDrawing) {
+      return { icon: '🟡', label: 'Partial Document Set', tone: 'text-amber-700' };
+    }
+    return { icon: '🔴', label: 'Missing Required Documents', tone: 'text-red-700' };
+  }, [documentPresence]);
 
   const pipelineRequirementsMet = documentPresence.hasBOM && documentPresence.hasAnyDrawing;
 
@@ -388,6 +420,10 @@ export default function SKUDashboardPage() {
             <div className="space-y-2 min-w-[220px]">
               <h2 className="text-xl font-semibold text-gray-900">Documents for this SKU</h2>
               <p className="text-sm text-gray-600">These are the authoritative sources for revision validation and readiness.</p>
+              <div className={`inline-flex items-center gap-2 text-sm font-semibold ${documentConfidence.tone}`}>
+                <span aria-hidden>{documentConfidence.icon}</span>
+                <span>{documentConfidence.label}</span>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {DOCUMENT_DEFINITIONS.map(def => {
                   const present = documentPresence[def.presenceKey];
@@ -415,6 +451,12 @@ export default function SKUDashboardPage() {
               </Link>
             )}
           </div>
+
+          {isDevelopment && documentDebug && (
+            <pre className="rounded-xl bg-gray-900/90 p-3 text-xs text-emerald-200 overflow-x-auto">
+              {JSON.stringify(documentDebug, null, 2)}
+            </pre>
+          )}
 
           <div className="grid gap-6 lg:grid-cols-3">
             {DOCUMENT_DEFINITIONS.map(def => {
