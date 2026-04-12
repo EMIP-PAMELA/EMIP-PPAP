@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import EMIPLayout from '../layout/EMIPLayout';
 import { getAllActiveBOMs } from '@/src/core/services/bomService';
@@ -36,6 +36,8 @@ const TIER_BADGE: Record<ReadinessTier, string> = {
   INCOMPLETE: 'bg-yellow-50 text-yellow-800 border border-yellow-200',
   BLOCKED: 'bg-red-50 text-red-700 border border-red-200',
 };
+
+const IS_DEV_ENV = process.env.NODE_ENV === 'development';
 
 function confidenceDot(score: number): string {
   if (score >= 90) return '🟢';
@@ -106,14 +108,14 @@ const SUGGESTED_ACTIONS: Array<{
     codes: ['MISSING_BOM'],
     getLabel: n => `${n} SKU${n > 1 ? 's' : ''} missing a BOM`,
     cta: 'Upload BOM',
-    href: '/upload/bom',
+    href: '/vault?docType=BOM&actionIntent=UPLOAD_MISSING_DOC',
     accent: 'border-amber-200 bg-amber-50 text-amber-800',
   },
   {
     codes: ['MISSING_CUSTOMER_DRAWING', 'MISSING_APOGEE_DRAWING'],
     getLabel: n => `${n} SKU${n > 1 ? 's' : ''} missing drawings`,
     cta: 'Upload Drawing',
-    href: '/upload/drawing',
+    href: '/vault?docType=CUSTOMER_DRAWING&actionIntent=UPLOAD_MISSING_DOC',
     accent: 'border-yellow-200 bg-yellow-50 text-yellow-800',
   },
 ];
@@ -128,6 +130,8 @@ export default function EMIPDashboardPage() {
   const [skus, setSkus] = useState<BasicSKU[]>([]);
   const [skusLoading, setSkusLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   const partNumbers = useMemo(
     () => skus.map(s => s.part_number.trim().toUpperCase()).filter(Boolean),
@@ -240,6 +244,29 @@ export default function EMIPDashboardPage() {
 
   const stale = ctxReady && isContextStale(userCtx);
 
+  const triggerDevReset = useCallback(async () => {
+    if (!IS_DEV_ENV) return;
+    const confirmed = window.confirm('This will delete ALL local dev data (SKUs, documents, ingestion history). Continue?');
+    if (!confirmed) return;
+
+    setResetError(null);
+    setResetting(true);
+
+    try {
+      const response = await fetch('/api/dev/reset-database', { method: 'POST' });
+      const payload = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string };
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error ?? 'Reset failed');
+      }
+      window.location.reload();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Reset failed';
+      setResetError(message);
+    } finally {
+      setResetting(false);
+    }
+  }, []);
+
   /**
    * Resume Work priority (deterministic):
    * 1. Last viewed SKU if still INCOMPLETE / BLOCKED / READY_WITH_WARNINGS
@@ -286,13 +313,31 @@ export default function EMIPDashboardPage() {
                 : `${totalSkus} SKUs · readiness fully evaluated`}
             </p>
           </div>
-          <Link
-            href="/sku"
-            className="shrink-0 text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline"
-          >
-            View all SKUs →
-          </Link>
+          <div className="flex items-center gap-3 shrink-0">
+            {IS_DEV_ENV && (
+              <button
+                type="button"
+                onClick={triggerDevReset}
+                disabled={resetting}
+                className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {resetting ? 'Resetting…' : 'Reset Dev Data'}
+              </button>
+            )}
+            <Link
+              href="/sku"
+              className="shrink-0 text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              View all SKUs →
+            </Link>
+          </div>
         </div>
+
+        {IS_DEV_ENV && resetError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            Dev reset failed: {resetError}
+          </div>
+        )}
 
         {/* RESUME WORK */}
         {ctxReady && (
