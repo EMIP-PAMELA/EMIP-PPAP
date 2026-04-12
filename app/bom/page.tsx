@@ -17,11 +17,13 @@
  * - Links to artifact and projection views
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import EMIPLayout from '../layout/EMIPLayout';
 import Link from 'next/link';
 import { getAllActiveBOMs } from '@/src/core/services/bomService';
 import BOMUpload from './components/BOMUpload';
+import RevisionStatusBadge from '@/src/features/revision/components/RevisionStatusBadge';
+import { useRevisionValidationMap } from '@/src/features/revision/hooks/useRevisionValidationMap';
 
 interface BOMListItem {
   partNumber: string;
@@ -45,6 +47,9 @@ export default function BOMPage() {
   const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const partNumbers = useMemo(() => boms.map(b => b.partNumber?.trim().toUpperCase() ?? ''), [boms]);
+  const { validationMap, pending } = useRevisionValidationMap(partNumbers);
 
   useEffect(() => {
     loadBOMs();
@@ -234,6 +239,13 @@ export default function BOMPage() {
                               >
                                 {bom.partNumber}
                               </Link>
+                              <div className="mt-1">
+                                <RevisionStatusBadge
+                                  status={validationMap[bom.partNumber.trim().toUpperCase()]?.status ?? undefined}
+                                  showLabel={false}
+                                  loading={pending.has(bom.partNumber.trim().toUpperCase())}
+                                />
+                              </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className="px-2 py-1 bg-gray-100 rounded text-sm font-medium">

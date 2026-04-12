@@ -7,22 +7,7 @@ import type { DocumentClassificationStatus } from '@/src/features/harness-work-i
 import type { RevisionState } from '@/src/utils/revisionEvaluator';
 import type { CrossSourceRevisionStatus } from '@/src/utils/revisionCrossValidator';
 import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
-
-const skuSyncBadges: Record<CrossSourceRevisionStatus, string> = {
-  SYNCHRONIZED: 'bg-emerald-100 text-emerald-800',
-  OUT_OF_SYNC: 'bg-amber-100 text-amber-800',
-  CONFLICT: 'bg-red-100 text-red-700',
-  INCOMPLETE: 'bg-gray-100 text-gray-600',
-  INCOMPARABLE: 'bg-orange-100 text-orange-800',
-};
-
-const skuSyncLabel: Record<CrossSourceRevisionStatus, string> = {
-  SYNCHRONIZED: 'Aligned',
-  OUT_OF_SYNC: 'Out of Sync',
-  CONFLICT: 'Conflict',
-  INCOMPLETE: 'Incomplete',
-  INCOMPARABLE: 'Incomparable',
-};
+import RevisionStatusBadge from '@/src/features/revision/components/RevisionStatusBadge';
 
 const readinessBadgeTone: Record<ReadinessStatus, string> = {
   READY: 'bg-emerald-100 text-emerald-800',
@@ -256,10 +241,12 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                       {doc.classification_status === 'RESOLVED' && 'Classification resolved'}
                       {doc.classification_status === 'NEEDS_REVIEW' && 'Manual review required'}
                     </p>
-                    {doc.sku_revision_status && doc.sku_revision_status !== 'SYNCHRONIZED' && (
-                      <p className="text-[11px] text-red-600 font-semibold">
-                        SKU {skuSyncLabel[doc.sku_revision_status]}
-                      </p>
+                    {doc.sku_revision_status && (
+                      <RevisionStatusBadge
+                        status={doc.sku_revision_status}
+                        showLabel={false}
+                        className="text-[11px]"
+                      />
                     )}
                     {doc.sku_readiness_status && doc.sku_readiness_status !== 'READY' && (
                       <p className="text-[11px] text-amber-700 font-semibold">
@@ -278,11 +265,7 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${classificationBadges[doc.classification_status].tone}`}>
                     {classificationBadges[doc.classification_status].label}
                   </span>
-                  {doc.sku_revision_status && (
-                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${skuSyncBadges[doc.sku_revision_status]}`}>
-                      SKU {skuSyncLabel[doc.sku_revision_status]}
-                    </span>
-                  )}
+                  {doc.sku_revision_status && <RevisionStatusBadge status={doc.sku_revision_status} showLabel={false} />}
                   {doc.sku_readiness_status && (
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ${readinessBadgeTone[doc.sku_readiness_status]}`}>
                       Readiness {readinessLabel[doc.sku_readiness_status]}

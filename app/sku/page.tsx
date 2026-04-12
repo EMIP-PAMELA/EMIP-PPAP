@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import EMIPLayout from '../layout/EMIPLayout';
 import type { SKURecord } from '@/src/features/harness-work-instructions/services/skuService';
+import RevisionStatusBadge from '@/src/features/revision/components/RevisionStatusBadge';
+import { useRevisionValidationMap } from '@/src/features/revision/hooks/useRevisionValidationMap';
 
 const SOURCE_LABEL: Record<string, string> = {
   CUSTOMER_DRAWING: 'Customer Drawing',
@@ -31,6 +33,9 @@ export default function SKUModelsPage() {
       }
     })();
   }, []);
+
+  const partNumbers = useMemo(() => skus.map(sku => sku.part_number?.trim().toUpperCase() ?? '').filter(Boolean), [skus]);
+  const { validationMap, pending } = useRevisionValidationMap(partNumbers);
 
   return (
     <EMIPLayout>
@@ -84,7 +89,16 @@ export default function SKUModelsPage() {
                 className="px-6 py-4 flex flex-col gap-1 md:flex-row md:items-center md:justify-between"
               >
                 <div>
-                  <p className="text-base font-semibold text-gray-900">{sku.part_number}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-base font-semibold text-gray-900">{sku.part_number}</p>
+                    {sku.part_number && (
+                      <RevisionStatusBadge
+                        status={validationMap[sku.part_number.trim().toUpperCase()]?.status ?? undefined}
+                        showLabel={false}
+                        loading={pending.has(sku.part_number.trim().toUpperCase())}
+                      />
+                    )}
+                  </div>
                   <p className="text-sm text-gray-500">{sku.description ?? 'No description'}</p>
                   <div className="flex items-center gap-3 mt-1">
                     {sku.created_from && (

@@ -11,8 +11,8 @@ import type {
 import type { RevisionState } from '@/src/utils/revisionEvaluator';
 import type { HarnessInstructionJob } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
 import type { ProcessInstructionBundle } from '@/src/features/harness-work-instructions/types/processInstructions';
-import type { CrossSourceRevisionStatus } from '@/src/utils/revisionCrossValidator';
 import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
+import RevisionSummaryCard from '@/src/features/revision/components/RevisionSummaryCard';
 
 const revisionStateTone: Record<RevisionState, string> = {
   CURRENT: 'bg-emerald-50 text-emerald-700',
@@ -26,42 +26,6 @@ const revisionStateLabel: Record<RevisionState, string> = {
   SUPERSEDED: 'Superseded',
   CONFLICT: 'Conflict',
   UNKNOWN: 'Unknown',
-};
-
-const revisionSyncStyles: Record<CrossSourceRevisionStatus, { container: string; badge: string; icon: string }> = {
-  SYNCHRONIZED: {
-    container: 'border-emerald-200 bg-emerald-50',
-    badge: 'bg-emerald-600 text-white',
-    icon: '✅',
-  },
-  OUT_OF_SYNC: {
-    container: 'border-amber-200 bg-amber-50',
-    badge: 'bg-amber-600 text-white',
-    icon: '⚠️',
-  },
-  CONFLICT: {
-    container: 'border-red-200 bg-red-50',
-    badge: 'bg-red-600 text-white',
-    icon: '🛑',
-  },
-  INCOMPLETE: {
-    container: 'border-gray-200 bg-gray-50',
-    badge: 'bg-gray-600 text-white',
-    icon: '⏳',
-  },
-  INCOMPARABLE: {
-    container: 'border-orange-200 bg-orange-50',
-    badge: 'bg-orange-600 text-white',
-    icon: '❓',
-  },
-};
-
-const revisionSyncLabel: Record<CrossSourceRevisionStatus, string> = {
-  SYNCHRONIZED: 'Synchronized',
-  OUT_OF_SYNC: 'Out of Sync',
-  CONFLICT: 'Conflict',
-  INCOMPLETE: 'Incomplete',
-  INCOMPARABLE: 'Incomparable',
 };
 
 const readinessStatusTone: Record<ReadinessStatus, { container: string; badge: string; icon: string }> = {
@@ -123,8 +87,6 @@ export default function SKUDashboardPage() {
   const partNumber = sku?.part_number ?? partNumberParam?.toUpperCase() ?? '';
   const vaultLink = sku ? `/vault?sku=${encodeURIComponent(sku.part_number)}` : '/vault';
   const revisionValidation = sku?.revision_validation ?? null;
-  const revisionSyncStatus: CrossSourceRevisionStatus = revisionValidation?.status ?? 'INCOMPLETE';
-  const revisionDetailItems = revisionValidation?.details?.length ? revisionValidation.details : [];
   const readiness = sku?.readiness ?? null;
   const overallReadinessStatus: ReadinessStatus | null = readiness?.overall_status ?? null;
   const readinessBlockers = readiness
@@ -361,52 +323,8 @@ export default function SKUDashboardPage() {
           </section>
         )}
 
-        {!loading && sku && revisionValidation && (
-          <section className={`rounded-2xl border px-5 py-4 space-y-4 ${revisionSyncStyles[revisionSyncStatus].container}`}>
-            <div className="flex flex-wrap items-start gap-3">
-              <span className="text-2xl" aria-hidden>
-                {revisionSyncStyles[revisionSyncStatus].icon}
-              </span>
-              <div className="flex-1 min-w-[220px] space-y-1">
-                <p className="text-xs uppercase tracking-[0.4em] text-gray-500">Revision Status</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-xl font-semibold text-gray-900">{revisionSyncLabel[revisionSyncStatus]}</h2>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${revisionSyncStyles[revisionSyncStatus].badge}`}>
-                    {revisionSyncLabel[revisionSyncStatus]}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-700">{revisionValidation.recommended_action}</p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">BOM Revision</p>
-                <p className="text-lg font-semibold text-gray-900">{revisionValidation.bom_revision ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">Customer Drawing</p>
-                <p className="text-lg font-semibold text-gray-900">{revisionValidation.customer_revision ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">Internal Drawing</p>
-                <p className="text-lg font-semibold text-gray-900">{revisionValidation.internal_revision ?? '—'}</p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-wide text-gray-500">Details</p>
-              {revisionDetailItems.length > 0 ? (
-                <ul className="list-disc pl-5 text-sm text-gray-700 space-y-1">
-                  {revisionDetailItems.map((detail, index) => (
-                    <li key={`${detail}-${index}`}>{detail}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-600">All CURRENT documents share the same revision.</p>
-              )}
-            </div>
-          </section>
+        {!loading && sku && (
+          <RevisionSummaryCard validation={revisionValidation} />
         )}
 
         {!loading && sku && (

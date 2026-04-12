@@ -1,4 +1,4 @@
-import type { CrossSourceValidationResult } from './revisionCrossValidator';
+import type { CrossSourceRevisionStatus, CrossSourceValidationResult } from './revisionCrossValidator';
 import type { RevisionState } from './revisionEvaluator';
 
 type DocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING' | 'UNKNOWN';
@@ -18,6 +18,10 @@ export interface OutputReadiness {
   blockers: string[];
   warnings: string[];
   recommended_action: string;
+  revision_gate_status?: CrossSourceRevisionStatus | null;
+  revision_gate_reason?: string | null;
+  revision_canonical_source?: string | null;
+  revision_canonical_revision?: string | null;
 }
 
 export interface SKUReadinessResult {
@@ -122,6 +126,13 @@ function compileReadiness(
   blockers: IssueDetail[],
   warnings: IssueDetail[],
   fallback: string,
+  options?: {
+    revisionStatus?: CrossSourceRevisionStatus | null;
+    revisionReason?: string | null;
+    revisionAction?: string | null;
+    canonicalRevision?: string | null;
+    canonicalSource?: string | null;
+  },
 ): OutputReadiness {
   let status: ReadinessStatus = 'READY';
   if (blockers.length > 0) {
@@ -132,14 +143,60 @@ function compileReadiness(
 
   const recommendedSource = blockers.length > 0 ? blockers : warnings;
   const recommended_action =
-    status === 'READY' ? fallback : recommendedSource[0]?.action ?? fallback;
+    status === 'READY'
+      ? fallback
+      : options?.revisionAction ?? recommendedSource[0]?.action ?? fallback;
 
   return {
     status,
     blockers: blockers.map(issue => issue.message),
     warnings: warnings.map(issue => issue.message),
     recommended_action,
+    revision_gate_status: options?.revisionStatus ?? null,
+    revision_gate_reason: options?.revisionReason ?? null,
+    revision_canonical_source: options?.canonicalSource ?? null,
+    revision_canonical_revision: options?.canonicalRevision ?? null,
   };
+}
+
+function revisionStatusToIssue(status: CrossSourceRevisionStatus | null): IssueCode | null {
+  switch (status) {
+    case 'CONFLICT':
+      return 'REVISION_CONFLICT';
+    case 'INCOMPARABLE':
+      return 'REVISION_INCOMPARABLE';
+    case 'OUT_OF_SYNC':
+      return 'REVISION_OUT_OF_SYNC';
+    case 'INCOMPLETE':
+      return 'REVISION_INCOMPLETE';
+    default:
+      return null;
+  }
+}
+
+function applyRevisionGate(
+  revisionStatus: CrossSourceRevisionStatus,
+  blockers: IssueDetail[],
+  warnings: IssueDetail[],
+  options: {
+    blockStatuses: CrossSourceRevisionStatus[];
+    warnStatuses: CrossSourceRevisionStatus[];
+  },
+): string | null {
+  const issueCode = revisionStatusToIssue(revisionStatus);
+  if (!issueCode) return null;
+
+  if (options.blockStatuses.includes(revisionStatus)) {
+    addIssue(blockers, issueCode);
+    return ISSUE_MESSAGES[issueCode];
+  }
+
+  if (options.warnStatuses.includes(revisionStatus)) {
+    addIssue(warnings, issueCode);
+    return ISSUE_MESSAGES[issueCode];
+  }
+
+  return null;
 }
 
 export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResult {
@@ -174,15 +231,10 @@ export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResu
     addIssue(wiBlockers, 'MULTIPLE_DRAWINGS');
   }
 
-  if (revisionValidation.status === 'CONFLICT') {
-    addIssue(wiBlockers, 'REVISION_CONFLICT');
-  } else if (revisionValidation.status === 'INCOMPARABLE') {
-    addIssue(wiBlockers, 'REVISION_INCOMPARABLE');
-  } else if (revisionValidation.status === 'OUT_OF_SYNC') {
-    addIssue(wiWarnings, 'REVISION_OUT_OF_SYNC');
-  } else if (revisionValidation.status === 'INCOMPLETE') {
-    addIssue(wiWarnings, 'REVISION_INCOMPLETE');
-  }
+  const wiRevisionReason = applyRevisionGate(revisionValidation.status, wiBlockers, wiWarnings, {
+    blockStatuses: ['CONFLICT', 'INCOMPARABLE', 'INCOMPLETE'],
+    warnStatuses: ['OUT_OF_SYNC'],
+  });
 
   if (!hasTrustedBOM && hasBOM) {
     addIssue(wiWarnings, 'UNTRUSTED_BOM');
@@ -195,6 +247,13 @@ export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResu
     wiBlockers,
     wiWarnings,
     'Proceed to generate work instructions.',
+    {
+      revisionStatus: revisionValidation.status,
+      revisionReason: wiRevisionReason,
+      revisionAction: revisionValidation.recommended_action,
+      canonicalRevision: revisionValidation.canonical_revision ?? revisionValidation.bom_revision ?? null,
+      canonicalSource: revisionValidation.canonical_source ?? null,
+    },
   );
 
   const travelerBlockers: IssueDetail[] = [];
@@ -207,9 +266,10 @@ export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResu
   if (!hasTrustedDrawing) {
     addIssue(travelerBlockers, 'DRAWING_NOT_TRUSTED');
   }
-  if (revisionValidation.status !== 'SYNCHRONIZED') {
-    addIssue(travelerWarnings, 'REVISION_OUT_OF_SYNC');
-  }
+  const travelerRevisionReason = applyRevisionGate(revisionValidation.status, travelerBlockers, travelerWarnings, {
+    blockStatuses: ['CONFLICT', 'INCOMPARABLE', 'OUT_OF_SYNC', 'INCOMPLETE'],
+    warnStatuses: [],
+  });
   if (drawingClassificationPending) {
     addIssue(travelerBlockers, 'DRAWING_CLASSIFICATION_PENDING');
   }
@@ -218,6 +278,13 @@ export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResu
     travelerBlockers,
     travelerWarnings,
     'Proceed to compile traveler package.',
+    {
+      revisionStatus: revisionValidation.status,
+      revisionReason: travelerRevisionReason,
+      revisionAction: revisionValidation.recommended_action,
+      canonicalRevision: revisionValidation.canonical_revision ?? revisionValidation.bom_revision ?? null,
+      canonicalSource: revisionValidation.canonical_source ?? null,
+    },
   );
 
   const komaxBlockers: IssueDetail[] = [];
@@ -235,13 +302,10 @@ export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResu
   if (bomClassificationPending) {
     addIssue(komaxBlockers, 'BOM_CLASSIFICATION_PENDING');
   }
-  if (revisionValidation.status === 'CONFLICT') {
-    addIssue(komaxBlockers, 'REVISION_CONFLICT');
-  } else if (revisionValidation.status === 'INCOMPARABLE') {
-    addIssue(komaxBlockers, 'REVISION_INCOMPARABLE');
-  } else if (revisionValidation.status !== 'SYNCHRONIZED') {
-    addIssue(komaxWarnings, 'REVISION_OUT_OF_SYNC');
-  }
+  const komaxRevisionReason = applyRevisionGate(revisionValidation.status, komaxBlockers, komaxWarnings, {
+    blockStatuses: ['CONFLICT', 'INCOMPARABLE', 'OUT_OF_SYNC', 'INCOMPLETE'],
+    warnStatuses: [],
+  });
 
   if (!hasTrustedBOM) {
     addIssue(komaxWarnings, 'INSUFFICIENT_BOM_STRUCTURE');
@@ -251,6 +315,13 @@ export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResu
     komaxBlockers,
     komaxWarnings,
     'Proceed to Komax / cut-sheet preparation.',
+    {
+      revisionStatus: revisionValidation.status,
+      revisionReason: komaxRevisionReason,
+      revisionAction: revisionValidation.recommended_action,
+      canonicalRevision: revisionValidation.canonical_revision ?? revisionValidation.bom_revision ?? null,
+      canonicalSource: revisionValidation.canonical_source ?? null,
+    },
   );
 
   let overall_status: ReadinessStatus = 'READY';
