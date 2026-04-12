@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
 import { getSupabaseServer } from '@/src/lib/supabaseServer';
 
 interface DocumentDetail {
@@ -30,7 +29,10 @@ async function loadDocument(id: string): Promise<DocumentDetail | null> {
     .maybeSingle();
 
   if (error) {
-    console.error('[VAULT DOCUMENT PAGE] failed to load document', error.message);
+    console.error('[VAULT DOCUMENT PAGE] fetch failed', {
+      documentId: id,
+      supabaseError: error,
+    });
     return null;
   }
 
@@ -51,7 +53,23 @@ async function loadDocument(id: string): Promise<DocumentDetail | null> {
 export default async function VaultDocumentDetailPage({ params }: { params: { id: string } }) {
   const document = await loadDocument(params.id);
   if (!document) {
-    notFound();
+    return (
+      <div className="mx-auto max-w-3xl space-y-6 py-10">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-5 text-amber-900">
+          <p className="text-sm font-semibold uppercase tracking-wide">Document not found</p>
+          <p className="mt-2 text-base text-amber-900">Requested ID: {params.id}</p>
+          <p className="mt-2 text-sm text-amber-800">
+            This document may not exist, may not be accessible, or may still be pending reconciliation.
+          </p>
+          <Link
+            href="/vault"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-amber-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-800"
+          >
+            ← Back to Vault
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
