@@ -17,6 +17,7 @@ import RevisionRiskSignalsCard from '@/src/features/revision/components/Revision
 import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
 import CorrectiveContextBanner from '@/src/components/CorrectiveContextBanner';
 import { deriveIssueKind, parseActionIntentParam } from '@/src/features/revision/utils/correctiveIntent';
+import { recordSkuVisit } from '@/src/features/dashboard/userContext';
 
 const revisionStateTone: Record<RevisionState, string> = {
   CURRENT: 'bg-emerald-50 text-emerald-700',
@@ -89,6 +90,7 @@ export default function SKUDashboardPage() {
   const canonicalSourceHint = canonicalSourceParam?.trim() ? canonicalSourceParam.trim().toUpperCase() : null;
   const actionIntent = parseActionIntentParam(searchParams?.get('actionIntent') ?? null);
   const correctiveIssueKind = deriveIssueKind(actionIntent);
+  const fromParam = searchParams?.get('from') ?? null;
   const [sku, setSku] = useState<SKURecord | null>(null);
   const [documents, setDocuments] = useState<SKUDocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -166,6 +168,12 @@ export default function SKUDashboardPage() {
     loadSKU();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partNumberParam]);
+
+  useEffect(() => {
+    if (!sku) return;
+    recordSkuVisit(sku.part_number, actionIntent ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sku?.part_number]);
 
   useEffect(() => {
     if (loading) return;
@@ -308,6 +316,12 @@ export default function SKUDashboardPage() {
             </p>
           )}
         </header>
+
+        {fromParam === 'resume' && !actionIntent && (
+          <p className="text-xs font-medium text-blue-600 -mt-1">
+            ↩ Resumed from your recent work
+          </p>
+        )}
 
         {actionIntent && (
           <CorrectiveContextBanner

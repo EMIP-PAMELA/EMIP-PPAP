@@ -6,6 +6,8 @@ import EMIPLayout from '../layout/EMIPLayout';
 import { getAllActiveBOMs } from '@/src/core/services/bomService';
 import { getCopperUsageAcrossParts } from '@/src/features/copper-index/services/copperService';
 import { useDashboardReadiness, type SKUReadinessSummary } from '@/src/features/dashboard/hooks/useDashboardReadiness';
+import { useDashboardUserContext } from '@/src/features/dashboard/hooks/useDashboardUserContext';
+import { isContextStale, relativeTime } from '@/src/features/dashboard/userContext';
 import type { ReadinessTier } from '@/src/utils/skuReadinessEvaluator';
 
 interface BomStats {
@@ -132,6 +134,7 @@ export default function EMIPDashboardPage() {
   );
 
   const { summaries, isLoadingAny, loaded } = useDashboardReadiness(partNumbers);
+  const { context: userCtx, ready: ctxReady } = useDashboardUserContext();
 
   useEffect(() => {
     (async () => {
@@ -234,6 +237,38 @@ export default function EMIPDashboardPage() {
   const totalLoaded = loaded.length;
   const totalSkus = partNumbers.length;
 
+  const stale = ctxReady && isContextStale(userCtx);
+
+  /**
+   * Resume Work priority (deterministic):
+   * 1. Last viewed SKU if still INCOMPLETE / BLOCKED / READY_WITH_WARNINGS
+   * 2. Most recent in recentSkus with unresolved issues
+   * 3. Most recent overall
+   */
+  const resumePrimary = useMemo<string | null>(() => {
+    if (!ctxReady || userCtx.recentSkus.length === 0) return null;
+    const recent = userCtx.recentSkus;
+    const lastViewed = userCtx.lastViewedSkuPartNumber?.trim().toUpperCase();
+
+    if (lastViewed) {
+      const s = summaries[lastViewed];
+      if (!s || s.loading || s.readiness_tier !== 'READY') return lastViewed;
+    }
+
+    const withIssues = recent.find(pn => {
+      const s = summaries[pn];
+      return s && !s.loading && s.readiness_tier !== 'READY';
+    });
+    if (withIssues) return withIssues;
+
+    return recent[0] ?? null;
+  }, [ctxReady, userCtx, summaries]);
+
+  const resumeRecentList = useMemo<string[]>(() => {
+    if (!ctxReady) return [];
+    return userCtx.recentSkus.filter(pn => pn !== resumePrimary).slice(0, 4);
+  }, [ctxReady, userCtx.recentSkus, resumePrimary]);
+
   return (
     <EMIPLayout>
       <div className="space-y-8">
@@ -257,6 +292,118 @@ export default function EMIPDashboardPage() {
             View all SKUs →
           </Link>
         </div>
+
+        {/* RESUME WORK */}
+        {ctxReady && (
+          <section className={`rounded-2xl border shadow-sm p-5 ${
+            stale ? 'border-gray-200 bg-gray-50' : 'border-blue-100 bg-blue-50'
+          }`}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">
+                  ↩ Resume Work
+                </h2>
+                {stale && (
+                  <p className="text-xs text-gray-400 mt-0.5">Last activity over 30 days ago</p>
+                )}
+              </div>
+              <span className="text-[10px] uppercase tracking-widest text-gray-400 border border-gray-200 bg-white rounded px-1.5 py-0.5">
+                My Active Work
+              </span>
+            </div>
+
+            {resumePrimary === null ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-white px-5 py-6 text-center">
+                <p className="text-sm font-medium text-gray-500">No recent work yet</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Open a SKU to begin — it will appear here for quick resumption.
+                </p>
+                <Link
+                  href="/sku"
+                  className="mt-3 inline-block text-xs font-semibold text-blue-600 hover:underline"
+                >
+                  Browse SKU Vault →
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Primary resume card */}
+                {(() => {
+                  const s = summaries[resumePrimary];
+                  const topIssue = s?.issues?.find(i => i.severity === 'critical') ?? s?.issues?.[0] ?? null;
+                  return (
+                    <Link
+                      href={`/sku/${encodeURIComponent(resumePrimary)}?from=resume`}
+                      className="flex items-start justify-between gap-4 rounded-xl border border-blue-200 bg-white p-4 hover:border-blue-300 hover:shadow-sm transition group"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700">{resumePrimary}</p>
+                          {userCtx.lastViewedAt && (
+                            <span className="text-[10px] text-gray-400">{relativeTime(userCtx.lastViewedAt)}</span>
+                          )}
+                          {userCtx.pendingWorkflowIntent && (
+                            <span className="text-[10px] rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 font-semibold">
+                              {userCtx.pendingWorkflowIntent.replace(/_/g, ' ')}
+                            </span>
+                          )}
+                        </div>
+                        {s && !s.loading && s.description && (
+                          <p className="text-xs text-gray-500 truncate mt-0.5">{s.description}</p>
+                        )}
+                        {s && !s.loading && topIssue && (
+                          <p className="text-xs text-gray-600 mt-0.5 truncate">{topIssue.message}</p>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        {s && !s.loading ? (
+                          <>
+                            <span className={`text-[10px] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap ${TIER_BADGE[s.readiness_tier]}`}>
+                              {TIER_LABEL[s.readiness_tier]}
+                            </span>
+                            <span className="text-[10px] text-gray-500">
+                              {confidenceDot(s.confidence_score)} {s.confidence_score}%
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-xs text-gray-400 animate-pulse">Loading…</span>
+                        )}
+                        <span className="mt-1 text-xs font-semibold text-blue-600 group-hover:underline">
+                          Resume →
+                        </span>
+                      </div>
+                    </Link>
+                  );
+                })()}
+
+                {/* Recent secondary list */}
+                {resumeRecentList.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {resumeRecentList.map(pn => {
+                      const s = summaries[pn];
+                      return (
+                        <Link
+                          key={pn}
+                          href={`/sku/${encodeURIComponent(pn)}?from=resume`}
+                          className="flex flex-col gap-1 rounded-xl border border-gray-200 bg-white px-3 py-2.5 hover:border-blue-200 hover:bg-blue-50/40 transition group"
+                        >
+                          <p className="text-xs font-semibold text-gray-800 group-hover:text-blue-700 truncate">{pn}</p>
+                          {s && !s.loading ? (
+                            <span className={`self-start text-[10px] font-semibold rounded px-1.5 py-0.5 ${TIER_BADGE[s.readiness_tier]}`}>
+                              {TIER_LABEL[s.readiness_tier]}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-gray-300 animate-pulse">…</span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Stat Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -410,14 +557,17 @@ export default function EMIPDashboardPage() {
           </section>
         </div>
 
-        {/* MESSAGES (stub) */}
+        {/* MESSAGES (stub — future authenticated dashboard integration) */}
         <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-semibold text-gray-900">Messages</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-gray-900">Messages</h2>
+              <span className="text-[10px] font-semibold rounded-full bg-gray-100 text-gray-400 px-2 py-0.5">0</span>
+            </div>
             <span className="text-[10px] uppercase tracking-widest text-gray-400 border border-gray-200 rounded px-1.5 py-0.5">Coming soon</span>
           </div>
           <p className="text-sm text-gray-400">
-            System notifications, approval requests, and escalation alerts will appear here.
+            Approval requests, assignment alerts, and escalation notifications will appear here once the user layer is active.
           </p>
         </section>
 
