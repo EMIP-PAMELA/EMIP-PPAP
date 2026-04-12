@@ -7,6 +7,7 @@ import {
   type CrossSourceRevisionStatus,
   type RevisionDocumentInput,
 } from '@/src/utils/revisionCrossValidator';
+import { evaluateSKUReadiness, type SKUReadinessResult, type ReadinessDocument } from '@/src/utils/skuReadinessEvaluator';
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 25;
@@ -194,6 +195,7 @@ export async function GET(request: NextRequest) {
       storage_path: doc.storage_path as string | null,
       extracted_text: null as string | null,
       sku_revision_status: null as CrossSourceRevisionStatus | null,
+      sku_readiness_status: null as SKUReadinessResult['overall_status'] | null,
       linked_documents: undefined as
         | {
             document_id: string;
@@ -248,43 +250,62 @@ export async function GET(request: NextRequest) {
 
   const skuIds = Array.from(new Set(baseRecords.map(record => record.sku_id).filter((id): id is string => Boolean(id))));
   const skuRevisionStatusMap = new Map<string, CrossSourceRevisionStatus>();
+  const skuReadinessMap = new Map<string, SKUReadinessResult>();
 
   if (skuIds.length > 0) {
     const { data: currentRows, error: currentError } = await supabase
       .from('sku_documents')
-      .select('id, sku_id, document_type, revision, normalized_revision')
+      .select(
+        'id, sku_id, document_type, revision, normalized_revision, classification_status, phantom_rev_flag',
+      )
       .in('sku_id', skuIds)
       .eq('is_current', true);
 
     if (currentError) {
       console.warn('[REVISION VALIDATION] Failed to load current docs for SKU status', currentError.message);
     } else {
-      const docsBySku = new Map<string, RevisionDocumentInput[]>();
+      const docsBySku = new Map<string, { validation: RevisionDocumentInput[]; readinessDocs: ReadinessDocument[] }>();
       (currentRows ?? []).forEach(row => {
         if (!row.sku_id) return;
         if (!docsBySku.has(row.sku_id)) {
-          docsBySku.set(row.sku_id, []);
+          docsBySku.set(row.sku_id, { validation: [], readinessDocs: [] });
         }
-        docsBySku.get(row.sku_id)!.push({
+        const bucket = docsBySku.get(row.sku_id)!;
+        bucket.validation.push({
           id: row.id,
           document_type: row.document_type,
           revision: row.revision,
           normalized_revision: row.normalized_revision ?? null,
           revision_state: 'CURRENT',
         });
+        bucket.readinessDocs.push({
+          id: row.id,
+          document_type: row.document_type,
+          revision_state: 'CURRENT',
+          classification_status: (row.classification_status ?? 'PENDING') as DocumentClassificationStatus,
+          phantom_rev_flag: row.phantom_rev_flag ?? false,
+        });
       });
 
-      docsBySku.forEach((docs, skuId) => {
-        const result = validateSKURevisionSet(docs);
-        skuRevisionStatusMap.set(skuId, result.status);
+      docsBySku.forEach((bundle, skuId) => {
+        const validation = validateSKURevisionSet(bundle.validation);
+        skuRevisionStatusMap.set(skuId, validation.status);
+        const readiness = evaluateSKUReadiness({ documents: bundle.readinessDocs, revisionValidation: validation });
+        skuReadinessMap.set(skuId, readiness);
       });
     }
   }
 
-  baseRecords = baseRecords.map(record => ({
-    ...record,
-    sku_revision_status: record.sku_id ? skuRevisionStatusMap.get(record.sku_id) ?? null : null,
-  }));
+  baseRecords = baseRecords.map(record => {
+    const state = revisionStateMap.get(record.id) ?? 'UNKNOWN';
+    return {
+      ...record,
+      status: state,
+      revision_state: state,
+      sku_revision_status: record.sku_id ? skuRevisionStatusMap.get(record.sku_id) ?? null : null,
+      sku_readiness_status: record.sku_id ? skuReadinessMap.get(record.sku_id)?.overall_status ?? null : null,
+    };
+  });
 
   if (includeText) {
     for (const record of baseRecords) {
@@ -421,10 +442,12 @@ export async function GET(request: NextRequest) {
       normalized_revision: _normalizedRevision,
       linked_documents: _linked,
       is_current: _isCurrent,
+      sku_readiness_status,
       ...rest
     } = record;
     const response: any = {
       ...rest,
+      sku_readiness_status,
       linked_documents_count: stat?.count ?? 0,
       highest_confidence_link: stat?.highest ?? null,
       conflict_flag: stat?.conflict ?? false,

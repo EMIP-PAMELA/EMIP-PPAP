@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServer } from '@/src/lib/supabaseServer';
 import { classifyDocument } from '@/src/services/classificationService';
 import { linkDocument } from '@/src/services/linkingService';
@@ -38,9 +38,9 @@ async function reprocessDocument(documentId: string) {
   await linkDocument(documentId);
 }
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const supabase = getSupabaseServer();
-  const documentId = params.id;
+  const { id: documentId } = await context.params;
 
   let payload: CorrectionRequest;
   try {

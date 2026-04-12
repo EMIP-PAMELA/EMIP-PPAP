@@ -9,6 +9,7 @@ import {
   validateSKURevisionSet,
   type CrossSourceValidationResult,
 } from '@/src/utils/revisionCrossValidator';
+import { evaluateSKUReadiness, type SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 import { hashBuffer, hashText } from '../utils/documentHash';
 import { summarizeLineDiff, type DocumentDiffSummary } from '../utils/documentDiff';
 
@@ -22,6 +23,7 @@ export interface SKURecord {
   created_at: string;
   updated_at: string;
   revision_validation?: CrossSourceValidationResult;
+  readiness?: SKUReadinessResult;
 }
 
 export interface DocumentMetadata {
@@ -41,6 +43,7 @@ export interface DocumentFirstIngestResult {
 export interface CurrentDocumentsResponse {
   documents: SKUDocumentRecord[];
   revision_validation: CrossSourceValidationResult;
+  readiness: SKUReadinessResult;
 }
 
 const SOURCE_PRIORITY: Record<DocumentType, number> = {
@@ -193,6 +196,7 @@ export async function getSKU(partNumber: string): Promise<{
   sku: SKURecord;
   documents: SKUDocumentRecord[];
   revision_validation: CrossSourceValidationResult;
+  readiness: SKUReadinessResult;
 } | null> {
   const supabase = createSupabaseAdmin();
   const normalized = partNumber.trim().toUpperCase();
@@ -212,10 +216,12 @@ export async function getSKU(partNumber: string): Promise<{
   const { sku_documents, ...rest } = data as SKURecord & { sku_documents?: SKUDocumentRecord[] };
   const documents = attachRevisionStates((sku_documents ?? []) as SKUDocumentRecord[]);
   const revision_validation = validateSKURevisionSet(documents);
+  const readiness = evaluateSKUReadiness({ documents, revisionValidation: revision_validation });
 
   const skuWithValidation: SKURecord = {
     ...rest,
     revision_validation,
+    readiness,
   };
 
   console.log('[REVISION VALIDATION]', {
@@ -227,10 +233,20 @@ export async function getSKU(partNumber: string): Promise<{
     internal_revision: revision_validation.internal_revision,
   });
 
+  console.log('[SKU READINESS]', {
+    sku_id: skuWithValidation.id,
+    part_number: skuWithValidation.part_number,
+    work_instructions: readiness.work_instructions.status,
+    traveler_package: readiness.traveler_package.status,
+    komax_cut_sheet: readiness.komax_cut_sheet.status,
+    summary: readiness.summary,
+  });
+
   return {
     sku: skuWithValidation,
     documents,
     revision_validation,
+    readiness,
   };
 }
 
@@ -551,6 +567,7 @@ export async function getCurrentDocuments(skuId: string): Promise<CurrentDocumen
   });
   const documents = attachRevisionStates(records);
   const revision_validation = validateSKURevisionSet(documents);
+  const readiness = evaluateSKUReadiness({ documents, revisionValidation: revision_validation });
 
   console.log('[REVISION VALIDATION]', {
     sku_id: skuId,
@@ -560,7 +577,15 @@ export async function getCurrentDocuments(skuId: string): Promise<CurrentDocumen
     internal_revision: revision_validation.internal_revision,
   });
 
-  return { documents, revision_validation };
+  console.log('[SKU READINESS]', {
+    sku_id: skuId,
+    work_instructions: readiness.work_instructions.status,
+    traveler_package: readiness.traveler_package.status,
+    komax_cut_sheet: readiness.komax_cut_sheet.status,
+    summary: readiness.summary,
+  });
+
+  return { documents, revision_validation, readiness };
 }
 
 export async function setCurrentDocument(documentId: string): Promise<SKUDocumentRecord | null> {

@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { getSupabaseServer } from '@/src/lib/supabaseServer';
 import type { DocumentClassificationStatus } from '@/src/features/harness-work-instructions/services/skuService';
+import { getSKU } from '@/src/features/harness-work-instructions/services/skuService';
+import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
 import { VaultCorrectionPanel } from '@/src/features/vault/components/VaultCorrectionPanel';
 
 interface DocumentDetail {
@@ -61,14 +63,15 @@ async function loadDocument(id: string): Promise<DocumentDetail | null> {
   };
 }
 
-export default async function VaultDocumentDetailPage({ params }: { params: { id: string } }) {
-  const document = await loadDocument(params.id);
+export default async function VaultDocumentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const document = await loadDocument(id);
   if (!document) {
     return (
       <div className="mx-auto max-w-3xl space-y-6 py-10">
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-5 text-amber-900">
           <p className="text-sm font-semibold uppercase tracking-wide">Document not found</p>
-          <p className="mt-2 text-base text-amber-900">Requested ID: {params.id}</p>
+          <p className="mt-2 text-base text-amber-900">Requested ID: {id}</p>
           <p className="mt-2 text-sm text-amber-800">
             This document may not exist, may not be accessible, or may still be pending reconciliation.
           </p>
@@ -81,6 +84,16 @@ export default async function VaultDocumentDetailPage({ params }: { params: { id
         </div>
       </div>
     );
+  }
+
+  let skuReadinessStatus: ReadinessStatus | null = null;
+  if (document.sku_part_number) {
+    try {
+      const skuRecord = await getSKU(document.sku_part_number);
+      skuReadinessStatus = skuRecord?.sku?.readiness?.overall_status ?? null;
+    } catch (err) {
+      console.warn('[VAULT DOCUMENT PAGE] readiness lookup failed', err);
+    }
   }
 
   const callouts: string[] = [];
@@ -96,6 +109,17 @@ export default async function VaultDocumentDetailPage({ params }: { params: { id
   if (document.classification_status === 'NEEDS_REVIEW') {
     callouts.push('Manual review required');
   }
+  if (skuReadinessStatus === 'BLOCKED') {
+    callouts.push('Linked SKU readiness blocked');
+  } else if (skuReadinessStatus === 'PARTIAL') {
+    callouts.push('Linked SKU readiness partial');
+  }
+
+  const readinessBadgeTone: Record<ReadinessStatus, string> = {
+    READY: 'bg-emerald-100 text-emerald-800',
+    PARTIAL: 'bg-amber-100 text-amber-800',
+    BLOCKED: 'bg-red-100 text-red-700',
+  };
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 py-10">
@@ -119,6 +143,14 @@ export default async function VaultDocumentDetailPage({ params }: { params: { id
           <p className="text-xs uppercase text-gray-400">SKU</p>
           <p className="text-lg font-semibold text-gray-900">{document.sku_part_number ?? 'Unlinked'}</p>
         </div>
+        {document.sku_part_number && skuReadinessStatus && (
+          <div>
+            <p className="text-xs uppercase text-gray-400">SKU Readiness</p>
+            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${readinessBadgeTone[skuReadinessStatus]}`}>
+              {skuReadinessStatus}
+            </span>
+          </div>
+        )}
         <div>
           <p className="text-xs uppercase text-gray-400">Inferred Part Number</p>
           <p className="text-lg font-semibold text-gray-900">{document.inferred_part_number ?? '—'}</p>

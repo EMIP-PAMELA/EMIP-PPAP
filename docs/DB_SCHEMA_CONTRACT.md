@@ -28,6 +28,13 @@ This contract enumerates the tables required by Vault ingestion, classification,
 | inferred_part_number | text | NULL | Linking and UI. |
 | drawing_number | text | NULL | Linking heuristics. |
 | created_at | timestamptz (generated) | NOT NULL | Alias of uploaded_at for legacy code; still in DB. |
+| normalized_revision | text | NULL | Normalized form of `revision`; populated on upload and used by revision evaluator. |
+| revision_kind | text | NULL CHECK ('ALPHA','NUMERIC','MIXED','UNKNOWN') | Kind classification output of revision parser. |
+| revision_source | text | NULL CHECK ('TEXT','FILENAME','MANUAL','FALLBACK','UNKNOWN') | Origin of the parsed revision signal. |
+| revision_confidence | numeric | NULL | Parser confidence score for the extracted revision. |
+| revision_state | text | NULL CHECK ('CURRENT','SUPERSEDED','CONFLICT','UNKNOWN','UNCONTROLLED') DEFAULT 'UNKNOWN' | Persisted revision evaluation state; updated by recomputeRevisionStates(). |
+| revision_state_reason | text | NULL | Human-readable reason for the revision_state value. |
+| revision_evaluated_at | timestamptz | NULL | Timestamp of the last revision evaluation write. |
 
 ## sku (public)
 | Column | Type | Nullable | Notes |
@@ -38,6 +45,7 @@ This contract enumerates the tables required by Vault ingestion, classification,
 | description | text | NULL | SKU dashboard. |
 | created_from | text | NULL, constrained to BOM/CUSTOMER_DRAWING/INTERNAL_DRAWING | Guarded in SKU service. |
 | created_at | timestamptz | NOT NULL DEFAULT now() | Auditing. |
+| updated_at | timestamptz | NOT NULL DEFAULT now() | Set by skuService on document upload. |
 
 ## sku_aliases (public)
 | Column | Type | Nullable | Notes |

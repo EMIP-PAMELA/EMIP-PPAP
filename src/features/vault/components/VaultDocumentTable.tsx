@@ -6,6 +6,7 @@ import type { VaultFilterState } from './VaultFilters';
 import type { DocumentClassificationStatus } from '@/src/features/harness-work-instructions/services/skuService';
 import type { RevisionState } from '@/src/utils/revisionEvaluator';
 import type { CrossSourceRevisionStatus } from '@/src/utils/revisionCrossValidator';
+import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
 
 const skuSyncBadges: Record<CrossSourceRevisionStatus, string> = {
   SYNCHRONIZED: 'bg-emerald-100 text-emerald-800',
@@ -23,6 +24,18 @@ const skuSyncLabel: Record<CrossSourceRevisionStatus, string> = {
   INCOMPARABLE: 'Incomparable',
 };
 
+const readinessBadgeTone: Record<ReadinessStatus, string> = {
+  READY: 'bg-emerald-100 text-emerald-800',
+  PARTIAL: 'bg-amber-100 text-amber-800',
+  BLOCKED: 'bg-red-100 text-red-700',
+};
+
+const readinessLabel: Record<ReadinessStatus, string> = {
+  READY: 'Ready',
+  PARTIAL: 'Partial',
+  BLOCKED: 'Blocked',
+};
+
 interface VaultDocumentRow {
   id: string;
   sku_id: string | null;
@@ -32,6 +45,7 @@ interface VaultDocumentRow {
   revision: string;
   revision_state: RevisionState;
   sku_revision_status?: CrossSourceRevisionStatus | null;
+  sku_readiness_status?: ReadinessStatus | null;
   uploaded_at: string;
   pipeline_status?: string | null;
   message?: string | null;
@@ -247,6 +261,11 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                         SKU {skuSyncLabel[doc.sku_revision_status]}
                       </p>
                     )}
+                    {doc.sku_readiness_status && doc.sku_readiness_status !== 'READY' && (
+                      <p className="text-[11px] text-amber-700 font-semibold">
+                        Readiness {readinessLabel[doc.sku_readiness_status]}
+                      </p>
+                    )}
                     {doc.classification_notes && (
                       <p className="text-[11px] italic text-gray-400 line-clamp-2">
                         {doc.classification_notes}
@@ -262,6 +281,11 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                   {doc.sku_revision_status && (
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ${skuSyncBadges[doc.sku_revision_status]}`}>
                       SKU {skuSyncLabel[doc.sku_revision_status]}
+                    </span>
+                  )}
+                  {doc.sku_readiness_status && (
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${readinessBadgeTone[doc.sku_readiness_status]}`}>
+                      Readiness {readinessLabel[doc.sku_readiness_status]}
                     </span>
                   )}
                   {doc.linked_documents_count > 0 && (

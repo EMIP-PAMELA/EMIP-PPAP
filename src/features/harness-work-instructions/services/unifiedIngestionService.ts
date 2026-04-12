@@ -1,5 +1,6 @@
 import { ingestDocumentFirstFlow, type DocumentType, type SKUDocumentRecord, type SKURecord, getCurrentDocuments, loadExtractedText } from './skuService';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
+import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 import { resolvePartNumberFromDrawing } from './drawingLookupService';
 import { storeAliasMapping, resolveAliasFromDB } from './aliasService';
 import { parseBOMToHWI } from '@/src/core/services/bomHWIAdapter';
@@ -36,6 +37,7 @@ export interface UnifiedIngestionResult {
   sku: SKURecord;
   documents: SKUDocumentRecord[];
   revisionValidation: CrossSourceValidationResult;
+  readiness: SKUReadinessResult;
   uploadResult: UploadDocumentResult;
   skuCreated: boolean;
   headerUpdated: boolean;
@@ -208,13 +210,14 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     normalizedText ?? undefined,
   );
 
-  const { documents, revision_validation } = await getCurrentDocuments(ingestResult.sku.id);
+  const { documents, revision_validation, readiness } = await getCurrentDocuments(ingestResult.sku.id);
   const pipeline = await buildPipelineFromDocuments(ingestResult.sku, documents);
 
   return {
     sku: ingestResult.sku,
     documents,
     revisionValidation: revision_validation,
+    readiness,
     uploadResult: ingestResult.uploadResult,
     skuCreated: ingestResult.skuCreated,
     headerUpdated: ingestResult.headerUpdated,

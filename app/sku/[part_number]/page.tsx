@@ -12,6 +12,7 @@ import type { RevisionState } from '@/src/utils/revisionEvaluator';
 import type { HarnessInstructionJob } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
 import type { ProcessInstructionBundle } from '@/src/features/harness-work-instructions/types/processInstructions';
 import type { CrossSourceRevisionStatus } from '@/src/utils/revisionCrossValidator';
+import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
 
 const revisionStateTone: Record<RevisionState, string> = {
   CURRENT: 'bg-emerald-50 text-emerald-700',
@@ -63,6 +64,42 @@ const revisionSyncLabel: Record<CrossSourceRevisionStatus, string> = {
   INCOMPARABLE: 'Incomparable',
 };
 
+const readinessStatusTone: Record<ReadinessStatus, { container: string; badge: string; icon: string }> = {
+  READY: {
+    container: 'border-emerald-200 bg-emerald-50',
+    badge: 'bg-emerald-600 text-white',
+    icon: '✅',
+  },
+  PARTIAL: {
+    container: 'border-amber-200 bg-amber-50',
+    badge: 'bg-amber-600 text-white',
+    icon: '⚠️',
+  },
+  BLOCKED: {
+    container: 'border-red-200 bg-red-50',
+    badge: 'bg-red-600 text-white',
+    icon: '🛑',
+  },
+};
+
+const readinessStatusLabel: Record<ReadinessStatus, string> = {
+  READY: 'Ready',
+  PARTIAL: 'Partial',
+  BLOCKED: 'Blocked',
+};
+
+const outputStatusTone: Record<ReadinessStatus, string> = {
+  READY: 'bg-emerald-100 text-emerald-800',
+  PARTIAL: 'bg-amber-100 text-amber-800',
+  BLOCKED: 'bg-red-100 text-red-700',
+};
+
+const readinessOutputs = [
+  { key: 'work_instructions', label: 'Work Instructions' },
+  { key: 'traveler_package', label: 'Traveler Package' },
+  { key: 'komax_cut_sheet', label: 'Komax / Cut Sheet' },
+] as const;
+
 interface PipelineSummary {
   wires: number;
   pinMapRows: number;
@@ -88,6 +125,39 @@ export default function SKUDashboardPage() {
   const revisionValidation = sku?.revision_validation ?? null;
   const revisionSyncStatus: CrossSourceRevisionStatus = revisionValidation?.status ?? 'INCOMPLETE';
   const revisionDetailItems = revisionValidation?.details?.length ? revisionValidation.details : [];
+  const readiness = sku?.readiness ?? null;
+  const overallReadinessStatus: ReadinessStatus | null = readiness?.overall_status ?? null;
+  const readinessBlockers = readiness
+    ? Array.from(
+        new Set([
+          ...readiness.work_instructions.blockers,
+          ...readiness.traveler_package.blockers,
+          ...readiness.komax_cut_sheet.blockers,
+        ]),
+      )
+    : [];
+  const readinessWarnings = readiness
+    ? Array.from(
+        new Set([
+          ...readiness.work_instructions.warnings,
+          ...readiness.traveler_package.warnings,
+          ...readiness.komax_cut_sheet.warnings,
+        ]),
+      )
+    : [];
+  const readinessNextAction = (() => {
+    if (!readiness) return 'Upload missing source documents.';
+    if (readiness.work_instructions.status !== 'READY') {
+      return readiness.work_instructions.recommended_action;
+    }
+    if (readiness.traveler_package.status !== 'READY') {
+      return readiness.traveler_package.recommended_action;
+    }
+    if (readiness.komax_cut_sheet.status !== 'READY') {
+      return readiness.komax_cut_sheet.recommended_action;
+    }
+    return 'All downstream outputs are clear to proceed.';
+  })();
 
   async function loadSKU() {
     if (!partNumberParam) return;
@@ -144,6 +214,13 @@ export default function SKUDashboardPage() {
 
       const status = (json.pipeline_status ?? 'PARTIAL') as 'READY' | 'PARTIAL';
       setPipelineStatus(status);
+
+      if (json.sku) {
+        setSku(json.sku as SKURecord);
+      }
+      if (Array.isArray(json.documents)) {
+        setDocuments(json.documents as SKUDocumentRecord[]);
+      }
 
       if (status === 'READY' && json.job && json.process_bundle) {
         const job: HarnessInstructionJob = json.job as HarnessInstructionJob;
@@ -218,6 +295,72 @@ export default function SKUDashboardPage() {
           )}
         </header>
 
+        {!loading && sku && readiness && overallReadinessStatus && (
+          <section className={`rounded-2xl border px-5 py-5 space-y-5 ${readinessStatusTone[overallReadinessStatus].container}`}>
+            <div className="flex flex-wrap items-start gap-4">
+              <span className="text-2xl" aria-hidden>
+                {readinessStatusTone[overallReadinessStatus].icon}
+              </span>
+              <div className="flex-1 min-w-[240px] space-y-1">
+                <p className="text-xs uppercase tracking-[0.4em] text-gray-500">SKU Readiness</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-semibold text-gray-900">{readinessStatusLabel[overallReadinessStatus]}</h2>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${readinessStatusTone[overallReadinessStatus].badge}`}>
+                    {readinessStatusLabel[overallReadinessStatus]}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-700">{readinessNextAction}</p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              {readinessOutputs.map(def => {
+                const output = readiness[def.key];
+                const primaryIssue = output.blockers[0] ?? output.warnings[0] ?? 'No outstanding issues.';
+                return (
+                  <div key={def.key} className="rounded-xl bg-white/70 p-4 shadow-sm border border-white">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-gray-800">{def.label}</p>
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${outputStatusTone[output.status]}`}>
+                        {readinessStatusLabel[output.status]}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-gray-600 line-clamp-2">{primaryIssue}</p>
+                    <p className="mt-2 text-xs font-semibold text-gray-500">Next: {output.recommended_action}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Critical blockers</p>
+                {readinessBlockers.length > 0 ? (
+                  <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 space-y-1">
+                    {readinessBlockers.slice(0, 5).map(item => (
+                      <li key={`blocker-${item}`}>{item}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-500">No blocking issues detected.</p>
+                )}
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Warnings</p>
+                {readinessWarnings.length > 0 ? (
+                  <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 space-y-1">
+                    {readinessWarnings.slice(0, 5).map(item => (
+                      <li key={`warning-${item}`}>{item}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-500">No warnings at this time.</p>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
         {!loading && sku && revisionValidation && (
           <section className={`rounded-2xl border px-5 py-4 space-y-4 ${revisionSyncStyles[revisionSyncStatus].container}`}>
             <div className="flex flex-wrap items-start gap-3">
@@ -268,7 +411,7 @@ export default function SKUDashboardPage() {
 
         {!loading && sku && (
           <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 flex flex-wrap items-center gap-4">
-            <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Readiness</span>
+            <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Source Checklist</span>
             <span className={`inline-flex items-center gap-1 text-xs font-semibold ${docByType.BOM ? 'text-emerald-700' : 'text-red-600'}`}>
               {docByType.BOM ? '✓' : '✗'} BOM
             </span>
