@@ -17,6 +17,8 @@ import type { UploadDocumentResult } from './skuService';
 import { extractPartNumberFromText } from '@/src/utils/extractPartNumber';
 import { extractDrawingNumberFromText } from '@/src/utils/extractDrawingNumber';
 import { extractEngineeringMasterIdentifiers, type EngineeringMasterIdentifiers } from '@/src/utils/extractEngineeringMasterIdentifiers';
+import { extractEngineeringMasterRevision } from '@/src/utils/extractEngineeringMasterRevision';
+import type { RevisionSource } from '@/src/utils/revisionParser';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -192,12 +194,28 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   let revision = normalizeOptionalString(revisionOverride);
   let description: string | null = null;
   let emIds: EngineeringMasterIdentifiers | null = null;
+  let revisionSource: RevisionSource | null = null;
 
   if (normalizedType === 'BOM' && normalizedText) {
     // Deterministic Engineering Master identifier extraction — NH > 45 > PENDING; 527 → drawing_number only
     emIds = extractEngineeringMasterIdentifiers(normalizedText);
     if (!partNumber && emIds.canonicalPartNumber) partNumber = emIds.canonicalPartNumber;
-    if (!revision) revision = deriveRevisionFromBOM(normalizedText);
+
+    if (!revision) {
+      // Engineering Master revision is taken from the explicit trailing revision field on the
+      // repeated header line. Identifier suffixes like -JJ or -EE are part-number variants,
+      // not revision tokens, and are never captured here.
+      const emRev = extractEngineeringMasterRevision(normalizedText);
+      if (emRev.isHeaderExplicit && emRev.revision) {
+        revision = emRev.revision;
+        revisionSource = 'HEADER_EXPLICIT';
+      } else {
+        // Generic fallback only — for non-EM BOMs or when header line is absent/malformed
+        revision = deriveRevisionFromBOM(normalizedText);
+        revisionSource = revision ? 'TEXT' : null;
+      }
+    }
+
     if (!description) description = deriveDescriptionFromBOM(normalizedText);
   } else if (normalizedText && normalizedType !== 'UNKNOWN') {
     const draft = ingestDrawingPdf({ drawingText: normalizedText, fileName: file.name });
@@ -262,6 +280,7 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
       description,
       sourceType: normalizedType,
       drawing_number: drawingNumber ?? null,
+      revisionSource: revisionSource ?? undefined,
     },
     file,
     normalizedText ?? undefined,

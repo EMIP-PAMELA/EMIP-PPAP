@@ -10,7 +10,7 @@ import {
   type CrossSourceValidationResult,
 } from '@/src/utils/revisionCrossValidator';
 import { evaluateSKUReadiness, type SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
-import { extractRevisionSignal } from '@/src/utils/revisionParser';
+import { extractRevisionSignal, type RevisionSource } from '@/src/utils/revisionParser';
 import { hashBuffer, hashText } from '../utils/documentHash';
 import { summarizeLineDiff, type DocumentDiffSummary } from '../utils/documentDiff';
 
@@ -34,6 +34,8 @@ export interface DocumentMetadata {
   sourceType: DocumentType;
   /** Apogee drawing number (527-XXXX-010) extracted from document header. Never used as part_number. */
   drawing_number?: string | null;
+  /** Explicit revision source override. Use HEADER_EXPLICIT when revision came from the EM repeated header line. */
+  revisionSource?: RevisionSource;
 }
 
 export interface DocumentFirstIngestResult {
@@ -354,7 +356,7 @@ export async function uploadDocument(
   type: DocumentType | string,
   revision: string,
   extractedText?: string,
-  identifiers?: { drawingNumber?: string | null },
+  identifiers?: { drawingNumber?: string | null; revisionSource?: RevisionSource },
 ): Promise<UploadDocumentResult> {
   const supabase = createSupabaseAdmin();
   const documentType = normalizeDocumentType(type);
@@ -492,7 +494,8 @@ export async function uploadDocument(
     normalized_revision: normalizedRevisionValue,
     // normalized_revision MUST originate from revisionParser to prevent dual-truth drift
     revision_kind: revisionSignal.revisionKind,
-    revision_source: revisionSignal.parseSource,
+    // HEADER_EXPLICIT takes precedence when explicitly provided by the caller (e.g. EM header extraction)
+    revision_source: identifiers?.revisionSource ?? revisionSignal.parseSource,
     revision_confidence: revisionSignal.confidence,
     file_url:      publicUrl,
     file_name:     file.name,
@@ -722,7 +725,7 @@ export async function ingestDocumentFirstFlow(
     meta.sourceType,
     meta.revision ?? 'UNSPECIFIED',
     extractedText,
-    { drawingNumber: meta.drawing_number ?? null },
+    { drawingNumber: meta.drawing_number ?? null, revisionSource: meta.revisionSource ?? undefined },
   );
 
   console.log('[HWI DOCUMENT-FIRST INGEST]', {
