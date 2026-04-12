@@ -13,6 +13,10 @@ import type { HarnessInstructionJob } from '@/src/features/harness-work-instruct
 import type { ProcessInstructionBundle } from '@/src/features/harness-work-instructions/types/processInstructions';
 import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
 import RevisionSummaryCard from '@/src/features/revision/components/RevisionSummaryCard';
+import RevisionRiskSignalsCard from '@/src/features/revision/components/RevisionRiskSignalsCard';
+import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
+import CorrectiveContextBanner from '@/src/components/CorrectiveContextBanner';
+import { deriveIssueKind, parseActionIntentParam } from '@/src/features/revision/utils/correctiveIntent';
 
 const revisionStateTone: Record<RevisionState, string> = {
   CURRENT: 'bg-emerald-50 text-emerald-700',
@@ -79,6 +83,12 @@ export default function SKUDashboardPage() {
   const tabParam = searchParams?.get('tab') ?? null;
   const focusParam = searchParams?.get('focus');
   const highlightParam = searchParams?.get('highlight');
+  const expectedRevisionParam = searchParams?.get('expectedRevision');
+  const expectedRevisionHint = expectedRevisionParam?.trim() ? expectedRevisionParam.trim().toUpperCase() : null;
+  const canonicalSourceParam = searchParams?.get('source');
+  const canonicalSourceHint = canonicalSourceParam?.trim() ? canonicalSourceParam.trim().toUpperCase() : null;
+  const actionIntent = parseActionIntentParam(searchParams?.get('actionIntent') ?? null);
+  const correctiveIssueKind = deriveIssueKind(actionIntent);
   const [sku, setSku] = useState<SKURecord | null>(null);
   const [documents, setDocuments] = useState<SKUDocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,6 +105,7 @@ export default function SKUDashboardPage() {
   const partNumber = sku?.part_number ?? partNumberParam?.toUpperCase() ?? '';
   const vaultLink = sku ? `/vault?sku=${encodeURIComponent(sku.part_number)}` : '/vault';
   const revisionValidation = sku?.revision_validation ?? null;
+  const revisionRisk = sku?.revision_risk ?? null;
   const readiness = sku?.readiness ?? null;
   const overallReadinessStatus: ReadinessStatus | null = readiness?.overall_status ?? null;
   const readinessBlockers = readiness
@@ -165,24 +176,27 @@ export default function SKUDashboardPage() {
     }
   }, [tabParam, loading]);
 
+  const revisionIntentActive = Boolean(actionIntent && actionIntent !== 'REVIEW_READINESS');
+  const readinessIntentActive = actionIntent === 'REVIEW_READINESS';
+
   useEffect(() => {
     if (loading) return;
     const shouldHighlightRevision =
-      tabParam === 'revision' || highlightParam === 'revision' || Boolean(focusParam);
+      tabParam === 'revision' || highlightParam === 'revision' || Boolean(focusParam) || revisionIntentActive;
     if (!shouldHighlightRevision) return;
     setRevisionHighlightActive(true);
     const timeout = window.setTimeout(() => setRevisionHighlightActive(false), 3500);
     return () => window.clearTimeout(timeout);
-  }, [tabParam, focusParam, highlightParam, loading]);
+  }, [tabParam, focusParam, highlightParam, loading, revisionIntentActive]);
 
   useEffect(() => {
     if (loading) return;
-    const shouldHighlightReadiness = tabParam === 'readiness' || highlightParam === 'readiness';
+    const shouldHighlightReadiness = tabParam === 'readiness' || highlightParam === 'readiness' || readinessIntentActive;
     if (!shouldHighlightReadiness) return;
     setReadinessHighlightActive(true);
     const timeout = window.setTimeout(() => setReadinessHighlightActive(false), 3500);
     return () => window.clearTimeout(timeout);
-  }, [tabParam, highlightParam, loading]);
+  }, [tabParam, highlightParam, loading, readinessIntentActive]);
 
   const docByType = useMemo(() => {
     const map: Record<string, SKUDocumentRecord | null> = {
@@ -294,6 +308,17 @@ export default function SKUDashboardPage() {
           )}
         </header>
 
+        {actionIntent && (
+          <CorrectiveContextBanner
+            intent={actionIntent}
+            partNumber={partNumber}
+            expectedRevision={expectedRevisionHint}
+            canonicalSource={canonicalSourceHint}
+            issueType={correctiveIssueKind}
+            location="sku"
+          />
+        )}
+
         {!loading && sku && readiness && overallReadinessStatus && (
           <section
             id="sku-readiness"
@@ -374,7 +399,16 @@ export default function SKUDashboardPage() {
               partNumber={sku.part_number}
               focusIntent={focusParam}
               highlight={revisionHighlightActive}
+              expectedRevisionHint={expectedRevisionHint}
+              canonicalSourceHint={canonicalSourceHint}
+              actionIntent={actionIntent}
+              defaultExpanded={Boolean(revisionIntentActive)}
+              riskSummary={revisionRisk}
             />
+
+            <div className="mt-4">
+              <RevisionRiskSignalsCard risk={revisionRisk} />
+            </div>
           </div>
         )}
 

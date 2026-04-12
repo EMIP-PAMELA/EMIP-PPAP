@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
+import type { RevisionRiskSummary } from '@/src/utils/revisionRiskAnalyzer';
 import RevisionStatusBadge from './RevisionStatusBadge';
 import { useRecommendedFixActions } from '@/src/features/revision/hooks/useRecommendedFixActions';
+import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
 
 const SOURCE_LABEL: Record<string, { title: string; description: string }> = {
   BOM: { title: 'BOM (Engineering Master)', description: 'Header explicit identifier' },
@@ -25,16 +27,52 @@ const FOCUS_LABELS: Record<string, { title: string; description: string }> = {
   review: { title: 'Manual review focus', description: 'Normalize incomparable revisions or escalate for manual review.' },
 };
 
+const RISK_BADGE: Record<string, string> = {
+  HIGH: 'bg-red-50 text-red-700 border border-red-200',
+  MEDIUM: 'bg-amber-50 text-amber-700 border border-amber-200',
+  LOW: 'bg-blue-50 text-blue-700 border border-blue-200',
+  NONE: 'bg-gray-100 text-gray-600 border border-gray-200',
+};
+
 interface Props {
   validation?: CrossSourceValidationResult | null;
   className?: string;
   partNumber?: string | null;
   focusIntent?: string | null;
   highlight?: boolean;
+  expectedRevisionHint?: string | null;
+  canonicalSourceHint?: string | null;
+  actionIntent?: ActionIntent | null;
+  defaultExpanded?: boolean;
+  riskSummary?: RevisionRiskSummary | null;
 }
 
-export default function RevisionSummaryCard({ validation, className = '', partNumber, focusIntent, highlight = false }: Props) {
-  const [showDetails, setShowDetails] = useState(false);
+export default function RevisionSummaryCard({
+  validation,
+  className = '',
+  partNumber,
+  focusIntent,
+  highlight = false,
+  expectedRevisionHint,
+  canonicalSourceHint,
+  actionIntent,
+  defaultExpanded = false,
+  riskSummary,
+}: Props) {
+  const [showDetails, setShowDetails] = useState(Boolean(defaultExpanded));
+
+  useEffect(() => {
+    if (defaultExpanded) {
+      setShowDetails(true);
+    }
+  }, [defaultExpanded]);
+
+  useEffect(() => {
+    if (!actionIntent) return;
+    if (actionIntent === 'RESOLVE_CONFLICT' || actionIntent === 'FIX_OUT_OF_SYNC' || actionIntent === 'REVIEW_INCOMPARABLE') {
+      setShowDetails(true);
+    }
+  }, [actionIntent]);
 
   if (!validation) {
     return (
@@ -49,6 +87,15 @@ export default function RevisionSummaryCard({ validation, className = '', partNu
   const focusKey = focusIntent ? focusIntent.toLowerCase() : null;
   const focusInfo = focusKey ? FOCUS_LABELS[focusKey] ?? null : null;
   const highlightClasses = highlight ? 'ring-2 ring-blue-300 shadow-lg shadow-blue-100 animate-pulse' : '';
+  const expectedMatchesCanonical = useMemo(() => {
+    if (!expectedRevisionHint || !canonical_revision) return true;
+    return expectedRevisionHint.toUpperCase() === canonical_revision.toUpperCase();
+  }, [expectedRevisionHint, canonical_revision]);
+  const canonicalSourceLabel = canonical_source ? SOURCE_LABEL[canonical_source]?.title ?? canonical_source : null;
+  const hintSourceLabel = canonicalSourceHint ? SOURCE_LABEL[canonicalSourceHint]?.title ?? canonicalSourceHint : null;
+  const riskLevel = riskSummary?.aggregate_level ?? 'NONE';
+  const showRiskBadge = Boolean(riskSummary && riskSummary.aggregate_level && riskSummary.aggregate_level !== 'NONE');
+  const primaryRiskSignal = riskSummary?.signals?.[0];
 
   return (
     <section className={`rounded-2xl border bg-white p-5 shadow-sm space-y-4 ${highlightClasses} ${className}`}>
@@ -60,8 +107,33 @@ export default function RevisionSummaryCard({ validation, className = '', partNu
             {canonical_source ? `Source: ${SOURCE_LABEL[canonical_source]?.title ?? canonical_source}` : 'No canonical source selected'}
           </p>
         </div>
-        <RevisionStatusBadge status={status} />
+        <div className="flex flex-col items-end gap-2">
+          <RevisionStatusBadge status={status} />
+          {showRiskBadge && (
+            <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${RISK_BADGE[riskLevel] ?? RISK_BADGE.NONE}`}>
+              Historical Risk · {riskLevel}
+            </span>
+          )}
+        </div>
       </div>
+
+      {expectedRevisionHint && (
+        <div
+          className={`rounded-xl border px-3 py-2 text-xs ${expectedMatchesCanonical ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-red-200 bg-red-50 text-red-900'}`}
+        >
+          <p className="font-semibold">
+            Expected revision {expectedRevisionHint}
+            {hintSourceLabel && ` · ${hintSourceLabel}`}
+          </p>
+          {!expectedMatchesCanonical && canonical_revision && (
+            <p className="text-[11px]">
+              Canonical currently {canonical_revision}
+              {canonicalSourceLabel && ` (${canonicalSourceLabel})`}. Update other sources to match before submitting.
+            </p>
+          )}
+          {expectedMatchesCanonical && <p className="text-[11px]">Canonical already aligned — use this as confirmation when updating sources.</p>}
+        </div>
+      )}
 
       {focusInfo && (
         <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
@@ -71,6 +143,13 @@ export default function RevisionSummaryCard({ validation, className = '', partNu
       )}
 
       <p className="text-sm text-gray-700">{recommended_action}</p>
+
+      {showRiskBadge && primaryRiskSignal && (
+        <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p className="font-semibold">Historical pattern: {primaryRiskSignal.signal_type.replace(/_/g, ' ')}</p>
+          <p className="mt-0.5 text-amber-900/90">{primaryRiskSignal.rationale}</p>
+        </div>
+      )}
 
       {actions.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -104,8 +183,18 @@ export default function RevisionSummaryCard({ validation, className = '', partNu
           const icon = COMPARISON_ICON[comparison] ?? '•';
           const title = SOURCE_LABEL[key]?.title ?? key;
           const note = SOURCE_LABEL[key]?.description;
+          const emphasize = (() => {
+            if (!focusKey) return false;
+            if (focusKey === 'conflict') return comparison === 'GREATER' || comparison === 'LESS';
+            if (focusKey === 'diff') return comparison === 'GREATER' || comparison === 'LESS';
+            if (focusKey === 'review') return comparison === 'INCOMPARABLE';
+            return false;
+          })();
           return (
-            <div key={key} className="rounded-xl border border-gray-200 bg-gray-50/70 p-3">
+            <div
+              key={key}
+              className={`rounded-xl border bg-gray-50/70 p-3 ${emphasize ? 'border-blue-300 ring-1 ring-blue-200 shadow-sm' : 'border-gray-200'}`}
+            >
               <p className="text-xs uppercase tracking-widest text-gray-500">{title}</p>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl" aria-hidden>{icon}</span>

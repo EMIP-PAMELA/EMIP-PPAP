@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
+import type { RevisionRiskSummary } from '@/src/utils/revisionRiskAnalyzer';
 import RevisionSummaryCard from '@/src/features/revision/components/RevisionSummaryCard';
 import { useRecommendedFixActions } from '@/src/features/revision/hooks/useRecommendedFixActions';
 
@@ -50,6 +51,7 @@ interface PPAPStatusBannerProps {
   partNumber?: string | null;
   readiness: SKUReadinessResult | null;
   revisionValidation: CrossSourceValidationResult | null;
+  revisionRisk?: RevisionRiskSummary | null;
   loading: boolean;
   error: string | null;
 }
@@ -106,6 +108,7 @@ export default function PPAPStatusBanner({
   partNumber,
   readiness,
   revisionValidation,
+  revisionRisk,
   loading,
   error,
 }: PPAPStatusBannerProps) {
@@ -131,6 +134,9 @@ export default function PPAPStatusBanner({
     || readiness?.komax_cut_sheet.recommended_action
     || readiness?.work_instructions.recommended_action
     || 'No outstanding actions.';
+
+  const topRiskSignal = revisionRisk?.signals?.[0];
+  const showRiskCallout = Boolean(revisionRisk && revisionRisk.aggregate_level && revisionRisk.aggregate_level !== 'NONE' && topRiskSignal);
 
   if (!partNumber) {
     return (
@@ -191,6 +197,12 @@ export default function PPAPStatusBanner({
           <p className="text-sm text-gray-600">
             <span className="font-semibold">Action:</span> {recommendedAction}
           </p>
+          {showRiskCallout && topRiskSignal && (
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <p className="font-semibold">Historical revision risk · {revisionRisk?.aggregate_level}</p>
+              <p className="mt-0.5 text-amber-900/80">{topRiskSignal.rationale}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -242,7 +254,7 @@ export default function PPAPStatusBanner({
           </div>
           {revisionValidation && (
             <div className="border-t border-gray-200 pt-4">
-              <RevisionSummaryCard validation={revisionValidation} partNumber={partNumber} />
+              <RevisionSummaryCard validation={revisionValidation} partNumber={partNumber} riskSummary={revisionRisk} />
             </div>
           )}
         </div>

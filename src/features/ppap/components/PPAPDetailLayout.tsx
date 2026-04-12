@@ -62,7 +62,7 @@ export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPA
   const isCoordinator = role === 'coordinator' || role === 'admin';
   const isEngineer = role === 'engineer';
   const postAck = isPostAckStatus(ppap.status);
-  const { readiness, revisionValidation, loading: readinessLoading, error: readinessError } = useSkuReadiness(ppap.part_number);
+  const { readiness, revisionValidation, revisionRisk, loading: readinessLoading, error: readinessError } = useSkuReadiness(ppap.part_number);
 
   const documentGateInfo = useMemo(() => {
     if (!readiness) {
@@ -98,6 +98,7 @@ export function PPAPDetailLayout({ ppap, events, conversations, documents }: PPA
           partNumber={ppap.part_number}
           readiness={readiness}
           revisionValidation={revisionValidation}
+          revisionRisk={revisionRisk}
           loading={readinessLoading}
           error={readinessError}
         />

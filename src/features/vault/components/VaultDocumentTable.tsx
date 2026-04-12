@@ -8,6 +8,7 @@ import type { RevisionState } from '@/src/utils/revisionEvaluator';
 import type { CrossSourceRevisionStatus } from '@/src/utils/revisionCrossValidator';
 import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
 import RevisionStatusBadge from '@/src/features/revision/components/RevisionStatusBadge';
+import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
 
 const readinessBadgeTone: Record<ReadinessStatus, string> = {
   READY: 'bg-emerald-100 text-emerald-800',
@@ -60,11 +61,21 @@ interface VaultDocumentRow {
 interface IssueContext {
   type: 'missing' | 'conflict';
   sources?: string[];
+  docType?: VaultFilterState['documentType'];
+  expectedRevision?: string | null;
+  actionIntent?: ActionIntent | null;
+}
+
+interface PrefillContext {
+  docType?: VaultFilterState['documentType'];
+  expectedRevision?: string | null;
+  actionIntent?: ActionIntent | null;
 }
 
 interface VaultDocumentTableProps {
   filters: VaultFilterState;
   issueContext?: IssueContext;
+  prefillContext?: PrefillContext;
 }
 
 const statusColors: Record<RevisionState, string> = {
@@ -120,7 +131,7 @@ function groupBySkuAndType(documents: VaultDocumentRow[]): { groupKey: string; d
   }));
 }
 
-export default function VaultDocumentTable({ filters, issueContext }: VaultDocumentTableProps) {
+export default function VaultDocumentTable({ filters, issueContext, prefillContext }: VaultDocumentTableProps) {
   const router = useRouter();
   const [documents, setDocuments] = useState<VaultDocumentRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -184,10 +195,30 @@ export default function VaultDocumentTable({ filters, issueContext }: VaultDocum
   };
 
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 ${prefillContext ? 'rounded-2xl border border-blue-100 p-3 bg-blue-50/40' : ''}`}>
       {issueContext && (
         <div className={`rounded-xl border px-3 py-2 text-xs font-semibold ${issueContext.type === 'missing' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
           Viewing documents in context of {issueContext.type === 'missing' ? 'missing revision sources' : 'revision conflicts'}.
+          {issueContext.docType && <span className="ml-2 font-normal">Doc type filter: {issueContext.docType.replace('_', ' ')}</span>}
+          {issueContext.expectedRevision && <span className="ml-2 font-normal">Expected REV {issueContext.expectedRevision}</span>}
+        </div>
+      )}
+
+      {prefillContext && (prefillContext.expectedRevision || prefillContext.docType || prefillContext.actionIntent) && (
+        <div className="rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs text-blue-900">
+          {prefillContext.expectedRevision && (
+            <p>
+              <span className="font-semibold">Expected revision:</span> {prefillContext.expectedRevision}
+            </p>
+          )}
+          {prefillContext.docType && (
+            <p className="mt-0.5">
+              <span className="font-semibold">Document type locked:</span> {prefillContext.docType.replace('_', ' ')}
+            </p>
+          )}
+          {prefillContext.actionIntent && (
+            <p className="mt-0.5 text-[11px] uppercase tracking-wide text-blue-600">Intent: {prefillContext.actionIntent.replace(/_/g, ' ')}</p>
+          )}
         </div>
       )}
 

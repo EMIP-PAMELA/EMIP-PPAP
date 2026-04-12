@@ -1,16 +1,33 @@
 'use client';
 
 import React, { useCallback, useRef, useState } from 'react';
+import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
+import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
+import type { RevisionValidationAuditMetadata, RevisionValidationSource } from '@/src/types/revisionValidation';
+import { detectDocumentType } from '@/src/features/vault/utils/documentSignals';
+import { extractEngineeringMasterRevision } from '@/src/utils/extractEngineeringMasterRevision';
+import { extractRheemDrawingRevision } from '@/src/utils/extractRheemDrawingRevision';
+import { extractApogeeDrawingRevision } from '@/src/utils/extractApogeeDrawingRevision';
+import { extractRevisionSignal } from '@/src/utils/revisionParser';
+import { compareRevisions } from '@/src/utils/revisionComparator';
+import type { RevisionComparisonResult } from '@/src/utils/revisionComparator';
+import UploadValidationBanner, { type UploadRevisionValidation } from './UploadValidationBanner';
 
 interface VaultUploaderProps {
   preselectedSku?: string;
+  docTypeHint?: string | null;
+  expectedRevisionHint?: string | null;
+  actionIntent?: ActionIntent | null;
+  canonicalSourceHint?: string | null;
 }
 
 type UploadStatus =
   | 'pending'
   | 'extracting'
+  | 'ready_to_upload'
   | 'uploading'
   | 'awaiting_part_number'
+  | 'awaiting_override'
   | 'success'
   | 'error';
 
@@ -35,6 +52,9 @@ interface UploadQueueItem {
   extractedText?: string;
   partNumberInput?: string;
   result?: VaultUploadResult;
+  validation?: UploadRevisionValidation;
+  overrideAccepted?: boolean;
+  validationAudit?: RevisionValidationAuditMetadata;
 }
 
 const formatBytes = (bytes: number) => {
@@ -49,13 +69,37 @@ const formatBytes = (bytes: number) => {
 const statusStyles: Record<UploadStatus, string> = {
   pending: 'bg-gray-100 text-gray-600',
   extracting: 'bg-amber-100 text-amber-800',
+  ready_to_upload: 'bg-blue-50 text-blue-700',
   uploading: 'bg-blue-100 text-blue-800',
   awaiting_part_number: 'bg-amber-100 text-amber-900',
+  awaiting_override: 'bg-red-100 text-red-800',
   success: 'bg-emerald-100 text-emerald-800',
   error: 'bg-red-100 text-red-800',
 };
 
-export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
+type ValidationExtractionResult = {
+  revision: string | null;
+  source: RevisionValidationSource;
+};
+
+const mapComparisonForPersistence = (comparison: RevisionComparisonResult | 'NO_EXPECTED'): RevisionComparisonResult => {
+  if (comparison === 'NO_EXPECTED') return 'UNKNOWN';
+  return comparison ?? 'UNKNOWN';
+};
+
+const createValidationAuditMetadata = (
+  validation: UploadRevisionValidation,
+  overrideUsed = false,
+): RevisionValidationAuditMetadata => ({
+  uploaded_revision: validation.extractedRevision ?? null,
+  expected_revision: validation.expectedRevision ?? null,
+  revision_comparison: mapComparisonForPersistence(validation.comparison),
+  revision_validation_source: validation.validationSource ?? 'UNKNOWN',
+  revision_override_used: overrideUsed,
+  revision_validated_at: validation.validatedAt ?? new Date().toISOString(),
+});
+
+export default function VaultUploader({ preselectedSku, docTypeHint, expectedRevisionHint, actionIntent, canonicalSourceHint }: VaultUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -65,7 +109,12 @@ export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
   }, []);
 
   const uploadWithMetadata = useCallback(
-    async (itemId: string, file: File, extractedText: string, overridePN?: string) => {
+    async (
+      itemId: string,
+      file: File,
+      extractedText: string,
+      options?: { overridePN?: string; validationAudit?: RevisionValidationAuditMetadata },
+    ) => {
       updateItem(itemId, {
         status: 'uploading',
         error: undefined,
@@ -78,8 +127,11 @@ export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
       if (preselectedSku) {
         fd.append('sku_part_number', preselectedSku);
       }
-      if (overridePN && overridePN.trim()) {
-        fd.append('part_number_override', overridePN.trim());
+      if (options?.overridePN && options.overridePN.trim()) {
+        fd.append('part_number_override', options.overridePN.trim());
+      }
+      if (options?.validationAudit) {
+        fd.append('validation_context', JSON.stringify(options.validationAudit));
       }
 
       try {
@@ -90,7 +142,7 @@ export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
           updateItem(itemId, {
             status: 'awaiting_part_number',
             message: 'Manual part number required to continue.',
-            partNumberInput: overridePN ?? preselectedSku ?? '',
+            partNumberInput: options?.overridePN ?? preselectedSku ?? '',
           });
           return;
         }
@@ -125,6 +177,159 @@ export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
     [preselectedSku, updateItem],
   );
 
+  const determineDocumentType = useCallback(
+    (text: string, fileName: string): DocumentType => {
+      if (docTypeHint && docTypeHint !== 'UNKNOWN') {
+        return docTypeHint as DocumentType;
+      }
+      const classification = detectDocumentType(text, fileName);
+      return classification.detected;
+    },
+    [docTypeHint],
+  );
+
+  const extractRevisionForDoc = useCallback(
+    (docType: DocumentType, text: string, fileName: string): ValidationExtractionResult => {
+      if (!text || text.trim().length === 0) {
+        return { revision: null, source: 'UNKNOWN' };
+      }
+
+      if (docType === 'BOM') {
+        const result = extractEngineeringMasterRevision(text);
+        return { revision: result.revision, source: 'BOM' };
+      }
+
+      if (docType === 'CUSTOMER_DRAWING') {
+        const result = extractRheemDrawingRevision(text);
+        if (result.isRheemTitleBlock) {
+          return { revision: result.revision, source: 'RHEEM' };
+        }
+      }
+
+      if (docType === 'INTERNAL_DRAWING') {
+        const result = extractApogeeDrawingRevision(text);
+        if (result.isApogeeDrawing) {
+          return { revision: result.revision, source: 'APOGEE' };
+        }
+      }
+
+      const generic = extractRevisionSignal({ extractedText: text, fileName });
+      return { revision: generic.normalized, source: 'GENERIC' };
+    },
+    [],
+  );
+
+  const buildValidation = useCallback(
+    (docType: DocumentType, extraction: ValidationExtractionResult, capturedAt: string): UploadRevisionValidation => {
+      const { revision: extractedRevision, source } = extraction;
+      if (!expectedRevisionHint) {
+        return {
+          state: 'unavailable',
+          comparison: 'NO_EXPECTED',
+          extractedRevision,
+          expectedRevision: null,
+          message: 'No revision validation available for this upload.',
+          requiresOverride: false,
+          docType,
+          canonicalSource: canonicalSourceHint ?? undefined,
+          validationSource: source,
+          validatedAt: capturedAt,
+        };
+      }
+
+      if (!extractedRevision) {
+        return {
+          state: 'unknown',
+          comparison: 'UNKNOWN',
+          extractedRevision,
+          expectedRevision: expectedRevisionHint,
+          message: 'Unable to detect revision from this document.',
+          requiresOverride: false,
+          docType,
+          canonicalSource: canonicalSourceHint ?? undefined,
+          validationSource: source,
+          validatedAt: capturedAt,
+        };
+      }
+
+      const comparison = compareRevisions(extractedRevision, expectedRevisionHint);
+
+      if (comparison === 'EQUAL') {
+        return {
+          state: 'matching',
+          comparison,
+          extractedRevision,
+          expectedRevision: expectedRevisionHint,
+          message: 'Revision matches expected canonical value.',
+          requiresOverride: false,
+          docType,
+          canonicalSource: canonicalSourceHint ?? undefined,
+          validationSource: source,
+          validatedAt: capturedAt,
+        };
+      }
+
+      if (comparison === 'LESS') {
+        return {
+          state: 'warning',
+          comparison,
+          extractedRevision,
+          expectedRevision: expectedRevisionHint,
+          message: `Uploaded revision (${extractedRevision}) is older than expected (${expectedRevisionHint}). Consider updating before proceeding.`,
+          requiresOverride: false,
+          docType,
+          canonicalSource: canonicalSourceHint ?? undefined,
+          validationSource: source,
+          validatedAt: capturedAt,
+        };
+      }
+
+      if (comparison === 'GREATER') {
+        return {
+          state: 'conflict',
+          comparison,
+          extractedRevision,
+          expectedRevision: expectedRevisionHint,
+          message: `Uploaded revision (${extractedRevision}) is newer than canonical (${expectedRevisionHint}). Verify upstream documents before continuing.`,
+          requiresOverride: true,
+          docType,
+          canonicalSource: canonicalSourceHint ?? undefined,
+          validationSource: source,
+          validatedAt: capturedAt,
+        };
+      }
+
+      if (comparison === 'INCOMPARABLE') {
+        return {
+          state: 'conflict',
+          comparison,
+          extractedRevision,
+          expectedRevision: expectedRevisionHint,
+          message: 'Revision format differs from canonical value. Manual review recommended before continuing.',
+          requiresOverride: true,
+          docType,
+          canonicalSource: canonicalSourceHint ?? undefined,
+          validationSource: source,
+          validatedAt: capturedAt,
+        };
+      }
+
+      return {
+        state: 'unknown',
+        comparison,
+        extractedRevision,
+        expectedRevision: expectedRevisionHint,
+        message: 'Revision comparison could not be determined.',
+        requiresOverride: false,
+        docType,
+        canonicalSource: canonicalSourceHint ?? undefined,
+        validationSource: source,
+        validatedAt: capturedAt,
+      };
+    },
+    [canonicalSourceHint, expectedRevisionHint],
+  );
+
   const processFile = useCallback(
     async (itemId: string, file: File) => {
       updateItem(itemId, {
@@ -136,8 +341,23 @@ export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
       try {
         const { extractTextFromPDF } = await import('@/src/features/documentEngine/utils/pdfToText');
         const extractedText = await extractTextFromPDF(file);
-        updateItem(itemId, { extractedText });
-        await uploadWithMetadata(itemId, file, extractedText);
+        const docType = determineDocumentType(extractedText, file.name);
+        const extraction = extractRevisionForDoc(docType, extractedText, file.name);
+        const capturedAt = new Date().toISOString();
+        const validation = buildValidation(docType, extraction, capturedAt);
+        const validationAudit = createValidationAuditMetadata(validation, false);
+
+        updateItem(itemId, {
+          extractedText,
+          validation,
+          validationAudit,
+          status: validation.requiresOverride ? 'awaiting_override' : 'ready_to_upload',
+          message: validation.message,
+        });
+
+        if (!validation.requiresOverride) {
+          await uploadWithMetadata(itemId, file, extractedText, { validationAudit });
+        }
       } catch (err) {
         console.error('[VaultUploader] extraction failed', err);
         updateItem(itemId, {
@@ -147,7 +367,7 @@ export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
         });
       }
     },
-    [updateItem, uploadWithMetadata],
+    [buildValidation, determineDocumentType, extractRevisionForDoc, updateItem, uploadWithMetadata],
   );
 
   const queueFiles = useCallback(
@@ -178,10 +398,44 @@ export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
     }
   };
 
+  const resolveValidationAudit = (item: UploadQueueItem, overrideUsed: boolean): RevisionValidationAuditMetadata | undefined => {
+    if (item.validation) {
+      return createValidationAuditMetadata(item.validation, overrideUsed);
+    }
+    if (item.validationAudit) {
+      if (overrideUsed && item.validationAudit.revision_override_used !== true) {
+        return { ...item.validationAudit, revision_override_used: true };
+      }
+      return item.validationAudit;
+    }
+    return undefined;
+  };
+
   const handleManualSubmit = async (item: UploadQueueItem) => {
     if (!item.file || !item.extractedText || !item.partNumberInput?.trim()) return;
-    await uploadWithMetadata(item.id, item.file, item.extractedText, item.partNumberInput.trim());
+    const overridePN = item.partNumberInput.trim();
+    const validationAudit = resolveValidationAudit(item, Boolean(item.validation?.requiresOverride && item.overrideAccepted));
+    await uploadWithMetadata(item.id, item.file, item.extractedText, {
+      overridePN,
+      validationAudit,
+    });
   };
+
+  const handleOverrideConfirm = async (item: UploadQueueItem) => {
+    if (!item.file || !item.extractedText || !item.validation) return;
+    const validationAudit = resolveValidationAudit(item, true);
+    updateItem(item.id, { validationAudit });
+    await uploadWithMetadata(item.id, item.file, item.extractedText, {
+      overridePN: item.partNumberInput?.trim(),
+      validationAudit,
+    });
+  };
+
+  const contextChips: string[] = [];
+  if (preselectedSku) contextChips.push(`SKU ${preselectedSku}`);
+  if (docTypeHint) contextChips.push(docTypeHint.replace('_', ' '));
+  if (expectedRevisionHint) contextChips.push(`Expected REV ${expectedRevisionHint}`);
+  if (actionIntent === 'UPLOAD_MISSING_DOC') contextChips.push('Upload focus');
 
   return (
     <div className="space-y-2">
@@ -231,6 +485,17 @@ export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
         />
       </div>
 
+      {contextChips.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] font-semibold text-blue-800">
+          <span className="uppercase tracking-wide text-[10px] text-blue-500">Prefilled:</span>
+          {contextChips.map(chip => (
+            <span key={chip} className="rounded-full bg-white/70 px-2 py-0.5">
+              {chip}
+            </span>
+          ))}
+        </div>
+      )}
+
       {queue.length > 0 && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between px-1">
@@ -255,6 +520,18 @@ export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
                 )}
                 {item.error && (
                   <p className="mt-2 text-xs text-red-600 font-semibold">{item.error}</p>
+                )}
+
+                {item.validation && (
+                  <div className="mt-2">
+                    <UploadValidationBanner
+                      validation={item.validation}
+                      overrideAccepted={item.overrideAccepted}
+                      onOverrideToggle={checked => updateItem(item.id, { overrideAccepted: checked })}
+                      onOverrideConfirm={() => handleOverrideConfirm(item)}
+                      disabled={item.status === 'uploading'}
+                    />
+                  </div>
                 )}
 
                 {item.status === 'awaiting_part_number' && (

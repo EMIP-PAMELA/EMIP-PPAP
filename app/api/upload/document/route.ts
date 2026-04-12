@@ -21,6 +21,7 @@ export async function POST(request: NextRequest) {
   const extractedTextField = formData.get('extracted_text');
   const partNumberOverride = formData.get('part_number_override');
   const skuHint = formData.get('sku_part_number');
+  const validationContextField = formData.get('validation_context');
 
   if (!(file instanceof File)) {
     return NextResponse.json({ ok: false, error: 'file is required' }, { status: 400 });
@@ -52,6 +53,10 @@ export async function POST(request: NextRequest) {
           : typeof skuHint === 'string' && skuHint.trim().length > 0
             ? skuHint
             : undefined,
+      validationContext:
+        typeof validationContextField === 'string'
+          ? JSON.parse(validationContextField)
+          : undefined,
     });
 
     classifyDocument(ingestionResult.uploadResult.document.id).catch(err => {

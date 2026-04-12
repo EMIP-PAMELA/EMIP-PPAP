@@ -2,6 +2,34 @@ import { useMemo } from 'react';
 import type { CrossSourceRevisionStatus, CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 
+/**
+ * Corrective routing contract (consumed by SKU + Vault pages):
+ *
+ * SKU page query params
+ * - tab: section to scroll (revision|readiness)
+ * - focus: revision focus (diff|conflict|review)
+ * - highlight: section highlight key (revision|readiness)
+ * - expectedRevision: canonical revision users should target
+ * - source: canonical source that produced the expectedRevision
+ * - actionIntent: ActionIntent enum informing helper banners + panel pre-expansion
+ *
+ * Vault page query params
+ * - part / sku: SKU to preselect in filters & uploader
+ * - issue: missing|conflict for contextual callouts
+ * - docType: BOM|CUSTOMER_DRAWING|INTERNAL_DRAWING (or friendly alias) to preselect filters
+ * - sources: comma-delimited revision sources powering issue callouts
+ * - expectedRevision: canonical revision expected for uploads/corrections
+ * - actionIntent: ActionIntent enum powering uploader auto-open + helper banner
+ */
+
+type VaultDocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
+
+const SOURCE_TO_DOC_TYPE: Record<string, VaultDocumentType> = {
+  BOM: 'BOM',
+  APOGEE: 'INTERNAL_DRAWING',
+  RHEEM: 'CUSTOMER_DRAWING',
+};
+
 type Severity = 'info' | 'warning' | 'danger';
 
 export type ActionIntent =
@@ -35,6 +63,7 @@ export interface RecommendedFixAction {
     canonicalSource?: string | null;
     missingSources?: string[];
     conflictSources?: string[];
+    documentType?: VaultDocumentType;
   };
 }
 
@@ -49,11 +78,18 @@ interface SkuRouteOptions {
   focus?: string;
   highlight?: string;
   anchor?: string;
+  expectedRevision?: string | null;
+  actionIntent?: ActionIntent;
+  source?: string | null;
 }
 
 interface VaultRouteOptions {
   issue?: 'missing' | 'conflict';
   sources?: string[];
+  docType?: VaultDocumentType;
+  expectedRevision?: string | null;
+  actionIntent?: ActionIntent;
+  canonicalSource?: string | null;
 }
 
 function buildSkuRoute(partNumber?: string | null, options?: SkuRouteOptions): string | undefined {
@@ -63,6 +99,9 @@ function buildSkuRoute(partNumber?: string | null, options?: SkuRouteOptions): s
   if (options?.tab) params.set('tab', options.tab);
   if (options?.focus) params.set('focus', options.focus);
   if (options?.highlight) params.set('highlight', options.highlight);
+  if (options?.expectedRevision) params.set('expectedRevision', options.expectedRevision);
+  if (options?.actionIntent) params.set('actionIntent', options.actionIntent);
+  if (options?.source) params.set('source', options.source);
   const query = params.toString();
   const anchor = options?.anchor ? `#${options.anchor}` : '';
   return `/sku/${encoded}${query ? `?${query}` : ''}${anchor}`;
@@ -71,10 +110,21 @@ function buildSkuRoute(partNumber?: string | null, options?: SkuRouteOptions): s
 function buildVaultRoute(partNumber?: string | null, options?: VaultRouteOptions): string | undefined {
   if (!partNumber) return undefined;
   const params = new URLSearchParams();
-  params.set('sku', partNumber.trim().toUpperCase());
+  const normalized = partNumber.trim().toUpperCase();
+  params.set('sku', normalized);
+  params.set('part', normalized);
   if (options?.issue) params.set('issue', options.issue);
   if (options?.sources?.length) params.set('sources', options.sources.join(','));
+  if (options?.docType) params.set('docType', options.docType);
+  if (options?.expectedRevision) params.set('expectedRevision', options.expectedRevision);
+  if (options?.actionIntent) params.set('actionIntent', options.actionIntent);
+  if (options?.canonicalSource) params.set('source', options.canonicalSource);
   return `/vault?${params.toString()}`;
+}
+
+function deriveDocumentType(source?: string | null): VaultDocumentType | undefined {
+  if (!source) return undefined;
+  return SOURCE_TO_DOC_TYPE[source] ?? undefined;
 }
 
 function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixAction[] {
@@ -102,6 +152,9 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
       tab: 'revision',
       highlight: 'revision',
       anchor: 'revision-summary',
+      expectedRevision: revisionValidation.canonical_revision,
+      actionIntent: 'VIEW_REVISION',
+      source: revisionValidation.canonical_source,
     }),
     context: {
       partNumber,
@@ -129,6 +182,9 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
           focus: 'diff',
           highlight: 'revision',
           anchor: 'revision-summary',
+          expectedRevision: revisionValidation.canonical_revision,
+          actionIntent: 'FIX_OUT_OF_SYNC',
+          source: revisionValidation.canonical_source,
         }),
         context: {
           partNumber,
@@ -156,6 +212,9 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
           focus: 'conflict',
           highlight: 'revision',
           anchor: 'revision-summary',
+          expectedRevision: revisionValidation.canonical_revision,
+          actionIntent: 'RESOLVE_CONFLICT',
+          source: revisionValidation.canonical_source,
         }),
         context: {
           partNumber,
@@ -179,6 +238,10 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
         href: buildVaultRoute(partNumber, {
           issue: 'missing',
           sources: missingSources,
+          docType: deriveDocumentType(missingSources[0]),
+          expectedRevision: revisionValidation.canonical_revision,
+          actionIntent: 'UPLOAD_MISSING_DOC',
+          canonicalSource: revisionValidation.canonical_source,
         }),
         severity: 'danger',
         intent: 'UPLOAD_MISSING_DOC',
@@ -188,6 +251,7 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
           canonicalRevision: revisionValidation.canonical_revision,
           canonicalSource: revisionValidation.canonical_source,
           missingSources,
+          documentType: deriveDocumentType(missingSources[0]),
         },
       },
       base,
@@ -206,6 +270,9 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
           focus: 'review',
           highlight: 'revision',
           anchor: 'revision-summary',
+          expectedRevision: revisionValidation.canonical_revision,
+          actionIntent: 'REVIEW_INCOMPARABLE',
+          source: revisionValidation.canonical_source,
         }),
         severity: 'danger',
         intent: 'REVIEW_INCOMPARABLE',
@@ -244,6 +311,7 @@ function mapReadinessToActions(input: CorrectionInput): RecommendedFixAction[] {
         tab: 'readiness',
         highlight: 'readiness',
         anchor: 'sku-readiness',
+        actionIntent: intent,
       }),
       severity,
       intent,

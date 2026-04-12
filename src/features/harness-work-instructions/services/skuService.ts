@@ -11,8 +11,14 @@ import {
 } from '@/src/utils/revisionCrossValidator';
 import { evaluateSKUReadiness, type SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 import { extractRevisionSignal, type RevisionSource } from '@/src/utils/revisionParser';
+import type { RevisionComparisonResult } from '@/src/utils/revisionComparator';
+import type { RevisionValidationAuditMetadata, RevisionValidationSource } from '@/src/types/revisionValidation';
 import { hashBuffer, hashText } from '../utils/documentHash';
 import { summarizeLineDiff, type DocumentDiffSummary } from '../utils/documentDiff';
+import {
+  analyzeRevisionValidationRisk,
+  type RevisionRiskSummary,
+} from '@/src/utils/revisionRiskAnalyzer';
 
 export type DocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING' | 'UNKNOWN';
 
@@ -25,6 +31,7 @@ export interface SKURecord {
   updated_at: string;
   revision_validation?: CrossSourceValidationResult;
   readiness?: SKUReadinessResult;
+  revision_risk?: RevisionRiskSummary;
 }
 
 export interface DocumentMetadata {
@@ -36,6 +43,8 @@ export interface DocumentMetadata {
   drawing_number?: string | null;
   /** Explicit revision source override. Use HEADER_EXPLICIT when revision came from the EM repeated header line. */
   revisionSource?: RevisionSource;
+  /** Optional validation audit context supplied by VaultUploader (advisory only). */
+  revisionValidation?: RevisionValidationAuditMetadata;
 }
 
 export interface DocumentFirstIngestResult {
@@ -138,6 +147,12 @@ export interface SKUDocumentRecord {
   inferred_part_number?: string | null;
   drawing_number?: string | null;
   revision_state?: RevisionState;
+  uploaded_revision?: string | null;
+  expected_revision?: string | null;
+  revision_comparison?: RevisionComparisonResult | null;
+  revision_validation_source?: RevisionValidationSource | null;
+  revision_override_used?: boolean | null;
+  revision_validated_at?: string | null;
 }
 
 const SKU_BUCKET = 'sku-documents';
@@ -204,6 +219,7 @@ export async function getSKU(partNumber: string): Promise<{
   documents: SKUDocumentRecord[];
   revision_validation: CrossSourceValidationResult;
   readiness: SKUReadinessResult;
+  revision_risk: RevisionRiskSummary;
 } | null> {
   const supabase = createSupabaseAdmin();
   const normalized = partNumber.trim().toUpperCase();
@@ -224,11 +240,13 @@ export async function getSKU(partNumber: string): Promise<{
   const documents = attachRevisionStates((sku_documents ?? []) as SKUDocumentRecord[]);
   const revision_validation = validateSKURevisionSet(documents);
   const readiness = evaluateSKUReadiness({ documents, revisionValidation: revision_validation });
+  const revision_risk = analyzeRevisionValidationRisk(documents);
 
   const skuWithValidation: SKURecord = {
     ...rest,
     revision_validation,
     readiness,
+    revision_risk,
   };
 
   console.log('[REVISION VALIDATION]', {
@@ -249,11 +267,19 @@ export async function getSKU(partNumber: string): Promise<{
     summary: readiness.summary,
   });
 
+  console.log('[REVISION RISK]', {
+    sku_id: skuWithValidation.id,
+    part_number: skuWithValidation.part_number,
+    aggregate_level: revision_risk.aggregate_level,
+    signal_count: revision_risk.signals.length,
+  });
+
   return {
     sku: skuWithValidation,
     documents,
     revision_validation,
     readiness,
+    revision_risk,
   };
 }
 
@@ -359,6 +385,7 @@ export async function uploadDocument(
   revision: string,
   extractedText?: string,
   identifiers?: { drawingNumber?: string | null; revisionSource?: RevisionSource },
+  revisionAudit?: RevisionValidationAuditMetadata,
 ): Promise<UploadDocumentResult> {
   const supabase = createSupabaseAdmin();
   const documentType = normalizeDocumentType(type);
@@ -511,6 +538,12 @@ export async function uploadDocument(
     compared_to_document_id: comparedDocumentId,
     classification_status: 'PENDING' as DocumentClassificationStatus,
     drawing_number: identifiers?.drawingNumber ?? null,
+    uploaded_revision: revisionAudit?.uploaded_revision ?? null,
+    expected_revision: revisionAudit?.expected_revision ?? null,
+    revision_comparison: revisionAudit?.revision_comparison ?? null,
+    revision_validation_source: revisionAudit?.revision_validation_source ?? null,
+    revision_override_used: revisionAudit?.revision_override_used ?? null,
+    revision_validated_at: revisionAudit?.revision_validated_at ?? null,
   };
 
   const { data, error } = await supabase
@@ -728,6 +761,7 @@ export async function ingestDocumentFirstFlow(
     meta.revision ?? 'UNSPECIFIED',
     extractedText,
     { drawingNumber: meta.drawing_number ?? null, revisionSource: meta.revisionSource ?? undefined },
+    meta.revisionValidation,
   );
 
   console.log('[HWI DOCUMENT-FIRST INGEST]', {

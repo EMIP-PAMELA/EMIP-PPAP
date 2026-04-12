@@ -1,4 +1,12 @@
-import { ingestDocumentFirstFlow, type DocumentType, type SKUDocumentRecord, type SKURecord, getCurrentDocuments, loadExtractedText } from './skuService';
+import {
+  ingestDocumentFirstFlow,
+  type DocumentType,
+  type SKUDocumentRecord,
+  type SKURecord,
+  getCurrentDocuments,
+  loadExtractedText,
+} from './skuService';
+import type { RevisionValidationAuditMetadata } from '@/src/types/revisionValidation';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 import { resolvePartNumberFromDrawing } from './drawingLookupService';
@@ -30,6 +38,7 @@ interface IngestAndProcessParams {
   extractedText?: string;
   partNumberOverride?: string;
   revisionOverride?: string;
+  validationContext?: RevisionValidationAuditMetadata;
 }
 
 interface PipelineResult {
@@ -188,7 +197,7 @@ async function buildPipelineFromDocuments(
 }
 
 export async function ingestAndProcessDocument(params: IngestAndProcessParams): Promise<UnifiedIngestionResult> {
-  const { file, documentType, extractedText, partNumberOverride, revisionOverride } = params;
+  const { file, documentType, extractedText, partNumberOverride, revisionOverride, validationContext } = params;
 
   const normalizedType = documentType;
   const normalizedText = normalizeOptionalString(extractedText);
@@ -312,6 +321,7 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
       sourceType: normalizedType,
       drawing_number: drawingNumber ?? null,
       revisionSource: revisionSource ?? undefined,
+      revisionValidation: validationContext,
     },
     file,
     normalizedText ?? undefined,
