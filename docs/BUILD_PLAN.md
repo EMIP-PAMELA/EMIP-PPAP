@@ -13,6 +13,8 @@
 
 HWI.15.4.1 — System Stabilization
 
+> **Operator Note (2026-04-11, DCL.01):** Repo migrations + schema contract are aligned. Remaining risk sits in live Supabase environments; all future DB changes must land in the canonical `supabase/migrations/` root before production push.
+
 ---
 
 ## CURRENT SYSTEM STATE

@@ -140,8 +140,21 @@ export async function GET(request: NextRequest) {
   const { data, error, count } = await query;
 
   if (error) {
-    console.error('[VAULT DOCUMENTS] Query failed', error.message);
-    return NextResponse.json({ documents: [], total: 0, error: error.message }, { status: 500 });
+    if (error.message?.toLowerCase().includes('column')) {
+      console.error('[VAULT DOCUMENTS] Schema drift detected — column missing in sku_documents', {
+        supabaseError: error.message,
+      });
+    } else {
+      console.error('[VAULT DOCUMENTS] Query failed', error.message);
+    }
+    return NextResponse.json(
+      {
+        documents: [],
+        total: 0,
+        error: 'Unable to load vault documents (schema verification required).',
+      },
+      { status: 500 },
+    );
   }
 
   const baseRecords = (data ?? []).map(doc => {
