@@ -32,6 +32,8 @@ export interface DocumentMetadata {
   revision?: string | null;
   description?: string | null;
   sourceType: DocumentType;
+  /** Apogee drawing number (527-XXXX-010) extracted from document header. Never used as part_number. */
+  drawing_number?: string | null;
 }
 
 export interface DocumentFirstIngestResult {
@@ -352,6 +354,7 @@ export async function uploadDocument(
   type: DocumentType | string,
   revision: string,
   extractedText?: string,
+  identifiers?: { drawingNumber?: string | null },
 ): Promise<UploadDocumentResult> {
   const supabase = createSupabaseAdmin();
   const documentType = normalizeDocumentType(type);
@@ -502,6 +505,7 @@ export async function uploadDocument(
     phantom_diff_summary: diffSummary,
     compared_to_document_id: comparedDocumentId,
     classification_status: 'PENDING' as DocumentClassificationStatus,
+    drawing_number: identifiers?.drawingNumber ?? null,
   };
 
   const { data, error } = await supabase
@@ -718,6 +722,7 @@ export async function ingestDocumentFirstFlow(
     meta.sourceType,
     meta.revision ?? 'UNSPECIFIED',
     extractedText,
+    { drawingNumber: meta.drawing_number ?? null },
   );
 
   console.log('[HWI DOCUMENT-FIRST INGEST]', {

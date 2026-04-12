@@ -6,6 +6,12 @@ const PART_NUMBER_PATTERNS = [
   /part\s*(?:number|no\.?|#)\s*[:\s]+([A-Z0-9]{2}[A-Z0-9\-]{4,})/i,
 ];
 
+/**
+ * Identifier prefixes that are drawing numbers, not part numbers.
+ * 527 = Apogee drawing number (527-XXXX-010). Must never be returned as a part_number.
+ */
+const DRAWING_NUMBER_PREFIXES = /^527-/;
+
 const WEAK_PN_TOKENS = new Set([
   'REV',
   'DWG',
@@ -57,6 +63,7 @@ export function extractPartNumberFromText(
       if (candidate.length < 6 || candidate.length > 40) continue;
       if (WEAK_PN_TOKENS.has(candidate)) continue;
       if (/^[A-Z]-$/i.test(candidate)) continue;
+      if (DRAWING_NUMBER_PREFIXES.test(candidate)) continue; // Apogee drawing number, not a part number
       return candidate;
     }
   }

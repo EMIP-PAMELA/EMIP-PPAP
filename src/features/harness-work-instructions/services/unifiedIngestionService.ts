@@ -16,6 +16,7 @@ import type { ProcessInstructionBundle } from '../types/processInstructions';
 import type { UploadDocumentResult } from './skuService';
 import { extractPartNumberFromText } from '@/src/utils/extractPartNumber';
 import { extractDrawingNumberFromText } from '@/src/utils/extractDrawingNumber';
+import { extractEngineeringMasterIdentifiers, type EngineeringMasterIdentifiers } from '@/src/utils/extractEngineeringMasterIdentifiers';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -190,10 +191,12 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   let partNumber = normalizeOptionalString(partNumberOverride);
   let revision = normalizeOptionalString(revisionOverride);
   let description: string | null = null;
+  let emIds: EngineeringMasterIdentifiers | null = null;
 
   if (normalizedType === 'BOM' && normalizedText) {
-    const derivedPN = extractPartNumberFromText(normalizedText);
-    if (!partNumber && derivedPN) partNumber = derivedPN;
+    // Deterministic Engineering Master identifier extraction — NH > 45 > PENDING; 527 → drawing_number only
+    emIds = extractEngineeringMasterIdentifiers(normalizedText);
+    if (!partNumber && emIds.canonicalPartNumber) partNumber = emIds.canonicalPartNumber;
     if (!revision) revision = deriveRevisionFromBOM(normalizedText);
     if (!description) description = deriveDescriptionFromBOM(normalizedText);
   } else if (normalizedText && normalizedType !== 'UNKNOWN') {
@@ -203,12 +206,14 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     if (!description && draft.title) description = draft.title;
   }
 
-  if (!partNumber && normalizedText) {
+  if (!partNumber && normalizedText && normalizedType !== 'BOM') {
+    // Generic fallback only for non-BOM types; BOM falls through to PENDING provisioning
     const derivedPN = extractPartNumberFromText(normalizedText);
     if (derivedPN) partNumber = derivedPN;
   }
 
-  const drawingNumber = normalizedText ? extractDrawingNumberFromText(normalizedText) : null;
+  // For BOM: prefer the deterministic extractor drawing number; all other types use the generic extractor
+  const drawingNumber = emIds?.drawingNumber ?? (normalizedText ? extractDrawingNumberFromText(normalizedText) : null);
 
   if (!partNumber && drawingNumber) {
     let resolved: string | null = null;
@@ -256,6 +261,7 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
       revision,
       description,
       sourceType: normalizedType,
+      drawing_number: drawingNumber ?? null,
     },
     file,
     normalizedText ?? undefined,
