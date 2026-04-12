@@ -117,11 +117,13 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
   const groupedDocuments = useMemo(() => groupBySkuAndType(documents), [documents]);
 
   const handleDocumentClick = (row: VaultDocumentRow) => {
-    if (row.sku_id && row.sku && row.classification_status === 'RESOLVED') {
-      router.push(`/sku/${encodeURIComponent(row.sku)}`);
-      return;
-    }
-    router.push(`/vault/document/${row.id}`);
+    const destination = row.sku_id && row.sku ? `/sku/${encodeURIComponent(row.sku)}` : `/vault/document/${row.id}`;
+    console.log('[ROUTING] Document click', {
+      documentId: row.id,
+      sku_id: row.sku_id,
+      destination,
+    });
+    router.push(destination);
   };
 
   return (
