@@ -4,12 +4,46 @@ import { useMemo, useState } from 'react';
 import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 import RevisionSummaryCard from '@/src/features/revision/components/RevisionSummaryCard';
+import { useRecommendedFixActions } from '@/src/features/revision/hooks/useRecommendedFixActions';
 
 interface IssueEntry {
   scope: string;
   message: string;
   recommended: string;
   type: 'blocker' | 'warning';
+}
+
+interface LinkOrButtonProps {
+  action: ReturnType<typeof useRecommendedFixActions>[number];
+}
+
+function LinkOrButton({ action }: LinkOrButtonProps) {
+  const tone = action.severity === 'danger'
+    ? 'bg-red-600 text-white hover:bg-red-700'
+    : action.severity === 'warning'
+      ? 'bg-amber-500 text-white hover:bg-amber-600'
+      : 'bg-blue-600 text-white hover:bg-blue-700';
+
+  if (action.href) {
+    return (
+      <a
+        href={action.href}
+        className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold shadow ${tone}`}
+      >
+        {action.label}
+      </a>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold shadow ${tone}`}
+      disabled
+    >
+      {action.label}
+    </button>
+  );
 }
 
 interface PPAPStatusBannerProps {
@@ -81,6 +115,8 @@ export default function PPAPStatusBanner({
   const primaryIssue = blockers[0] ?? warnings[0] ?? null;
   const totalIssues = blockers.length + warnings.length;
   const additionalCount = primaryIssue ? totalIssues - 1 : 0;
+
+  const actions = useRecommendedFixActions({ partNumber, readiness, revisionValidation });
 
   const statusTone = (() => {
     if (loading) return TONE.unknown;
@@ -165,6 +201,14 @@ export default function PPAPStatusBanner({
       >
         {showDetails ? 'Hide details' : 'View details'}
       </button>
+
+      {actions.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {actions.slice(0, 3).map(action => (
+            <LinkOrButton key={action.id} action={action} />
+          ))}
+        </div>
+      )}
 
       {showDetails && (
         <div className="space-y-4 text-sm text-gray-800">

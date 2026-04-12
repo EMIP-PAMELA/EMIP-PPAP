@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 import RevisionStatusBadge from './RevisionStatusBadge';
+import { useRecommendedFixActions } from '@/src/features/revision/hooks/useRecommendedFixActions';
 
 const SOURCE_LABEL: Record<string, { title: string; description: string }> = {
   BOM: { title: 'BOM (Engineering Master)', description: 'Header explicit identifier' },
@@ -21,9 +22,10 @@ const COMPARISON_ICON: Record<string, string> = {
 interface Props {
   validation?: CrossSourceValidationResult | null;
   className?: string;
+  partNumber?: string | null;
 }
 
-export default function RevisionSummaryCard({ validation, className = '' }: Props) {
+export default function RevisionSummaryCard({ validation, className = '', partNumber }: Props) {
   const [showDetails, setShowDetails] = useState(false);
 
   if (!validation) {
@@ -35,6 +37,7 @@ export default function RevisionSummaryCard({ validation, className = '' }: Prop
   }
 
   const { status, canonical_revision, canonical_source, recommended_action, sources, comparisons, details, signals_used } = validation;
+  const actions = useRecommendedFixActions({ partNumber, revisionValidation: validation });
 
   return (
     <section className={`rounded-2xl border bg-white p-5 shadow-sm space-y-4 ${className}`}>
@@ -50,6 +53,20 @@ export default function RevisionSummaryCard({ validation, className = '' }: Prop
       </div>
 
       <p className="text-sm text-gray-700">{recommended_action}</p>
+
+      {actions.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {actions.slice(0, 2).map(action => (
+            <a
+              key={action.id}
+              href={action.href}
+              className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold ${action.severity === 'danger' ? 'bg-red-600 text-white hover:bg-red-700' : action.severity === 'warning' ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+            >
+              {action.label}
+            </a>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-3 md:grid-cols-3">
         {(['BOM', 'APOGEE', 'RHEEM'] as const).map(key => {
