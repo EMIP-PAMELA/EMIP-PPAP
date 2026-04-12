@@ -1550,6 +1550,10 @@ export async function getBOMBySource(sourceReference: string): Promise<BOMRecord
 // BOM INGESTION (Database Persistence)
 // ============================================================
 
+export interface StoreBOMOptions {
+  derivedFrom: 'vault_ingestion';
+}
+
 /**
  * Store BOM records in database
  * 
@@ -1558,7 +1562,16 @@ export async function getBOMBySource(sourceReference: string): Promise<BOMRecord
  * @param partNumber Parent part number (for logging only)
  * @param records BOM records to store
  */
-export async function storeBOM(partNumber: string, records: BOMRecord[]): Promise<void> {
+export async function storeBOM(
+  partNumber: string,
+  records: BOMRecord[],
+  options?: StoreBOMOptions,
+): Promise<void> {
+  // Governance: bom_records is a derived projection from sku_documents. Do not write directly.
+  if (options?.derivedFrom !== 'vault_ingestion') {
+    throw new Error('bom_records is a derived projection from sku_documents. Writes must originate from Vault ingestion.');
+  }
+  // V6.0.6: CRITICAL - Validate part number at storage entry point
   // V6.0.6: CRITICAL - Validate part number at storage entry point
   // This is the final defense against part number degradation
   if (!partNumber || !partNumber.includes('-')) {
@@ -1818,49 +1831,29 @@ export async function parseAndStoreBOM(
   text: string, 
   sourceReference: string
 ): Promise<RawBOMData> {
-  console.log(`🧠 V5.1 [BOM Service] Parse and store from source: ${sourceReference}`);
-  
-  const parseResult = parseBOMWithValidation(text);
-  
-  if (!parseResult.success || !parseResult.data) {
-    throw new Error(`BOM parsing failed: ${parseResult.errors.map(e => e.message).join(', ')}`);
-  }
-  
-  const rawData = parseResult.data;
-  
-  // Note: This is a simplified normalization
-  // Full normalization should use ingestion.ts for production
-  const records: BOMRecord[] = [];
-  
-  for (const operation of rawData.operations) {
-    for (const component of operation.components) {
-      // Prepare metadata
-      const metadata = {
-        rawLine: component.rawLine,
-        candidateIds: component.candidateIds,
-      };
-      
-      records.push({
-        parent_part_number: rawData.masterPartNumber,
-        component_part_number: component.detectedPartId,
-        quantity: component.detectedQty || 1,
-        unit: component.detectedUom,
-        description: null, // Can be enriched in future
-        operation_step: operation.step,
-        gauge: null, // V5.6.4: Wire gauge (not extracted in legacy function)
-        color: null, // V5.6.4: Wire color (not extracted in legacy function)
-        revision: null, // V5.6.4: Revision (not provided in legacy function)
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-    }
-  }
-  
-  await storeBOM(rawData.masterPartNumber, records);
-  
-  console.log(`🧠 [BOM Service] Stored ${records.length} normalized records to database`);
-  
-  return rawData;
+  const error = new Error('Direct BOM ingestion is deprecated. Use Vault upload endpoint.');
+  console.error('[BOM SERVICE] parseAndStoreBOM is disabled', { sourceReference });
+  throw error;
+  /*
+   * Legacy implementation retained for reference:
+   *
+   * console.log(`🧠 V5.1 [BOM Service] Parse and store from source: ${sourceReference}`);
+   * const parseResult = parseBOMWithValidation(text);
+   * if (!parseResult.success || !parseResult.data) {
+   *   throw new Error(`BOM parsing failed: ${parseResult.errors.map(e => e.message).join(', ')}`);
+   * }
+   * const rawData = parseResult.data;
+   * const records: BOMRecord[] = [];
+   * for (const operation of rawData.operations) {
+   *   for (const component of operation.components) {
+   *     const normalized = await normalizeComponentBetweenServices(component, operation, rawData.masterPartNumber);
+   *     records.push(normalized);
+   *   }
+   * }
+   * await storeBOM(rawData.masterPartNumber, records);
+   * console.log(`🧠 [BOM Service] Stored ${records.length} normalized records to database`);
+   * return rawData;
+   */
 }
 
 // ============================================================

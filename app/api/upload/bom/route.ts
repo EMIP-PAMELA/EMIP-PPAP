@@ -3,6 +3,7 @@ import { ingestAndProcessDocument } from '@/src/features/harness-work-instructio
 import { classifyDocument } from '@/src/services/classificationService';
 
 export async function POST(request: NextRequest) {
+  // Governance: all BOM uploads must flow through Vault so bom_records stays derived-only.
   const formData = await request.formData();
   const file = formData.get('file');
   const manualPartNumber = formData.get('part_number');

@@ -4,6 +4,7 @@ import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 import { resolvePartNumberFromDrawing } from './drawingLookupService';
 import { storeAliasMapping, resolveAliasFromDB } from './aliasService';
 import { parseBOMToHWI } from '@/src/core/services/bomHWIAdapter';
+import { ingestBOMFromVaultProjection, type IngestionMetadata } from '@/src/core/data/bom/ingestion';
 import { ingestDrawingPdf } from './drawingIngestionService';
 import { fuseDrawingWithBOM } from './drawingFusionService';
 import { resolveEndpoints } from './endpointResolutionService';
@@ -42,6 +43,56 @@ export interface UnifiedIngestionResult {
   skuCreated: boolean;
   headerUpdated: boolean;
   pipeline: PipelineResult;
+}
+
+async function projectBOMToRepository(params: {
+  document: SKUDocumentRecord;
+  sku: SKURecord;
+  providedText?: string | null;
+}): Promise<void> {
+  const { document, sku, providedText } = params;
+
+  if (document.document_type !== 'BOM') {
+    return;
+  }
+
+  if (document.storage_path == null) {
+    console.warn('[BOM PROJECTION] Missing storage path for document', { documentId: document.id });
+    return;
+  }
+
+  const text = providedText?.trim()?.length ? providedText : await loadExtractedText(document.storage_path);
+
+  if (!text || text.trim().length === 0) {
+    console.warn('[BOM PROJECTION] Missing BOM text for derived projection', { documentId: document.id });
+    return;
+  }
+
+  const metadata: IngestionMetadata = {
+    sourceReference: document.file_name,
+    sourceType: 'engineering_master',
+    revision: document.normalized_revision || document.revision,
+    partNumber: sku.part_number,
+    artifactUrl: document.file_url,
+    artifactPath: document.storage_path,
+  };
+
+  console.log('[BOM PROJECTION] Writing derived bom_records from Vault ingestion', {
+    documentId: document.id,
+    skuId: sku.id,
+    partNumber: sku.part_number,
+    revision: metadata.revision,
+  });
+
+  try {
+    await ingestBOMFromVaultProjection(text, metadata);
+  } catch (err) {
+    console.error('[BOM PROJECTION] Failed to persist derived BOM', {
+      documentId: document.id,
+      skuId: sku.id,
+      error: err instanceof Error ? err.message : err,
+    });
+  }
 }
 
 function deriveRevisionFromBOM(text: string): string | null {
@@ -209,6 +260,14 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     file,
     normalizedText ?? undefined,
   );
+
+  if (ingestResult.uploadResult.status !== 'duplicate') {
+    await projectBOMToRepository({
+      document: ingestResult.uploadResult.document,
+      sku: ingestResult.sku,
+      providedText: normalizedText ?? null,
+    });
+  }
 
   const { documents, revision_validation, readiness } = await getCurrentDocuments(ingestResult.sku.id);
   const pipeline = await buildPipelineFromDocuments(ingestResult.sku, documents);

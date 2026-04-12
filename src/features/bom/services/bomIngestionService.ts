@@ -20,7 +20,7 @@
  */
 
 import { uploadEngineeringMaster, type ArtifactMetadata } from '@/src/core/services/artifactService';
-import { ingestBOMFromText, type IngestionMetadata } from '@/src/core/data/bom/ingestion';
+import { ingestBOMFromVaultProjection, type IngestionMetadata } from '@/src/core/data/bom/ingestion';
 
 // ============================================================
 // TYPES
@@ -45,6 +45,27 @@ import { extractTextFromPDF } from '../extraction/pdfExtractor';
 import { parseBOMText } from '../extraction/bomParser';
 // V6.0.1: Import core parser for part number extraction
 import { parseBOMWithValidation } from '@/src/core/parser/parserService';
+
+/**
+ * Governance: bom_records is now a derived projection populated via Vault ingestion.
+ * Direct BOM ingestion is disabled — callers must use the Vault upload endpoint.
+ */
+export async function uploadAndIngestBOM(
+  file: File,
+  bomText: string,
+  metadata?: Partial<{
+    partNumber: string;
+    revision: string;
+    sourceReference: string;
+  }>
+): Promise<BOMUploadResult> {
+  const error = new Error('Direct BOM ingestion is deprecated. Use Vault upload endpoint.');
+  console.error('[BOM INGESTION] Direct ingestion attempt blocked by governance guard', {
+    fileName: file.name,
+    governance: 'Vault canonical write path',
+  });
+  throw error;
+}
 
 /**
  * Extract part number from filename
@@ -199,7 +220,7 @@ function resolvePartNumber(sources: {
  * @param metadata Optional metadata overrides
  * @returns Upload result
  */
-export async function uploadAndIngestBOM(
+async function legacyUploadAndIngestBOM(
   file: File,
   bomText: string,
   metadata?: Partial<{
@@ -394,7 +415,7 @@ export async function uploadAndIngestBOM(
       artifactPath: uploadResult.path
     };
 
-    const ingestionResult = await ingestBOMFromText(textToIngest, ingestionMetadata);
+    const ingestionResult = await ingestBOMFromVaultProjection(textToIngest, ingestionMetadata);
 
     console.log('💾 V5.7.1 DB INSERT COMPLETE', {
       partNumber: ingestionResult.masterPartNumber,

@@ -27,7 +27,7 @@ import { BOMRecord, RawBOMData, ParseResult, RawComponent, RawOperation } from '
 import { supabase } from '@/src/lib/supabaseClient';
 import { parseBOMWithValidation } from '@/src/core/parser/parserService';
 import { normalizeRevision, NormalizedRevision, extractRevisionFromRecords, determineRevisionAction } from '@/src/core/services/revisionService';
-import { getBOM, storeBOM, compareRevision, classifyComponentWithLookup } from '@/src/core/services/bomService';
+import { getBOM, storeBOM, compareRevision, classifyComponentWithLookup, type StoreBOMOptions } from '@/src/core/services/bomService';
 import { normalizePartNumber } from '@/src/core/utils/normalizePartNumber';
 import { isValidPartNumberCandidate } from '@/src/core/utils/isValidPartNumberCandidate';
 import { PARSER_VERSION } from '@/src/core/parser/parserService';
@@ -50,6 +50,26 @@ export interface IngestionMetadata {
   artifactPath?: string | null;
   uploadedBy?: string;
   notes?: string;
+}
+
+export async function ingestBOMFromVaultProjection(
+  bomText: string,
+  metadata: IngestionMetadata,
+): Promise<IngestionResult> {
+  return ingestBOMPipeline(bomText, metadata, { derivedFrom: 'vault_ingestion' });
+}
+
+export async function ingestBOMFromText(
+  bomText: string,
+  metadata: IngestionMetadata,
+): Promise<IngestionResult> {
+  // Governance: bom_records is a derived projection from sku_documents. Do not write directly.
+  const error = new Error('Direct BOM ingestion is deprecated. Use Vault upload endpoint.');
+  console.error('[BOM INGESTION] Direct ingest attempt blocked', {
+    sourceReference: metadata.sourceReference,
+    governance: 'Vault canonical write path',
+  });
+  throw error;
 }
 
 // ============================================================
@@ -277,9 +297,10 @@ async function normalizeComponent(
  * @param metadata Ingestion metadata
  * @returns Ingestion result with success status and stats
  */
-export async function ingestBOMFromText(
+async function ingestBOMPipeline(
   bomText: string,
-  metadata: IngestionMetadata
+  metadata: IngestionMetadata,
+  storeOptions: StoreBOMOptions,
 ): Promise<IngestionResult> {
   console.log('🚀 V6.7.1 INGEST START', {
     sourceReference: metadata.sourceReference,
@@ -693,7 +714,7 @@ export async function ingestBOMFromText(
     
     // Step 3: Store (records already have is_active set from normalization)
     try {
-      await storeBOM(masterPartNumber, normalizedRecords);
+      await storeBOM(masterPartNumber, normalizedRecords, storeOptions);
       console.log('✅ V6.7.1 INSERT SUCCESS', {
         partNumber: masterPartNumber,
         revision: incomingRevision.revision,
@@ -842,17 +863,9 @@ export async function ingestBOMFromFile(
   file: File,
   metadata?: Partial<IngestionMetadata>
 ): Promise<IngestionResult> {
-  const text = await file.text();
-  
-  const fullMetadata: IngestionMetadata = {
-    sourceReference: metadata?.sourceReference || file.name,
-    sourceType: metadata?.sourceType || 'visual_export',
-    revision: metadata?.revision,
-    uploadedBy: metadata?.uploadedBy,
-    notes: metadata?.notes,
-  };
-  
-  return ingestBOMFromText(text, fullMetadata);
+  const error = new Error('Direct BOM ingestion is deprecated. Use Vault upload endpoint.');
+  console.error('[BOM INGESTION] ingestBOMFromFile blocked', { fileName: file.name });
+  throw error;
 }
 
 /**

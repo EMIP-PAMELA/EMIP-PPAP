@@ -10,6 +10,7 @@ import {
   type CrossSourceValidationResult,
 } from '@/src/utils/revisionCrossValidator';
 import { evaluateSKUReadiness, type SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
+import { extractRevisionSignal } from '@/src/utils/revisionParser';
 import { hashBuffer, hashText } from '../utils/documentHash';
 import { summarizeLineDiff, type DocumentDiffSummary } from '../utils/documentDiff';
 
@@ -354,17 +355,25 @@ export async function uploadDocument(
 ): Promise<UploadDocumentResult> {
   const supabase = createSupabaseAdmin();
   const documentType = normalizeDocumentType(type);
+  const revisionSignal = extractRevisionSignal({
+    manualRevision: revision,
+    extractedText: extractedText ?? null,
+    fileName: file.name,
+  });
+  const hasManualRevision = typeof revision === 'string' && /\S/.test(revision);
+  const revisionValue = hasManualRevision ? revision : revisionSignal.raw ?? 'UNSPECIFIED';
+  const normalizedRevisionValue = revisionSignal.normalized;
+  const storageRevisionSegment = normalizedRevisionValue ?? 'UNSPECIFIED';
   const timestamp = Date.now();
   const safeName = file.name.replace(/\s+/g, '-');
-  const normalizedRevision = revision?.trim() || 'UNSPECIFIED';
-  const storagePath = `${skuId}/${documentType}/${normalizedRevision}/${timestamp}-${safeName}`;
+  const storagePath = `${skuId}/${documentType}/${storageRevisionSegment}/${timestamp}-${safeName}`;
 
   const arrayBuffer = await file.arrayBuffer();
   const contentHash = hashBuffer(arrayBuffer);
   console.log('[HWI DOCUMENT HASHED]', {
     sku_id: skuId,
     document_type: documentType,
-    revision: normalizedRevision,
+    revision: storageRevisionSegment,
     content_hash: contentHash,
   });
 
@@ -378,14 +387,14 @@ export async function uploadDocument(
     .select('*')
     .eq('sku_id', skuId)
     .eq('document_type', documentType)
-    .eq('revision', normalizedRevision)
+    .eq('revision', revisionValue)
     .order('uploaded_at', { ascending: false });
 
   if (existingError) {
     console.error('[HWI DOCUMENT LOOKUP] Failed', {
       sku_id: skuId,
       document_type: documentType,
-      revision: normalizedRevision,
+      revision: revisionValue,
       error: existingError.message,
     });
     throw new Error(existingError.message);
@@ -398,7 +407,7 @@ export async function uploadDocument(
     console.log('[HWI DUPLICATE DOCUMENT]', {
       sku_id: skuId,
       document_type: documentType,
-      revision: normalizedRevision,
+      revision: revisionValue,
     });
     return {
       status: 'duplicate',
@@ -450,7 +459,7 @@ export async function uploadDocument(
         console.log('[HWI DOCUMENT DIFF BUILT]', {
           sku_id: skuId,
           document_type: documentType,
-          revision: normalizedRevision,
+          revision: storageRevisionSegment,
           compared_to_document_id: comparedDocumentId,
           changed_line_count: diffSummary.changed_line_count,
           likely_functional_change: diffSummary.likely_functional_change,
@@ -460,7 +469,7 @@ export async function uploadDocument(
           reason: 'missing_previous_text',
           sku_id: skuId,
           document_type: documentType,
-          revision: normalizedRevision,
+          revision: storageRevisionSegment,
         });
       }
     } else {
@@ -468,7 +477,7 @@ export async function uploadDocument(
         reason: 'missing_extracted_text',
         sku_id: skuId,
         document_type: documentType,
-        revision: normalizedRevision,
+        revision: storageRevisionSegment,
       });
     }
   }
@@ -476,8 +485,12 @@ export async function uploadDocument(
   const payload = {
     sku_id:        skuId,
     document_type: documentType,
-    revision:      normalizedRevision,
-    normalized_revision: normalizedRevision,
+    revision:      revisionValue,
+    normalized_revision: normalizedRevisionValue,
+    // normalized_revision MUST originate from revisionParser to prevent dual-truth drift
+    revision_kind: revisionSignal.revisionKind,
+    revision_source: revisionSignal.parseSource,
+    revision_confidence: revisionSignal.confidence,
     file_url:      publicUrl,
     file_name:     file.name,
     storage_path:  storagePath,
@@ -511,7 +524,7 @@ export async function uploadDocument(
     console.warn('[HWI PHANTOM REV DETECTED]', {
       sku_id: skuId,
       document_type: documentType,
-      revision: normalizedRevision,
+      revision: storageRevisionSegment,
       previous_document_id: existingDocs?.[0]?.id ?? null,
       new_document_id: data.id,
     });
@@ -529,7 +542,7 @@ export async function uploadDocument(
   console.log('[HWI DOCUMENT UPLOADED]', {
     sku_id: skuId,
     document_type: documentType,
-    revision: normalizedRevision,
+    revision: storageRevisionSegment,
     storage_path: payload.storage_path,
   });
 

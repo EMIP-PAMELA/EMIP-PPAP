@@ -25,7 +25,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { uploadAndIngestBOM } from '@/src/features/bom/services/bomIngestionService';
+import type { BOMUploadResult } from '@/src/features/bom/services/bomIngestionService';
 import { supabase } from '@/src/lib/supabaseClient';
 
 /**
@@ -45,6 +45,83 @@ function isRetryableError(error: string): boolean {
     lowerError.includes('502') ||
     lowerError.includes('504')
   );
+}
+
+type VaultUploadParams = {
+  file: File;
+  extractedText?: string;
+  partNumber?: string | null;
+  revision?: string | null;
+};
+
+async function uploadBOMViaVaultEndpoint({
+  file,
+  extractedText,
+  partNumber,
+  revision,
+}: VaultUploadParams): Promise<BOMUploadResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const trimmedText = extractedText?.trim();
+  const trimmedPart = partNumber?.trim();
+  const trimmedRevision = revision?.trim();
+
+  if (trimmedText) {
+    formData.append('extracted_text', trimmedText);
+  }
+
+  if (trimmedPart) {
+    formData.append('part_number', trimmedPart);
+  }
+
+  if (trimmedRevision) {
+    formData.append('revision', trimmedRevision);
+  }
+
+  const response = await fetch('/api/upload/bom', {
+    method: 'POST',
+    body: formData,
+  });
+
+  let payload: any = null;
+  try {
+    payload = await response.json();
+  } catch (err) {
+    console.error('[BOM UPLOAD] Failed to parse response', err);
+  }
+
+  if (!response.ok || !payload?.ok) {
+    const message = payload?.error || `Vault upload failed (status ${response.status})`;
+    return {
+      success: false,
+      partNumber: trimmedPart || 'UNKNOWN',
+      revision: trimmedRevision || 'UNKNOWN',
+      recordsCreated: 0,
+      artifactUrl: null,
+      errors: [message],
+      warnings: [],
+    };
+  }
+
+  const uploadResult = payload.uploadResult ?? {};
+  const document = uploadResult.document ?? null;
+  const resolvedPartNumber = payload.sku?.part_number || trimmedPart || 'UNKNOWN';
+  const resolvedRevision =
+    document?.normalized_revision ||
+    document?.revision ||
+    trimmedRevision ||
+    'UNKNOWN';
+
+  return {
+    success: true,
+    partNumber: resolvedPartNumber,
+    revision: resolvedRevision,
+    recordsCreated: document ? 1 : 0,
+    artifactUrl: document?.file_url ?? null,
+    errors: [],
+    warnings: [],
+  };
 }
 
 /**
@@ -439,7 +516,9 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
       await new Promise(resolve => setTimeout(resolve, 0));
       
       try {
-        const result = await uploadAndIngestBOM(item.file, bomText, {
+        const result = await uploadBOMViaVaultEndpoint({
+          file: item.file,
+          extractedText: bomText,
           partNumber: partNumber || undefined,
           revision: revision || undefined,
         });
@@ -672,7 +751,9 @@ export default function BOMUpload({ onUploadSuccess }: BOMUploadProps) {
     setUploadResult(null);
 
     try {
-      const result = await uploadAndIngestBOM(file, bomText, {
+      const result = await uploadBOMViaVaultEndpoint({
+        file,
+        extractedText: bomText,
         partNumber: partNumber || undefined,
         revision: revision || undefined,
       });
