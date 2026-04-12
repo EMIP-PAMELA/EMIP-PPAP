@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 import type { RevisionRiskSummary } from '@/src/utils/revisionRiskAnalyzer';
 import type { ExpectedDrawingSummary } from '@/src/features/harness-work-instructions/services/skuService';
-import type { ReadinessTier } from '@/src/utils/skuReadinessEvaluator';
+import type { ReadinessTier, ConfidenceFactor } from '@/src/utils/skuReadinessEvaluator';
 import RevisionStatusBadge from './RevisionStatusBadge';
 import { useRecommendedFixActions } from '@/src/features/revision/hooks/useRecommendedFixActions';
 import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
@@ -43,6 +43,20 @@ const READINESS_TIER_STYLE: Record<ReadinessTier, string> = {
   BLOCKED: 'bg-red-50 text-red-700 border-red-200',
 };
 
+function confidenceDot(score: number): string {
+  if (score >= 90) return '🟢';
+  if (score >= 70) return '🟡';
+  if (score >= 50) return '🟠';
+  return '🔴';
+}
+
+function confidenceLabel(score: number): string {
+  if (score >= 90) return 'High confidence';
+  if (score >= 70) return 'Moderate confidence';
+  if (score >= 50) return 'Low confidence';
+  return 'Very low confidence';
+}
+
 const DRAWING_SOURCE_LABEL: Record<string, string> = {
   drawing_lookup: 'Drawing lookup (CSV)',
   sku_documents: 'Vault documents',
@@ -69,6 +83,8 @@ interface Props {
   riskSummary?: RevisionRiskSummary | null;
   expectedDrawings?: ExpectedDrawingSummary | null;
   readinessTier?: ReadinessTier | null;
+  confidenceScore?: number | null;
+  confidenceFactors?: ConfidenceFactor[] | null;
 }
 
 export default function RevisionSummaryCard({
@@ -84,8 +100,11 @@ export default function RevisionSummaryCard({
   riskSummary,
   expectedDrawings,
   readinessTier,
+  confidenceScore,
+  confidenceFactors,
 }: Props) {
   const [showDetails, setShowDetails] = useState(Boolean(defaultExpanded));
+  const [showFactors, setShowFactors] = useState(false);
 
   useEffect(() => {
     if (defaultExpanded) {
@@ -126,6 +145,7 @@ export default function RevisionSummaryCard({
   const expectedDrawingSource = expectedDrawings?.apogee?.source ?? null;
   const tierLabel = readinessTier ? READINESS_TIER_LABEL[readinessTier] : null;
   const tierStyle = readinessTier ? READINESS_TIER_STYLE[readinessTier] : null;
+  const hasConfidence = typeof confidenceScore === 'number';
 
   return (
     <section className={`rounded-2xl border bg-white p-5 shadow-sm space-y-4 ${highlightClasses} ${className}`}>
@@ -133,14 +153,26 @@ export default function RevisionSummaryCard({
         <div className="flex-1 min-w-[200px]">
           <p className="text-xs uppercase tracking-[0.4em] text-gray-500">Revision Validation</p>
           {tierLabel && tierStyle && (
-            <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold mb-1 ${tierStyle}`}>
-              {tierLabel}
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+              <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${tierStyle}`}>
+                {tierLabel}
+              </span>
+              {hasConfidence && (
+                <span className="text-[11px] text-gray-500 font-medium">
+                  {confidenceDot(confidenceScore!)} {confidenceScore}%
+                </span>
+              )}
+            </div>
           )}
           <h2 className="text-xl font-semibold text-gray-900">Canonical Revision {canonical_revision ?? '—'}</h2>
           <p className="text-sm text-gray-600">
             {canonical_source ? `Source: ${SOURCE_LABEL[canonical_source]?.title ?? canonical_source}` : 'No canonical source selected'}
           </p>
+          {hasConfidence && (
+            <p className="text-xs text-gray-500 mt-0.5">
+              {confidenceDot(confidenceScore!)} {confidenceScore}% — {confidenceLabel(confidenceScore!)}
+            </p>
+          )}
         </div>
         <div className="flex flex-col items-end gap-2">
           <RevisionStatusBadge status={status} />
@@ -178,6 +210,29 @@ export default function RevisionSummaryCard({
       )}
 
       <p className="text-sm text-gray-700">{recommended_action}</p>
+
+      {hasConfidence && confidenceFactors && confidenceFactors.length > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs">
+          <button
+            type="button"
+            onClick={() => setShowFactors(v => !v)}
+            className="flex items-center gap-1.5 font-semibold text-gray-700 hover:text-gray-900 w-full text-left"
+          >
+            <span>{confidenceDot(confidenceScore!)} {confidenceScore}% confidence — {confidenceLabel(confidenceScore!)}</span>
+            <span className="ml-auto text-gray-400">{showFactors ? '▲' : '▼'}</span>
+          </button>
+          {showFactors && (
+            <ul className="mt-2 space-y-1">
+              {confidenceFactors.map(factor => (
+                <li key={factor.code} className="flex justify-between items-baseline gap-2 text-gray-700">
+                  <span>{factor.description}</span>
+                  <span className="shrink-0 font-semibold text-red-600">{factor.impact}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {showRiskBadge && primaryRiskSignal && (
         <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900">

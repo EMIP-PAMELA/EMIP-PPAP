@@ -22,6 +22,12 @@ export interface ReadinessIssue {
   source?: string;
 }
 
+export interface ConfidenceFactor {
+  code: string;
+  impact: number;
+  description: string;
+}
+
 export interface OutputReadiness {
   status: ReadinessStatus;
   blockers: string[];
@@ -41,6 +47,8 @@ export interface SKUReadinessResult {
   summary: string[];
   readiness_tier: ReadinessTier;
   issues: ReadinessIssue[];
+  confidence_score: number;
+  confidence_factors: ConfidenceFactor[];
 }
 
 export interface ReadinessDocument {
@@ -54,6 +62,7 @@ export interface ReadinessDocument {
 export interface SKUReadinessInput {
   documents: ReadinessDocument[];
   revisionValidation: CrossSourceValidationResult;
+  revisionRiskSignals?: Array<{ signal_type: string }> | null;
 }
 
 type IssueCode =
@@ -266,6 +275,72 @@ function deriveReadinessTier(p: TierParams): ReadinessTier {
   return 'READY';
 }
 
+function computeConfidenceScore(
+  p: TierParams,
+  revisionValidation: CrossSourceValidationResult,
+  riskSignals?: Array<{ signal_type: string }> | null,
+): { score: number; factors: ConfidenceFactor[] } {
+  let score = 100;
+  const factors: ConfidenceFactor[] = [];
+
+  const deduct = (code: string, impact: number, description: string) => {
+    score += impact;
+    factors.push({ code, impact, description });
+  };
+
+  if (p.revisionStatus === 'CONFLICT') {
+    deduct('REVISION_CONFLICT', -60, 'Cross-source revision conflict detected');
+  } else if (p.revisionStatus === 'OUT_OF_SYNC') {
+    deduct('REVISION_OUT_OF_SYNC', -40, 'BOM and drawing revisions do not match');
+  } else if (p.revisionStatus === 'INCOMPARABLE') {
+    deduct('REVISION_INCOMPARABLE', -25, 'Revision formats cannot be compared');
+  }
+
+  if (!p.hasBOM) {
+    deduct('MISSING_BOM', -50, 'BOM document is missing');
+  }
+  if (!p.hasCustomerDrawing) {
+    deduct('MISSING_CUSTOMER_DRAWING', -25, 'Customer drawing not present');
+  }
+  if (!p.hasApogeeDrawing) {
+    deduct('MISSING_APOGEE_DRAWING', -10, 'Internal Apogee drawing not created');
+  }
+
+  const signalsUsed = revisionValidation.signals_used ?? [];
+  if (signalsUsed.includes('TEXT')) {
+    deduct('WEAK_SIGNAL_TEXT', -10, 'Revision detected via text scan only');
+  }
+  if (signalsUsed.includes('UNKNOWN')) {
+    deduct('WEAK_SIGNAL_UNKNOWN', -20, 'Revision source could not be determined');
+  }
+
+  if (riskSignals?.length) {
+    const applied = new Set<string>();
+    for (const signal of riskSignals) {
+      const st = signal.signal_type;
+      if (!applied.has(st)) {
+        if (st === 'REPEATED_OVERRIDE') {
+          deduct('RISK_REPEATED_OVERRIDE', -10, 'Historical repeated override detected');
+          applied.add(st);
+        } else if (st === 'FREQUENT_CONFLICT_UPLOADS') {
+          deduct('RISK_FREQUENT_CONFLICT_UPLOADS', -15, 'History of frequent conflict uploads');
+          applied.add(st);
+        } else if (st === 'WEAK_REVISION_DETECTION') {
+          deduct('RISK_WEAK_REVISION_DETECTION', -10, 'Weak historical revision detection signals');
+          applied.add(st);
+        }
+      }
+    }
+  }
+
+  factors.sort((a, b) => a.impact - b.impact);
+
+  return {
+    score: Math.max(0, Math.min(100, score)),
+    factors,
+  };
+}
+
 export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResult {
   const { documents, revisionValidation } = input;
   const currentDocs = documents.filter(doc => doc.revision_state === 'CURRENT');
@@ -424,6 +499,11 @@ export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResu
   };
   const readiness_tier = deriveReadinessTier(tierParams);
   const issues = buildReadinessIssues(tierParams);
+  const { score: confidence_score, factors: confidence_factors } = computeConfidenceScore(
+    tierParams,
+    revisionValidation,
+    input.revisionRiskSignals,
+  );
 
   return {
     overall_status,
@@ -433,5 +513,7 @@ export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResu
     summary,
     readiness_tier,
     issues,
+    confidence_score,
+    confidence_factors,
   };
 }

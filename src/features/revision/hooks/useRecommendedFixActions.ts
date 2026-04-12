@@ -436,6 +436,35 @@ function mapReadinessToActions(input: CorrectionInput): RecommendedFixAction[] {
   return actions;
 }
 
+const FACTOR_CODE_PATTERNS: Array<{ code: string; match: (id: string) => boolean }> = [
+  { code: 'REVISION_CONFLICT',        match: id => id.includes('conflict') },
+  { code: 'REVISION_OUT_OF_SYNC',     match: id => id.includes('out-of-sync') },
+  { code: 'REVISION_INCOMPARABLE',    match: id => id.includes('incomparable') || id.includes('normalize') },
+  { code: 'MISSING_BOM',              match: id => id.includes('bom') },
+  { code: 'MISSING_CUSTOMER_DRAWING', match: id => id.includes('customer-drawing') },
+  { code: 'MISSING_APOGEE_DRAWING',   match: id => id.includes('internal-drawing') },
+];
+
+function sortByConfidenceFactors(
+  actions: RecommendedFixAction[],
+  factors?: Array<{ code: string; impact: number }> | null,
+): RecommendedFixAction[] {
+  if (!factors?.length) return actions;
+
+  const factorPriority = new Map(factors.map((f, i) => [f.code, i]));
+
+  const getPriority = (action: RecommendedFixAction): number => {
+    for (const { code, match } of FACTOR_CODE_PATTERNS) {
+      if (match(action.id)) {
+        return factorPriority.get(code) ?? 999;
+      }
+    }
+    return 999;
+  };
+
+  return [...actions].sort((a, b) => getPriority(a) - getPriority(b));
+}
+
 export function useRecommendedFixActions(input: CorrectionInput): RecommendedFixAction[] {
   return useMemo(() => {
     const revisionActions = mapRevisionStatusToActions(input);
@@ -449,6 +478,9 @@ export function useRecommendedFixActions(input: CorrectionInput): RecommendedFix
       }
     });
 
-    return Array.from(deduped.values());
+    return sortByConfidenceFactors(
+      Array.from(deduped.values()),
+      input.readiness?.confidence_factors,
+    );
   }, [input.partNumber, input.readiness, input.revisionValidation]);
 }

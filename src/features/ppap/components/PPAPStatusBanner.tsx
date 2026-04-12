@@ -99,6 +99,13 @@ const TIER_BADGE: Record<ReadinessTier, string> = {
   BLOCKED: 'bg-red-50 text-red-700 border border-red-200',
 };
 
+function confidenceDot(score: number): string {
+  if (score >= 90) return '🟢';
+  if (score >= 70) return '🟡';
+  if (score >= 50) return '🟠';
+  return '🔴';
+}
+
 function collectIssues(readiness: SKUReadinessResult | null): { blockers: IssueEntry[]; warnings: IssueEntry[] } {
   if (!readiness) return { blockers: [], warnings: [] };
 
@@ -210,9 +217,16 @@ export default function PPAPStatusBanner({
             <span className="text-xs uppercase tracking-[0.3em] text-gray-500">PPAP Readiness</span>
           </div>
           {readiness?.readiness_tier && (
-            <span className={`inline-block rounded px-2 py-0.5 text-[11px] font-semibold ${TIER_BADGE[readiness.readiness_tier]}`}>
-              {TIER_LABEL[readiness.readiness_tier]}
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className={`inline-block rounded px-2 py-0.5 text-[11px] font-semibold ${TIER_BADGE[readiness.readiness_tier]}`}>
+                {TIER_LABEL[readiness.readiness_tier]}
+              </span>
+              {typeof readiness.confidence_score === 'number' && (
+                <span className="text-[11px] text-gray-600 font-medium">
+                  {confidenceDot(readiness.confidence_score)} {readiness.confidence_score}% confidence
+                </span>
+              )}
+            </div>
           )}
           {primaryIssue ? (
             <p className="text-sm text-gray-900 font-semibold">
@@ -301,7 +315,15 @@ export default function PPAPStatusBanner({
           </div>
           {revisionValidation && (
             <div className="border-t border-gray-200 pt-4">
-              <RevisionSummaryCard validation={revisionValidation} partNumber={partNumber} riskSummary={revisionRisk} expectedDrawings={expectedDrawings} readinessTier={readiness?.readiness_tier ?? null} />
+              <RevisionSummaryCard
+                validation={revisionValidation}
+                partNumber={partNumber}
+                riskSummary={revisionRisk}
+                expectedDrawings={expectedDrawings}
+                readinessTier={readiness?.readiness_tier ?? null}
+                confidenceScore={readiness?.confidence_score ?? null}
+                confidenceFactors={readiness?.confidence_factors ?? null}
+              />
             </div>
           )}
         </div>

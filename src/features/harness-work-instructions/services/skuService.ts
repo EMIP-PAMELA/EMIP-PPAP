@@ -253,8 +253,12 @@ export async function getSKU(partNumber: string): Promise<{
   const { sku_documents, ...rest } = data as SKURecord & { sku_documents?: SKUDocumentRecord[] };
   const documents = attachRevisionStates((sku_documents ?? []) as SKUDocumentRecord[]);
   const revision_validation = validateSKURevisionSet(documents);
-  const readiness = evaluateSKUReadiness({ documents, revisionValidation: revision_validation });
   const revision_risk = analyzeRevisionValidationRisk(documents);
+  const readiness = evaluateSKUReadiness({
+    documents,
+    revisionValidation: revision_validation,
+    revisionRiskSignals: revision_risk.signals,
+  });
   const expected_drawings = await buildExpectedDrawingSummary(normalized, documents);
 
   const skuWithValidation: SKURecord = {

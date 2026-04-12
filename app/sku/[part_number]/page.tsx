@@ -407,6 +407,8 @@ export default function SKUDashboardPage() {
               riskSummary={revisionRisk}
               expectedDrawings={expectedDrawings}
               readinessTier={sku.readiness?.readiness_tier ?? null}
+              confidenceScore={sku.readiness?.confidence_score ?? null}
+              confidenceFactors={sku.readiness?.confidence_factors ?? null}
             />
 
             <div className="mt-4">
