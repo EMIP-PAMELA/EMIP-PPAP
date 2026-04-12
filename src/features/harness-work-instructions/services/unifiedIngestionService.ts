@@ -18,6 +18,7 @@ import { extractPartNumberFromText } from '@/src/utils/extractPartNumber';
 import { extractDrawingNumberFromText } from '@/src/utils/extractDrawingNumber';
 import { extractEngineeringMasterIdentifiers, type EngineeringMasterIdentifiers } from '@/src/utils/extractEngineeringMasterIdentifiers';
 import { extractEngineeringMasterRevision } from '@/src/utils/extractEngineeringMasterRevision';
+import { extractRheemDrawingRevision } from '@/src/utils/extractRheemDrawingRevision';
 import type { RevisionSource } from '@/src/utils/revisionParser';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
@@ -220,8 +221,23 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   } else if (normalizedText && normalizedType !== 'UNKNOWN') {
     const draft = ingestDrawingPdf({ drawingText: normalizedText, fileName: file.name });
     if (!partNumber && draft.drawing_number) partNumber = draft.drawing_number;
-    if (!revision && draft.revision) revision = draft.revision;
     if (!description && draft.title) description = draft.title;
+
+    if (!revision) {
+      // Rheem drawings store revision in the title block using 'REV PART NO.' structure.
+      // Revision is tied to the part number, not a standalone REV label.
+      // Only attempt when a 45-* Rheem part number is present in the document.
+      const hasRheemPN = /\b45-\d{5,6}-\d{2,4}\b/.test(normalizedText);
+      if (hasRheemPN) {
+        const rheemRev = extractRheemDrawingRevision(normalizedText);
+        if (rheemRev.isRheemTitleBlock && rheemRev.revision) {
+          revision = rheemRev.revision;
+          revisionSource = 'TITLE_BLOCK_RHEEM';
+        }
+      }
+      // Fallback to generic drawing ingestion revision (revision_source remains null → TEXT)
+      if (!revision && draft.revision) revision = draft.revision;
+    }
   }
 
   if (!partNumber && normalizedText && normalizedType !== 'BOM') {
