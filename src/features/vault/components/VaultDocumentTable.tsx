@@ -49,6 +49,15 @@ const statusColors: Record<string, string> = {
   UNKNOWN: 'bg-amber-100 text-amber-800',
 };
 
+const statusAccent: Record<DocumentClassificationStatus, { bar: string; tint: string; tag?: string | null; emphasize?: boolean }> = {
+  RESOLVED: { bar: 'bg-emerald-400', tint: 'bg-gray-50', tag: null, emphasize: false },
+  PENDING: { bar: 'bg-amber-400', tint: 'bg-amber-50/40', tag: 'Needs Input', emphasize: false },
+  PROCESSING: { bar: 'bg-blue-400', tint: 'bg-blue-50/40', tag: 'Processing', emphasize: false },
+  PARTIAL: { bar: 'bg-orange-500', tint: 'bg-orange-50/50', tag: 'Incomplete', emphasize: true },
+  PARTIAL_MISMATCH: { bar: 'bg-red-500', tint: 'bg-red-50/60', tag: 'Conflict', emphasize: true },
+  NEEDS_REVIEW: { bar: 'bg-red-600', tint: 'bg-red-50/70', tag: 'Needs Review', emphasize: true },
+};
+
 const classificationBadges: Record<DocumentClassificationStatus, { label: string; tone: string }> = {
   PENDING: { label: '🟡 Pending', tone: 'bg-amber-50 text-amber-800 border border-amber-100' },
   PROCESSING: { label: '🔵 Processing', tone: 'bg-blue-50 text-blue-700 border border-blue-100' },
@@ -67,9 +76,22 @@ function groupBySkuAndType(documents: VaultDocumentRow[]): { groupKey: string; d
     }
     map.get(key)!.push(doc);
   }
+  const priorityOrder: DocumentClassificationStatus[] = [
+    'NEEDS_REVIEW',
+    'PARTIAL_MISMATCH',
+    'PARTIAL',
+    'PENDING',
+    'PROCESSING',
+    'RESOLVED',
+  ];
+
   return Array.from(map.entries()).map(([groupKey, docs]) => ({
     groupKey,
-    documents: docs.sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()),
+    documents: docs.sort((a, b) => {
+      const priorityDiff = priorityOrder.indexOf(a.classification_status) - priorityOrder.indexOf(b.classification_status);
+      if (priorityDiff !== 0) return priorityDiff;
+      return new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime();
+    }),
   }));
 }
 
@@ -163,15 +185,23 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
           <div className="divide-y divide-gray-200">
             {group.documents.map((doc, index) => {
               const computedStatus = index === 0 ? 'CURRENT' : 'UNKNOWN';
+              const accent = statusAccent[doc.classification_status];
               return (
                 <button
                   key={doc.id}
                   type="button"
                   onClick={() => handleDocumentClick(doc)}
-                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-blue-50 cursor-pointer transition bg-white last:rounded-b-xl"
+                  className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-blue-50 cursor-pointer transition last:rounded-b-xl border-l-4 ${accent.bar} ${accent.tint} ${accent.emphasize ? 'border border-red-200 shadow-sm' : 'border border-transparent'}`}
                 >
                   <div className="flex-1 min-w-[200px] space-y-1">
-                    <p className="font-semibold text-gray-900">{doc.filename}</p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${accent.emphasize ? 'text-gray-900' : 'text-gray-800'}`}>{doc.filename}</p>
+                      {accent.tag && (
+                        <span className="text-[10px] uppercase tracking-wide text-gray-600 bg-white/70 px-2 py-0.5 rounded-full">
+                          {accent.tag}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-500">
                       Revision {doc.revision} · Uploaded {new Date(doc.uploaded_at).toLocaleString()}
                     </p>
