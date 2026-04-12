@@ -1,5 +1,14 @@
 'use client';
 
+/**
+ * DOCUMENT TRUTH CONTRACT
+ *
+ * All document presence logic MUST flow through documentPresence.
+ * No component may independently derive document state from raw documents.
+ *
+ * This prevents UI drift and inconsistent system behavior.
+ */
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -18,6 +27,12 @@ import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedF
 import CorrectiveContextBanner from '@/src/components/CorrectiveContextBanner';
 import { deriveIssueKind, parseActionIntentParam } from '@/src/features/revision/utils/correctiveIntent';
 import { recordSkuVisit } from '@/src/features/dashboard/userContext';
+import {
+  deriveDocumentPresence,
+  type DocByTypeMap,
+  type DocumentPresence,
+  type SupportedDocumentType,
+} from '@/src/features/sku/utils/documentPresence';
 
 const revisionStateTone: Record<RevisionState, string> = {
   CURRENT: 'bg-emerald-50 text-emerald-700',
@@ -57,18 +72,17 @@ const readinessStatusLabel: Record<ReadinessStatus, string> = {
   BLOCKED: 'Blocked',
 };
 
-type SupportedDocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
-type DocumentPresenceKey = 'bom' | 'customerDrawing' | 'internalDrawing';
-
-const DOCUMENT_DEFINITIONS: Array<{
+type DocumentDefinition = {
   type: SupportedDocumentType;
   label: string;
   description: string;
-  presenceKey: DocumentPresenceKey;
-}> = [
-  { type: 'BOM', label: 'BOM', description: 'Bill of Materials', presenceKey: 'bom' },
-  { type: 'CUSTOMER_DRAWING', label: 'Customer Drawing', description: 'Customer-supplied drawing', presenceKey: 'customerDrawing' },
-  { type: 'INTERNAL_DRAWING', label: 'Internal Drawing', description: 'Internal / Apogee drawing', presenceKey: 'internalDrawing' },
+  presenceKey: keyof Pick<DocumentPresence, 'hasBOM' | 'hasCustomerDrawing' | 'hasInternalDrawing'>;
+};
+
+const DOCUMENT_DEFINITIONS: DocumentDefinition[] = [
+  { type: 'BOM', label: 'BOM', description: 'Bill of Materials', presenceKey: 'hasBOM' },
+  { type: 'CUSTOMER_DRAWING', label: 'Customer Drawing', description: 'Customer-supplied drawing', presenceKey: 'hasCustomerDrawing' },
+  { type: 'INTERNAL_DRAWING', label: 'Internal Drawing', description: 'Internal / Apogee drawing', presenceKey: 'hasInternalDrawing' },
 ];
 
 interface PipelineSummary {
@@ -219,31 +233,23 @@ export default function SKUDashboardPage() {
     return () => window.clearTimeout(timeout);
   }, [tabParam, highlightParam, loading, readinessIntentActive]);
 
-  const docByType = useMemo(() => {
-    const map: Record<string, SKUDocumentRecord | null> = {
+  const docByType = useMemo<DocByTypeMap>(() => {
+    const map: DocByTypeMap = {
       BOM: null,
       CUSTOMER_DRAWING: null,
       INTERNAL_DRAWING: null,
     };
     for (const doc of documents) {
-      if (doc.revision_state === 'CURRENT') {
-        map[doc.document_type] = doc;
+      if (doc.revision_state === 'CURRENT' && (doc.document_type === 'BOM' || doc.document_type === 'CUSTOMER_DRAWING' || doc.document_type === 'INTERNAL_DRAWING')) {
+        map[doc.document_type as SupportedDocumentType] = doc;
       }
     }
     return map;
   }, [documents]);
 
-  const documentPresence = useMemo(
-    () => ({
-      bom: Boolean(docByType.BOM),
-      customerDrawing: Boolean(docByType.CUSTOMER_DRAWING),
-      internalDrawing: Boolean(docByType.INTERNAL_DRAWING),
-    }),
-    [docByType],
-  );
+  const documentPresence = useMemo<DocumentPresence>(() => deriveDocumentPresence(docByType), [docByType]);
 
-  const hasAnyDrawing = documentPresence.customerDrawing || documentPresence.internalDrawing;
-  const pipelineRequirementsMet = documentPresence.bom && hasAnyDrawing;
+  const pipelineRequirementsMet = documentPresence.hasBOM && documentPresence.hasAnyDrawing;
 
   const buildUploadLink = useCallback(
     (docType: SupportedDocumentType) => {
@@ -309,9 +315,15 @@ export default function SKUDashboardPage() {
 
   useEffect(() => {
     if (loading) return;
+    if (!sku || !documentPresence.hasBOM || !documentPresence.hasAnyDrawing) {
+      setPipelineStatus('PARTIAL');
+      setSummary(null);
+      autoRunSignature.current = null;
+      return;
+    }
     const currentBOM = docByType.BOM;
     const currentDrawing = docByType.INTERNAL_DRAWING ?? docByType.CUSTOMER_DRAWING;
-    if (!sku || !currentBOM || !currentDrawing) {
+    if (!currentBOM || !currentDrawing) {
       setPipelineStatus('PARTIAL');
       setSummary(null);
       autoRunSignature.current = null;
@@ -321,7 +333,7 @@ export default function SKUDashboardPage() {
     if (autoRunSignature.current === sig) return;
     autoRunSignature.current = sig;
     runPipeline('auto');
-  }, [docByType, sku?.id, loading]);
+  }, [docByType, documentPresence.hasBOM, documentPresence.hasAnyDrawing, sku?.id, loading]);
 
   const sectionDescription = (type: string) => {
     if (type === 'BOM') return 'Bill of Materials';
@@ -408,70 +420,71 @@ export default function SKUDashboardPage() {
             {DOCUMENT_DEFINITIONS.map(def => {
               const doc = docByType[def.type];
               const present = documentPresence[def.presenceKey];
+              const currentDoc = present ? doc : null;
               return (
                 <div key={def.type} className="rounded-2xl border border-gray-200 bg-white/80 p-5 shadow-sm">
                   <p className="text-sm uppercase tracking-widest text-gray-500">{def.label}</p>
                   <p className="text-xs text-gray-500">{def.description}</p>
-                  {present && doc ? (
+                  {currentDoc ? (
                     <div className="mt-4 space-y-2">
-                      <p className="text-lg font-semibold text-gray-900">Revision {doc.revision}</p>
-                      <p className="text-sm text-gray-600">{doc.file_name}</p>
-                      <p className="text-xs text-gray-400">Uploaded {new Date(doc.uploaded_at).toLocaleString()}</p>
+                      <p className="text-lg font-semibold text-gray-900">Revision {currentDoc.revision}</p>
+                      <p className="text-sm text-gray-600">{currentDoc.file_name}</p>
+                      <p className="text-xs text-gray-400">Uploaded {new Date(currentDoc.uploaded_at).toLocaleString()}</p>
                       <div className="flex flex-wrap items-center gap-2">
                         <span
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${revisionStateTone[doc.revision_state ?? 'UNKNOWN']}`}
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${revisionStateTone[currentDoc.revision_state ?? 'UNKNOWN']}`}
                         >
-                          {revisionStateLabel[doc.revision_state ?? 'UNKNOWN']}
+                          {revisionStateLabel[currentDoc.revision_state ?? 'UNKNOWN']}
                         </span>
-                        {doc.phantom_rev_flag && (
+                        {currentDoc.phantom_rev_flag && (
                           <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
                             PHANTOM REV
                           </span>
                         )}
-                        {doc.phantom_diff_summary && (
+                        {currentDoc.phantom_diff_summary && (
                           <span
                             className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ${
-                              doc.phantom_diff_summary.likely_functional_change
+                              currentDoc.phantom_diff_summary.likely_functional_change
                                 ? 'bg-red-50 text-red-700'
                                 : 'bg-blue-50 text-blue-700'
                             }`}
                           >
-                            {doc.phantom_diff_summary.likely_functional_change
+                            {currentDoc.phantom_diff_summary.likely_functional_change
                               ? 'Functional Change Likely'
                               : 'Minor/Unclear Change'}
                           </span>
                         )}
                       </div>
-                      {doc.phantom_rev_flag && doc.phantom_rev_note && (
-                        <p className="text-xs text-amber-600">{doc.phantom_rev_note}</p>
+                      {currentDoc.phantom_rev_flag && currentDoc.phantom_rev_note && (
+                        <p className="text-xs text-amber-600">{currentDoc.phantom_rev_note}</p>
                       )}
-                      {doc.phantom_rev_flag && !doc.phantom_diff_summary && (
+                      {currentDoc.phantom_rev_flag && !currentDoc.phantom_diff_summary && (
                         <p className="text-xs text-amber-600">Diff summary unavailable for this upload.</p>
                       )}
-                      {doc.phantom_diff_summary && (
+                      {currentDoc.phantom_diff_summary && (
                         <details className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
                           <summary className="cursor-pointer font-semibold">View summary</summary>
-                          <p className="mt-1 text-amber-800">{doc.phantom_diff_summary.summary_message}</p>
+                          <p className="mt-1 text-amber-800">{currentDoc.phantom_diff_summary.summary_message}</p>
                           <p className="mt-1 text-amber-800">
-                            Δ Lines: {doc.phantom_diff_summary.changed_line_count} · Functional change:{' '}
-                            {doc.phantom_diff_summary.likely_functional_change ? 'YES' : 'NO'}
+                            Δ Lines: {currentDoc.phantom_diff_summary.changed_line_count} · Functional change:{' '}
+                            {currentDoc.phantom_diff_summary.likely_functional_change ? 'YES' : 'NO'}
                           </p>
                           <div className="mt-2 grid gap-2 md:grid-cols-2">
-                            {doc.phantom_diff_summary.added_lines.length > 0 && (
+                            {currentDoc.phantom_diff_summary.added_lines.length > 0 && (
                               <div>
                                 <p className="text-[11px] uppercase text-amber-600">Added</p>
                                 <ul className="mt-1 space-y-1 font-mono text-[11px]">
-                                  {doc.phantom_diff_summary.added_lines.map(line => (
+                                  {currentDoc.phantom_diff_summary.added_lines.map((line: string) => (
                                     <li key={line}>{line}</li>
                                   ))}
                                 </ul>
                               </div>
                             )}
-                            {doc.phantom_diff_summary.removed_lines.length > 0 && (
+                            {currentDoc.phantom_diff_summary.removed_lines.length > 0 && (
                               <div>
                                 <p className="text-[11px] uppercase text-amber-600">Removed</p>
                                 <ul className="mt-1 space-y-1 font-mono text-[11px]">
-                                  {doc.phantom_diff_summary.removed_lines.map(line => (
+                                  {currentDoc.phantom_diff_summary.removed_lines.map((line: string) => (
                                     <li key={line}>{line}</li>
                                   ))}
                                 </ul>
@@ -481,7 +494,7 @@ export default function SKUDashboardPage() {
                         </details>
                       )}
                       <a
-                        href={doc.file_url}
+                        href={currentDoc.file_url}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
@@ -590,11 +603,11 @@ export default function SKUDashboardPage() {
                 <p className="text-sm text-gray-500 mt-1">
                   {pipelineStatus === 'READY'
                     ? 'Latest documents have generated a full harness instruction job.'
-                    : !documentPresence.bom && !hasAnyDrawing
+                    : !documentPresence.hasBOM && !documentPresence.hasAnyDrawing
                       ? 'Upload a BOM and at least one drawing to build instructions automatically.'
-                      : !documentPresence.bom
+                      : !documentPresence.hasBOM
                         ? 'Upload a BOM to unlock the pipeline for this SKU.'
-                        : !hasAnyDrawing
+                        : !documentPresence.hasAnyDrawing
                           ? 'Upload a customer or internal drawing to unlock the pipeline for this SKU.'
                           : 'Documents are syncing — rerun the pipeline once status shows READY.'}
                 </p>
@@ -725,7 +738,7 @@ export default function SKUDashboardPage() {
                               <div>
                                 <p className="text-[11px] uppercase text-amber-600">Added</p>
                                 <ul className="mt-1 space-y-1 font-mono text-[11px]">
-                                  {doc.phantom_diff_summary.added_lines.map(line => (
+                                  {doc.phantom_diff_summary.added_lines.map((line: string) => (
                                     <li key={line}>{line}</li>
                                   ))}
                                 </ul>
@@ -735,7 +748,7 @@ export default function SKUDashboardPage() {
                               <div>
                                 <p className="text-[11px] uppercase text-amber-600">Removed</p>
                                 <ul className="mt-1 space-y-1 font-mono text-[11px]">
-                                  {doc.phantom_diff_summary.removed_lines.map(line => (
+                                  {doc.phantom_diff_summary.removed_lines.map((line: string) => (
                                     <li key={line}>{line}</li>
                                   ))}
                                 </ul>
