@@ -125,9 +125,9 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       {loading && (
-        <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
+        <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
           Loading documents…
         </div>
       )}
@@ -135,20 +135,20 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
       {!loading && !error && documents.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500">
+        <div className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
           No documents found for the selected filters.
         </div>
       )}
 
       {groupedDocuments.map(group => (
-        <div key={group.groupKey} className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-            <div>
+        <div key={group.groupKey} className="rounded-xl border border-gray-300 bg-gray-50 shadow-sm">
+          <div className="flex items-center justify-between border-b border-gray-200 bg-white px-3 py-2 rounded-t-xl">
+            <div className="flex items-center gap-3">
               <p className="text-sm font-semibold text-gray-900">{group.groupKey}</p>
-              <p className="text-xs text-gray-500">{group.documents.length} document(s)</p>
+              <p className="text-xs text-gray-400">{group.documents.length} doc{group.documents.length === 1 ? '' : 's'}</p>
             </div>
           </div>
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-200">
             {group.documents.map((doc, index) => {
               const computedStatus = index === 0 ? 'CURRENT' : 'UNKNOWN';
               return (
@@ -156,7 +156,7 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
                   key={doc.id}
                   type="button"
                   onClick={() => handleDocumentClick(doc)}
-                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-blue-50 cursor-pointer transition"
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-blue-50 cursor-pointer transition bg-white last:rounded-b-xl"
                 >
                   <div className="flex-1 min-w-[200px]">
                     <p className="font-semibold text-gray-900">{doc.filename}</p>

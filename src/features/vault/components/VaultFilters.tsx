@@ -21,25 +21,25 @@ export default function VaultFilters({ value, onChange }: VaultFiltersProps) {
   };
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-end gap-4">
-        <label className="flex-1 min-w-[160px] flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">SKU</span>
+    <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex-1 min-w-[140px] flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">SKU</span>
           <input
             type="text"
             value={value.sku ?? ''}
             placeholder="e.g. NH45-110858-01"
             onChange={event => handleChange('sku', event.target.value.toUpperCase())}
-            className="rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
           />
         </label>
 
-        <label className="flex-1 min-w-[140px] flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Document Type</span>
+        <label className="flex-1 min-w-[120px] flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Doc Type</span>
           <select
             value={value.documentType ?? ''}
             onChange={event => handleChange('documentType', event.target.value)}
-            className="rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
           >
             <option value="">All Types</option>
             <option value="BOM">BOM</option>
@@ -48,26 +48,26 @@ export default function VaultFilters({ value, onChange }: VaultFiltersProps) {
           </select>
         </label>
 
-        <label className="flex-1 min-w-[140px] flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Status</span>
+        <label className="flex-1 min-w-[100px] flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Status</span>
           <select
             value={value.status ?? ''}
             onChange={event => handleChange('status', event.target.value)}
-            className="rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
           >
-            <option value="">All Statuses</option>
+            <option value="">All</option>
             <option value="CURRENT">Current</option>
             <option value="OBSOLETE">Obsolete</option>
             <option value="UNKNOWN">Unknown</option>
           </select>
         </label>
 
-        <label className="flex-1 min-w-[160px] flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Classification Status</span>
+        <label className="flex-1 min-w-[140px] flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Classification</span>
           <select
             value={value.classificationStatus ?? ''}
             onChange={event => handleChange('classificationStatus', event.target.value)}
-            className="rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
           >
             <option value="">All States</option>
             <option value="PENDING">Pending</option>
@@ -79,14 +79,14 @@ export default function VaultFilters({ value, onChange }: VaultFiltersProps) {
           </select>
         </label>
 
-        <label className="flex-1 min-w-[200px] flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Search</span>
+        <label className="flex-1 min-w-[160px] flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Search</span>
           <input
             type="text"
             value={value.search ?? ''}
             placeholder="Filename or revision"
             onChange={event => handleChange('search', event.target.value)}
-            className="rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
           />
         </label>
       </div>

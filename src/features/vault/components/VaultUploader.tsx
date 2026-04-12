@@ -184,76 +184,62 @@ export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-3">
-        <div
-          onDragOver={event => {
-            event.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={event => {
-            event.preventDefault();
-            setIsDragging(false);
-          }}
-          onDrop={handleDrop}
-          className={`rounded-2xl border-2 border-dashed px-6 py-10 text-center transition ${
-            isDragging ? 'border-blue-500 bg-blue-50/60 text-blue-700' : 'border-gray-300 text-gray-500'
-          }`}
-        >
-          <div className="space-y-3">
-            <p className="text-sm font-medium">Drag & drop documents here</p>
-            <p className="text-xs text-gray-400">
-              PDFs preferred. The vault automatically detects BOMs vs drawings and routes them through the pipeline.
-            </p>
-            <div className="flex justify-center">
-              <button
-                type="button"
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-                onClick={() => inputRef.current?.click()}
-              >
-                Select Files
-              </button>
-            </div>
-            {preselectedSku && (
-              <p className="text-xs text-blue-700">
-                Tagged to SKU <span className="font-semibold">{preselectedSku}</span>
-              </p>
-            )}
-          </div>
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            accept=".pdf"
-            className="hidden"
-            onChange={event => {
-              if (event.target.files) {
-                queueFiles(event.target.files);
-                event.target.value = '';
-              }
-            }}
-          />
+    <div className="space-y-2">
+      <div
+        onDragOver={event => {
+          event.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={event => {
+          event.preventDefault();
+          setIsDragging(false);
+        }}
+        onDrop={handleDrop}
+        className={`flex items-center justify-between gap-4 rounded-xl border-2 border-dashed px-4 py-3 transition ${
+          isDragging ? 'border-blue-500 bg-blue-50/60' : 'border-gray-300'
+        }`}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <span className={`text-sm font-medium ${isDragging ? 'text-blue-700' : 'text-gray-500'}`}>
+            {isDragging ? 'Drop files to upload…' : 'Drag & drop PDFs here'}
+          </span>
+          {preselectedSku && (
+            <span className="text-xs text-blue-600">
+              → SKU <span className="font-semibold">{preselectedSku}</span>
+            </span>
+          )}
         </div>
-        <p className="text-xs text-gray-500">
-          All uploads are persisted even if the system cannot immediately classify them. Missing part numbers will prompt a
-          manual entry per file.
-        </p>
+        <button
+          type="button"
+          className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition"
+          onClick={() => inputRef.current?.click()}
+        >
+          Select Files
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept=".pdf"
+          className="hidden"
+          onChange={event => {
+            if (event.target.files) {
+              queueFiles(event.target.files);
+              event.target.value = '';
+            }
+          }}
+        />
       </div>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-800">Upload Queue</h3>
-          <span className="text-xs text-gray-500">{queue.length} file{queue.length === 1 ? '' : 's'}</span>
-        </div>
-
-        {queue.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500">
-            No files uploaded yet.
+      {queue.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between px-1">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Upload Queue</p>
+            <span className="text-xs text-gray-400">{queue.length} file{queue.length === 1 ? '' : 's'}</span>
           </div>
-        ) : (
-          <ul className="space-y-3">
+          <ul className="space-y-1.5">
             {queue.map(item => (
-              <li key={item.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <li key={item.id} className="rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
                 <div className="flex flex-wrap items-start gap-3">
                   <div className="flex-1 min-w-[200px]">
                     <p className="text-sm font-semibold text-gray-900">{item.fileName}</p>
@@ -320,8 +306,8 @@ export default function VaultUploader({ preselectedSku }: VaultUploaderProps) {
               </li>
             ))}
           </ul>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
