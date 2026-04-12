@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { VaultFilterState } from './VaultFilters';
 import type { DocumentClassificationStatus } from '@/src/features/harness-work-instructions/services/skuService';
 
 interface VaultDocumentRow {
   id: string;
+  sku_id: string | null;
   filename: string;
   document_type: 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
   sku: string | null;
@@ -22,6 +23,8 @@ interface VaultDocumentRow {
   classification_confidence: number | null;
   classification_notes: string | null;
   last_classified_at: string | null;
+  inferred_part_number: string | null;
+  drawing_number: string | null;
   linked_documents_count: number;
   highest_confidence_link: { link_type: string; confidence_score: number } | null;
   conflict_flag: boolean;
@@ -71,6 +74,7 @@ function groupBySkuAndType(documents: VaultDocumentRow[]): { groupKey: string; d
 }
 
 export default function VaultDocumentTable({ filters }: VaultDocumentTableProps) {
+  const router = useRouter();
   const [documents, setDocuments] = useState<VaultDocumentRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,28 +115,13 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
   }, [filters.sku, filters.documentType, filters.status, filters.search, filters.classificationStatus]);
 
   const groupedDocuments = useMemo(() => groupBySkuAndType(documents), [documents]);
-  const [selected, setSelected] = useState<VaultDocumentRow | null>(null);
-  const [detail, setDetail] = useState<VaultDocumentRow | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
 
-  const openDetail = async (row: VaultDocumentRow) => {
-    setSelected(row);
-    setDetail(row);
-
-    if (row.extracted_text && row.linked_documents) return;
-    setDetailLoading(true);
-    try {
-      const res = await fetch(`/api/vault/documents?id=${row.id}&include_text=true&include_links=true&limit=1`);
-      if (!res.ok) throw new Error('Failed to load document');
-      const json = await res.json();
-      if (json.documents && json.documents[0]) {
-        setDetail(json.documents[0]);
-      }
-    } catch (err) {
-      console.warn('[VaultDocumentTable] detail load failed', err);
-    } finally {
-      setDetailLoading(false);
+  const handleDocumentClick = (row: VaultDocumentRow) => {
+    if (row.sku_id && row.sku && row.classification_status === 'RESOLVED') {
+      router.push(`/sku/${encodeURIComponent(row.sku)}`);
+      return;
     }
+    router.push(`/vault/document/${row.id}`);
   };
 
   return (
@@ -165,8 +154,9 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
               return (
                 <button
                   key={doc.id}
-                  onClick={() => openDetail(doc)}
-                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-gray-50"
+                  type="button"
+                  onClick={() => handleDocumentClick(doc)}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-blue-50 cursor-pointer transition"
                 >
                   <div className="flex-1 min-w-[200px]">
                     <p className="font-semibold text-gray-900">{doc.filename}</p>
@@ -197,162 +187,6 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
           </div>
         </div>
       ))}
-
-      {selected && (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={() => { setSelected(null); setDetail(null); }}>
-          <div
-            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
-            onClick={event => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm uppercase tracking-[0.4em] text-blue-500">Document Detail</p>
-                <h2 className="text-2xl font-bold text-gray-900">{detail?.filename ?? selected.filename}</h2>
-                <p className="text-sm text-gray-500">
-                  {(detail ?? selected).document_type.replace('_', ' ')} · Revision {(detail ?? selected).revision}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setSelected(null); setDetail(null); }}
-                className="rounded-full border border-gray-200 p-2 text-gray-500 hover:bg-gray-50"
-              >
-                ✕
-              </button>
-            </div>
-
-            <dl className="mt-6 grid gap-4 md:grid-cols-2 text-sm">
-              <div>
-                <dt className="text-xs uppercase text-gray-400">SKU</dt>
-                <dd className="font-semibold text-gray-900">{(detail ?? selected).sku ?? 'Unlinked'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase text-gray-400">Uploaded</dt>
-<dd className="font-semibold text-gray-900">{new Date((detail ?? selected).uploaded_at).toLocaleString()}</dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase text-gray-400">Status</dt>
-                <dd className="font-semibold text-gray-900">{(detail ?? selected).status}</dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase text-gray-400">Pipeline</dt>
-                <dd className="font-semibold text-gray-900">{(detail ?? selected).pipeline_status ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase text-gray-400">Classification</dt>
-                <dd className="font-semibold text-gray-900">
-                  {classificationBadges[(detail ?? selected).classification_status].label}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase text-gray-400">Attempts</dt>
-                <dd className="font-semibold text-gray-900">{(detail ?? selected).classification_attempts}</dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase text-gray-400">Confidence</dt>
-                <dd className="font-semibold text-gray-900">
-                  {(detail ?? selected).classification_confidence != null
-                    ? `${Math.round(((detail ?? selected).classification_confidence as number) * 100)}%`
-                    : '—'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase text-gray-400">Linked Documents</dt>
-                <dd className="font-semibold text-gray-900">
-                  {(detail ?? selected).linked_documents_count ?? 0}
-                </dd>
-              </div>
-            </dl>
-
-            {(detail ?? selected).message && (
-              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                {(detail ?? selected).message}
-              </div>
-            )}
-
-            {(detail ?? selected).classification_notes && (
-              <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                {(detail ?? selected).classification_notes}
-              </div>
-            )}
-
-            {(detail ?? selected).highest_confidence_link && (
-              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-                Highest link: {(detail ?? selected).highest_confidence_link?.link_type ?? 'N/A'} ·
-                Confidence {(detail ?? selected).highest_confidence_link?.confidence_score ?? 0}
-              </div>
-            )}
-
-            {detailLoading && (
-              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                Loading extracted text…
-              </div>
-            )}
-
-            {detail?.extracted_text && !detailLoading && (
-              <div className="mt-4">
-                <p className="text-xs uppercase text-gray-400 mb-1">Extracted Text</p>
-                <pre className="max-h-[200px] overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 whitespace-pre-wrap">
-                  {detail.extracted_text}
-                </pre>
-              </div>
-            )}
-
-            {(detail ?? selected).linked_documents && (detail ?? selected).linked_documents!.length > 0 && (
-              <div className="mt-4">
-                <p className="text-xs uppercase text-gray-400 mb-2">Linked Documents</p>
-                <div className="space-y-2">
-                  {(detail ?? selected).linked_documents!.map(link => (
-                    <div key={link.document_id} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold text-gray-900">{link.filename}</p>
-                          <p className="text-xs text-gray-500">
-                            {link.document_type} · SKU {link.sku ?? '—'}
-                          </p>
-                        </div>
-                        <span className="text-xs font-semibold text-gray-700">
-                          {link.link_type} · {link.confidence_score}
-                        </span>
-                      </div>
-                      {link.signals_used && link.signals_used.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-gray-500">
-                          {link.signals_used.map(signal => (
-                            <span key={signal} className="rounded-full bg-gray-100 px-2 py-0.5">
-                              {signal}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-4 flex flex-wrap gap-3 text-sm">
-              {(detail ?? selected).sku && (
-                <Link
-                  href={`/sku/${encodeURIComponent((detail ?? selected).sku as string)}`}
-                  className="rounded-xl border border-gray-200 px-4 py-2 font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  Open SKU →
-                </Link>
-              )}
-              {(detail ?? selected).file_url && (
-                <a
-                  href={(detail ?? selected).file_url as string}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-xl border border-blue-200 px-4 py-2 font-semibold text-blue-600 hover:bg-blue-50"
-                >
-                  View File →
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

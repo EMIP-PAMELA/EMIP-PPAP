@@ -96,6 +96,8 @@ export async function GET(request: NextRequest) {
        classification_confidence,
        classification_notes,
        last_classified_at,
+       inferred_part_number,
+       drawing_number,
        sku:sku_id (part_number),
        storage_path
       `,
@@ -148,6 +150,7 @@ export async function GET(request: NextRequest) {
       : (doc.sku as { part_number?: string } | null);
     return {
       id: doc.id,
+      sku_id: doc.sku_id,
       filename: doc.file_name,
       document_type: doc.document_type,
       sku: skuRel?.part_number ?? null,
@@ -162,6 +165,8 @@ export async function GET(request: NextRequest) {
       classification_confidence: doc.classification_confidence ?? null,
       classification_notes: doc.classification_notes ?? null,
       last_classified_at: doc.last_classified_at ?? null,
+      inferred_part_number: doc.inferred_part_number ?? null,
+      drawing_number: doc.drawing_number ?? null,
       linked_documents_count: 0,
       highest_confidence_link: null as { link_type: string; confidence_score: number } | null,
       conflict_flag: false,
