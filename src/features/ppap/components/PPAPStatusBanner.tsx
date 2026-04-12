@@ -242,7 +242,7 @@ export default function PPAPStatusBanner({
           </div>
           {revisionValidation && (
             <div className="border-t border-gray-200 pt-4">
-              <RevisionSummaryCard validation={revisionValidation} />
+              <RevisionSummaryCard validation={revisionValidation} partNumber={partNumber} />
             </div>
           )}
         </div>

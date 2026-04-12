@@ -19,13 +19,21 @@ const COMPARISON_ICON: Record<string, string> = {
   NO_CANONICAL: '…',
 };
 
+const FOCUS_LABELS: Record<string, { title: string; description: string }> = {
+  diff: { title: 'Out-of-sync focus', description: 'Compare BOM vs. drawings to align revisions.' },
+  conflict: { title: 'Conflict focus', description: 'Resolve competing canonical sources before proceeding.' },
+  review: { title: 'Manual review focus', description: 'Normalize incomparable revisions or escalate for manual review.' },
+};
+
 interface Props {
   validation?: CrossSourceValidationResult | null;
   className?: string;
   partNumber?: string | null;
+  focusIntent?: string | null;
+  highlight?: boolean;
 }
 
-export default function RevisionSummaryCard({ validation, className = '', partNumber }: Props) {
+export default function RevisionSummaryCard({ validation, className = '', partNumber, focusIntent, highlight = false }: Props) {
   const [showDetails, setShowDetails] = useState(false);
 
   if (!validation) {
@@ -38,9 +46,12 @@ export default function RevisionSummaryCard({ validation, className = '', partNu
 
   const { status, canonical_revision, canonical_source, recommended_action, sources, comparisons, details, signals_used } = validation;
   const actions = useRecommendedFixActions({ partNumber, revisionValidation: validation });
+  const focusKey = focusIntent ? focusIntent.toLowerCase() : null;
+  const focusInfo = focusKey ? FOCUS_LABELS[focusKey] ?? null : null;
+  const highlightClasses = highlight ? 'ring-2 ring-blue-300 shadow-lg shadow-blue-100 animate-pulse' : '';
 
   return (
-    <section className={`rounded-2xl border bg-white p-5 shadow-sm space-y-4 ${className}`}>
+    <section className={`rounded-2xl border bg-white p-5 shadow-sm space-y-4 ${highlightClasses} ${className}`}>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[200px]">
           <p className="text-xs uppercase tracking-[0.4em] text-gray-500">Revision Validation</p>
@@ -52,18 +63,36 @@ export default function RevisionSummaryCard({ validation, className = '', partNu
         <RevisionStatusBadge status={status} />
       </div>
 
+      {focusInfo && (
+        <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+          <p className="font-semibold">{focusInfo.title}</p>
+          <p className="text-[11px] text-blue-700">{focusInfo.description}</p>
+        </div>
+      )}
+
       <p className="text-sm text-gray-700">{recommended_action}</p>
 
       {actions.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {actions.slice(0, 2).map(action => (
-            <a
-              key={action.id}
-              href={action.href}
-              className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold ${action.severity === 'danger' ? 'bg-red-600 text-white hover:bg-red-700' : action.severity === 'warning' ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-            >
-              {action.label}
-            </a>
+            action.href ? (
+              <a
+                key={action.id}
+                href={action.href}
+                className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold ${action.severity === 'danger' ? 'bg-red-600 text-white hover:bg-red-700' : action.severity === 'warning' ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+              >
+                {action.label}
+              </a>
+            ) : (
+              <button
+                key={action.id}
+                type="button"
+                className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold cursor-not-allowed opacity-70 ${action.severity === 'danger' ? 'bg-red-600 text-white' : action.severity === 'warning' ? 'bg-amber-500 text-white' : 'bg-blue-600 text-white'}`}
+                disabled
+              >
+                {action.label}
+              </button>
+            )
           ))}
         </div>
       )}

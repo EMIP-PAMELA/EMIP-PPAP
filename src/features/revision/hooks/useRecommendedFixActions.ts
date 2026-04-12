@@ -1,25 +1,41 @@
 import { useMemo } from 'react';
-import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
+import type { CrossSourceRevisionStatus, CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 
 type Severity = 'info' | 'warning' | 'danger';
 
-type ActionType =
+export type ActionIntent =
+  | 'VIEW_REVISION'
+  | 'FIX_OUT_OF_SYNC'
+  | 'RESOLVE_CONFLICT'
+  | 'UPLOAD_MISSING_DOC'
+  | 'REVIEW_INCOMPARABLE'
+  | 'REVIEW_READINESS';
+
+type ActionDestination =
   | 'VIEW_REVISION_DETAILS'
   | 'OPEN_SKU'
   | 'OPEN_VAULT'
   | 'MANUAL_REVIEW'
-  | 'UPLOAD_DOCUMENT'
-  | 'OPEN_CORRECTION_WIZARD';
+  | 'UPLOAD_DOCUMENT';
 
 export interface RecommendedFixAction {
   id: string;
   label: string;
   description: string;
-  actionType: ActionType;
+  actionType: ActionDestination;
   href?: string;
   disabled?: boolean;
   severity: Severity;
+  intent: ActionIntent;
+  context?: {
+    partNumber?: string | null;
+    revisionStatus?: CrossSourceRevisionStatus;
+    canonicalRevision?: string | null;
+    canonicalSource?: string | null;
+    missingSources?: string[];
+    conflictSources?: string[];
+  };
 }
 
 interface CorrectionInput {
@@ -28,22 +44,52 @@ interface CorrectionInput {
   revisionValidation?: CrossSourceValidationResult | null;
 }
 
-function buildHref(actionType: ActionType, partNumber?: string | null): string | undefined {
+interface SkuRouteOptions {
+  tab?: string;
+  focus?: string;
+  highlight?: string;
+  anchor?: string;
+}
+
+interface VaultRouteOptions {
+  issue?: 'missing' | 'conflict';
+  sources?: string[];
+}
+
+function buildSkuRoute(partNumber?: string | null, options?: SkuRouteOptions): string | undefined {
   if (!partNumber) return undefined;
   const encoded = encodeURIComponent(partNumber.trim().toUpperCase());
-  switch (actionType) {
-    case 'OPEN_SKU':
-      return `/sku/${encoded}`;
-    case 'OPEN_VAULT':
-      return `/vault?sku=${encoded}`;
-    default:
-      return undefined;
-  }
+  const params = new URLSearchParams();
+  if (options?.tab) params.set('tab', options.tab);
+  if (options?.focus) params.set('focus', options.focus);
+  if (options?.highlight) params.set('highlight', options.highlight);
+  const query = params.toString();
+  const anchor = options?.anchor ? `#${options.anchor}` : '';
+  return `/sku/${encoded}${query ? `?${query}` : ''}${anchor}`;
+}
+
+function buildVaultRoute(partNumber?: string | null, options?: VaultRouteOptions): string | undefined {
+  if (!partNumber) return undefined;
+  const params = new URLSearchParams();
+  params.set('sku', partNumber.trim().toUpperCase());
+  if (options?.issue) params.set('issue', options.issue);
+  if (options?.sources?.length) params.set('sources', options.sources.join(','));
+  return `/vault?${params.toString()}`;
 }
 
 function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixAction[] {
   const { revisionValidation, partNumber } = input;
   if (!revisionValidation) return [];
+
+  const comparisons = revisionValidation.comparisons ?? [];
+  const missingSources = comparisons
+    .filter(entry => entry.comparison === 'MISSING')
+    .map(entry => entry.source)
+    .filter(Boolean);
+  const conflictSources = comparisons
+    .filter(entry => entry.comparison === 'GREATER' || entry.comparison === 'LESS')
+    .map(entry => entry.source)
+    .filter(Boolean);
 
   const base: RecommendedFixAction = {
     id: 'view-revision-details',
@@ -51,6 +97,18 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
     description: 'Inspect canonical vs. source revisions and underlying signals.',
     actionType: 'VIEW_REVISION_DETAILS',
     severity: 'info',
+    intent: 'VIEW_REVISION',
+    href: buildSkuRoute(partNumber, {
+      tab: 'revision',
+      highlight: 'revision',
+      anchor: 'revision-summary',
+    }),
+    context: {
+      partNumber,
+      revisionStatus: revisionValidation.status,
+      canonicalRevision: revisionValidation.canonical_revision,
+      canonicalSource: revisionValidation.canonical_source,
+    },
   };
 
   if (revisionValidation.status === 'SYNCHRONIZED') {
@@ -64,8 +122,21 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
         label: 'Review out-of-sync revisions',
         description: revisionValidation.recommended_action,
         actionType: 'OPEN_SKU',
-        href: buildHref('OPEN_SKU', partNumber),
         severity: 'warning',
+        intent: 'FIX_OUT_OF_SYNC',
+        href: buildSkuRoute(partNumber, {
+          tab: 'revision',
+          focus: 'diff',
+          highlight: 'revision',
+          anchor: 'revision-summary',
+        }),
+        context: {
+          partNumber,
+          revisionStatus: revisionValidation.status,
+          canonicalRevision: revisionValidation.canonical_revision,
+          canonicalSource: revisionValidation.canonical_source,
+          conflictSources,
+        },
       },
       base,
     ];
@@ -78,8 +149,21 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
         label: 'Resolve revision conflict',
         description: revisionValidation.recommended_action,
         actionType: 'MANUAL_REVIEW',
-        href: buildHref('OPEN_SKU', partNumber),
         severity: 'danger',
+        intent: 'RESOLVE_CONFLICT',
+        href: buildSkuRoute(partNumber, {
+          tab: 'revision',
+          focus: 'conflict',
+          highlight: 'revision',
+          anchor: 'revision-summary',
+        }),
+        context: {
+          partNumber,
+          revisionStatus: revisionValidation.status,
+          canonicalRevision: revisionValidation.canonical_revision,
+          canonicalSource: revisionValidation.canonical_source,
+          conflictSources,
+        },
       },
       base,
     ];
@@ -92,8 +176,19 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
         label: 'Review missing revision sources',
         description: revisionValidation.recommended_action,
         actionType: 'OPEN_VAULT',
-        href: buildHref('OPEN_VAULT', partNumber),
+        href: buildVaultRoute(partNumber, {
+          issue: 'missing',
+          sources: missingSources,
+        }),
         severity: 'danger',
+        intent: 'UPLOAD_MISSING_DOC',
+        context: {
+          partNumber,
+          revisionStatus: revisionValidation.status,
+          canonicalRevision: revisionValidation.canonical_revision,
+          canonicalSource: revisionValidation.canonical_source,
+          missingSources,
+        },
       },
       base,
     ];
@@ -106,8 +201,20 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
         label: 'Review incomparable revisions',
         description: revisionValidation.recommended_action,
         actionType: 'MANUAL_REVIEW',
-        href: buildHref('OPEN_SKU', partNumber),
+        href: buildSkuRoute(partNumber, {
+          tab: 'revision',
+          focus: 'review',
+          highlight: 'revision',
+          anchor: 'revision-summary',
+        }),
         severity: 'danger',
+        intent: 'REVIEW_INCOMPARABLE',
+        context: {
+          partNumber,
+          revisionStatus: revisionValidation.status,
+          canonicalRevision: revisionValidation.canonical_revision,
+          canonicalSource: revisionValidation.canonical_source,
+        },
       },
       base,
     ];
@@ -121,14 +228,28 @@ function mapReadinessToActions(input: CorrectionInput): RecommendedFixAction[] {
   if (!readiness) return [];
 
   const actions: RecommendedFixAction[] = [];
-  const addAction = (id: string, label: string, description: string, actionType: ActionType, severity: Severity) => {
+  const addAction = (
+    id: string,
+    label: string,
+    description: string,
+    severity: Severity,
+    intent: ActionIntent,
+  ) => {
     actions.push({
       id,
       label,
       description,
-      actionType,
-      href: buildHref(actionType, partNumber),
+      actionType: 'OPEN_SKU',
+      href: buildSkuRoute(partNumber, {
+        tab: 'readiness',
+        highlight: 'readiness',
+        anchor: 'sku-readiness',
+      }),
       severity,
+      intent,
+      context: {
+        partNumber,
+      },
     });
   };
 
@@ -137,8 +258,8 @@ function mapReadinessToActions(input: CorrectionInput): RecommendedFixAction[] {
       'resolve-work-instructions-blocker',
       'Resolve work instructions blocker',
       readiness.work_instructions.recommended_action,
-      'OPEN_SKU',
       'warning',
+      'REVIEW_READINESS',
     );
   }
 
@@ -147,8 +268,8 @@ function mapReadinessToActions(input: CorrectionInput): RecommendedFixAction[] {
       'fix-traveler-blocker',
       'Resolve traveler package blocker',
       readiness.traveler_package.recommended_action,
-      'OPEN_SKU',
       'danger',
+      'REVIEW_READINESS',
     );
   }
 
@@ -157,8 +278,8 @@ function mapReadinessToActions(input: CorrectionInput): RecommendedFixAction[] {
       'fix-komax-blocker',
       'Resolve Komax/cut-sheet blocker',
       readiness.komax_cut_sheet.recommended_action,
-      'OPEN_SKU',
       'danger',
+      'REVIEW_READINESS',
     );
   }
 
@@ -167,8 +288,8 @@ function mapReadinessToActions(input: CorrectionInput): RecommendedFixAction[] {
       'review-overall-readiness',
       'Review readiness blockers',
       readiness.work_instructions.recommended_action || 'Review SKU readiness status for detailed blockers.',
-      'OPEN_SKU',
       'danger',
+      'REVIEW_READINESS',
     );
   }
 
@@ -177,8 +298,8 @@ function mapReadinessToActions(input: CorrectionInput): RecommendedFixAction[] {
       'review-readiness-warnings',
       'Review readiness warnings',
       readiness.work_instructions.recommended_action,
-      'OPEN_SKU',
       'warning',
+      'REVIEW_READINESS',
     );
   }
 

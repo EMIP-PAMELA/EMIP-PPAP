@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import EMIPLayout from '../../layout/EMIPLayout';
 import type {
   SKURecord,
@@ -74,7 +74,11 @@ interface PipelineSummary {
 
 export default function SKUDashboardPage() {
   const params = useParams<{ part_number: string }>();
+  const searchParams = useSearchParams();
   const partNumberParam = params?.part_number ? decodeURIComponent(params.part_number) : '';
+  const tabParam = searchParams?.get('tab') ?? null;
+  const focusParam = searchParams?.get('focus');
+  const highlightParam = searchParams?.get('highlight');
   const [sku, setSku] = useState<SKURecord | null>(null);
   const [documents, setDocuments] = useState<SKUDocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +87,10 @@ export default function SKUDashboardPage() {
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'READY' | 'PARTIAL'>('idle');
   const autoRunSignature = useRef<string | null>(null);
+  const readinessSectionRef = useRef<HTMLElement | null>(null);
+  const revisionSectionRef = useRef<HTMLDivElement | null>(null);
+  const [revisionHighlightActive, setRevisionHighlightActive] = useState(false);
+  const [readinessHighlightActive, setReadinessHighlightActive] = useState(false);
 
   const partNumber = sku?.part_number ?? partNumberParam?.toUpperCase() ?? '';
   const vaultLink = sku ? `/vault?sku=${encodeURIComponent(sku.part_number)}` : '/vault';
@@ -146,6 +154,35 @@ export default function SKUDashboardPage() {
     loadSKU();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partNumberParam]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (tabParam === 'revision' && revisionSectionRef.current) {
+      revisionSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    if (tabParam === 'readiness' && readinessSectionRef.current) {
+      readinessSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [tabParam, loading]);
+
+  useEffect(() => {
+    if (loading) return;
+    const shouldHighlightRevision =
+      tabParam === 'revision' || highlightParam === 'revision' || Boolean(focusParam);
+    if (!shouldHighlightRevision) return;
+    setRevisionHighlightActive(true);
+    const timeout = window.setTimeout(() => setRevisionHighlightActive(false), 3500);
+    return () => window.clearTimeout(timeout);
+  }, [tabParam, focusParam, highlightParam, loading]);
+
+  useEffect(() => {
+    if (loading) return;
+    const shouldHighlightReadiness = tabParam === 'readiness' || highlightParam === 'readiness';
+    if (!shouldHighlightReadiness) return;
+    setReadinessHighlightActive(true);
+    const timeout = window.setTimeout(() => setReadinessHighlightActive(false), 3500);
+    return () => window.clearTimeout(timeout);
+  }, [tabParam, highlightParam, loading]);
 
   const docByType = useMemo(() => {
     const map: Record<string, SKUDocumentRecord | null> = {
@@ -258,7 +295,11 @@ export default function SKUDashboardPage() {
         </header>
 
         {!loading && sku && readiness && overallReadinessStatus && (
-          <section className={`rounded-2xl border px-5 py-5 space-y-5 ${readinessStatusTone[overallReadinessStatus].container}`}>
+          <section
+            id="sku-readiness"
+            ref={readinessSectionRef}
+            className={`rounded-2xl border px-5 py-5 space-y-5 ${readinessStatusTone[overallReadinessStatus].container} ${readinessHighlightActive ? 'ring-2 ring-blue-300 shadow-lg shadow-blue-100' : ''}`}
+          >
             <div className="flex flex-wrap items-start gap-4">
               <span className="text-2xl" aria-hidden>
                 {readinessStatusTone[overallReadinessStatus].icon}
@@ -272,6 +313,9 @@ export default function SKUDashboardPage() {
                   </span>
                 </div>
                 <p className="text-sm text-gray-700">{readinessNextAction}</p>
+                {readinessHighlightActive && (
+                  <p className="text-xs font-semibold text-blue-700">Opened from corrective action.</p>
+                )}
               </div>
             </div>
 
@@ -324,7 +368,14 @@ export default function SKUDashboardPage() {
         )}
 
         {!loading && sku && (
-          <RevisionSummaryCard validation={revisionValidation} />
+          <div id="revision-summary" ref={revisionSectionRef}>
+            <RevisionSummaryCard
+              validation={revisionValidation}
+              partNumber={sku.part_number}
+              focusIntent={focusParam}
+              highlight={revisionHighlightActive}
+            />
+          </div>
         )}
 
         {!loading && sku && (

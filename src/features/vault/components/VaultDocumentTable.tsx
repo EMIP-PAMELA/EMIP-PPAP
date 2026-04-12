@@ -57,8 +57,14 @@ interface VaultDocumentRow {
   }[];
 }
 
+interface IssueContext {
+  type: 'missing' | 'conflict';
+  sources?: string[];
+}
+
 interface VaultDocumentTableProps {
   filters: VaultFilterState;
+  issueContext?: IssueContext;
 }
 
 const statusColors: Record<RevisionState, string> = {
@@ -114,7 +120,7 @@ function groupBySkuAndType(documents: VaultDocumentRow[]): { groupKey: string; d
   }));
 }
 
-export default function VaultDocumentTable({ filters }: VaultDocumentTableProps) {
+export default function VaultDocumentTable({ filters, issueContext }: VaultDocumentTableProps) {
   const router = useRouter();
   const [documents, setDocuments] = useState<VaultDocumentRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -179,6 +185,12 @@ export default function VaultDocumentTable({ filters }: VaultDocumentTableProps)
 
   return (
     <div className="space-y-2">
+      {issueContext && (
+        <div className={`rounded-xl border px-3 py-2 text-xs font-semibold ${issueContext.type === 'missing' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
+          Viewing documents in context of {issueContext.type === 'missing' ? 'missing revision sources' : 'revision conflicts'}.
+        </div>
+      )}
+
       {loading && (
         <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
           Loading documents…
