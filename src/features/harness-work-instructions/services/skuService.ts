@@ -110,6 +110,7 @@ export interface SKUDocumentRecord {
   classification_notes: string | null;
   inferred_part_number?: string | null;
   drawing_number?: string | null;
+  created_at?: string | null;
 }
 
 const SKU_BUCKET = 'sku-documents';
