@@ -30,6 +30,8 @@ export type SignalSource =
 export interface Signal<T> {
   value: T | null;
   source: SignalSource;
+  /** Optional region descriptor (TITLE_BLOCK, TABLE, etc.). */
+  region?: string | null;
 }
 
 export const SIGNAL_PRIORITY: Record<SignalSource, number> = {

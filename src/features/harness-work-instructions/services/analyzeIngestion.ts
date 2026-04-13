@@ -530,7 +530,6 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
         signals_skipped: 'all subsequent PART_NUMBER candidates',
       });
     }
-    if (!partNumber) partNumber = filenamePartNumber;
   } else if (filenamePartNumber && fieldLocks.PART_NUMBER) {
     console.debug('[GUARDRAIL ENFORCEMENT]', {
       field: 'PART_NUMBER',
@@ -551,7 +550,6 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
         confidence: 0.92,
         regionLabel: 'TITLE_BLOCK',
       });
-      if (!partNumber) partNumber = emIds.canonicalPartNumber;
     }
 
     if (!revision) {
@@ -591,7 +589,6 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
         confidence: 0.9,
         regionLabel: 'TITLE_BLOCK',
       });
-      if (!partNumber) partNumber = draft.drawing_number;
     }
     if (!description && draft.title) description = draft.title;
 
@@ -647,7 +644,6 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
         confidence: 0.4,
         regionLabel: 'TABLE',
       });
-      partNumber = derived;
     }
   }
 
@@ -761,6 +757,8 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
 
   if (partWinner) {
     partNumber = partWinner.value;
+  } else {
+    partNumber = null;
   }
 
   const revEvidenceSignals = revisionFiltering.keptEvidence;

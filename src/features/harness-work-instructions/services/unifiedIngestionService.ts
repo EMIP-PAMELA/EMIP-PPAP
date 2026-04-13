@@ -22,16 +22,9 @@ import type { HarnessInstructionJob } from '../types/harnessInstruction.schema';
 import type { CanonicalDrawingDraft } from '../types/drawingDraft';
 import type { ProcessInstructionBundle } from '../types/processInstructions';
 import type { UploadDocumentResult } from './skuService';
-import { extractPartNumberFromText } from '@/src/utils/extractPartNumber';
-import { extractDrawingNumberFromText, extractDrawingNumberFromFilename } from '@/src/utils/extractDrawingNumber';
-import { extractEngineeringMasterIdentifiers, type EngineeringMasterIdentifiers } from '@/src/utils/extractEngineeringMasterIdentifiers';
-import { extractEngineeringMasterRevision } from '@/src/utils/extractEngineeringMasterRevision';
-import { extractRheemDrawingRevision } from '@/src/utils/extractRheemDrawingRevision';
-import { extractApogeeDrawingRevision } from '@/src/utils/extractApogeeDrawingRevision';
-import { extractRevisionSignal, type RevisionSource } from '@/src/utils/revisionParser';
-import { resolveDocumentSignalsFromArrays, type Signal } from '../utils/resolveDocumentSignals';
-import { analyzeDocumentStructure } from './documentStructureAnalyzer';
-import type { ExtractionFragment, EvidenceSignal, DocumentExtractionEvidence } from '../types/extractionEvidence';
+import type { RevisionSource } from '@/src/utils/revisionParser';
+import { analyzeFileIngestion } from './analyzeIngestion';
+import type { DocumentExtractionEvidence } from '../types/extractionEvidence';
 import type { IngestionAnalysisResult } from '@/src/features/vault/types/ingestionReview';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
@@ -227,171 +220,42 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   const operatorConfirmedPart = normalizeOptionalString(partNumberOverride);
   const operatorConfirmedRevision = normalizeOptionalString(revisionOverride);
   const operatorConfirmedDrawing = normalizeOptionalString(drawingNumberOverride);
-  let partNumber = operatorConfirmedPart;
-  let revision = operatorConfirmedRevision;
-  let description: string | null = null;
-  let emIds: EngineeringMasterIdentifiers | null = null;
-  let revisionSource: RevisionSource | null = null;
-
-  if (normalizedType === 'BOM' && normalizedText) {
-    // Deterministic Engineering Master identifier extraction — NH > 45 > PENDING; 527 → drawing_number only
-    emIds = extractEngineeringMasterIdentifiers(normalizedText);
-    if (!partNumber && emIds.canonicalPartNumber) partNumber = emIds.canonicalPartNumber;
-
-    if (!revision) {
-      // Engineering Master revision is taken from the explicit trailing revision field on the
-      // repeated header line. Identifier suffixes like -JJ or -EE are part-number variants,
-      // not revision tokens, and are never captured here.
-      const emRev = extractEngineeringMasterRevision(normalizedText);
-      if (emRev.isHeaderExplicit && emRev.revision) {
-        revision = emRev.revision;
-        revisionSource = 'HEADER_EXPLICIT';
-      } else {
-        // Generic fallback only — for non-EM BOMs or when header line is absent/malformed
-        revision = deriveRevisionFromBOM(normalizedText);
-        revisionSource = revision ? 'TEXT' : null;
-      }
-    }
-
-    if (!description) description = deriveDescriptionFromBOM(normalizedText);
-  } else if (normalizedText && normalizedType !== 'UNKNOWN') {
-    const draft = ingestDrawingPdf({ drawingText: normalizedText, fileName: file.name });
-    if (!partNumber && draft.drawing_number) partNumber = draft.drawing_number;
-    if (!description && draft.title) description = draft.title;
-
-    if (!revision) {
-      const hasApogeePN = /\b527-\d{4}-010\b/.test(normalizedText);
-      const hasRheemPN  = /\b45-\d{5,6}-\d{2,4}\b/.test(normalizedText);
-
-      if (hasApogeePN) {
-        // Apogee drawings store revision in the upper-right revision record box.
-        // 527-XXXX-010 is the internal drawing number, not revision.
-        // 45-* may appear as customer/Rheem number in the title area — never a revision.
-        // Apogee revisions may be numeric (00–02) or alphabetic (A, B, LL).
-        const apogeeRev = extractApogeeDrawingRevision(normalizedText);
-        if (apogeeRev.isApogeeDrawing && apogeeRev.revision) {
-          revision = apogeeRev.revision;
-          revisionSource = 'REVISION_BOX_APOGEE';
-        }
-      } else if (hasRheemPN) {
-        // Rheem drawings store revision in the title block using 'REV PART NO.' structure.
-        // Revision is tied to the part number, not a standalone REV label.
-        // Rheem path is skipped when Apogee (527-*) is detected, since Apogee drawings
-        // also contain 45-* customer numbers that must not trigger the Rheem path.
-        const rheemRev = extractRheemDrawingRevision(normalizedText);
-        if (rheemRev.isRheemTitleBlock && rheemRev.revision) {
-          revision = rheemRev.revision;
-          revisionSource = 'TITLE_BLOCK_RHEEM';
-        }
-      }
-
-      // Fallback to generic drawing ingestion revision (revision_source remains null → TEXT)
-      if (!revision && draft.revision) revision = draft.revision;
-    }
-  }
-
-  if (!partNumber && normalizedText && normalizedType !== 'BOM') {
-    // Generic fallback only for non-BOM types; BOM falls through to PENDING provisioning
-    const derivedPN = extractPartNumberFromText(normalizedText);
-    if (derivedPN) partNumber = derivedPN;
-  }
-
   // ---------------------------------------------------------------------------
-  // Phase 3H.29: Fragment capture — raw OCR regions and filename token
+  // Phase 3H.40.B: Delegate resolution to analyzeFileIngestion for guardrail
+  // enforcement (fieldLocks, filterFieldSignals, selectCandidateByOrder, audit).
   // ---------------------------------------------------------------------------
-
-  const rawLines = normalizedText?.split('\n') ?? [];
-  const titleBlockRaw = rawLines.slice(0, 60).join('\n').slice(0, 1500);
-  const extractionFragments: ExtractionFragment[] = [
-    ...(titleBlockRaw.trim().length > 0 ? [{
-      source: 'OCR_TITLE_BLOCK' as const,
-      raw_text: titleBlockRaw,
-      confidence: 1.0,
-      metadata: { total_lines: rawLines.length, captured_lines: Math.min(60, rawLines.length) },
-    }] : []),
-    { source: 'FILENAME' as const, raw_text: file.name, confidence: 1.0 },
-  ];
-
-  // Phase 3H.29 STEP 5: Structural analysis (heuristic — no value extraction)
-  const documentStructure = analyzeDocumentStructure(extractionFragments);
-
-  // ---------------------------------------------------------------------------
-  // Signal Resolution — Phase 3H.18 / 3H.29 STEP 3+4
-  // Build explicit Signal<string>[] arrays consumed by resolveDocumentSignalsFromArrays.
-  // ---------------------------------------------------------------------------
-
-  const drawingNumberFromText     = normalizedText ? extractDrawingNumberFromText(normalizedText) : null;
-  const drawingNumberFromFilename = extractDrawingNumberFromFilename(file.name);
-
-  const filenameRevSignal = extractRevisionSignal({ fileName: file.name });
-  const filenameRevision  = (filenameRevSignal.normalized && filenameRevSignal.parseSource !== 'UNKNOWN')
-    ? filenameRevSignal.normalized
-    : null;
-
-  const isStructuredRevision =
-    revisionSource === 'REVISION_BOX_APOGEE' ||
-    revisionSource === 'TITLE_BLOCK_RHEEM'   ||
-    revisionSource === 'HEADER_EXPLICIT';
-
-  const revisionSignals: Signal<string>[] = [
-    { value: isStructuredRevision ? (revision ?? null) : null, source: 'TITLE_BLOCK' },
-    { value: !isStructuredRevision && revision ? revision : null, source: 'TEXT' },
-    { value: filenameRevision ?? null, source: 'FILENAME' },
-  ];
-  const drawingNumberSignals: Signal<string>[] = [
-    { value: emIds?.drawingNumber ?? null,    source: 'TITLE_BLOCK' },
-    { value: drawingNumberFromText,           source: 'TEXT' },
-    { value: drawingNumberFromFilename,       source: 'FILENAME' },
-  ];
-
-  const resolved = resolveDocumentSignalsFromArrays(revisionSignals, drawingNumberSignals);
-
-  // Apply resolved revision if it improves on what text extraction found
-  if (resolved.revision.value && !revision) {
-    revision = resolved.revision.value;
-    if (resolved.revision.source === 'FILENAME') revisionSource = 'FILENAME';
-  }
-
-  let drawingNumber = resolved.drawingNumber.value;
-  if (operatorConfirmedDrawing) {
-    drawingNumber = operatorConfirmedDrawing;
-  }
-
-  console.log('[SIGNAL RESOLUTION]', {
-    file: file.name,
-    revision:      { value: resolved.revision.value,      source: resolved.revision.source },
-    drawingNumber: { value: resolved.drawingNumber.value, source: resolved.drawingNumber.source },
+  const analysis = await analyzeFileIngestion({
+    fileName: file.name,
+    fileSize: file.size,
+    normalizedText,
+    partNumberHint: operatorConfirmedPart,
+    revisionHint: operatorConfirmedRevision,
+    drawingNumberHint: operatorConfirmedDrawing,
+    forcedDocumentType: normalizedType !== 'UNKNOWN' ? normalizedType : null,
   });
 
-  // ---------------------------------------------------------------------------
-  // Phase 3H.29 STEP 2+6: Build evidence bundle — all signals, fragments, resolved values
-  // ---------------------------------------------------------------------------
+  let partNumber = analysis.proposedPartNumber;
+  let revision = analysis.proposedRevision;
+  const drawingNumber = analysis.proposedDrawingNumber;
+  const revisionSource = analysis.revisionSource as RevisionSource | null;
 
-  const revEvidenceSignals: EvidenceSignal[] = [
-    ...(isStructuredRevision && revision ? [{
-      source: 'TITLE_BLOCK',
-      value: revision,
-      confidence: revisionSource === 'REVISION_BOX_APOGEE' || revisionSource === 'TITLE_BLOCK_RHEEM' ? 1.0 : 0.95,
-    }] : []),
-    ...(!isStructuredRevision && revision ? [{ source: 'TEXT', value: revision, confidence: 0.7 }] : []),
-    ...(filenameRevision ? [{ source: 'FILENAME', value: filenameRevision, confidence: 0.6 }] : []),
-  ];
-  const drnEvidenceSignals: EvidenceSignal[] = [
-    ...(emIds?.drawingNumber ? [{ source: 'TITLE_BLOCK', value: emIds.drawingNumber, confidence: 0.95 }] : []),
-    ...(drawingNumberFromText ? [{ source: 'TEXT', value: drawingNumberFromText, confidence: 0.8 }] : []),
-    ...(drawingNumberFromFilename ? [{ source: 'FILENAME', value: drawingNumberFromFilename, confidence: 0.7 }] : []),
-  ];
+  // Description is not part of guardrail resolution — derive locally
+  let description: string | null = null;
+  if (normalizedType === 'BOM' && normalizedText) {
+    description = deriveDescriptionFromBOM(normalizedText);
+  } else if (normalizedText && normalizedType !== 'UNKNOWN') {
+    const draft = ingestDrawingPdf({ drawingText: normalizedText, fileName: file.name });
+    if (draft.title) description = draft.title;
+  }
 
+  // ---------------------------------------------------------------------------
+  // Phase 3H.40.B: Augment extraction evidence with commit-specific metadata.
+  // All signals, fragments, resolution_audit, and field_extractions come from
+  // analyzeFileIngestion — no duplicate construction here.
+  // ---------------------------------------------------------------------------
   const captureTimestamp = new Date().toISOString();
   const extractionEvidence: DocumentExtractionEvidence = {
-    fragments: extractionFragments,
-    revision_signals: revEvidenceSignals,
-    drawing_number_signals: drnEvidenceSignals,
-    document_structure: documentStructure,
-    resolved_revision: resolved.revision.value,
-    resolved_revision_source: resolved.revision.source !== 'NONE' ? resolved.revision.source : null,
-    resolved_drawing_number: resolved.drawingNumber.value,
-    resolved_drawing_number_source: resolved.drawingNumber.source !== 'NONE' ? resolved.drawingNumber.source : null,
+    ...analysis.extractionEvidence,
     captured_at: captureTimestamp,
     confirmation_mode: confirmationMode ?? null,
     confirmation_details: confirmationMode
@@ -420,6 +284,19 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
       blocksCommit: q.blocksCommit,
     })),
   };
+
+  console.log('[ANALYZE vs COMMIT]', {
+    file: file.name,
+    analyze_part_number: analysis.proposedPartNumber,
+    analyze_revision: analysis.proposedRevision,
+    analyze_drawing_number: analysis.proposedDrawingNumber,
+    commit_part_number: partNumber,
+    commit_revision: revision,
+    commit_drawing_number: drawingNumber,
+    parity: analysis.proposedPartNumber === partNumber &&
+            analysis.proposedRevision === revision &&
+            analysis.proposedDrawingNumber === drawingNumber,
+  });
 
   if (!partNumber && drawingNumber) {
     let resolvedPN: string | null = null;

@@ -192,8 +192,8 @@ export async function classifyDocument(documentId: string): Promise<void> {
     .maybeSingle();
 
   const existingDrawingNumber = existingRecord?.drawing_number ?? null;
-  const existingSource: SignalSource = existingDrawingNumber ? 'TEXT' : 'NONE';
-  const incomingSource: SignalSource = signalContext.drawingNumber ? 'TEXT' : 'NONE';
+  const existingSource: SignalSource = existingDrawingNumber ? 'HEURISTIC' : 'NONE';
+  const incomingSource: SignalSource = signalContext.drawingNumber ? 'HEURISTIC' : 'NONE';
 
   const baseUpdate: Record<string, unknown> = {
     classification_status: statusToPersist,
