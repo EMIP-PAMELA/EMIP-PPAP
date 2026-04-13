@@ -18,6 +18,8 @@ import {
   type UnresolvedQuestion,
 } from '@/src/features/vault/types/ingestionReview';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
+import type { FieldExtraction, FieldExtractionSource, EvidenceSignal } from '@/src/features/harness-work-instructions/types/extractionEvidence';
+import type { RegionOverlay } from '@/src/features/harness-work-instructions/types/documentRegionOverlay';
 import DocumentOverlayViewer from './DocumentOverlayViewer';
 
 // ---------------------------------------------------------------------------
@@ -29,6 +31,45 @@ interface UploadWorkbenchProps {
   onCommitComplete?: () => void;
   /** Optional SKU pre-fill for corrective workflow context. */
   preselectedSku?: string;
+}
+
+function getFieldExtractionFor(analysis: IngestionAnalysisResult | undefined, key: FieldKey): FieldExtraction | null {
+  const target = FIELD_TO_EXTRACTION[key];
+  return analysis?.extractionEvidence?.field_extractions?.find(fe => fe.field === target) ?? null;
+}
+
+function confidenceInputClasses(level: ConfidenceLevel, fallback: string, missing: boolean): string {
+  if (missing) return 'border-red-400 bg-red-50';
+  if (level === 'high') return 'border-emerald-300 bg-white';
+  if (level === 'medium') return 'border-amber-300 bg-white';
+  if (level === 'low') return 'border-red-300 bg-red-50';
+  return fallback;
+}
+
+function acceptButtonClasses(level: ConfidenceLevel): string {
+  if (level === 'high') return 'bg-emerald-600 text-white hover:bg-emerald-700';
+  if (level === 'medium') return 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100';
+  return 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed';
+}
+
+const truncateSnippet = (value: string, max = 90) => (value.length > max ? `${value.slice(0, max).trim()}…` : value);
+
+function buildCandidatesFromSignals(signals?: EvidenceSignal[]): FieldCandidate[] {
+  if (!signals) return [];
+  const seen = new Set<string>();
+  const candidates: FieldCandidate[] = [];
+  signals.forEach((signal, idx) => {
+    if (!signal.value) return;
+    const dedupeKey = `${signal.value}-${signal.source}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    candidates.push({
+      id: `${signal.source}-${idx}`,
+      value: signal.value,
+      label: `${signal.value} — ${signal.source} (${Math.round(signal.confidence * 100)}%)`,
+    });
+  });
+  return candidates;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +121,86 @@ const STATUS_LABEL: Record<WorkbenchItemStatus, string> = {
   committed:       'Committed',
   failed:          'Failed',
 };
+
+type FieldKey = 'partNumber' | 'revision' | 'drawingNumber';
+type FieldCandidate = { id: string; value: string; label: string };
+
+interface FieldSectionConfig {
+  key: FieldKey;
+  label: string;
+  required: boolean;
+  placeholder: string;
+  missing: boolean;
+  shouldRender: boolean;
+  value: string;
+  suggestedValue: string | null;
+  operatorConfirmed: boolean;
+  confidence: number | null;
+  extraction: FieldExtraction | null;
+  warning?: string | null;
+  candidates: FieldCandidate[];
+}
+
+const FIELD_TO_EXTRACTION: Record<FieldKey, FieldExtraction['field']> = {
+  partNumber: 'PART_NUMBER',
+  revision: 'REVISION',
+  drawingNumber: 'DRAWING_NUMBER',
+};
+
+const SOURCE_BADGES: Record<FieldExtractionSource | 'UNKNOWN', { label: string; className: string }> = {
+  AI:        { label: 'AI Suggestion',   className: 'bg-purple-100 text-purple-900 border border-purple-200' },
+  OCR:       { label: 'Extracted',       className: 'bg-blue-100 text-blue-900 border border-blue-200' },
+  FILENAME:  { label: 'From Filename',  className: 'bg-gray-100 text-gray-700 border border-gray-200' },
+  HEURISTIC: { label: 'Heuristic',      className: 'bg-amber-100 text-amber-900 border border-amber-200' },
+  UNKNOWN:   { label: 'Unknown Source', className: 'bg-gray-100 text-gray-600 border border-gray-200' },
+};
+
+type ConfidenceLevel = 'high' | 'medium' | 'low' | 'unknown';
+
+interface ConfidenceMeta {
+  level: ConfidenceLevel;
+  label: string;
+  message: string;
+  pillClass: string;
+  textClass: string;
+}
+
+function describeConfidence(value?: number | null): ConfidenceMeta {
+  if (typeof value !== 'number') {
+    return {
+      level: 'unknown',
+      label: 'Confidence unavailable',
+      message: 'No confidence score supplied — verify manually.',
+      pillClass: 'bg-gray-100 text-gray-600',
+      textClass: 'text-gray-500',
+    };
+  }
+  if (value >= 0.9) {
+    return {
+      level: 'high',
+      label: 'High confidence',
+      message: 'High confidence — safe to accept after quick visual check.',
+      pillClass: 'bg-emerald-100 text-emerald-800',
+      textClass: 'text-emerald-700',
+    };
+  }
+  if (value >= 0.6) {
+    return {
+      level: 'medium',
+      label: 'Medium confidence',
+      message: 'Review recommended — verify against the source region.',
+      pillClass: 'bg-amber-100 text-amber-900',
+      textClass: 'text-amber-700',
+    };
+  }
+  return {
+    level: 'low',
+    label: 'Low confidence',
+    message: 'Low confidence — require manual verification before confirming.',
+    pillClass: 'bg-red-100 text-red-800',
+    textClass: 'text-red-600',
+  };
+}
 
 const formatBytes = (bytes: number) => {
   if (!Number.isFinite(bytes) || bytes === 0) return '0 B';
@@ -354,20 +475,42 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
   }, []);
 
-  const setConfirmedField = useCallback((itemId: string, field: 'documentType' | 'partNumber' | 'revision' | 'drawingNumber', value: string) => {
+  const setConfirmedField = useCallback((
+    itemId: string,
+    field: 'documentType' | 'partNumber' | 'revision' | 'drawingNumber',
+    value: string,
+    options?: { markConfirmed?: boolean },
+  ) => {
     setItems(prev => prev.map(item => {
       if (item.id !== itemId) return item;
-      const patch: Partial<WorkbenchItem> = {
-        operatorConfirmed: { ...item.operatorConfirmed, [field]: true },
-      };
+      const patch: Partial<WorkbenchItem> = {};
+
       if (field === 'documentType') patch.confirmedDocumentType = value as WorkbenchItem['confirmedDocumentType'];
       if (field === 'partNumber') patch.confirmedPartNumber = value;
       if (field === 'revision') patch.confirmedRevision = value;
       if (field === 'drawingNumber') patch.confirmedDrawingNumber = value;
+
+      if (options && typeof options.markConfirmed === 'boolean') {
+        const nextOperatorConfirmed = { ...item.operatorConfirmed };
+        nextOperatorConfirmed[field] = options.markConfirmed;
+        patch.operatorConfirmed = nextOperatorConfirmed;
+      }
+
       const updated = { ...item, ...patch };
       patch.status = isItemReady(updated) ? 'ready_to_commit' : 'needs_review';
       return { ...item, ...patch };
     }));
+  }, []);
+
+  const focusRegion = useCallback((regionId?: string | null) => {
+    if (!regionId) return;
+    setActiveRegionId(regionId);
+  }, []);
+
+  const openEvidenceAtRegion = useCallback((regionId?: string | null) => {
+    if (!regionId) return;
+    setActiveRegionId(regionId);
+    setOverlayOpen(true);
   }, []);
 
   const answerQuestion = useCallback((itemId: string, questionId: string, value: string) => {
@@ -797,143 +940,217 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                 const missingPart = dt && !vals.partNumber?.trim();
                 const missingRevision = needsRevision && !vals.revision?.trim();
                 const missingDrawing = needsDrawing && !vals.drawingNumber?.trim();
-                return (
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-3">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Confirm Fields</p>
+                const analysis = selectedItem.analysis;
+                const regionList = analysis?.extractionEvidence?.document_structure?.regions ?? [];
+                const regionMap = new Map<string, RegionOverlay>(regionList.map(region => [region.id, region] as [string, RegionOverlay]));
+                const revisionCandidates = buildCandidatesFromSignals(analysis?.extractionEvidence?.revision_signals);
+                const drawingCandidates = buildCandidatesFromSignals(analysis?.extractionEvidence?.drawing_number_signals);
 
-                    {/* Part Number */}
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-gray-600">Part Number <span className="text-red-500">*</span></label>
-                        {selectedItem.operatorConfirmed?.partNumber
-                          ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">Confirmed</span>
-                          : vals.partNumber
-                            ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Suggested</span>
-                            : <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">Required</span>}
+                const partExtraction = getFieldExtractionFor(analysis, 'partNumber');
+                const revisionExtraction = getFieldExtractionFor(analysis, 'revision');
+                const drawingExtraction = getFieldExtractionFor(analysis, 'drawingNumber');
+
+                const sections: FieldSectionConfig[] = [
+                  {
+                    key: 'partNumber' as const,
+                    label: 'Part Number',
+                    required: true,
+                    placeholder: 'e.g. NH45-110858-01',
+                    missing: Boolean(missingPart),
+                    shouldRender: true,
+                    value: vals.partNumber,
+                    suggestedValue: analysis?.proposedPartNumber ?? null,
+                    operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.partNumber),
+                    confidence: analysis?.partNumberConfidence ?? partExtraction?.confidence ?? null,
+                    extraction: partExtraction,
+                    warning: analysis?.partNumberIsProvisional ? 'Extraction could not resolve part number — enter manually.' : null,
+                    candidates: [] as FieldCandidate[],
+                  },
+                  {
+                    key: 'revision' as const,
+                    label: 'Revision',
+                    required: Boolean(needsRevision),
+                    placeholder: 'e.g. B, 02, Rev A',
+                    missing: Boolean(missingRevision),
+                    shouldRender: Boolean(needsRevision || analysis?.proposedRevision),
+                    value: vals.revision,
+                    suggestedValue: analysis?.proposedRevision ?? null,
+                    operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.revision),
+                    confidence: analysis?.revisionConfidence ?? revisionExtraction?.confidence ?? null,
+                    extraction: revisionExtraction,
+                    warning: null,
+                    candidates: revisionCandidates,
+                  },
+                  {
+                    key: 'drawingNumber' as const,
+                    label: 'Drawing Number',
+                    required: Boolean(needsDrawing),
+                    placeholder: 'e.g. DWG-45-1085',
+                    missing: Boolean(missingDrawing),
+                    shouldRender: Boolean(needsDrawing || analysis?.proposedDrawingNumber),
+                    value: vals.drawingNumber,
+                    suggestedValue: analysis?.proposedDrawingNumber ?? null,
+                    operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.drawingNumber),
+                    confidence: drawingExtraction?.confidence ?? null,
+                    extraction: drawingExtraction,
+                    warning: null,
+                    candidates: drawingCandidates,
+                  },
+                ].filter(section => section.shouldRender);
+
+                const renderFieldSection = (section: FieldSectionConfig) => {
+                  const region = section.extraction?.sourceRegionId
+                    ? regionMap.get(section.extraction.sourceRegionId) ?? null
+                    : null;
+                  const badge = SOURCE_BADGES[section.extraction?.source ?? 'UNKNOWN'];
+                  const confidenceMeta = describeConfidence(section.confidence);
+                  const snippet = region?.extractedText ?? section.extraction?.value ?? null;
+                  const regionLabel = region
+                    ? `${region.label.replace('_', ' ')} (${region.source})`
+                    : section.extraction?.source ?? null;
+                  const value = section.value ?? '';
+                  const suggestionAvailable = Boolean(section.suggestedValue);
+                  const acceptDisabled = !suggestionAvailable || confidenceMeta.level === 'low';
+                  const showAcceptButton = suggestionAvailable && !section.operatorConfirmed;
+                  const showConfirmButton = Boolean(value.trim()) && !section.operatorConfirmed;
+                  const viewSourceEnabled = Boolean(section.extraction?.sourceRegionId && region);
+                  const statusChip = section.operatorConfirmed
+                    ? { label: 'Confirmed', className: 'bg-emerald-100 text-emerald-800' }
+                    : value
+                      ? { label: 'Suggested', className: 'bg-amber-100 text-amber-800' }
+                      : section.required
+                        ? { label: 'Required', className: 'bg-red-100 text-red-700' }
+                        : { label: 'Optional', className: 'bg-gray-100 text-gray-600' };
+                  const viewSourceTone = confidenceMeta.level === 'medium'
+                    ? 'border border-amber-300 text-amber-800 hover:bg-amber-50'
+                    : 'border border-blue-200 text-blue-700 hover:bg-blue-50';
+                  const confidenceValue = typeof section.confidence === 'number'
+                    ? `${Math.round(section.confidence * 100)}%`
+                    : '—';
+
+                  return (
+                    <div key={section.key} className="rounded-lg border border-gray-200 bg-white/60 px-3 py-2 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
+                            {section.label}
+                            {section.required && <span className="text-red-500">*</span>}
+                          </label>
+                          <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusChip.className}`}>
+                            {statusChip.label}
+                          </span>
+                        </div>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}>
+                          {badge.label}
+                        </span>
                       </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className={`rounded-full px-2 py-0.5 font-semibold ${confidenceMeta.pillClass}`}>
+                          Confidence: {confidenceValue} · {confidenceMeta.label}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => viewSourceEnabled && openEvidenceAtRegion(section.extraction?.sourceRegionId)}
+                          disabled={!viewSourceEnabled}
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition ${viewSourceEnabled ? viewSourceTone : 'border border-gray-200 text-gray-400 cursor-not-allowed opacity-60'}`}
+                        >
+                          View Source
+                        </button>
+                      </div>
+                      <p className={`text-[11px] ${confidenceMeta.textClass}`}>{confidenceMeta.message}</p>
                       <div className="flex gap-2">
                         <input
                           type="text"
-                          value={vals.partNumber}
-                          placeholder="e.g. NH45-110858-01"
-                          onChange={e => setConfirmedField(selectedItem.id, 'partNumber', e.target.value)}
-                          className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-blue-100 ${
-                            missingPart ? 'border-red-400 bg-red-50' : 'border-gray-300'
-                          }`}
+                          value={value}
+                          placeholder={section.placeholder}
+                          onChange={e => setConfirmedField(selectedItem.id, section.key, e.target.value, { markConfirmed: false })}
+                          onFocus={() => focusRegion(section.extraction?.sourceRegionId ?? null)}
+                          className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-blue-100 ${confidenceInputClasses(confidenceMeta.level, 'border-gray-300 bg-white', section.missing)}`}
                         />
-                        {selectedItem.analysis?.proposedPartNumber && !selectedItem.operatorConfirmed?.partNumber && (
+                        {showAcceptButton && (
                           <button
                             type="button"
-                            onClick={() => setConfirmedField(selectedItem.id, 'partNumber', selectedItem.analysis!.proposedPartNumber!)}
-                            className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                            disabled={acceptDisabled}
+                            onClick={() => {
+                              if (!section.suggestedValue || acceptDisabled) return;
+                              setConfirmedField(selectedItem.id, section.key, section.suggestedValue, { markConfirmed: true });
+                            }}
+                            className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed ${acceptButtonClasses(confidenceMeta.level)}`}
                           >
                             Accept
                           </button>
                         )}
-                      </div>
-                      {selectedItem.analysis?.partNumberIsProvisional && (
-                        <p className="text-[10px] text-orange-600">Extraction could not resolve part number — enter manually</p>
-                      )}
-                    </div>
-
-                    {/* Revision */}
-                    {(needsRevision || selectedItem.analysis?.proposedRevision) && (
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-gray-600">
-                            Revision {needsRevision && <span className="text-red-500">*</span>}
-                          </label>
-                          {selectedItem.operatorConfirmed?.revision
-                            ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">Confirmed</span>
-                            : vals.revision
-                              ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Suggested</span>
-                              : needsRevision
-                                ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">Required</span>
-                                : null}
-                        </div>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={vals.revision}
-                            placeholder="e.g. B, 02, Rev A"
-                            onChange={e => setConfirmedField(selectedItem.id, 'revision', e.target.value)}
-                            className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-blue-100 ${
-                              missingRevision ? 'border-red-400 bg-red-50' : 'border-gray-300'
-                            }`}
-                          />
-                          {selectedItem.analysis?.proposedRevision && !selectedItem.operatorConfirmed?.revision && (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmedField(selectedItem.id, 'revision', selectedItem.analysis!.proposedRevision!)}
-                              className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
-                            >
-                              Accept
-                            </button>
-                          )}
-                        </div>
-                        {selectedItem.analysis?.revisionConfidence != null && selectedItem.analysis.proposedRevision && (
-                          <p className="text-[10px] text-gray-400">
-                            Extraction confidence: {Math.round(selectedItem.analysis.revisionConfidence * 100)}%
-                            {selectedItem.analysis.revisionSource ? ` · ${selectedItem.analysis.revisionSource}` : ''}
-                          </p>
+                        {showConfirmButton && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmedField(selectedItem.id, section.key, value, { markConfirmed: true })}
+                            className="shrink-0 rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                          >
+                            Confirm
+                          </button>
                         )}
                       </div>
-                    )}
+                      {section.warning && (
+                        <p className="text-[10px] text-orange-600">{section.warning}</p>
+                      )}
+                      {confidenceMeta.level === 'low' && (
+                        <p className="text-[10px] text-red-600 font-semibold">Low confidence — verify manually before confirming.</p>
+                      )}
+                      {snippet && (
+                        <p className="text-[10px] text-gray-500">
+                          Detected: <span className="font-mono font-semibold text-gray-700">{truncateSnippet(snippet)}</span>
+                          {regionLabel ? ` · from ${regionLabel}` : ''}
+                        </p>
+                      )}
+                      {section.candidates.length > 1 && (
+                        <div className="space-y-1 text-[11px]">
+                          <label className="font-semibold text-gray-600">Other detected values</label>
+                          <select
+                            defaultValue=""
+                            className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs"
+                            onChange={e => {
+                              if (!e.target.value) return;
+                              setConfirmedField(selectedItem.id, section.key, e.target.value, { markConfirmed: false });
+                              e.target.selectedIndex = 0;
+                            }}
+                          >
+                            <option value="">Select alternative…</option>
+                            {section.candidates.map(candidate => (
+                              <option key={candidate.id} value={candidate.value}>{candidate.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  );
+                };
 
-                    {/* Drawing Number — INTERNAL_DRAWING only */}
-                    {(needsDrawing || selectedItem.analysis?.proposedDrawingNumber) && (
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-gray-600">
-                            Drawing Number {needsDrawing && <span className="text-red-500">*</span>}
-                          </label>
-                          {selectedItem.operatorConfirmed?.drawingNumber
-                            ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">Confirmed</span>
-                            : vals.drawingNumber
-                              ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Suggested</span>
-                              : needsDrawing
-                                ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">Required</span>
-                                : null}
-                        </div>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={vals.drawingNumber}
-                            placeholder="e.g. DWG-45-1085"
-                            onChange={e => setConfirmedField(selectedItem.id, 'drawingNumber', e.target.value)}
-                            className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-blue-100 ${
-                              missingDrawing ? 'border-red-400 bg-red-50' : 'border-gray-300'
-                            }`}
-                          />
-                          {selectedItem.analysis?.proposedDrawingNumber && !selectedItem.operatorConfirmed?.drawingNumber && (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmedField(selectedItem.id, 'drawingNumber', selectedItem.analysis!.proposedDrawingNumber!)}
-                              className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
-                            >
-                              Accept
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                return (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Confirm Fields</p>
+                    <div className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-[11px] text-purple-900">
+                      Values below are AI-assisted suggestions. Please confirm before committing.
+                    </div>
+                    {sections.length ? sections.map(renderFieldSection) : (
+                      <p className="text-xs text-gray-500">Set a document type to receive extraction suggestions.</p>
                     )}
 
                     {/* Extraction summary + overlay trigger */}
                     <div className="border-t border-gray-200 pt-2 text-[10px] text-gray-400 space-y-1">
-                      {selectedItem.analysis && (
-                        <p>Extraction type suggestion: <span className="font-semibold text-gray-600">{DOC_TYPE_LABELS[selectedItem.analysis.proposedDocumentType]}</span> ({Math.round(selectedItem.analysis.docTypeConfidence * 100)}% confidence)</p>
+                      {analysis && (
+                        <p>Extraction type suggestion: <span className="font-semibold text-gray-600">{DOC_TYPE_LABELS[analysis.proposedDocumentType]}</span> ({Math.round(analysis.docTypeConfidence * 100)}% confidence)</p>
                       )}
-                      {selectedItem.analysis?.extractionEvidence?.document_structure?.regions?.length ? (
+                      {analysis?.extractionEvidence?.document_structure?.regions?.length ? (
                         <button
                           type="button"
                           onClick={() => {
-                            const firstRegion = selectedItem.analysis?.extractionEvidence?.document_structure?.regions?.[0]?.id ?? null;
+                            const firstRegion = analysis?.extractionEvidence?.document_structure?.regions?.[0]?.id ?? null;
                             setActiveRegionId(firstRegion);
                             setOverlayOpen(true);
                           }}
                           className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
                         >
-                          View Extraction Overlay ({selectedItem.analysis.extractionEvidence.document_structure!.regions!.length})
+                          View Extraction Overlay ({analysis.extractionEvidence.document_structure!.regions!.length})
                         </button>
                       ) : (
                         <p className="text-[10px] text-gray-500">No overlay regions detected.</p>)
