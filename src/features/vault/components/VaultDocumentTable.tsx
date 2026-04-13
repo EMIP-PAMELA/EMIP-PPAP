@@ -225,13 +225,31 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
     const compact = options?.compact ?? false;
     const revisionState = doc.revision_state ?? 'UNKNOWN';
     const accent = statusAccent[doc.classification_status];
+    const isUnlinked = !doc.sku_id;
+    const isPending = Boolean(doc.sku?.startsWith('PENDING-'));
     const partLabel = doc.sku ?? doc.inferred_part_number ?? '—';
-    const revisionLabel = doc.revision && doc.revision.trim().length > 0 ? doc.revision : '—';
-    const extractionStatus: ExtractionStatus = doc.revision && doc.revision.trim().length > 0
+    const displayRevision =
+      doc.normalized_revision?.trim()
+        ? doc.normalized_revision
+        : doc.revision && doc.revision.trim() && doc.revision !== 'UNSPECIFIED'
+          ? doc.revision
+          : null;
+    const revisionLabel = displayRevision ?? '—';
+    const hasRevision = Boolean(displayRevision);
+    const extractionStatus: ExtractionStatus = hasRevision
       ? doc.phantom_rev_flag
         ? 'weak'
         : 'parsed'
       : 'failed';
+
+    if (isDevelopment && doc.revision === 'UNSPECIFIED' && doc.normalized_revision) {
+      console.warn('[VAULT REVISION MISMATCH]', {
+        documentId: doc.id,
+        stored_revision: doc.revision,
+        normalized_revision: doc.normalized_revision,
+        filename: doc.filename,
+      });
+    }
     const extractionBadgeTone = extractionStatusBadge[extractionStatus];
     const extractionSource = extractorLabel[doc.document_type] ?? 'Generic fallback';
     const debugPayload = isDevelopment
@@ -263,6 +281,16 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
                   {accent.tag}
                 </span>
               )}
+              {isUnlinked && (
+                <span className="text-[10px] font-semibold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
+                  ⚠️ Not linked to SKU
+                </span>
+              )}
+              {isPending && (
+                <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                  ⏳ Pending SKU assignment
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
               <span className="font-semibold text-gray-700">Part:</span>
@@ -282,9 +310,14 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
               <span className="text-gray-500">{extractionSource}</span>
               <span className="text-gray-400">· Uploaded {new Date(doc.uploaded_at).toLocaleString()}</span>
             </div>
-            {!doc.revision?.trim() && (
+            {!hasRevision && (
               <p className="text-[11px] font-semibold text-red-600">
                 No revision detected in document (missing text layer or unsupported format).
+              </p>
+            )}
+            {doc.revision === 'UNSPECIFIED' && doc.normalized_revision && (
+              <p className="text-[11px] text-amber-600">
+                Stored as UNSPECIFIED — displayed from normalized value ({doc.normalized_revision}).
               </p>
             )}
             <p className="text-[11px] text-gray-600">State: {revisionState}</p>

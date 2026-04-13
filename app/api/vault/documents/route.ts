@@ -192,6 +192,8 @@ export async function GET(request: NextRequest) {
       linked_documents_count: 0,
       highest_confidence_link: null as { link_type: string; confidence_score: number } | null,
       conflict_flag: false,
+      phantom_rev_flag: doc.phantom_rev_flag ?? false,
+      phantom_rev_note: doc.phantom_rev_note ?? null,
       storage_path: doc.storage_path as string | null,
       extracted_text: null as string | null,
       sku_revision_status: null as CrossSourceRevisionStatus | null,
@@ -439,7 +441,6 @@ export async function GET(request: NextRequest) {
     const stat = linkStats.get(record.id);
     const {
       storage_path,
-      normalized_revision: _normalizedRevision,
       linked_documents: _linked,
       is_current: _isCurrent,
       sku_readiness_status,

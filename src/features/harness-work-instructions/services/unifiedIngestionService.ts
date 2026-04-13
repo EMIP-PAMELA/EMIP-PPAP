@@ -327,6 +327,32 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     normalizedText ?? undefined,
   );
 
+  const extractedPart = partNumber;
+  const extractedRevision = revision ?? null;
+  const matchedSku = ingestResult.sku.part_number;
+  const documentId = ingestResult.uploadResult.document.id;
+
+  console.log('[HWI INGEST IDENTITY]', {
+    extractedPart,
+    extractedRevision,
+    matchedSku,
+    documentId,
+    skuCreated: ingestResult.skuCreated,
+    usedFallbackPN: usedFallback,
+    documentType: normalizedType,
+    storedRevision: ingestResult.uploadResult.document.revision,
+    normalizedRevision: ingestResult.uploadResult.document.normalized_revision ?? null,
+  });
+
+  if (usedFallback) {
+    console.warn('[HWI UNLINKED DOCUMENT] Document could not be matched to a SKU — provisional part number assigned', {
+      documentId,
+      provisionalPart: extractedPart,
+      fileName: file.name,
+      documentType: normalizedType,
+    });
+  }
+
   if (ingestResult.uploadResult.status !== 'duplicate') {
     await projectBOMToRepository({
       document: ingestResult.uploadResult.document,

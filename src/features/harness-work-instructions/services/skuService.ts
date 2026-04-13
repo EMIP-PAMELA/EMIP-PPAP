@@ -451,8 +451,24 @@ export async function uploadDocument(
     extractedText: extractedText ?? null,
     fileName: file.name,
   });
-  const hasManualRevision = typeof revision === 'string' && /\S/.test(revision);
-  const revisionValue = hasManualRevision ? revision : revisionSignal.raw ?? 'UNSPECIFIED';
+  // 'UNSPECIFIED' is a sentinel, not a real manual revision — treat it as absent so the
+  // signal extracted from the document text is used instead of the fallback string.
+  const hasManualRevision = typeof revision === 'string' && revision !== 'UNSPECIFIED' && /\S/.test(revision);
+  const revisionValue = hasManualRevision
+    ? revision
+    : (revisionSignal.normalized ?? revisionSignal.raw ?? 'UNSPECIFIED');
+
+  if (!hasManualRevision && (revisionSignal.normalized || revisionSignal.raw)) {
+    console.log('[HWI REVISION FALLBACK USED]', {
+      sku_id: skuId,
+      document_type: documentType,
+      sentinel: revision,
+      extracted_raw: revisionSignal.raw,
+      extracted_normalized: revisionSignal.normalized,
+      source: revisionSignal.parseSource,
+      confidence: revisionSignal.confidence,
+    });
+  }
   const normalizedRevisionValue = revisionSignal.normalized;
   const storageRevisionSegment = normalizedRevisionValue ?? 'UNSPECIFIED';
   const timestamp = Date.now();
