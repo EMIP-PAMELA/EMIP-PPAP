@@ -33,6 +33,12 @@ import {
   type DocumentPresence,
   type SupportedDocumentType,
 } from '@/src/features/sku/utils/documentPresence';
+import {
+  resolveCanonicalDocument,
+  CANONICAL_STATUS_SORT_ORDER,
+  type CanonicalDocumentContext,
+  type CanonicalDocumentStatus,
+} from '@/src/features/revision/utils/resolveCanonicalDocuments';
 
 const revisionStateTone: Record<RevisionState, string> = {
   CURRENT: 'bg-emerald-50 text-emerald-700',
@@ -46,6 +52,16 @@ const revisionStateLabel: Record<RevisionState, string> = {
   SUPERSEDED: 'Superseded',
   CONFLICT: 'Conflict',
   UNKNOWN: 'Unknown',
+};
+
+const CANONICAL_BADGE: Record<CanonicalDocumentStatus, { label: string; tone: string }> = {
+  CANONICAL: { label: '⭐ Canonical',        tone: 'bg-yellow-50 text-yellow-800 border border-yellow-200' },
+  MATCHING:  { label: '✓ Matches expected', tone: 'bg-emerald-50 text-emerald-700 border border-emerald-100' },
+  OUTDATED:  { label: '⚠ Outdated',          tone: 'bg-amber-50 text-amber-700 border border-amber-100' },
+  CONFLICT:  { label: '🔥 Conflict',         tone: 'bg-red-50 text-red-700 border border-red-100' },
+  PENDING:   { label: '⏳ Pending SKU',       tone: 'bg-gray-100 text-gray-600 border border-gray-200' },
+  UNLINKED:  { label: '⚠ Unlinked',          tone: 'bg-orange-50 text-orange-700 border border-orange-100' },
+  UNKNOWN:   { label: '—',                   tone: 'bg-gray-100 text-gray-500 border border-gray-200' },
 };
 
 const readinessStatusTone: Record<ReadinessStatus, { container: string; badge: string; icon: string }> = {
@@ -366,6 +382,30 @@ export default function SKUDashboardPage() {
     autoRunSignature.current = sig;
     runPipeline('auto');
   }, [docByType, documentPresence.hasBOM, documentPresence.hasAnyDrawing, sku?.id, loading]);
+
+  const canonicalContext = useMemo<CanonicalDocumentContext | null>(() => {
+    if (!revisionValidation?.canonical_revision) return null;
+    return {
+      skuCanonicalRevision: revisionValidation.canonical_revision,
+      skuCanonicalSource: revisionValidation.canonical_source,
+      comparisons: revisionValidation.comparisons ?? [],
+      expectedApogeeDrawingNumber: expectedDrawings?.apogee?.drawing_number ?? null,
+    };
+  }, [revisionValidation, expectedDrawings]);
+
+  const sortedDocuments = useMemo(() => {
+    if (!canonicalContext) return documents;
+    return [...documents].sort((a, b) => {
+      const aOrder = CANONICAL_STATUS_SORT_ORDER[
+        resolveCanonicalDocument(a, canonicalContext).status
+      ];
+      const bOrder = CANONICAL_STATUS_SORT_ORDER[
+        resolveCanonicalDocument(b, canonicalContext).status
+      ];
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime();
+    });
+  }, [documents, canonicalContext]);
 
   const sectionDescription = (type: string) => {
     if (type === 'BOM') return 'Bill of Materials';
@@ -720,16 +760,30 @@ export default function SKUDashboardPage() {
                 <tr className="text-left text-sm text-gray-500">
                   <th className="px-4 py-2">Type</th>
                   <th className="px-4 py-2">Revision</th>
+                  <th className="px-4 py-2">Authority</th>
                   <th className="px-4 py-2">File</th>
                   <th className="px-4 py-2">Status / Integrity</th>
                   <th className="px-4 py-2">Uploaded</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
-                {documents.map(doc => (
+                {sortedDocuments.map(doc => {
+                  const resolution = resolveCanonicalDocument(doc, canonicalContext);
+                  const authBadge = CANONICAL_BADGE[resolution.status];
+                  return (
                   <tr key={doc.id}>
                     <td className="px-4 py-2 font-medium text-gray-900">{sectionDescription(doc.document_type)}</td>
                     <td className="px-4 py-2">{doc.canonical_revision ?? doc.normalized_revision ?? '—'}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex flex-col gap-0.5">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${authBadge.tone}`}>
+                          {authBadge.label}
+                        </span>
+                        {resolution.status !== 'UNKNOWN' && (
+                          <span className="text-[11px] text-gray-500 max-w-[160px] leading-tight">{resolution.reason}</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-2">
                       <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-700">
                         {doc.file_name}
@@ -802,10 +856,11 @@ export default function SKUDashboardPage() {
                     </td>
                     <td className="px-4 py-2 text-gray-500">{new Date(doc.uploaded_at).toLocaleString()}</td>
                   </tr>
-                ))}
+                  );
+                })}
                 {documents.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
                       No documents uploaded yet.
                     </td>
                   </tr>

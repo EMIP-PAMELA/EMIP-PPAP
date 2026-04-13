@@ -9,6 +9,15 @@ import type { CrossSourceRevisionStatus } from '@/src/utils/revisionCrossValidat
 import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
 import RevisionStatusBadge from '@/src/features/revision/components/RevisionStatusBadge';
 import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
+import {
+  resolveCanonicalDocuments,
+  summarizeCanonicalResolution,
+  CANONICAL_STATUS_SORT_ORDER,
+  type CanonicalDocumentContext,
+  type CanonicalDocumentResolution,
+  type CanonicalDocumentStatus,
+} from '@/src/features/revision/utils/resolveCanonicalDocuments';
+import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 
 const readinessBadgeTone: Record<ReadinessStatus, string> = {
   READY: 'bg-emerald-100 text-emerald-800',
@@ -103,6 +112,16 @@ const extractionStatusBadge: Record<ExtractionStatus, { label: string; tone: str
   failed: { label: '🔴 Failed', tone: 'bg-red-50 text-red-700 border border-red-100' },
 };
 
+const CANONICAL_STATUS_BADGE: Record<CanonicalDocumentStatus, { label: string; tone: string }> = {
+  CANONICAL: { label: '⭐ Canonical',        tone: 'bg-yellow-50 text-yellow-800 border border-yellow-200' },
+  MATCHING:  { label: '✓ Matches expected', tone: 'bg-emerald-50 text-emerald-700 border border-emerald-100' },
+  OUTDATED:  { label: '⚠ Outdated',          tone: 'bg-amber-50 text-amber-700 border border-amber-100' },
+  CONFLICT:  { label: '🔥 Conflict',         tone: 'bg-red-50 text-red-700 border border-red-100' },
+  PENDING:   { label: '⏳ Pending SKU',       tone: 'bg-gray-100 text-gray-600 border border-gray-200' },
+  UNLINKED:  { label: '⚠ Unlinked',          tone: 'bg-orange-50 text-orange-700 border border-orange-100' },
+  UNKNOWN:   { label: '? Authority unknown', tone: 'bg-gray-100 text-gray-500 border border-gray-200' },
+};
+
 const extractorLabel: Record<VaultDocumentRow['document_type'], string> = {
   BOM: 'BOM extractor',
   CUSTOMER_DRAWING: 'Rheem extractor',
@@ -127,32 +146,40 @@ const classificationBadges: Record<DocumentClassificationStatus, { label: string
   RESOLVED: { label: '🟢 Resolved', tone: 'bg-emerald-50 text-emerald-800 border border-emerald-100' },
 };
 
-function groupBySkuAndType(documents: VaultDocumentRow[]): { groupKey: string; documents: VaultDocumentRow[] }[] {
+function groupBySkuAndType(
+  documents: VaultDocumentRow[],
+  resolutionMap?: Map<string, CanonicalDocumentResolution>,
+): { groupKey: string; documents: VaultDocumentRow[] }[] {
   const map = new Map<string, VaultDocumentRow[]>();
   for (const doc of documents) {
     const key = `${doc.sku ?? 'UNLINKED'}-${doc.document_type}`;
-    if (!map.has(key)) {
-      map.set(key, []);
-    }
+    if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(doc);
   }
-  const priorityOrder: DocumentClassificationStatus[] = [
-    'NEEDS_REVIEW',
-    'PARTIAL_MISMATCH',
-    'PARTIAL',
-    'PENDING',
-    'PROCESSING',
-    'RESOLVED',
+  const classificationPriority: DocumentClassificationStatus[] = [
+    'NEEDS_REVIEW', 'PARTIAL_MISMATCH', 'PARTIAL', 'PENDING', 'PROCESSING', 'RESOLVED',
   ];
 
-  return Array.from(map.entries()).map(([groupKey, docs]) => ({
-    groupKey,
-    documents: docs.sort((a, b) => {
-      const priorityDiff = priorityOrder.indexOf(a.classification_status) - priorityOrder.indexOf(b.classification_status);
-      if (priorityDiff !== 0) return priorityDiff;
-      return new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime();
-    }),
-  }));
+  const getBestCanonicalOrder = (docs: VaultDocumentRow[]) =>
+    Math.min(...docs.map(d => CANONICAL_STATUS_SORT_ORDER[resolutionMap?.get(d.id)?.status ?? 'UNKNOWN']));
+
+  return Array.from(map.entries())
+    .map(([groupKey, docs]) => ({
+      groupKey,
+      documents: docs.sort((a, b) => {
+        if (resolutionMap) {
+          const aOrder = CANONICAL_STATUS_SORT_ORDER[resolutionMap.get(a.id)?.status ?? 'UNKNOWN'];
+          const bOrder = CANONICAL_STATUS_SORT_ORDER[resolutionMap.get(b.id)?.status ?? 'UNKNOWN'];
+          if (aOrder !== bOrder) return aOrder - bOrder;
+        }
+        const classDiff = classificationPriority.indexOf(a.classification_status) - classificationPriority.indexOf(b.classification_status);
+        if (classDiff !== 0) return classDiff;
+        return new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime();
+      }),
+    }))
+    .sort((a, b) =>
+      resolutionMap ? getBestCanonicalOrder(a.documents) - getBestCanonicalOrder(b.documents) : 0,
+    );
 }
 
 export default function VaultDocumentTable({ filters, issueContext, prefillContext, viewMode, refreshToken = 0 }: VaultDocumentTableProps) {
@@ -161,6 +188,7 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isDevelopment = process.env.NODE_ENV === 'development';
+  const [skuContext, setSkuContext] = useState<CanonicalDocumentContext | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -197,12 +225,60 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
     return () => controller.abort();
   }, [filters.sku, filters.documentType, filters.status, filters.search, filters.classificationStatus, refreshToken]);
 
-  const groupedDocuments = useMemo(() => groupBySkuAndType(documents), [documents]);
-  const compactDocuments = useMemo(
-    () =>
-      [...documents].sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()),
-    [documents],
+  // Fetch SKU-level canonical context when a specific SKU is filtered
+  useEffect(() => {
+    if (!filters.sku) {
+      setSkuContext(null);
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`/api/sku/get?partNumber=${encodeURIComponent(filters.sku)}`, { signal: controller.signal })
+      .then(res => (res.ok ? res.json() : null))
+      .then(json => {
+        if (!json?.ok || controller.signal.aborted) return;
+        const validation: CrossSourceValidationResult | null =
+          json.sku?.revision_validation ?? json.revision_validation ?? null;
+        const expectedDrawings = json.sku?.expected_drawings ?? json.expected_drawings ?? null;
+        if (!validation) { setSkuContext(null); return; }
+        setSkuContext({
+          skuCanonicalRevision: validation.canonical_revision,
+          skuCanonicalSource: validation.canonical_source,
+          comparisons: validation.comparisons ?? [],
+          expectedApogeeDrawingNumber: expectedDrawings?.apogee?.drawing_number ?? null,
+        });
+      })
+      .catch(() => { if (!controller.signal.aborted) setSkuContext(null); });
+    return () => controller.abort();
+  }, [filters.sku]);
+
+  const resolutionMap = useMemo(() => {
+    const map = new Map<string, CanonicalDocumentResolution>();
+    for (const { doc, resolution } of resolveCanonicalDocuments(documents, skuContext)) {
+      map.set(doc.id, resolution);
+    }
+    return map;
+  }, [documents, skuContext]);
+
+  const canonicalSummary = useMemo(() => {
+    if (!skuContext) return null;
+    return summarizeCanonicalResolution(Array.from(resolutionMap.values()), skuContext);
+  }, [resolutionMap, skuContext]);
+
+  const groupedDocuments = useMemo(
+    () => groupBySkuAndType(documents, resolutionMap),
+    [documents, resolutionMap],
   );
+  const compactDocuments = useMemo(() => {
+    if (skuContext) {
+      return [...documents].sort((a, b) => {
+        const aOrder = CANONICAL_STATUS_SORT_ORDER[resolutionMap.get(a.id)?.status ?? 'UNKNOWN'];
+        const bOrder = CANONICAL_STATUS_SORT_ORDER[resolutionMap.get(b.id)?.status ?? 'UNKNOWN'];
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        return new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime();
+      });
+    }
+    return [...documents].sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime());
+  }, [documents, skuContext, resolutionMap]);
 
   const handleDocumentClick = (row: VaultDocumentRow) => {
     let destination = `/vault/document/${row.id}`;
@@ -244,6 +320,9 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
         : 'parsed'
       : 'failed';
 
+    const resolution = resolutionMap.get(doc.id) ?? null;
+    const authorityBadge = (resolution && skuContext) ? CANONICAL_STATUS_BADGE[resolution.status] : null;
+
     if (isDevelopment && !doc.canonical_revision && (doc.normalized_revision || (doc.revision && doc.revision !== 'UNSPECIFIED'))) {
       console.warn('[VAULT CANONICAL REVISION NULL — raw/normalized suggest value exists]', {
         documentId: doc.id,
@@ -268,6 +347,9 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
           classification_status: doc.classification_status,
           classification_notes: doc.classification_notes ?? null,
           drawing_number: doc.drawing_number ?? null,
+          canonical_resolution: resolution
+            ? { status: resolution.status, reason: resolution.reason, matchesExpectedRevision: resolution.matchesExpectedRevision, matchesExpectedDrawing: resolution.matchesExpectedDrawing }
+            : null,
         }
       : null;
 
@@ -298,6 +380,14 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
                 </span>
               )}
             </div>
+            {authorityBadge && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${authorityBadge.tone}`}>
+                  {authorityBadge.label}
+                </span>
+                <span className="text-[11px] text-gray-500">{resolution!.reason}</span>
+              </div>
+            )}
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
               <span className="font-semibold text-gray-700">Part:</span>
               <span>{partLabel}</span>
@@ -388,6 +478,17 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
 
   return (
     <div className={`space-y-2 ${prefillContext ? 'rounded-2xl border border-blue-100 p-3 bg-blue-50/40' : ''}`}>
+      {canonicalSummary && (
+        <div className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+          canonicalSummary.includes('conflict') || canonicalSummary.includes('No uploaded')
+            ? 'border-red-200 bg-red-50 text-red-800'
+            : canonicalSummary.includes('canonical document')
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : 'border-amber-200 bg-amber-50 text-amber-900'
+        }`}>
+          {canonicalSummary}
+        </div>
+      )}
       {issueContext && (
         <div className={`rounded-xl border px-3 py-2 text-xs font-semibold ${issueContext.type === 'missing' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
           Viewing documents in context of {issueContext.type === 'missing' ? 'missing revision sources' : 'revision conflicts'}.
