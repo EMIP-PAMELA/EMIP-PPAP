@@ -62,6 +62,7 @@ function deriveRevisionFromBOM(text: string): string | null {
 }
 
 type FieldKey = 'REVISION' | 'DRAWING_NUMBER' | 'PART_NUMBER';
+type PipelineMode = 'BOM' | 'DRAWING';
 type CandidateSignalSource = Exclude<SignalSource, 'NONE'>;
 
 interface FieldSignalCandidate {
@@ -91,6 +92,12 @@ const FIELD_REGION_MAP: Record<FieldKey, Set<RegionOverlay['label']>> = {
   REVISION: new Set(['REVISION', 'TITLE_BLOCK']),
   DRAWING_NUMBER: new Set(['DRAWING_NUMBER', 'TITLE_BLOCK']),
   PART_NUMBER: new Set(['TITLE_BLOCK']),
+};
+
+const BOM_FIELD_REGION_MAP: Record<FieldKey, Set<RegionOverlay['label']>> = {
+  REVISION: new Set(['REVISION', 'TITLE_BLOCK', 'TABLE', 'UNKNOWN']),
+  DRAWING_NUMBER: new Set(['DRAWING_NUMBER', 'TITLE_BLOCK', 'TABLE', 'UNKNOWN']),
+  PART_NUMBER: new Set(['TITLE_BLOCK', 'TABLE', 'UNKNOWN']),
 };
 
 const NOISE_WORDS = new Set(['TORQUE', 'COLOR', 'COLOUR', 'WIRE', 'NOTES', 'TABLE']);
@@ -151,7 +158,7 @@ function resolveRegionIdForCandidate(
 }
 
 const FIELD_SELECTION_CHAIN: Record<FieldKey, CandidateSignalSource[]> = {
-  PART_NUMBER: ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'AI_REGION'],
+  PART_NUMBER: ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'AI_REGION', 'TABLE_TEXT'],
   REVISION:    ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'AI_REGION', 'HEURISTIC'],
   DRAWING_NUMBER: ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'AI_REGION', 'HEURISTIC', 'TABLE_TEXT'],
 };
@@ -170,13 +177,15 @@ function selectCandidateByOrder(
 function filterFieldSignals(
   field: FieldKey,
   candidates: FieldSignalCandidate[],
-  options?: { titleBlockTrusted?: boolean },
+  options?: { titleBlockTrusted?: boolean; pipelineMode?: PipelineMode },
 ): {
   kept: FieldSignalCandidate[];
   keptEvidence: EvidenceSignal[];
   discardedEvidence: EvidenceSignal[];
 } {
-  const allowedRegions = FIELD_REGION_MAP[field] ?? new Set<RegionOverlay['label']>();
+  const pipelineMode = options?.pipelineMode ?? 'DRAWING';
+  const regionMap = pipelineMode === 'BOM' ? BOM_FIELD_REGION_MAP : FIELD_REGION_MAP;
+  const allowedRegions = regionMap[field] ?? new Set<RegionOverlay['label']>();
   const minLength = MIN_LENGTH_BY_FIELD[field] ?? 1;
   const titleBlockTrusted = options?.titleBlockTrusted ?? true;
   const kept: FieldSignalCandidate[] = [];
@@ -416,6 +425,10 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   const docTypeSignals = docTypeForced ? [`USER_PRESET:${docType}`] : classification.signals;
   const docTypeConfidence = docTypeForced ? 1 : getDocTypeConfidence(docType, docTypeSignals);
 
+  // --- Pipeline mode ---
+  const pipelineMode: PipelineMode = docType === 'BOM' ? 'BOM' : 'DRAWING';
+  console.log('[PIPELINE MODE]', { file: fileName, documentType: docType, pipelineMode });
+
   // --- Extraction state ---
   const drawingNumberOverride = trimStr(drawingNumberHint);
   let partNumber = trimStr(partNumberHint);
@@ -512,7 +525,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     const fnCandidate = addCandidate('PART_NUMBER', {
       value: filenamePartNumber,
       source: 'FILENAME',
-      confidence: 0.95,
+      confidence: pipelineMode === 'BOM' ? 0.98 : 0.95,
       regionLabel: 'FILENAME',
     });
     if (fnCandidate) {
@@ -576,6 +589,19 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
         revision = bomRev;
         revisionSource = revision ? 'TEXT' : null;
       }
+    }
+  }
+
+  // --- BOM table scan (Phase 3H.41) ---
+  if (pipelineMode === 'BOM' && normalizedText) {
+    const nhMatches = normalizedText.match(/\bNH\d{2}-\d{5}-\d{3}\b/g) ?? [];
+    for (const match of nhMatches) {
+      addCandidate('PART_NUMBER', {
+        value: match,
+        source: 'TABLE_TEXT',
+        confidence: 0.75,
+        regionLabel: 'TABLE',
+      });
     }
   }
 
@@ -717,10 +743,10 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     });
   }
 
-  const titleBlockTrusted = enforceTitleBlockSanity(mergedRegions);
-  const revisionFiltering = filterFieldSignals('REVISION', fieldCandidates.REVISION, { titleBlockTrusted });
-  const drawingFiltering = filterFieldSignals('DRAWING_NUMBER', fieldCandidates.DRAWING_NUMBER, { titleBlockTrusted });
-  const partFiltering = filterFieldSignals('PART_NUMBER', fieldCandidates.PART_NUMBER, { titleBlockTrusted });
+  const titleBlockTrusted = pipelineMode === 'BOM' ? true : enforceTitleBlockSanity(mergedRegions);
+  const revisionFiltering = filterFieldSignals('REVISION', fieldCandidates.REVISION, { titleBlockTrusted, pipelineMode });
+  const drawingFiltering = filterFieldSignals('DRAWING_NUMBER', fieldCandidates.DRAWING_NUMBER, { titleBlockTrusted, pipelineMode });
+  const partFiltering = filterFieldSignals('PART_NUMBER', fieldCandidates.PART_NUMBER, { titleBlockTrusted, pipelineMode });
 
   const selectedRevisionCandidate = fieldLocks.REVISION
     ? (lockedFieldCandidate.REVISION ?? null)
