@@ -29,6 +29,7 @@ type UploadStatus =
   | 'uploading'
   | 'awaiting_part_number'
   | 'awaiting_override'
+  | 'needs_confirmation'
   | 'success'
   | 'error';
 
@@ -56,6 +57,12 @@ interface UploadQueueItem {
   validation?: UploadRevisionValidation;
   overrideAccepted?: boolean;
   validationAudit?: RevisionValidationAuditMetadata;
+  /** Phase 3H.31: values suggested by extraction — shown in confirmation UI. */
+  proposedDocType?: DocumentType;
+  proposedRevision?: string | null;
+  /** Phase 3H.31: values confirmed by operator before operational commit. */
+  confirmedDocType?: DocumentType;
+  confirmedRevision?: string;
 }
 
 const formatBytes = (bytes: number) => {
@@ -74,6 +81,7 @@ const statusStyles: Record<UploadStatus, string> = {
   uploading: 'bg-blue-100 text-blue-800',
   awaiting_part_number: 'bg-amber-100 text-amber-900',
   awaiting_override: 'bg-red-100 text-red-800',
+  needs_confirmation: 'bg-orange-100 text-orange-900',
   success: 'bg-emerald-100 text-emerald-800',
   error: 'bg-red-100 text-red-800',
 };
@@ -350,6 +358,26 @@ export default function VaultUploader({ preselectedSku, docTypeHint, expectedRev
         const validation = buildValidation(docType, extraction, capturedAt);
         const validationAudit = createValidationAuditMetadata(validation, false);
 
+        // Phase 3H.31: Gate uncertain files — do NOT auto-commit UNKNOWN type or missing revision.
+        const docTypeUncertain = docType === 'UNKNOWN';
+        const revisionMissing  = !extraction.revision;
+        const needsConfirmation = docTypeUncertain || revisionMissing;
+
+        if (needsConfirmation) {
+          updateItem(itemId, {
+            extractedText,
+            validation,
+            validationAudit,
+            status: 'needs_confirmation',
+            message: docTypeUncertain
+              ? 'Document type could not be determined. Confirm before uploading.'
+              : 'Revision could not be extracted. Enter it before uploading.',
+            proposedDocType: docType !== 'UNKNOWN' ? docType : undefined,
+            proposedRevision: extraction.revision ?? null,
+          });
+          return;
+        }
+
         updateItem(itemId, {
           extractedText,
           validation,
@@ -422,6 +450,43 @@ export default function VaultUploader({ preselectedSku, docTypeHint, expectedRev
       overridePN,
       validationAudit,
     });
+  };
+
+  const handleOperationalConfirm = async (item: UploadQueueItem) => {
+    if (!item.file || !item.extractedText) return;
+    const docType = item.confirmedDocType ?? item.proposedDocType;
+    if (!docType || docType === 'UNKNOWN') return;
+    const overridePN = item.partNumberInput?.trim() || preselectedSku || undefined;
+    if (!overridePN) {
+      updateItem(item.id, { status: 'awaiting_part_number', message: 'Part number required to continue.' });
+      return;
+    }
+    updateItem(item.id, { status: 'uploading', message: 'Committing verified document…' });
+    const fd = new FormData();
+    fd.append('file', item.file);
+    fd.append('extracted_text', item.extractedText);
+    fd.append('confirmed_document_type', docType);
+    fd.append('confirmed_part_number', overridePN);
+    if (item.confirmedRevision) fd.append('confirmed_revision', item.confirmedRevision);
+    fd.append('confirmation_mode', 'USER_CONFIRMED');
+    const validationAudit = resolveValidationAudit(item, false);
+    if (validationAudit) fd.append('validation_context', JSON.stringify(validationAudit));
+    try {
+      const res  = await fetch('/api/upload/commit', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        updateItem(item.id, { status: 'error', error: json.error ?? 'Commit failed' });
+        return;
+      }
+      updateItem(item.id, {
+        status: 'success',
+        message: json.message ?? 'Document committed.',
+        result: { documentType: json.document_type, sku: json.sku, revision: json.document?.revision, message: json.message },
+      });
+      onUploadComplete?.();
+    } catch (err) {
+      updateItem(item.id, { status: 'error', error: err instanceof Error ? err.message : 'Commit failed' });
+    }
   };
 
   const handleOverrideConfirm = async (item: UploadQueueItem) => {
@@ -534,6 +599,66 @@ export default function VaultUploader({ preselectedSku, docTypeHint, expectedRev
                       onOverrideConfirm={() => handleOverrideConfirm(item)}
                       disabled={item.status === 'uploading'}
                     />
+                  </div>
+                )}
+
+                {item.status === 'needs_confirmation' && (
+                  <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50 p-3 space-y-3">
+                    <p className="text-xs font-semibold text-orange-900">
+                      Manual confirmation required before upload
+                    </p>
+                    {/* Doc type selector */}
+                    <div className="space-y-1">
+                      <p className="text-xs text-orange-800 font-medium">Document type</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(['BOM', 'CUSTOMER_DRAWING', 'INTERNAL_DRAWING'] as const).map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => updateItem(item.id, { confirmedDocType: t })}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition ${
+                              (item.confirmedDocType ?? item.proposedDocType) === t
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
+                            }`}
+                          >
+                            {t === 'BOM' ? 'BOM' : t === 'CUSTOMER_DRAWING' ? 'Customer Drawing' : 'Internal Drawing'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Revision input */}
+                    <div className="space-y-1">
+                      <p className="text-xs text-orange-800 font-medium">Revision</p>
+                      <input
+                        type="text"
+                        value={item.confirmedRevision ?? item.proposedRevision ?? ''}
+                        onChange={e => updateItem(item.id, { confirmedRevision: e.target.value })}
+                        placeholder="e.g. B, 02, Rev A"
+                        className="w-full rounded-lg border border-orange-200 px-3 py-2 text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                      />
+                    </div>
+                    {/* Part number (required if no preselectedSku) */}
+                    {!preselectedSku && (
+                      <div className="space-y-1">
+                        <p className="text-xs text-orange-800 font-medium">Part number</p>
+                        <input
+                          type="text"
+                          value={item.partNumberInput ?? ''}
+                          onChange={e => updateItem(item.id, { partNumberInput: e.target.value })}
+                          placeholder="e.g. NH45-110858-01"
+                          className="w-full rounded-lg border border-orange-200 px-3 py-2 text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                        />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleOperationalConfirm(item)}
+                      disabled={!(item.confirmedDocType ?? item.proposedDocType) || (item.confirmedDocType ?? item.proposedDocType) === 'UNKNOWN'}
+                      className="rounded-lg bg-orange-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 hover:bg-orange-800 transition"
+                    >
+                      Confirm &amp; Upload
+                    </button>
                   </div>
                 )}
 

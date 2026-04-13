@@ -1,3 +1,24 @@
+/**
+ * LEGACY ROUTE — Phase 3H.31 Deprecation Notice
+ *
+ * This route (POST /api/upload/document) performs auto-classification and auto-commit
+ * in a single step WITHOUT a verification gate. It is DEPRECATED as the primary admin
+ * upload path following Phase 3H.31 (Verified Ingestion Pivot).
+ *
+ * Replacement paths:
+ *   POST /api/upload/analyze  — Phase A: extract signals, build evidence, surface questions
+ *   POST /api/upload/commit   — Phase B: commit only after operator confirms verified values
+ *
+ * This route is retained temporarily for:
+ *   - backward-compat callers that already pass reliable confirmed values
+ *   - internal regression testing
+ *   - BOM/drawing upload routes that may still call ingestAndProcessDocument directly
+ *
+ * GOVERNANCE: Do not add new callers to this route. Route new UI code through
+ * /api/upload/analyze → review → /api/upload/commit.
+ *
+ * TODO Phase 3H.32+: Remove this route once all callers are migrated.
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { ingestAndProcessDocument } from '@/src/features/harness-work-instructions/services/unifiedIngestionService';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';

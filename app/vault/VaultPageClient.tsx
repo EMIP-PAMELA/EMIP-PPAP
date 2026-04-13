@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import EMIPLayout from '../layout/EMIPLayout';
-import VaultUploader from '@/src/features/vault/components/VaultUploader';
+import UploadWorkbench from '@/src/features/vault/components/UploadWorkbench';
 import VaultFilters, { type VaultFilterState } from '@/src/features/vault/components/VaultFilters';
 import VaultDocumentTable from '@/src/features/vault/components/VaultDocumentTable';
 import CorrectiveContextBanner from '@/src/components/CorrectiveContextBanner';
@@ -117,9 +117,7 @@ export default function VaultPageClient({ initialSearchParams }: VaultPageClient
   }));
   const [viewMode, setViewMode] = useState<'grid' | 'compact'>('grid');
   const [refreshToken, setRefreshToken] = useState(0);
-  const [showUploader, setShowUploader] = useState<boolean>(() => Boolean(issueType === 'missing' || actionIntent === 'UPLOAD_MISSING_DOC'));
-  const autoOpenUploader = actionIntent === 'UPLOAD_MISSING_DOC' || issueType === 'missing';
-
+  const [showWorkbench, setShowWorkbench] = useState<boolean>(false);
   const displaySku = useMemo(() => filters.sku ?? skuParam, [filters.sku, skuParam]);
   const hasPrefilledFilters = Boolean(skuParam || docTypeParam);
 
@@ -127,11 +125,6 @@ export default function VaultPageClient({ initialSearchParams }: VaultPageClient
     if (!docTypeParam) return;
     setFilters(current => (current.documentType === docTypeParam ? current : { ...current, documentType: docTypeParam }));
   }, [docTypeParam]);
-
-  useEffect(() => {
-    if (!autoOpenUploader) return;
-    setShowUploader(true);
-  }, [autoOpenUploader]);
 
   return (
     <EMIPLayout>
@@ -149,10 +142,10 @@ export default function VaultPageClient({ initialSearchParams }: VaultPageClient
           </div>
           <button
             type="button"
-            onClick={() => setShowUploader(v => !v)}
+            onClick={() => setShowWorkbench(true)}
             className="shrink-0 rounded-xl bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition"
           >
-            {showUploader ? 'Hide Uploader' : '+ Upload Files'}
+            + Upload Workbench
           </button>
         </header>
 
@@ -192,14 +185,11 @@ export default function VaultPageClient({ initialSearchParams }: VaultPageClient
           </div>
         )}
 
-        {showUploader && (
-          <VaultUploader
+        {showWorkbench && (
+          <UploadWorkbench
             preselectedSku={displaySku}
-            docTypeHint={docTypeParam}
-            expectedRevisionHint={expectedRevisionHint}
-            actionIntent={actionIntent}
-            canonicalSourceHint={canonicalSourceHint}
-            onUploadComplete={() => setRefreshToken(prev => prev + 1)}
+            onClose={() => setShowWorkbench(false)}
+            onCommitComplete={() => setRefreshToken(prev => prev + 1)}
           />
         )}
 

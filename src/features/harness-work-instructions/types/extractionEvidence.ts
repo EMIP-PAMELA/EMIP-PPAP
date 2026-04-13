@@ -108,4 +108,12 @@ export interface DocumentExtractionEvidence {
   resolved_drawing_number_source: string | null;
   /** ISO timestamp of evidence capture. */
   captured_at: string;
+  /**
+   * Phase 3H.31: How this document's commit was authorized.
+   * AUTO_VERIFIED  — all signals were high-confidence; system allowed auto-commit.
+   * USER_CONFIRMED — operator confirmed values before commit (operational upload).
+   * ADMIN_CONFIRMED — admin reviewed and approved in batch workbench.
+   * null            — committed via legacy path (before Phase 3H.31).
+   */
+  confirmation_mode?: 'AUTO_VERIFIED' | 'USER_CONFIRMED' | 'ADMIN_CONFIRMED' | null;
 }

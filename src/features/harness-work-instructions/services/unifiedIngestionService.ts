@@ -42,6 +42,8 @@ interface IngestAndProcessParams {
   partNumberOverride?: string;
   revisionOverride?: string;
   validationContext?: RevisionValidationAuditMetadata;
+  /** Phase 3H.31: How this commit was authorized. Stored in extraction_evidence. */
+  confirmationMode?: 'AUTO_VERIFIED' | 'USER_CONFIRMED' | 'ADMIN_CONFIRMED';
 }
 
 interface PipelineResult {
@@ -200,7 +202,7 @@ async function buildPipelineFromDocuments(
 }
 
 export async function ingestAndProcessDocument(params: IngestAndProcessParams): Promise<UnifiedIngestionResult> {
-  const { file, documentType, extractedText, partNumberOverride, revisionOverride, validationContext } = params;
+  const { file, documentType, extractedText, partNumberOverride, revisionOverride, validationContext, confirmationMode } = params;
 
   const normalizedType = documentType;
   const normalizedText = normalizeOptionalString(extractedText);
@@ -366,6 +368,7 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     resolved_drawing_number: resolved.drawingNumber.value,
     resolved_drawing_number_source: resolved.drawingNumber.source !== 'NONE' ? resolved.drawingNumber.source : null,
     captured_at: new Date().toISOString(),
+    confirmation_mode: confirmationMode ?? null,
   };
 
   if (!partNumber && drawingNumber) {
