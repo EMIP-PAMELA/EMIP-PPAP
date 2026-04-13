@@ -18,6 +18,7 @@ import {
   type UnresolvedQuestion,
 } from '@/src/features/vault/types/ingestionReview';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
+import DocumentOverlayViewer from './DocumentOverlayViewer';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -191,6 +192,7 @@ function QuestionCard({
           Suggested by extraction: <span className="font-semibold">{question.suggestedValue}</span>
         </p>
       )}
+
     </div>
   );
 }
@@ -199,8 +201,25 @@ function QuestionCard({
 // Evidence panel sub-component
 // ---------------------------------------------------------------------------
 
-function EvidencePanel({ evidence }: { evidence: IngestionAnalysisResult['extractionEvidence'] }) {
+const FIELD_EXTRACTION_COLORS: Record<string, string> = {
+  REVISION: 'text-red-700 bg-red-50 border-red-200',
+  PART_NUMBER: 'text-blue-700 bg-blue-50 border-blue-200',
+  DRAWING_NUMBER: 'text-green-700 bg-green-50 border-green-200',
+};
+
+function EvidencePanel({
+  evidence,
+  onRegionSelect,
+  activeRegionId,
+}: {
+  evidence: IngestionAnalysisResult['extractionEvidence'];
+  onRegionSelect?: (regionId: string) => void;
+  activeRegionId?: string | null;
+}) {
   const [open, setOpen] = useState(false);
+  const regions = evidence.document_structure?.regions ?? [];
+  const findRegion = (id: string | null) => regions.find(r => r.id === id);
+
   return (
     <details open={open} onToggle={e => setOpen((e.target as HTMLDetailsElement).open)}
       className="rounded-xl border border-gray-200 bg-gray-50 text-xs">
@@ -208,40 +227,109 @@ function EvidencePanel({ evidence }: { evidence: IngestionAnalysisResult['extrac
         Evidence Chain {open ? '▲' : '▼'}
       </summary>
       {open && (
-        <div className="px-3 pb-3 space-y-1 text-gray-700">
+        <div className="px-3 pb-3 space-y-3 text-gray-700">
           <div className="text-sky-600 font-semibold">
             Document class: {evidence.document_structure?.document_class_hint ?? '—'}
           </div>
-          <div className="font-medium text-gray-500 mt-2">Revision signals</div>
-          {evidence.revision_signals.length === 0
-            ? <div className="text-gray-400">none detected</div>
-            : evidence.revision_signals.map((s, i) => (
-              <div key={i} className="ml-2">
-                <span className="text-blue-600">{s.source}</span>:{' '}
-                <span className="font-semibold">{s.value ?? 'null'}</span>{' '}
-                <span className="text-gray-400">(conf {s.confidence.toFixed(2)})</span>
-              </div>
-            ))
-          }
-          <div className="font-medium text-gray-500 mt-2">Drawing number signals</div>
-          {evidence.drawing_number_signals.length === 0
-            ? <div className="text-gray-400">none detected</div>
-            : evidence.drawing_number_signals.map((s, i) => (
-              <div key={i} className="ml-2">
-                <span className="text-blue-600">{s.source}</span>:{' '}
-                <span className="font-semibold">{s.value ?? 'null'}</span>{' '}
-                <span className="text-gray-400">(conf {s.confidence.toFixed(2)})</span>
-              </div>
-            ))
-          }
+
+          {/* Field extractions — primary traceability view */}
+          {evidence.field_extractions?.length ? (
+            <div className="space-y-1">
+              <div className="font-medium text-gray-500">Extracted fields</div>
+              {evidence.field_extractions.map(fe => {
+                const region = findRegion(fe.sourceRegionId);
+                const tone = FIELD_EXTRACTION_COLORS[fe.field] ?? 'text-gray-700 bg-gray-50 border-gray-200';
+                const isActive = activeRegionId !== null && fe.sourceRegionId === activeRegionId;
+                return (
+                  <button
+                    key={fe.field}
+                    type="button"
+                    disabled={!fe.sourceRegionId}
+                    onClick={() => fe.sourceRegionId && onRegionSelect?.(fe.sourceRegionId)}
+                    className={`w-full rounded-lg border px-2 py-1.5 text-left transition ${
+                      isActive ? 'ring-2 ring-blue-400' : ''
+                    } ${tone} ${fe.sourceRegionId ? 'hover:opacity-90 cursor-pointer' : 'cursor-default opacity-70'}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[11px]">{fe.field.replace('_', ' ')}</span>
+                      <span className="text-[10px]">{Math.round(fe.confidence * 100)}% · {fe.source}</span>
+                    </div>
+                    <div className="flex items-center justify-between mt-0.5">
+                      <span className="font-mono text-[11px] font-semibold">{fe.value ?? '—'}</span>
+                      {region
+                        ? <span className="text-[10px] underline decoration-dotted">{region.label.replace('_', ' ')} ↗</span>
+                        : <span className="text-[10px] text-gray-400">full-text fallback</span>
+                      }
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {/* Raw signals */}
+          <div className="space-y-1">
+            <div className="font-medium text-gray-500">Revision signals</div>
+            {evidence.revision_signals.length === 0
+              ? <div className="text-gray-400">none detected</div>
+              : evidence.revision_signals.map((s, i) => (
+                <div key={i} className="ml-2">
+                  <span className="text-blue-600">{s.source}</span>:{' '}
+                  <span className="font-semibold">{s.value ?? 'null'}</span>{' '}
+                  <span className="text-gray-400">(conf {s.confidence.toFixed(2)})</span>
+                </div>
+              ))
+            }
+          </div>
+          <div className="space-y-1">
+            <div className="font-medium text-gray-500">Drawing number signals</div>
+            {evidence.drawing_number_signals.length === 0
+              ? <div className="text-gray-400">none detected</div>
+              : evidence.drawing_number_signals.map((s, i) => (
+                <div key={i} className="ml-2">
+                  <span className="text-blue-600">{s.source}</span>:{' '}
+                  <span className="font-semibold">{s.value ?? 'null'}</span>{' '}
+                  <span className="text-gray-400">(conf {s.confidence.toFixed(2)})</span>
+                </div>
+              ))
+            }
+          </div>
+
           {evidence.document_structure && (
-            <div className="mt-2 text-gray-500">
+            <div className="text-gray-500">
               Structure: title_block={String(evidence.document_structure.has_title_block)} ·
               connectors={String(evidence.document_structure.has_connector_tables)} ·
               wire_map={String(evidence.document_structure.has_wire_mapping)}
             </div>
           )}
-          <div className="text-gray-400 mt-1">captured {evidence.captured_at}</div>
+          {regions.length > 0 && (
+            <div className="space-y-1">
+              <div className="font-medium text-gray-500">Detected regions ({regions.length})</div>
+              {regions.map(region => (
+                <button
+                  key={region.id}
+                  type="button"
+                  onClick={() => onRegionSelect?.(region.id)}
+                  className={`w-full rounded-lg border px-2 py-1 text-left transition ${
+                    activeRegionId === region.id ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:border-blue-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-gray-700">
+                    <span>{region.label.replace('_', ' ')}</span>
+                    <span>{Math.round(region.confidence * 100)}%</span>
+                  </div>
+                  <div className="text-[10px] text-gray-500">
+                    box=({region.boundingBox.x.toFixed(2)}, {region.boundingBox.y.toFixed(2)}) · {region.boundingBox.width.toFixed(2)}w × {region.boundingBox.height.toFixed(2)}h
+                  </div>
+                  {region.extractedText && (
+                    <p className="text-[10px] text-gray-400 line-clamp-2">{region.extractedText}</p>
+                  )}
+                  <p className="text-[10px] text-gray-400">source: {region.source}</p>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="text-gray-400">captured {evidence.captured_at}</div>
         </div>
       )}
     </details>
@@ -259,6 +347,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const [isDragging, setIsDragging] = useState(false);
   const [filter, setFilter]       = useState<'all' | 'needs_review' | 'ready' | 'committed'>('all');
   const [uploadMode, setUploadMode] = useState<UploadMode>('MIXED');
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
 
   const updateItem = useCallback((id: string, patch: Partial<WorkbenchItem>) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
@@ -828,12 +918,27 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                       </div>
                     )}
 
-                    {/* Extraction summary */}
-                    {selectedItem.analysis && (
-                      <div className="border-t border-gray-200 pt-2 text-[10px] text-gray-400 space-y-0.5">
+                    {/* Extraction summary + overlay trigger */}
+                    <div className="border-t border-gray-200 pt-2 text-[10px] text-gray-400 space-y-1">
+                      {selectedItem.analysis && (
                         <p>Extraction type suggestion: <span className="font-semibold text-gray-600">{DOC_TYPE_LABELS[selectedItem.analysis.proposedDocumentType]}</span> ({Math.round(selectedItem.analysis.docTypeConfidence * 100)}% confidence)</p>
-                      </div>
-                    )}
+                      )}
+                      {selectedItem.analysis?.extractionEvidence?.document_structure?.regions?.length ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const firstRegion = selectedItem.analysis?.extractionEvidence?.document_structure?.regions?.[0]?.id ?? null;
+                            setActiveRegionId(firstRegion);
+                            setOverlayOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+                        >
+                          View Extraction Overlay ({selectedItem.analysis.extractionEvidence.document_structure!.regions!.length})
+                        </button>
+                      ) : (
+                        <p className="text-[10px] text-gray-500">No overlay regions detected.</p>)
+                      }
+                    </div>
                   </div>
                 );
               })()}
@@ -853,7 +958,14 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               ) : null}
 
               {selectedItem.analysis?.extractionEvidence ? (
-                <EvidencePanel evidence={selectedItem.analysis.extractionEvidence} />
+                <EvidencePanel
+                  evidence={selectedItem.analysis.extractionEvidence}
+                  onRegionSelect={regionId => {
+                    setActiveRegionId(regionId);
+                    setOverlayOpen(true);
+                  }}
+                  activeRegionId={activeRegionId}
+                />
               ) : null}
 
               {selectedItem.status === 'ready_to_commit' ? (
@@ -913,6 +1025,40 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
           >
             Commit All Verified ({counts.ready})
           </button>
+        </div>
+      )}
+
+      {overlayOpen && selectedItem && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Extraction Overlay</p>
+                <p className="text-xs text-gray-500">Visualizing first page regions · {selectedItem.file.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOverlayOpen(false)}
+                className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-200"
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-4">
+              {selectedItem.analysis?.extractionEvidence?.document_structure?.regions?.length ? (
+                <DocumentOverlayViewer
+                  file={selectedItem.file}
+                  regions={selectedItem.analysis.extractionEvidence.document_structure.regions}
+                  activeRegionId={activeRegionId}
+                  onRegionFocus={setActiveRegionId}
+                />
+              ) : (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-12 text-center text-sm text-gray-500">
+                  No regions available for this document.
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

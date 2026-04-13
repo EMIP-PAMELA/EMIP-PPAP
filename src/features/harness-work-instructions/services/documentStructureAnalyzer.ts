@@ -16,6 +16,7 @@ import type {
   DocumentRegion,
   DocumentClassHint,
 } from '../types/extractionEvidence';
+import type { RegionOverlay } from '../types/documentRegionOverlay';
 
 // ---------------------------------------------------------------------------
 // Document-class patterns
@@ -95,6 +96,63 @@ export function analyzeDocumentStructure(fragments: ExtractionFragment[]): Docum
   const connectorRegion   = scanForRegion(lines, CONNECTOR_KEYWORDS,   'Connector Table', 2);
   const mappingRegion     = scanForRegion(lines, MAPPING_KEYWORDS,     'Wire Mapping',   3);
 
+  const heuristicRegions: RegionOverlay[] = [];
+  let overlayCount = 0;
+  const pushRegion = (region: Omit<RegionOverlay, 'id'>) => {
+    heuristicRegions.push({ id: `heuristic-${overlayCount++}`, ...region });
+  };
+
+  if (titleBlockRegion) {
+    pushRegion({
+      label: 'TITLE_BLOCK',
+      boundingBox: { x: 0.05, y: 0.75, width: 0.5, height: 0.2 },
+      confidence: Math.min(0.9, titleBlockRegion.confidence + 0.2),
+      extractedText: titleBlockRegion.indicators.join(', '),
+      source: 'HEURISTIC',
+    });
+  }
+
+  const textSample = lines.join('\n').toUpperCase();
+  if (textSample.includes('REV')) {
+    pushRegion({
+      label: 'REVISION',
+      boundingBox: { x: 0.65, y: 0.78, width: 0.3, height: 0.18 },
+      confidence: 0.5,
+      extractedText: 'REV keyword cluster detected',
+      source: 'HEURISTIC',
+    });
+  }
+
+  if (textSample.includes('PART') || textSample.includes('PN')) {
+    pushRegion({
+      label: 'PART_NUMBER',
+      boundingBox: { x: 0.6, y: 0.1, width: 0.35, height: 0.2 },
+      confidence: 0.45,
+      extractedText: 'PART keyword cluster detected',
+      source: 'HEURISTIC',
+    });
+  }
+
+  if (textSample.includes('DRAWING') || textSample.includes('DWG')) {
+    pushRegion({
+      label: 'DRAWING_NUMBER',
+      boundingBox: { x: 0.1, y: 0.05, width: 0.35, height: 0.15 },
+      confidence: 0.4,
+      extractedText: 'DRAWING keyword cluster detected',
+      source: 'HEURISTIC',
+    });
+  }
+
+  if (connectorRegion || mappingRegion) {
+    pushRegion({
+      label: 'TABLE',
+      boundingBox: { x: 0.1, y: 0.25, width: 0.8, height: 0.4 },
+      confidence: 0.5,
+      extractedText: 'Connector / mapping table signatures detected',
+      source: 'HEURISTIC',
+    });
+  }
+
   return {
     document_class_hint:    documentClassHint,
     has_title_block:        titleBlockRegion  !== null,
@@ -103,6 +161,7 @@ export function analyzeDocumentStructure(fragments: ExtractionFragment[]): Docum
     connector_regions:      connectorRegion   ? [connectorRegion]  : [],
     has_wire_mapping:       mappingRegion     !== null,
     mapping_regions:        mappingRegion     ? [mappingRegion]    : [],
+    regions:                heuristicRegions,
     analyzed_by:            'HEURISTIC',
     analyzed_at:            new Date().toISOString(),
   };

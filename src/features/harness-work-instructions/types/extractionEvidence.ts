@@ -11,6 +11,28 @@
  *   - Document structure is structural layout analysis — NOT value extraction.
  *   - Resolved values mirror what was actually persisted in revision / drawing_number.
  */
+import type { RegionOverlay } from './documentRegionOverlay';
+
+// ---------------------------------------------------------------------------
+// Field Extraction — a specific field value bound to a source region (Phase 3H.36)
+// ---------------------------------------------------------------------------
+
+/** How a FieldExtraction value was obtained. */
+export type FieldExtractionSource = 'OCR' | 'HEURISTIC' | 'AI' | 'FILENAME';
+
+/**
+ * Links one extracted field (revision, part number, drawing number) to the
+ * specific document region it came from, providing full traceability.
+ */
+export interface FieldExtraction {
+  field: 'REVISION' | 'PART_NUMBER' | 'DRAWING_NUMBER';
+  /** The extracted value, or null if extraction produced nothing. */
+  value: string | null;
+  confidence: number;
+  /** ID of the RegionOverlay that yielded this value. Null = full-text fallback. */
+  sourceRegionId: string | null;
+  source: FieldExtractionSource;
+}
 
 // ---------------------------------------------------------------------------
 // Fragment — raw OCR or filename evidence
@@ -80,6 +102,8 @@ export interface DocumentStructureAnalysis {
   has_wire_mapping: boolean;
   /** Detected wire mapping regions (may be empty). */
   mapping_regions: DocumentRegion[];
+  /** Optional normalized overlay regions merged from heuristic + AI passes. */
+  regions?: RegionOverlay[];
   /** How this analysis was produced — 'HEURISTIC' until an AI model is wired in. */
   analyzed_by: 'HEURISTIC' | 'AI';
   analyzed_at: string;
@@ -88,6 +112,7 @@ export interface DocumentStructureAnalysis {
 // ---------------------------------------------------------------------------
 // Evidence Bundle — everything captured for one document ingestion
 // ---------------------------------------------------------------------------
+
 
 export interface DocumentExtractionEvidence {
   /** Raw text fragments captured during ingestion. */
@@ -140,4 +165,9 @@ export interface DocumentExtractionEvidence {
     fieldToResolve?: string;
     blocksCommit: boolean;
   }[];
+  /**
+   * Phase 3H.36: Field-to-region bindings for fully traceable extraction.
+   * Every extracted field is linked to the document region it was derived from.
+   */
+  field_extractions?: FieldExtraction[];
 }

@@ -27,9 +27,17 @@ import { extractDrawingNumberFromText, extractDrawingNumberFromFilename } from '
 import { ingestDrawingPdf } from './drawingIngestionService';
 import { resolveDocumentSignalsFromArrays, type Signal } from '../utils/resolveDocumentSignals';
 import { analyzeDocumentStructure } from './documentStructureAnalyzer';
+import { extractRegionsWithAI } from './aiRegionExtractor';
 import { resolveAliasFromDB } from './aliasService';
 import { resolvePartNumberFromDrawing } from './drawingLookupService';
-import type { ExtractionFragment, EvidenceSignal, DocumentExtractionEvidence } from '../types/extractionEvidence';
+import type {
+  ExtractionFragment,
+  EvidenceSignal,
+  DocumentExtractionEvidence,
+  FieldExtraction,
+  FieldExtractionSource,
+} from '../types/extractionEvidence';
+import type { RegionOverlay } from '../types/documentRegionOverlay';
 import type { DocumentType } from './skuService';
 import type {
   IngestionAnalysisResult,
@@ -82,6 +90,53 @@ function getPartNumberConfidence(pn: string | null, isProvisional: boolean, reso
   if (isProvisional) return 0.05;
   if (resolvedViaAlias) return 0.85;
   return 0.8;
+}
+
+// ---------------------------------------------------------------------------
+// Region helpers (Phase 3H.36)
+// ---------------------------------------------------------------------------
+
+function findRegionByLabel(
+  regions: RegionOverlay[],
+  ...labels: Array<RegionOverlay['label']>
+): RegionOverlay | null {
+  for (const label of labels) {
+    const found = regions.find(r => r.label === label);
+    if (found) return found;
+  }
+  return null;
+}
+
+function mapRevisionSourceToFieldSource(
+  revisionSource: RevisionSource | null,
+  revision: string | null,
+  filenameRevision: string | null,
+): FieldExtractionSource {
+  if (
+    revisionSource === 'REVISION_BOX_APOGEE' ||
+    revisionSource === 'TITLE_BLOCK_RHEEM' ||
+    revisionSource === 'HEADER_EXPLICIT'
+  ) return 'OCR';
+  if (
+    revisionSource === 'FILENAME' ||
+    (filenameRevision !== null && revision === filenameRevision)
+  ) return 'FILENAME';
+  if (revisionSource === 'TEXT') return 'HEURISTIC';
+  return 'HEURISTIC';
+}
+
+function mergeRegions(heuristic: RegionOverlay[], ai: RegionOverlay[]): RegionOverlay[] {
+  if (ai.length === 0) return heuristic;
+  const seen = new Set<string>();
+  const merged: RegionOverlay[] = [];
+  for (const region of ai) {
+    merged.push({ ...region, id: region.id || `ai-${region.label}-${merged.length}` });
+    seen.add(region.label);
+  }
+  for (const region of heuristic) {
+    if (!seen.has(region.label)) merged.push(region);
+  }
+  return merged;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,12 +208,17 @@ function buildUnresolvedQuestions(params: {
 
   const revValues = [...new Set(params.revisionSignals.filter(s => s.value !== null).map(s => s.value))];
   if (revValues.length > 1) {
+    const titleBlockVal = params.revisionSignals.find(s => s.source === 'TITLE_BLOCK')?.value;
+    const otherVals = params.revisionSignals.filter(s => s.source !== 'TITLE_BLOCK' && s.value && s.value !== titleBlockVal).map(s => s.value);
+    const isStructuredConflict = Boolean(titleBlockVal && otherVals.length > 0);
     questions.push({
       id: 'q-signal-conflict',
-      issueCode: 'SIGNAL_CONFLICT',
-      severity: 'WARNING',
-      blocksCommit: false,
-      promptText: `Multiple revision values detected: ${revValues.join(', ')}. Verify which is correct.`,
+      issueCode: isStructuredConflict ? 'REVISION_CONFLICT' : 'SIGNAL_CONFLICT',
+      severity: isStructuredConflict ? 'BLOCKING' : 'WARNING',
+      blocksCommit: isStructuredConflict,
+      promptText: isStructuredConflict
+        ? `Revision conflict: title block says "${titleBlockVal}" but another source says "${otherVals[0]}". Confirm the correct value.`
+        : `Multiple revision values detected: ${revValues.join(', ')}. Verify which is correct.`,
       suggestedValue: params.revision,
       fieldToResolve: 'revision',
     });
@@ -268,6 +328,19 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   ];
   const documentStructure = analyzeDocumentStructure(extractionFragments);
 
+  const heuristicRegions = documentStructure.regions ?? [];
+  let aiRegions: RegionOverlay[] = [];
+  try {
+    aiRegions = await extractRegionsWithAI({
+      textualHint: normalizedText ? normalizedText.slice(0, 4000) : null,
+    });
+  } catch (err) {
+    console.warn('[ANALYZE INGESTION] AI region extractor failed, continuing with heuristics.', err);
+  }
+
+  const mergedRegions: RegionOverlay[] = mergeRegions(heuristicRegions, aiRegions);
+  documentStructure.regions = mergedRegions;
+
   // --- Signal resolution ---
   const drawingNumberFromText     = normalizedText ? extractDrawingNumberFromText(normalizedText) : null;
   const drawingNumberFromFilename = extractDrawingNumberFromFilename(fileName);
@@ -356,6 +429,43 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
 
   const revisionConfidence = getRevisionConfidence(revisionSource, Boolean(filenameRevision));
   const partNumberConfidence = getPartNumberConfidence(partNumber, partNumberIsProvisional, resolvedViaAlias);
+
+  // --- Field-to-region binding (Phase 3H.36) ---
+  const revRegion = findRegionByLabel(mergedRegions, 'REVISION', 'TITLE_BLOCK');
+  const partRegion = findRegionByLabel(mergedRegions, 'PART_NUMBER', 'TITLE_BLOCK');
+  const drnRegion  = findRegionByLabel(mergedRegions, 'DRAWING_NUMBER', 'TITLE_BLOCK');
+
+  let drnFieldConf = 0.0;
+  let drnFieldSource: FieldExtractionSource = 'HEURISTIC';
+  if (emDrawingNumber)           { drnFieldSource = 'OCR';      drnFieldConf = 0.95; }
+  else if (drawingNumberFromText){ drnFieldSource = 'HEURISTIC'; drnFieldConf = 0.8;  }
+  else if (drawingNumberFromFilename) { drnFieldSource = 'FILENAME'; drnFieldConf = 0.7; }
+
+  const fieldExtractions: FieldExtraction[] = [
+    {
+      field: 'REVISION',
+      value: revision,
+      confidence: revisionConfidence,
+      sourceRegionId: revRegion?.id ?? null,
+      source: mapRevisionSourceToFieldSource(revisionSource, revision, filenameRevision),
+    },
+    {
+      field: 'PART_NUMBER',
+      value: partNumber,
+      confidence: partNumberConfidence,
+      sourceRegionId: partRegion?.id ?? null,
+      source: resolvedViaAlias ? 'OCR' : 'HEURISTIC',
+    },
+    {
+      field: 'DRAWING_NUMBER',
+      value: proposedDrawingNumber,
+      confidence: drnFieldConf,
+      sourceRegionId: drnRegion?.id ?? null,
+      source: drnFieldSource,
+    },
+  ];
+
+  extractionEvidence.field_extractions = fieldExtractions;
 
   // --- Questions ---
   const unresolvedQuestions = buildUnresolvedQuestions({
