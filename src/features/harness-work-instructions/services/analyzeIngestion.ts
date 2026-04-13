@@ -61,8 +61,21 @@ function deriveRevisionFromBOM(text: string): string | null {
   return null;
 }
 
+const REJECT_REVISION_FRAGMENTS = new Set([
+  'ISED', 'EVISED', 'EVISION', 'ISE', 'REVIS', 'EVISE',
+]);
+
+function isStrictRevisionToken(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const v = value.trim().toUpperCase();
+  if (v.length === 0 || v.length > 4) return false;
+  if (REJECT_REVISION_FRAGMENTS.has(v)) return false;
+  return /^(?:[A-Z]{1,4}|\d{1,2})$/.test(v);
+}
+
 type FieldKey = 'REVISION' | 'DRAWING_NUMBER' | 'PART_NUMBER';
 type PipelineMode = 'BOM' | 'DRAWING';
+type DrawingSubtype = 'INTERNAL_DRAWING' | 'CUSTOMER_DRAWING' | 'DRAWING_UNKNOWN' | 'N/A';
 type CandidateSignalSource = Exclude<SignalSource, 'NONE'>;
 
 interface FieldSignalCandidate {
@@ -72,6 +85,19 @@ interface FieldSignalCandidate {
   confidence: number;
   regionLabel: RegionOverlay['label'] | 'FILENAME' | 'UNKNOWN';
   regionId?: string | null;
+}
+
+type DrawingSignalCandidate = {
+  field: FieldKey;
+  value: string;
+  source: CandidateSignalSource;
+  confidence: number;
+  regionLabel: FieldSignalCandidate['regionLabel'];
+};
+
+interface DrawingExtractionResult {
+  candidates: DrawingSignalCandidate[];
+  description: string | null;
 }
 
 function candidateToEvidenceSignal(
@@ -401,6 +427,75 @@ function buildUnresolvedQuestions(params: {
 // Public API
 // ---------------------------------------------------------------------------
 
+function extractInternalDrawingSignals(text: string, fileName: string): DrawingExtractionResult {
+  const candidates: DrawingSignalCandidate[] = [];
+
+  const textMatch = text.match(/\b(527-\d{4}-010)\b/);
+  const fnMatch   = !textMatch ? fileName.match(/\b(527-\d{4}-010)\b/) : null;
+  const apogeePN  = (textMatch ?? fnMatch)?.[1] ?? null;
+  const pnSource: CandidateSignalSource = textMatch ? 'TITLE_BLOCK_OCR' : 'FILENAME';
+  const pnConf    = textMatch ? 0.97 : 0.9;
+  const pnRegion: FieldSignalCandidate['regionLabel'] = textMatch ? 'TITLE_BLOCK' : 'FILENAME';
+  if (apogeePN) {
+    candidates.push({ field: 'PART_NUMBER',    value: apogeePN, source: pnSource, confidence: pnConf, regionLabel: pnRegion });
+    candidates.push({ field: 'DRAWING_NUMBER', value: apogeePN, source: pnSource, confidence: pnConf, regionLabel: pnRegion });
+  }
+
+  const apogeeRev = extractApogeeDrawingRevision(text);
+  if (apogeeRev.revision && isStrictRevisionToken(apogeeRev.revision)) {
+    candidates.push({ field: 'REVISION', value: apogeeRev.revision, source: 'TITLE_BLOCK_OCR', confidence: 0.98, regionLabel: 'REVISION' });
+  }
+
+  const titleMatch = text.match(/(?:WIRE\s+HARNESS|ASSEMBLY|CABLE\s+ASSY|WIRING\s+DIAGRAM)[^\n]{0,80}/i);
+  const description = titleMatch ? titleMatch[0].replace(/\s+/g, ' ').trim().slice(0, 120) : null;
+
+  return { candidates, description };
+}
+
+function extractCustomerDrawingSignals(text: string, fileName: string): DrawingExtractionResult {
+  const candidates: DrawingSignalCandidate[] = [];
+
+  const rheemPnMatch = text.match(/\b(45-\d{5,6}-\d{2,4}[A-Z]?)\b/);
+  if (rheemPnMatch) {
+    candidates.push({ field: 'PART_NUMBER', value: rheemPnMatch[1], source: 'TITLE_BLOCK_OCR', confidence: 0.95, regionLabel: 'TITLE_BLOCK' });
+  }
+
+  const drnFromText = extractDrawingNumberFromText(text);
+  const drnFromFile = extractDrawingNumberFromFilename(fileName);
+  const drn = drnFromText ?? drnFromFile;
+  if (drn) {
+    const drnSource: CandidateSignalSource = drnFromText ? 'TITLE_BLOCK_OCR' : 'FILENAME';
+    const drnConf   = drnFromText ? 0.82 : 0.7;
+    const drnRegion: FieldSignalCandidate['regionLabel'] = drnFromText ? 'TITLE_BLOCK' : 'FILENAME';
+    candidates.push({ field: 'DRAWING_NUMBER', value: drn, source: drnSource, confidence: drnConf, regionLabel: drnRegion });
+  }
+
+  const rheemRev = extractRheemDrawingRevision(text);
+  if (rheemRev.isRheemTitleBlock && rheemRev.revision && isStrictRevisionToken(rheemRev.revision)) {
+    candidates.push({ field: 'REVISION', value: rheemRev.revision, source: 'TITLE_BLOCK_OCR', confidence: 0.97, regionLabel: 'REVISION' });
+  }
+
+  const titleMatch = text.match(/(?:WIRE\s+HARNESS|ASSEMBLY|CABLE\s+ASSY|WIRING\s+DIAGRAM)[^\n]{0,80}/i);
+  const description = titleMatch ? titleMatch[0].replace(/\s+/g, ' ').trim().slice(0, 120) : null;
+
+  return { candidates, description };
+}
+
+function extractUnknownDrawingSignals(text: string, fileName: string): DrawingExtractionResult {
+  const candidates: DrawingSignalCandidate[] = [];
+  const draft = ingestDrawingPdf({ drawingText: text, fileName });
+
+  if (draft.drawing_number) {
+    candidates.push({ field: 'PART_NUMBER',    value: draft.drawing_number, source: 'TITLE_BLOCK_OCR', confidence: 0.8, regionLabel: 'TITLE_BLOCK' });
+    candidates.push({ field: 'DRAWING_NUMBER', value: draft.drawing_number, source: 'TITLE_BLOCK_OCR', confidence: 0.8, regionLabel: 'TITLE_BLOCK' });
+  }
+  if (draft.revision && isStrictRevisionToken(draft.revision)) {
+    candidates.push({ field: 'REVISION', value: draft.revision, source: 'HEURISTIC', confidence: 0.6, regionLabel: 'TITLE_BLOCK' });
+  }
+
+  return { candidates, description: draft.title ?? null };
+}
+
 export interface AnalyzeIngestionParams {
   fileName: string;
   fileSize: number;
@@ -428,6 +523,16 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   // --- Pipeline mode ---
   const pipelineMode: PipelineMode = docType === 'BOM' ? 'BOM' : 'DRAWING';
   console.log('[PIPELINE MODE]', { file: fileName, documentType: docType, pipelineMode });
+
+  // --- Drawing subtype ---
+  const drawingSubtype: DrawingSubtype = (() => {
+    if (pipelineMode !== 'DRAWING') return 'N/A';
+    if (!normalizedText) return 'DRAWING_UNKNOWN';
+    if (/\b527-\d{4}-010\b/.test(normalizedText) || /\b527-\d{4}-010\b/.test(fileName)) return 'INTERNAL_DRAWING';
+    if (/\b45-\d{5,6}-\d{2,4}\b/.test(normalizedText)) return 'CUSTOMER_DRAWING';
+    return 'DRAWING_UNKNOWN';
+  })();
+  console.log('[DRAWING SUBTYPE]', { file: fileName, drawingSubtype });
 
   // --- Extraction state ---
   const drawingNumberOverride = trimStr(drawingNumberHint);
@@ -605,58 +710,19 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     }
   }
 
-  // --- Drawing extraction ---
-  if (normalizedText && docType !== 'BOM' && docType !== 'UNKNOWN') {
-    const draft = ingestDrawingPdf({ drawingText: normalizedText, fileName });
-    if (draft.drawing_number) {
-      addCandidate('PART_NUMBER', {
-        value: draft.drawing_number,
-        source: 'TITLE_BLOCK_OCR',
-        confidence: 0.9,
-        regionLabel: 'TITLE_BLOCK',
-      });
+  // --- Drawing extraction (subtype-aware, Phase 3H.43) ---
+  if (pipelineMode === 'DRAWING' && normalizedText) {
+    const drawingResult = drawingSubtype === 'INTERNAL_DRAWING'
+      ? extractInternalDrawingSignals(normalizedText, fileName)
+      : drawingSubtype === 'CUSTOMER_DRAWING'
+      ? extractCustomerDrawingSignals(normalizedText, fileName)
+      : extractUnknownDrawingSignals(normalizedText, fileName);
+
+    for (const c of drawingResult.candidates) {
+      addCandidate(c.field, { value: c.value, source: c.source, confidence: c.confidence, regionLabel: c.regionLabel });
     }
-    if (!description && draft.title) description = draft.title;
-
-    if (!revision) {
-      const hasApogeePN = /\b527-\d{4}-010\b/.test(normalizedText);
-      const hasRheemPN  = /\b45-\d{5,6}-\d{2,4}\b/.test(normalizedText);
-
-      if (hasApogeePN) {
-        const apogeeRev = extractApogeeDrawingRevision(normalizedText);
-        if (apogeeRev.isApogeeDrawing && apogeeRev.revision) {
-          revision = apogeeRev.revision;
-          revisionSource = 'REVISION_BOX_APOGEE';
-          addCandidate('REVISION', {
-            value: apogeeRev.revision,
-            source: 'TITLE_BLOCK_OCR',
-            confidence: 0.98,
-            regionLabel: 'REVISION',
-          });
-        }
-      } else if (hasRheemPN) {
-        const rheemRev = extractRheemDrawingRevision(normalizedText);
-        if (rheemRev.isRheemTitleBlock && rheemRev.revision) {
-          revision = rheemRev.revision;
-          revisionSource = 'TITLE_BLOCK_RHEEM';
-          addCandidate('REVISION', {
-            value: rheemRev.revision,
-            source: 'TITLE_BLOCK_OCR',
-            confidence: 0.97,
-            regionLabel: 'REVISION',
-          });
-        }
-      }
-      if (!revision && draft.revision) {
-        revision = draft.revision;
-        revisionSource = 'TEXT';
-        addCandidate('REVISION', {
-          value: draft.revision,
-          source: 'HEURISTIC',
-          confidence: 0.65,
-          regionLabel: 'TITLE_BLOCK',
-        });
-      }
+    if (!description && drawingResult.description) {
+      description = drawingResult.description;
     }
   }
 
@@ -761,6 +827,9 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   if (selectedRevisionCandidate) {
     revision = selectedRevisionCandidate.value;
     revisionSource = mapSignalSourceToRevisionSource(selectedRevisionCandidate.source);
+    if (drawingSubtype === 'INTERNAL_DRAWING' && selectedRevisionCandidate.source === 'TITLE_BLOCK_OCR') {
+      revisionSource = 'REVISION_BOX_APOGEE';
+    }
     if (!fieldResolutionMode.REVISION) {
       fieldResolutionMode.REVISION = 'RESOLVED';
       fieldResolutionSource.REVISION = selectedRevisionCandidate.source;
@@ -835,6 +904,8 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     resolved_drawing_number_source: selectedDrawingCandidate?.source ?? null,
     captured_at: new Date().toISOString(),
     confirmation_mode: null,
+    pipeline_mode: pipelineMode,
+    drawing_subtype: drawingSubtype !== 'N/A' ? drawingSubtype : null,
     discarded_signals: discardedSignals.length > 0 ? discardedSignals : undefined,
   };
 

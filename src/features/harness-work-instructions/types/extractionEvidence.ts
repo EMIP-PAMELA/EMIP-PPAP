@@ -205,4 +205,8 @@ export interface DocumentExtractionEvidence {
     revision?: FieldResolutionAudit;
     drawing_number?: FieldResolutionAudit;
   };
+  /** Phase 3H.43: Pipeline mode active during extraction (BOM / DRAWING). */
+  pipeline_mode?: string | null;
+  /** Phase 3H.43: Drawing subtype identified during extraction (INTERNAL_DRAWING / CUSTOMER_DRAWING / DRAWING_UNKNOWN). */
+  drawing_subtype?: string | null;
 }
