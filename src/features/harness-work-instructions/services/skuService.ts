@@ -20,6 +20,7 @@ import {
   type RevisionRiskSummary,
 } from '@/src/utils/revisionRiskAnalyzer';
 import { resolveDrawingForPart } from '@/src/features/harness-work-instructions/services/drawingLookupService';
+import { selectCanonicalRevision } from '@/src/utils/revisionCanonical';
 
 export type DocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING' | 'UNKNOWN';
 
@@ -137,8 +138,11 @@ export interface SKUDocumentRecord {
   id: string;
   sku_id: string;
   document_type: DocumentType;
+  /** Raw extracted or manual input — diagnostic only. Use canonical_revision for display. */
   revision: string;
   normalized_revision?: string | null;
+  /** Single authoritative revision for UI and workflow logic. Derived from normalized_revision ?? revision (non-sentinel). */
+  canonical_revision?: string | null;
   revision_source?: RevisionSource | null;
   revision_confidence?: number | null;
   file_url: string;
@@ -395,6 +399,10 @@ function attachRevisionStates(documents: SKUDocumentRecord[]): SKUDocumentRecord
       ...doc,
       revision_state: revisionState,
       is_current: revisionState === 'CURRENT',
+      canonical_revision: selectCanonicalRevision({
+        normalizedRevision: doc.normalized_revision,
+        rawRevision: doc.revision,
+      }),
     };
   });
 }
@@ -589,6 +597,11 @@ export async function uploadDocument(
     }
   }
 
+  // CANONICAL REVISION CONTRACT (Phase 3H.25)
+  // normalized_revision is the ONLY authoritative revision field for UI and workflow logic.
+  // revision stores the raw/manual input and may contain sentinels — it is diagnostic only.
+  // canonical_revision is derived at query time via selectCanonicalRevision().
+  // NEVER store a sentinel string in normalized_revision.
   const payload = {
     sku_id:        skuId,
     document_type: documentType,

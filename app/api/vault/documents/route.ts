@@ -8,6 +8,7 @@ import {
   type RevisionDocumentInput,
 } from '@/src/utils/revisionCrossValidator';
 import { evaluateSKUReadiness, type SKUReadinessResult, type ReadinessDocument } from '@/src/utils/skuReadinessEvaluator';
+import { selectCanonicalRevision } from '@/src/utils/revisionCanonical';
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 25;
@@ -194,6 +195,11 @@ export async function GET(request: NextRequest) {
       conflict_flag: false,
       phantom_rev_flag: doc.phantom_rev_flag ?? false,
       phantom_rev_note: doc.phantom_rev_note ?? null,
+      /** Canonical revision — single authoritative value for UI display. */
+      canonical_revision: selectCanonicalRevision({
+        normalizedRevision: doc.normalized_revision as string | null,
+        rawRevision: doc.revision as string | null,
+      }),
       storage_path: doc.storage_path as string | null,
       extracted_text: null as string | null,
       sku_revision_status: null as CrossSourceRevisionStatus | null,

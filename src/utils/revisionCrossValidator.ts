@@ -1,6 +1,7 @@
 import { compareRevisions, type RevisionComparisonResult } from '@/src/utils/revisionComparator';
 import type { RevisionState } from '@/src/utils/revisionEvaluator';
 import type { RevisionSource } from '@/src/utils/revisionParser';
+import { selectCanonicalRevision } from '@/src/utils/revisionCanonical';
 
 export type CrossSourceRevisionStatus =
   | 'SYNCHRONIZED'
@@ -105,7 +106,12 @@ function snapshotAuthority(
     };
   }
 
-  const revision = selected.revision ?? selected.normalized_revision ?? null;
+  // Use selectCanonicalRevision to prevent sentinels (e.g. 'UNSPECIFIED') from leaking into
+  // cross-source comparisons. canonical_revision takes precedence over raw revision.
+  const revision = selectCanonicalRevision({
+    normalizedRevision: selected.normalized_revision,
+    rawRevision: selected.revision,
+  });
   const normalized = selected.normalized_revision ?? normalizeValue(revision);
 
   return {

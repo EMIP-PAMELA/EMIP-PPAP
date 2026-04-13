@@ -28,8 +28,11 @@ interface VaultDocumentRow {
   filename: string;
   document_type: 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
   sku: string | null;
+  /** Raw extracted or manual input — diagnostic only. */
   revision: string;
   normalized_revision?: string | null;
+  /** Single authoritative revision for display. Never a sentinel string. */
+  canonical_revision?: string | null;
   revision_state: RevisionState;
   sku_revision_status?: CrossSourceRevisionStatus | null;
   sku_readiness_status?: ReadinessStatus | null;
@@ -228,12 +231,9 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
     const isUnlinked = !doc.sku_id;
     const isPending = Boolean(doc.sku?.startsWith('PENDING-'));
     const partLabel = doc.sku ?? doc.inferred_part_number ?? '—';
-    const displayRevision =
-      doc.normalized_revision?.trim()
-        ? doc.normalized_revision
-        : doc.revision && doc.revision.trim() && doc.revision !== 'UNSPECIFIED'
-          ? doc.revision
-          : null;
+    // canonical_revision is the ONLY approved revision source for display.
+    // raw revision and normalized_revision are diagnostic only.
+    const displayRevision = doc.canonical_revision ?? null;
     const revisionLabel = displayRevision ?? '—';
     const hasRevision = Boolean(displayRevision);
     const extractionStatus: ExtractionStatus = hasRevision
@@ -242,11 +242,11 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
         : 'parsed'
       : 'failed';
 
-    if (isDevelopment && doc.revision === 'UNSPECIFIED' && doc.normalized_revision) {
-      console.warn('[VAULT REVISION MISMATCH]', {
+    if (isDevelopment && !doc.canonical_revision && (doc.normalized_revision || (doc.revision && doc.revision !== 'UNSPECIFIED'))) {
+      console.warn('[VAULT CANONICAL REVISION NULL — raw/normalized suggest value exists]', {
         documentId: doc.id,
-        stored_revision: doc.revision,
-        normalized_revision: doc.normalized_revision,
+        raw_revision: doc.revision,
+        normalized_revision: doc.normalized_revision ?? null,
         filename: doc.filename,
       });
     }
@@ -254,7 +254,8 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
     const extractionSource = extractorLabel[doc.document_type] ?? 'Generic fallback';
     const debugPayload = isDevelopment
       ? {
-          extracted_revision: doc.revision ?? null,
+          canonical_revision: doc.canonical_revision ?? null,
+          raw_revision: doc.revision ?? null,
           normalized_revision: doc.normalized_revision ?? null,
           expected_revision: expectedRevision ?? null,
           validation_status: doc.sku_revision_status ?? 'UNKNOWN',
@@ -313,11 +314,6 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
             {!hasRevision && (
               <p className="text-[11px] font-semibold text-red-600">
                 No revision detected in document (missing text layer or unsupported format).
-              </p>
-            )}
-            {doc.revision === 'UNSPECIFIED' && doc.normalized_revision && (
-              <p className="text-[11px] text-amber-600">
-                Stored as UNSPECIFIED — displayed from normalized value ({doc.normalized_revision}).
               </p>
             )}
             <p className="text-[11px] text-gray-600">State: {revisionState}</p>

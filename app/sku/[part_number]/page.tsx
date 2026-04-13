@@ -729,7 +729,7 @@ export default function SKUDashboardPage() {
                 {documents.map(doc => (
                   <tr key={doc.id}>
                     <td className="px-4 py-2 font-medium text-gray-900">{sectionDescription(doc.document_type)}</td>
-                    <td className="px-4 py-2">{doc.revision}</td>
+                    <td className="px-4 py-2">{doc.canonical_revision ?? doc.normalized_revision ?? '—'}</td>
                     <td className="px-4 py-2">
                       <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-700">
                         {doc.file_name}
