@@ -527,6 +527,157 @@ function EvidencePanel({
 }
 
 // ---------------------------------------------------------------------------
+// Parsed Drawing Data Panel (Phase 3H.43.X)
+// ---------------------------------------------------------------------------
+
+interface ParsedWire { id: string; length: number | null; gauge: string | null; color: string | null; pin: number | null }
+interface ParsedConnector { manufacturer: string | null; partNumber: string | null; torque: string | null; color: string | null }
+interface ParsedNotes { tolerances: string[]; instructions: string[] }
+interface ParsedQuality { wireTableDetected: boolean; connectorTableDetected: boolean; titleBlockDetected: boolean; wireCount: number; connectorCount: number; toleranceCount: number }
+
+function ParsedDrawingDataPanel({ data }: { data: Record<string, unknown> }) {
+  const [open, setOpen] = useState(false);
+  const wires = (data.wires ?? []) as ParsedWire[];
+  const connectors = (data.connectors ?? []) as ParsedConnector[];
+  const notes = (data.notes ?? { tolerances: [], instructions: [] }) as ParsedNotes;
+  const quality = data.parseQuality as ParsedQuality | undefined;
+  const partNumber = data.partNumber as string | null;
+  const revision = data.revision as string | null;
+  const description = data.description as string | null;
+
+  const wireCount = wires.length;
+  const connectorCount = connectors.length;
+  const hasData = wireCount > 0 || connectorCount > 0 || notes.tolerances.length > 0;
+
+  return (
+    <details open={open} onToggle={e => setOpen((e.target as HTMLDetailsElement).open)}
+      className="rounded-xl border border-indigo-200 bg-indigo-50/50 text-xs">
+      <summary className="cursor-pointer px-3 py-2 font-semibold text-indigo-700 select-none flex items-center gap-2">
+        <span>Parsed Drawing Data</span>
+        {hasData && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] text-indigo-800">{wireCount}W · {connectorCount}C</span>}
+        <span className="ml-auto text-[10px] text-indigo-400">{open ? '▲' : '▼'}</span>
+      </summary>
+      {open && (
+        <div className="px-3 pb-3 space-y-3 text-gray-700">
+          {/* Header fields */}
+          <div className="flex flex-wrap gap-3 text-[11px]">
+            {partNumber && <div><span className="font-semibold text-gray-500">PN:</span> <span className="font-mono font-semibold">{partNumber}</span></div>}
+            {revision && <div><span className="font-semibold text-gray-500">Rev:</span> <span className="font-mono font-semibold">{revision}</span></div>}
+            {description && <div><span className="font-semibold text-gray-500">Desc:</span> <span className="text-gray-600">{description}</span></div>}
+          </div>
+
+          {/* Parse quality summary */}
+          {quality && (
+            <div className="flex flex-wrap gap-2 text-[10px]">
+              <span className={`rounded-full px-2 py-0.5 font-semibold ${quality.titleBlockDetected ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>
+                Title Block {quality.titleBlockDetected ? '✓' : '✗'}
+              </span>
+              <span className={`rounded-full px-2 py-0.5 font-semibold ${quality.wireTableDetected ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>
+                Wire Table {quality.wireTableDetected ? '✓' : '✗'}
+              </span>
+              <span className={`rounded-full px-2 py-0.5 font-semibold ${quality.connectorTableDetected ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>
+                Connectors {quality.connectorTableDetected ? '✓' : '✗'}
+              </span>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-600">
+                {quality.toleranceCount} tolerance{quality.toleranceCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
+
+          {/* Wire table */}
+          {wireCount > 0 && (
+            <div>
+              <div className="font-semibold text-gray-500 mb-1">Wire Table ({wireCount})</div>
+              <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-gray-100 text-gray-500 uppercase text-[10px]">
+                    <tr>
+                      <th className="px-2 py-1 text-left">ID</th>
+                      <th className="px-2 py-1 text-right">Length</th>
+                      <th className="px-2 py-1 text-left">Gauge</th>
+                      <th className="px-2 py-1 text-left">Color</th>
+                      <th className="px-2 py-1 text-right">Pin</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {wires.slice(0, 50).map((w, idx) => (
+                      <tr key={idx} className="border-t border-gray-100 hover:bg-indigo-50/40">
+                        <td className="px-2 py-0.5 font-mono font-semibold">{w.id}</td>
+                        <td className="px-2 py-0.5 text-right font-mono">{w.length !== null ? w.length.toFixed(2) : '—'}</td>
+                        <td className="px-2 py-0.5">{w.gauge ?? '—'}</td>
+                        <td className="px-2 py-0.5">{w.color ?? '—'}</td>
+                        <td className="px-2 py-0.5 text-right">{w.pin !== null ? w.pin : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {wireCount > 50 && <div className="px-2 py-1 text-[10px] text-gray-400">Showing first 50 of {wireCount} wires</div>}
+              </div>
+            </div>
+          )}
+
+          {/* Connector table */}
+          {connectorCount > 0 && (
+            <div>
+              <div className="font-semibold text-gray-500 mb-1">Connectors ({connectorCount})</div>
+              <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-gray-100 text-gray-500 uppercase text-[10px]">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Manufacturer</th>
+                      <th className="px-2 py-1 text-left">Part Number</th>
+                      <th className="px-2 py-1 text-left">Torque</th>
+                      <th className="px-2 py-1 text-left">Color</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {connectors.map((c, idx) => (
+                      <tr key={idx} className="border-t border-gray-100 hover:bg-indigo-50/40">
+                        <td className="px-2 py-0.5">{c.manufacturer ?? '—'}</td>
+                        <td className="px-2 py-0.5 font-mono">{c.partNumber ?? '—'}</td>
+                        <td className="px-2 py-0.5">{c.torque ?? '—'}</td>
+                        <td className="px-2 py-0.5">{c.color ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          {(notes.tolerances.length > 0 || notes.instructions.length > 0) && (
+            <div>
+              <div className="font-semibold text-gray-500 mb-1">Notes</div>
+              {notes.tolerances.length > 0 && (
+                <div className="mb-1">
+                  <div className="text-[10px] font-semibold text-amber-700 mb-0.5">Wire Length Tolerances</div>
+                  {notes.tolerances.map((t, idx) => (
+                    <div key={idx} className="text-[11px] text-gray-600 ml-2">{t}</div>
+                  ))}
+                </div>
+              )}
+              {notes.instructions.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-semibold text-gray-600 mb-0.5">Instructions</div>
+                  {notes.instructions.map((n, idx) => (
+                    <div key={idx} className="text-[11px] text-gray-600 ml-2">{n}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!hasData && (
+            <div className="text-[11px] text-gray-400">No structured data extracted from this drawing.</div>
+          )}
+        </div>
+      )}
+    </details>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
@@ -1264,6 +1415,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   }}
                   activeRegionId={activeRegionId}
                 />
+              ) : null}
+
+              {selectedItem.analysis?.structuredData ? (
+                <ParsedDrawingDataPanel data={selectedItem.analysis.structuredData} />
               ) : null}
 
               {selectedItem.status === 'ready_to_commit' ? (

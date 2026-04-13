@@ -95,6 +95,9 @@ export interface IngestionAnalysisResult {
   /** True when zero BLOCKING questions remain — safe to commit without user input. */
   readyToCommit: boolean;
 
+  /** Phase 3H.43.X: Structured drawing data from domain-specific parser (e.g. RheemDrawingModel). */
+  structuredData?: Record<string, unknown> | null;
+
   analyzedAt: string;
 }
 

@@ -209,4 +209,6 @@ export interface DocumentExtractionEvidence {
   pipeline_mode?: string | null;
   /** Phase 3H.43: Drawing subtype identified during extraction (INTERNAL_DRAWING / CUSTOMER_DRAWING / DRAWING_UNKNOWN). */
   drawing_subtype?: string | null;
+  /** Phase 3H.43.X: Structured drawing data from domain-specific parser (e.g. RheemDrawingModel). */
+  structured_data?: Record<string, unknown> | null;
 }

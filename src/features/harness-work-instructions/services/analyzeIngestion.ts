@@ -25,6 +25,7 @@ import { extractRevisionSignal, type RevisionSource } from '@/src/utils/revision
 import { extractPartNumberFromText, extractPartNumberFromFilename } from '@/src/utils/extractPartNumber';
 import { extractDrawingNumberFromText, extractDrawingNumberFromFilename } from '@/src/utils/extractDrawingNumber';
 import { ingestDrawingPdf } from './drawingIngestionService';
+import { parseRheemDrawing, detectRheemDrawing, type RheemDrawingModel } from './rheemDrawingParser';
 import type { SignalSource } from '../utils/resolveDocumentSignals';
 import { analyzeDocumentStructure } from './documentStructureAnalyzer';
 import { extractRegionsWithAI } from './aiRegionExtractor';
@@ -98,6 +99,7 @@ type DrawingSignalCandidate = {
 interface DrawingExtractionResult {
   candidates: DrawingSignalCandidate[];
   description: string | null;
+  rheemModel?: RheemDrawingModel | null;
 }
 
 function candidateToEvidenceSignal(
@@ -454,12 +456,35 @@ function extractInternalDrawingSignals(text: string, fileName: string): DrawingE
 
 function extractCustomerDrawingSignals(text: string, fileName: string): DrawingExtractionResult {
   const candidates: DrawingSignalCandidate[] = [];
+  let rheemModel: RheemDrawingModel | null = null;
 
-  const rheemPnMatch = text.match(/\b(45-\d{5,6}-\d{2,4}[A-Z]?)\b/);
-  if (rheemPnMatch) {
-    candidates.push({ field: 'PART_NUMBER', value: rheemPnMatch[1], source: 'TITLE_BLOCK_OCR', confidence: 0.95, regionLabel: 'TITLE_BLOCK' });
+  // --- Rheem structured parser (Phase 3H.43.X) ---
+  if (detectRheemDrawing(text, fileName)) {
+    rheemModel = parseRheemDrawing(text, fileName);
+
+    // Bridge title block into signal system with high confidence
+    if (rheemModel.titleBlock.partNumber) {
+      const conf = rheemModel.titleBlock.anchorFound ? 0.98 : 0.90;
+      candidates.push({ field: 'PART_NUMBER', value: rheemModel.titleBlock.partNumber, source: 'TITLE_BLOCK_OCR', confidence: conf, regionLabel: 'TITLE_BLOCK' });
+    }
+    if (rheemModel.titleBlock.revision && isStrictRevisionToken(rheemModel.titleBlock.revision)) {
+      const conf = rheemModel.titleBlock.anchorFound ? 0.98 : 0.85;
+      candidates.push({ field: 'REVISION', value: rheemModel.titleBlock.revision, source: 'TITLE_BLOCK_OCR', confidence: conf, regionLabel: 'REVISION' });
+    }
+  } else {
+    // Fallback to legacy extraction for non-Rheem customer drawings
+    const rheemPnMatch = text.match(/\b(45-\d{5,6}-\d{2,4}[A-Z]?)\b/);
+    if (rheemPnMatch) {
+      candidates.push({ field: 'PART_NUMBER', value: rheemPnMatch[1], source: 'TITLE_BLOCK_OCR', confidence: 0.95, regionLabel: 'TITLE_BLOCK' });
+    }
+
+    const rheemRev = extractRheemDrawingRevision(text);
+    if (rheemRev.isRheemTitleBlock && rheemRev.revision && isStrictRevisionToken(rheemRev.revision)) {
+      candidates.push({ field: 'REVISION', value: rheemRev.revision, source: 'TITLE_BLOCK_OCR', confidence: 0.97, regionLabel: 'REVISION' });
+    }
   }
 
+  // Drawing number extraction (always run)
   const drnFromText = extractDrawingNumberFromText(text);
   const drnFromFile = extractDrawingNumberFromFilename(fileName);
   const drn = drnFromText ?? drnFromFile;
@@ -470,15 +495,12 @@ function extractCustomerDrawingSignals(text: string, fileName: string): DrawingE
     candidates.push({ field: 'DRAWING_NUMBER', value: drn, source: drnSource, confidence: drnConf, regionLabel: drnRegion });
   }
 
-  const rheemRev = extractRheemDrawingRevision(text);
-  if (rheemRev.isRheemTitleBlock && rheemRev.revision && isStrictRevisionToken(rheemRev.revision)) {
-    candidates.push({ field: 'REVISION', value: rheemRev.revision, source: 'TITLE_BLOCK_OCR', confidence: 0.97, regionLabel: 'REVISION' });
-  }
+  const description = rheemModel?.description ?? (() => {
+    const titleMatch = text.match(/(?:WIRE\s+HARNESS|ASSEMBLY|CABLE\s+ASSY|WIRING\s+DIAGRAM)[^\n]{0,80}/i);
+    return titleMatch ? titleMatch[0].replace(/\s+/g, ' ').trim().slice(0, 120) : null;
+  })();
 
-  const titleMatch = text.match(/(?:WIRE\s+HARNESS|ASSEMBLY|CABLE\s+ASSY|WIRING\s+DIAGRAM)[^\n]{0,80}/i);
-  const description = titleMatch ? titleMatch[0].replace(/\s+/g, ' ').trim().slice(0, 120) : null;
-
-  return { candidates, description };
+  return { candidates, description, rheemModel };
 }
 
 function extractUnknownDrawingSignals(text: string, fileName: string): DrawingExtractionResult {
@@ -711,6 +733,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   }
 
   // --- Drawing extraction (subtype-aware, Phase 3H.43) ---
+  let rheemStructuredData: RheemDrawingModel | null = null;
   if (pipelineMode === 'DRAWING' && normalizedText) {
     const drawingResult = drawingSubtype === 'INTERNAL_DRAWING'
       ? extractInternalDrawingSignals(normalizedText, fileName)
@@ -723,6 +746,9 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     }
     if (!description && drawingResult.description) {
       description = drawingResult.description;
+    }
+    if (drawingResult.rheemModel) {
+      rheemStructuredData = drawingResult.rheemModel;
     }
   }
 
@@ -907,6 +933,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     pipeline_mode: pipelineMode,
     drawing_subtype: drawingSubtype !== 'N/A' ? drawingSubtype : null,
     discarded_signals: discardedSignals.length > 0 ? discardedSignals : undefined,
+    structured_data: rheemStructuredData ? (rheemStructuredData as unknown as Record<string, unknown>) : null,
   };
 
   const revisionConfidence = getRevisionConfidence(revisionSource, hasFilenameRev);
@@ -1024,6 +1051,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     extractionEvidence,
     unresolvedQuestions,
     readyToCommit,
+    structuredData: rheemStructuredData ? (rheemStructuredData as unknown as Record<string, unknown>) : null,
     analyzedAt: new Date().toISOString(),
   };
 }
