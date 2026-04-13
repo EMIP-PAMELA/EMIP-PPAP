@@ -18,7 +18,7 @@ import type { RegionOverlay } from './documentRegionOverlay';
 // ---------------------------------------------------------------------------
 
 /** How a FieldExtraction value was obtained. */
-export type FieldExtractionSource = 'OCR' | 'HEURISTIC' | 'AI' | 'FILENAME';
+export type FieldExtractionSource = 'OCR' | 'HEURISTIC' | 'AI' | 'FILENAME' | 'USER';
 
 /**
  * Links one extracted field (revision, part number, drawing number) to the
@@ -32,6 +32,8 @@ export interface FieldExtraction {
   /** ID of the RegionOverlay that yielded this value. Null = full-text fallback. */
   sourceRegionId: string | null;
   source: FieldExtractionSource;
+  /** True when downstream systems must not override this value unless user edits. */
+  locked?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +64,25 @@ export interface EvidenceSignal {
   value: string | null;
   /** Confidence in this specific candidate (0–1). */
   confidence: number;
+  /** Region label (TITLE_BLOCK, REVISION, TABLE, FILENAME, etc.) that produced this value. */
+  region_label?: RegionOverlay['label'] | 'FILENAME' | 'UNKNOWN';
+  /** Optional reason describing why this signal was ignored downstream (wrong region, noise, etc.). */
+  ignored_reason?: string | null;
+  /** Priority bucket used during resolution (USER_CONFIRMED, FILENAME, TITLE_BLOCK_OCR, etc.). */
+  priority_tag?: 'USER_CONFIRMED' | 'FILENAME' | 'TITLE_BLOCK_OCR' | 'AI_REGION' | 'HEURISTIC' | 'TABLE_TEXT';
+}
+
+export type ResolutionMode = 'SHORT_CIRCUIT' | 'RESOLVED' | 'USER_OVERRIDE';
+
+export interface FieldResolutionAudit {
+  field: 'REVISION' | 'DRAWING_NUMBER' | 'PART_NUMBER';
+  resolution_mode: ResolutionMode;
+  source: string | null;
+  locked: boolean;
+  short_circuit_applied: boolean;
+  signals_considered: number;
+  signals_discarded: number;
+  enforcement_rules_applied: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +142,8 @@ export interface DocumentExtractionEvidence {
   revision_signals: EvidenceSignal[];
   /** All candidate drawing number values found. */
   drawing_number_signals: EvidenceSignal[];
+  /** All candidate part number values considered after filtering. */
+  part_number_signals?: EvidenceSignal[];
   /** Structural layout analysis (heuristic). */
   document_structure: DocumentStructureAnalysis | null;
   /** The revision value that was actually persisted to sku_documents.revision. */
@@ -170,4 +193,16 @@ export interface DocumentExtractionEvidence {
    * Every extracted field is linked to the document region it was derived from.
    */
   field_extractions?: FieldExtraction[];
+  /** Signals that were discarded (e.g., wrong region, noise) for transparency in debug UI. */
+  discarded_signals?: Array<{
+    field: 'REVISION' | 'DRAWING_NUMBER' | 'PART_NUMBER';
+    reason: string;
+    signals: EvidenceSignal[];
+  }>;
+  /** Guardrail enforcement summary per field (Phase 3H.39.1). */
+  resolution_audit?: {
+    part_number?: FieldResolutionAudit;
+    revision?: FieldResolutionAudit;
+    drawing_number?: FieldResolutionAudit;
+  };
 }

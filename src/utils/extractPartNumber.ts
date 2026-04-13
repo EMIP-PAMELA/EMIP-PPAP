@@ -70,3 +70,12 @@ export function extractPartNumberFromText(
 
   return null;
 }
+
+export function extractPartNumberFromFilename(fileName: string | null | undefined): string | null {
+  if (!fileName) return null;
+  const stem = fileName
+    .replace(/\.[^.]+$/, '')
+    .replace(/[ _]+/g, '-')
+    .replace(/[^A-Za-z0-9-]/g, '-');
+  return extractPartNumberFromText(stem, { lineLimit: 5 });
+}

@@ -22,10 +22,10 @@ import { extractEngineeringMasterRevision } from '@/src/utils/extractEngineering
 import { extractRheemDrawingRevision } from '@/src/utils/extractRheemDrawingRevision';
 import { extractApogeeDrawingRevision } from '@/src/utils/extractApogeeDrawingRevision';
 import { extractRevisionSignal, type RevisionSource } from '@/src/utils/revisionParser';
-import { extractPartNumberFromText } from '@/src/utils/extractPartNumber';
+import { extractPartNumberFromText, extractPartNumberFromFilename } from '@/src/utils/extractPartNumber';
 import { extractDrawingNumberFromText, extractDrawingNumberFromFilename } from '@/src/utils/extractDrawingNumber';
 import { ingestDrawingPdf } from './drawingIngestionService';
-import { resolveDocumentSignalsFromArrays, type Signal } from '../utils/resolveDocumentSignals';
+import type { SignalSource } from '../utils/resolveDocumentSignals';
 import { analyzeDocumentStructure } from './documentStructureAnalyzer';
 import { extractRegionsWithAI } from './aiRegionExtractor';
 import { resolveAliasFromDB } from './aliasService';
@@ -36,6 +36,7 @@ import type {
   DocumentExtractionEvidence,
   FieldExtraction,
   FieldExtractionSource,
+  ResolutionMode,
 } from '../types/extractionEvidence';
 import type { RegionOverlay } from '../types/documentRegionOverlay';
 import type { DocumentType } from './skuService';
@@ -60,6 +61,181 @@ function deriveRevisionFromBOM(text: string): string | null {
   return null;
 }
 
+type FieldKey = 'REVISION' | 'DRAWING_NUMBER' | 'PART_NUMBER';
+type CandidateSignalSource = Exclude<SignalSource, 'NONE'>;
+
+interface FieldSignalCandidate {
+  field: FieldKey;
+  value: string;
+  source: CandidateSignalSource;
+  confidence: number;
+  regionLabel: RegionOverlay['label'] | 'FILENAME' | 'UNKNOWN';
+  regionId?: string | null;
+}
+
+function candidateToEvidenceSignal(
+  candidate: FieldSignalCandidate,
+  ignoredReason: string | null = null,
+): EvidenceSignal {
+  return {
+    source: candidate.source,
+    value: candidate.value,
+    confidence: candidate.confidence,
+    region_label: candidate.regionLabel,
+    ignored_reason: ignoredReason,
+    priority_tag: candidate.source,
+  };
+}
+
+const FIELD_REGION_MAP: Record<FieldKey, Set<RegionOverlay['label']>> = {
+  REVISION: new Set(['REVISION', 'TITLE_BLOCK']),
+  DRAWING_NUMBER: new Set(['DRAWING_NUMBER', 'TITLE_BLOCK']),
+  PART_NUMBER: new Set(['TITLE_BLOCK']),
+};
+
+const NOISE_WORDS = new Set(['TORQUE', 'COLOR', 'COLOUR', 'WIRE', 'NOTES', 'TABLE']);
+const TITLE_BLOCK_KEYWORDS = ['PART', 'P/N', 'PN', 'DRAWING', 'DWG', 'TITLE'];
+const TITLE_BLOCK_VALUE_PATTERN = /\b[A-Z]{2,}-\d{3,}(?:-[A-Z0-9]{1,})?\b/;
+const MIN_LENGTH_BY_FIELD: Record<FieldKey, number> = {
+  REVISION: 1,
+  DRAWING_NUMBER: 4,
+  PART_NUMBER: 4,
+};
+
+function titleBlockTextIsTrusted(text?: string | null): boolean {
+  if (!text) return false;
+  const upper = text.toUpperCase();
+  const hasKeyword = TITLE_BLOCK_KEYWORDS.some(keyword => upper.includes(keyword));
+  const hasPattern = TITLE_BLOCK_VALUE_PATTERN.test(upper.replace(/[^A-Z0-9-]/g, ' '));
+  return hasKeyword || hasPattern;
+}
+
+function enforceTitleBlockSanity(regions: RegionOverlay[]): boolean {
+  let anyTrusted = false;
+  regions.forEach(region => {
+    if (region.label !== 'TITLE_BLOCK') return;
+    if (titleBlockTextIsTrusted(region.extractedText)) {
+      anyTrusted = true;
+    } else {
+      region.label = 'UNKNOWN';
+    }
+  });
+  return anyTrusted;
+}
+
+function mapSignalSourceToFieldExtractionSource(source: SignalSource | null | undefined): FieldExtractionSource {
+  if (source === 'FILENAME') return 'FILENAME';
+  if (source === 'TITLE_BLOCK_OCR') return 'OCR';
+  if (source === 'AI_REGION') return 'AI';
+  if (source === 'USER_CONFIRMED') return 'USER';
+  return 'HEURISTIC';
+}
+
+function mapSignalSourceToRevisionSource(source: SignalSource | null | undefined): RevisionSource | null {
+  if (!source || source === 'NONE') return null;
+  if (source === 'USER_CONFIRMED') return 'MANUAL';
+  if (source === 'FILENAME') return 'FILENAME';
+  if (source === 'TITLE_BLOCK_OCR') return 'TITLE_BLOCK_RHEEM';
+  if (source === 'AI_REGION') return 'FALLBACK';
+  if (source === 'HEURISTIC' || source === 'TABLE_TEXT') return 'TEXT';
+  return 'UNKNOWN';
+}
+
+function resolveRegionIdForCandidate(
+  candidate: FieldSignalCandidate | null,
+  regions: RegionOverlay[],
+): string | null {
+  if (!candidate) return null;
+  if (candidate.regionLabel === 'FILENAME' || candidate.regionLabel === 'UNKNOWN') return null;
+  return findRegionByLabel(regions, candidate.regionLabel as RegionOverlay['label'])?.id ?? null;
+}
+
+const FIELD_SELECTION_CHAIN: Record<FieldKey, CandidateSignalSource[]> = {
+  PART_NUMBER: ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'AI_REGION'],
+  REVISION:    ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'AI_REGION', 'HEURISTIC'],
+  DRAWING_NUMBER: ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'AI_REGION', 'HEURISTIC', 'TABLE_TEXT'],
+};
+
+function selectCandidateByOrder(
+  candidates: FieldSignalCandidate[],
+  order: CandidateSignalSource[],
+): FieldSignalCandidate | null {
+  for (const source of order) {
+    const found = candidates.find(candidate => candidate.source === source);
+    if (found) return found;
+  }
+  return null;
+}
+
+function filterFieldSignals(
+  field: FieldKey,
+  candidates: FieldSignalCandidate[],
+  options?: { titleBlockTrusted?: boolean },
+): {
+  kept: FieldSignalCandidate[];
+  keptEvidence: EvidenceSignal[];
+  discardedEvidence: EvidenceSignal[];
+} {
+  const allowedRegions = FIELD_REGION_MAP[field] ?? new Set<RegionOverlay['label']>();
+  const minLength = MIN_LENGTH_BY_FIELD[field] ?? 1;
+  const titleBlockTrusted = options?.titleBlockTrusted ?? true;
+  const kept: FieldSignalCandidate[] = [];
+  const keptEvidence: EvidenceSignal[] = [];
+  const discardedEvidence: EvidenceSignal[] = [];
+
+  for (const candidate of candidates) {
+    const value = candidate.value?.trim();
+    if (!value) continue;
+    let ignoredReason: string | null = null;
+    if (value.length < minLength) {
+      ignoredReason = 'Ignored (value too short)';
+    } else if (
+      field === 'PART_NUMBER' &&
+      NOISE_WORDS.has(value.replace(/[^A-Z]/gi, '').toUpperCase())
+    ) {
+      ignoredReason = 'BLACKLISTED_TERM';
+    } else if (
+      candidate.regionLabel === 'TITLE_BLOCK' &&
+      !titleBlockTrusted
+    ) {
+      ignoredReason = 'INVALID_TITLE_BLOCK_CONTENT';
+    } else if (
+      candidate.regionLabel !== 'FILENAME' &&
+      !allowedRegions.has(candidate.regionLabel as RegionOverlay['label'])
+    ) {
+      ignoredReason = `Ignored (wrong region: ${candidate.regionLabel})`;
+    }
+
+    const evidence: EvidenceSignal = {
+      source: candidate.source,
+      value,
+      confidence: candidate.confidence,
+      region_label: candidate.regionLabel,
+      priority_tag: candidate.source,
+      ignored_reason: ignoredReason,
+    };
+
+    if (ignoredReason) {
+      discardedEvidence.push(evidence);
+      continue;
+    }
+
+    kept.push(candidate);
+    keptEvidence.push(evidence);
+  }
+
+  if (discardedEvidence.length > 0) {
+    console.debug('[FILTERED SIGNALS]', {
+      field,
+      kept: kept.map(signal => ({ value: signal.value, source: signal.source, region: signal.regionLabel })),
+      discarded: discardedEvidence.map(signal => ({ value: signal.value, source: signal.source, reason: signal.ignored_reason })),
+    });
+  }
+
+  return { kept, keptEvidence, discardedEvidence };
+}
+
+
 function trimStr(v?: string | null): string | null {
   if (typeof v !== 'string') return null;
   const t = v.trim();
@@ -78,6 +254,7 @@ function getDocTypeConfidence(detected: DocumentType | 'UNKNOWN', signals: strin
 }
 
 function getRevisionConfidence(revisionSource: RevisionSource | null, hasFilenameRev: boolean): number {
+  if (revisionSource === 'MANUAL') return 1.0;
   if (revisionSource === 'REVISION_BOX_APOGEE' || revisionSource === 'TITLE_BLOCK_RHEEM') return 1.0;
   if (revisionSource === 'HEADER_EXPLICIT') return 0.95;
   if (revisionSource === 'TEXT') return 0.7;
@@ -105,24 +282,6 @@ function findRegionByLabel(
     if (found) return found;
   }
   return null;
-}
-
-function mapRevisionSourceToFieldSource(
-  revisionSource: RevisionSource | null,
-  revision: string | null,
-  filenameRevision: string | null,
-): FieldExtractionSource {
-  if (
-    revisionSource === 'REVISION_BOX_APOGEE' ||
-    revisionSource === 'TITLE_BLOCK_RHEEM' ||
-    revisionSource === 'HEADER_EXPLICIT'
-  ) return 'OCR';
-  if (
-    revisionSource === 'FILENAME' ||
-    (filenameRevision !== null && revision === filenameRevision)
-  ) return 'FILENAME';
-  if (revisionSource === 'TEXT') return 'HEURISTIC';
-  return 'HEURISTIC';
 }
 
 function mergeRegions(heuristic: RegionOverlay[], ai: RegionOverlay[]): RegionOverlay[] {
@@ -208,8 +367,10 @@ function buildUnresolvedQuestions(params: {
 
   const revValues = [...new Set(params.revisionSignals.filter(s => s.value !== null).map(s => s.value))];
   if (revValues.length > 1) {
-    const titleBlockVal = params.revisionSignals.find(s => s.source === 'TITLE_BLOCK')?.value;
-    const otherVals = params.revisionSignals.filter(s => s.source !== 'TITLE_BLOCK' && s.value && s.value !== titleBlockVal).map(s => s.value);
+    const titleBlockVal = params.revisionSignals.find(s => s.source === 'TITLE_BLOCK_OCR')?.value;
+    const otherVals = params.revisionSignals
+      .filter(s => s.source !== 'TITLE_BLOCK_OCR' && s.value && s.value !== titleBlockVal)
+      .map(s => s.value);
     const isStructuredConflict = Boolean(titleBlockVal && otherVals.length > 0);
     questions.push({
       id: 'q-signal-conflict',
@@ -256,23 +417,165 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   const docTypeConfidence = docTypeForced ? 1 : getDocTypeConfidence(docType, docTypeSignals);
 
   // --- Extraction state ---
+  const drawingNumberOverride = trimStr(drawingNumberHint);
   let partNumber = trimStr(partNumberHint);
   let revision = trimStr(revisionHint);
   let revisionSource: RevisionSource | null = null;
   let description: string | null = null;
+  const fieldCandidates: Record<FieldKey, FieldSignalCandidate[]> = {
+    REVISION: [],
+    DRAWING_NUMBER: [],
+    PART_NUMBER: [],
+  };
+  const fieldLocks: Record<FieldKey, boolean> = {
+    REVISION: false,
+    DRAWING_NUMBER: false,
+    PART_NUMBER: false,
+  };
+  const lockedSignalBypass: Record<FieldKey, FieldSignalCandidate[]> = {
+    REVISION: [],
+    DRAWING_NUMBER: [],
+    PART_NUMBER: [],
+  };
+  const lockedFieldCandidate: Partial<Record<FieldKey, FieldSignalCandidate>> = {};
+  const fieldResolutionMode: Record<FieldKey, ResolutionMode | null> = {
+    REVISION: null,
+    DRAWING_NUMBER: null,
+    PART_NUMBER: null,
+  };
+  const fieldResolutionSource: Record<FieldKey, SignalSource | null> = {
+    REVISION: null,
+    DRAWING_NUMBER: null,
+    PART_NUMBER: null,
+  };
+  const enforcementRules: Record<FieldKey, Set<string>> = {
+    REVISION: new Set<string>(),
+    DRAWING_NUMBER: new Set<string>(),
+    PART_NUMBER: new Set<string>(),
+  };
+  const addCandidate = (field: FieldKey, candidate: Omit<FieldSignalCandidate, 'field'>) => {
+    if (!candidate.value) return null;
+    const fullCandidate: FieldSignalCandidate = { field, ...candidate };
+    if (fieldLocks[field]) {
+      lockedSignalBypass[field].push(fullCandidate);
+      return fullCandidate;
+    }
+    fieldCandidates[field].push(fullCandidate);
+    return fullCandidate;
+  };
+
+  if (partNumber) {
+    const candidate = addCandidate('PART_NUMBER', {
+      value: partNumber,
+      source: 'USER_CONFIRMED',
+      confidence: 1,
+      regionLabel: 'TITLE_BLOCK',
+    });
+    if (candidate) {
+      fieldLocks.PART_NUMBER = true;
+      lockedFieldCandidate.PART_NUMBER = candidate;
+      fieldResolutionMode.PART_NUMBER = 'USER_OVERRIDE';
+      fieldResolutionSource.PART_NUMBER = 'USER_CONFIRMED';
+    }
+  }
+  if (revision) {
+    const candidate = addCandidate('REVISION', {
+      value: revision,
+      source: 'USER_CONFIRMED',
+      confidence: 1,
+      regionLabel: 'REVISION',
+    });
+    if (candidate) {
+      fieldLocks.REVISION = true;
+      lockedFieldCandidate.REVISION = candidate;
+      fieldResolutionMode.REVISION = 'USER_OVERRIDE';
+      fieldResolutionSource.REVISION = 'USER_CONFIRMED';
+    }
+  }
+  if (drawingNumberOverride) {
+    const candidate = addCandidate('DRAWING_NUMBER', {
+      value: drawingNumberOverride,
+      source: 'USER_CONFIRMED',
+      confidence: 1,
+      regionLabel: 'TITLE_BLOCK',
+    });
+    if (candidate) {
+      fieldLocks.DRAWING_NUMBER = true;
+      lockedFieldCandidate.DRAWING_NUMBER = candidate;
+      fieldResolutionMode.DRAWING_NUMBER = 'USER_OVERRIDE';
+      fieldResolutionSource.DRAWING_NUMBER = 'USER_CONFIRMED';
+    }
+  }
+
+  const filenamePartNumber = extractPartNumberFromFilename(fileName);
+  if (filenamePartNumber && !fieldLocks.PART_NUMBER) {
+    const fnCandidate = addCandidate('PART_NUMBER', {
+      value: filenamePartNumber,
+      source: 'FILENAME',
+      confidence: 0.95,
+      regionLabel: 'FILENAME',
+    });
+    if (fnCandidate) {
+      fieldLocks.PART_NUMBER = true;
+      lockedFieldCandidate.PART_NUMBER = fnCandidate;
+      fieldResolutionMode.PART_NUMBER = 'SHORT_CIRCUIT';
+      fieldResolutionSource.PART_NUMBER = 'FILENAME';
+      enforcementRules.PART_NUMBER.add('FILENAME_SHORT_CIRCUIT');
+      console.debug('[GUARDRAIL ENFORCEMENT]', {
+        field: 'PART_NUMBER',
+        short_circuit_applied: true,
+        locked: true,
+        source: 'FILENAME',
+        value: filenamePartNumber,
+        signals_skipped: 'all subsequent PART_NUMBER candidates',
+      });
+    }
+    if (!partNumber) partNumber = filenamePartNumber;
+  } else if (filenamePartNumber && fieldLocks.PART_NUMBER) {
+    console.debug('[GUARDRAIL ENFORCEMENT]', {
+      field: 'PART_NUMBER',
+      short_circuit_applied: false,
+      locked: true,
+      source: fieldResolutionSource.PART_NUMBER,
+      filename_value_bypassed: filenamePartNumber,
+    });
+  }
 
   // --- BOM (Engineering Master) extraction ---
   if (docType === 'BOM' && normalizedText) {
     const emIds = extractEngineeringMasterIdentifiers(normalizedText);
-    if (!partNumber && emIds.canonicalPartNumber) partNumber = emIds.canonicalPartNumber;
+    if (emIds.canonicalPartNumber) {
+      addCandidate('PART_NUMBER', {
+        value: emIds.canonicalPartNumber,
+        source: 'TITLE_BLOCK_OCR',
+        confidence: 0.92,
+        regionLabel: 'TITLE_BLOCK',
+      });
+      if (!partNumber) partNumber = emIds.canonicalPartNumber;
+    }
 
     if (!revision) {
       const emRev = extractEngineeringMasterRevision(normalizedText);
       if (emRev.isHeaderExplicit && emRev.revision) {
         revision = emRev.revision;
         revisionSource = 'HEADER_EXPLICIT';
+        addCandidate('REVISION', {
+          value: emRev.revision,
+          source: 'TITLE_BLOCK_OCR',
+          confidence: 0.95,
+          regionLabel: 'REVISION',
+        });
       } else {
-        revision = deriveRevisionFromBOM(normalizedText);
+        const bomRev = deriveRevisionFromBOM(normalizedText);
+        if (bomRev) {
+          addCandidate('REVISION', {
+            value: bomRev,
+            source: 'HEURISTIC',
+            confidence: 0.6,
+            regionLabel: 'TITLE_BLOCK',
+          });
+        }
+        revision = bomRev;
         revisionSource = revision ? 'TEXT' : null;
       }
     }
@@ -281,7 +584,15 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   // --- Drawing extraction ---
   if (normalizedText && docType !== 'BOM' && docType !== 'UNKNOWN') {
     const draft = ingestDrawingPdf({ drawingText: normalizedText, fileName });
-    if (!partNumber && draft.drawing_number) partNumber = draft.drawing_number;
+    if (draft.drawing_number) {
+      addCandidate('PART_NUMBER', {
+        value: draft.drawing_number,
+        source: 'TITLE_BLOCK_OCR',
+        confidence: 0.9,
+        regionLabel: 'TITLE_BLOCK',
+      });
+      if (!partNumber) partNumber = draft.drawing_number;
+    }
     if (!description && draft.title) description = draft.title;
 
     if (!revision) {
@@ -293,17 +604,35 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
         if (apogeeRev.isApogeeDrawing && apogeeRev.revision) {
           revision = apogeeRev.revision;
           revisionSource = 'REVISION_BOX_APOGEE';
+          addCandidate('REVISION', {
+            value: apogeeRev.revision,
+            source: 'TITLE_BLOCK_OCR',
+            confidence: 0.98,
+            regionLabel: 'REVISION',
+          });
         }
       } else if (hasRheemPN) {
         const rheemRev = extractRheemDrawingRevision(normalizedText);
         if (rheemRev.isRheemTitleBlock && rheemRev.revision) {
           revision = rheemRev.revision;
           revisionSource = 'TITLE_BLOCK_RHEEM';
+          addCandidate('REVISION', {
+            value: rheemRev.revision,
+            source: 'TITLE_BLOCK_OCR',
+            confidence: 0.97,
+            regionLabel: 'REVISION',
+          });
         }
       }
       if (!revision && draft.revision) {
         revision = draft.revision;
         revisionSource = 'TEXT';
+        addCandidate('REVISION', {
+          value: draft.revision,
+          source: 'HEURISTIC',
+          confidence: 0.65,
+          regionLabel: 'TITLE_BLOCK',
+        });
       }
     }
   }
@@ -311,7 +640,15 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   // --- Generic part number fallback ---
   if (!partNumber && normalizedText && docType !== 'BOM') {
     const derived = extractPartNumberFromText(normalizedText);
-    if (derived) partNumber = derived;
+    if (derived) {
+      addCandidate('PART_NUMBER', {
+        value: derived,
+        source: 'TABLE_TEXT',
+        confidence: 0.4,
+        regionLabel: 'TABLE',
+      });
+      partNumber = derived;
+    }
   }
 
   // --- Fragment capture ---
@@ -347,54 +684,101 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   const filenameRevSignal = extractRevisionSignal({ fileName });
   const filenameRevision  = (filenameRevSignal.normalized && filenameRevSignal.parseSource !== 'UNKNOWN')
     ? filenameRevSignal.normalized : null;
-
-  const isStructuredRevision =
-    revisionSource === 'REVISION_BOX_APOGEE' ||
-    revisionSource === 'TITLE_BLOCK_RHEEM'   ||
-    revisionSource === 'HEADER_EXPLICIT';
+  if (filenameRevision) {
+    addCandidate('REVISION', {
+      value: filenameRevision,
+      source: 'FILENAME',
+      confidence: 0.9,
+      regionLabel: 'FILENAME',
+    });
+  }
 
   const emDrawingNumber = docType === 'BOM' && normalizedText
     ? extractEngineeringMasterIdentifiers(normalizedText).drawingNumber
     : null;
-
-  const revSignalsArr: Signal<string>[] = [
-    { value: isStructuredRevision ? (revision ?? null) : null, source: 'TITLE_BLOCK' },
-    { value: !isStructuredRevision && revision ? revision : null, source: 'TEXT' },
-    { value: filenameRevision ?? null, source: 'FILENAME' },
-  ];
-  const drnSignalsArr: Signal<string>[] = [
-    { value: emDrawingNumber ?? null,      source: 'TITLE_BLOCK' },
-    { value: drawingNumberFromText,        source: 'TEXT' },
-    { value: drawingNumberFromFilename,    source: 'FILENAME' },
-  ];
-  const resolved = resolveDocumentSignalsFromArrays(revSignalsArr, drnSignalsArr);
-
-  if (resolved.revision.value && !revision) {
-    revision = resolved.revision.value;
-    if (resolved.revision.source === 'FILENAME') revisionSource = 'FILENAME';
+  if (emDrawingNumber) {
+    addCandidate('DRAWING_NUMBER', {
+      value: emDrawingNumber,
+      source: 'TITLE_BLOCK_OCR',
+      confidence: 0.93,
+      regionLabel: 'TITLE_BLOCK',
+    });
   }
-  let proposedDrawingNumber = resolved.drawingNumber.value;
-  if (typeof drawingNumberHint === 'string' && drawingNumberHint.trim().length > 0) {
-    proposedDrawingNumber = drawingNumberHint.trim();
+  if (drawingNumberFromText) {
+    addCandidate('DRAWING_NUMBER', {
+      value: drawingNumberFromText,
+      source: 'TABLE_TEXT',
+      confidence: 0.45,
+      regionLabel: 'TABLE',
+    });
+  }
+  if (drawingNumberFromFilename) {
+    addCandidate('DRAWING_NUMBER', {
+      value: drawingNumberFromFilename,
+      source: 'FILENAME',
+      confidence: 0.85,
+      regionLabel: 'FILENAME',
+    });
   }
 
-  // --- Evidence signals ---
-  const revEvidenceSignals: EvidenceSignal[] = [
-    ...(isStructuredRevision && revision ? [{
-      source: 'TITLE_BLOCK', value: revision,
-      confidence: revisionSource === 'REVISION_BOX_APOGEE' || revisionSource === 'TITLE_BLOCK_RHEEM' ? 1.0 : 0.95,
-    }] : []),
-    ...(!isStructuredRevision && revision ? [{ source: 'TEXT', value: revision, confidence: 0.7 }] : []),
-    ...(filenameRevision ? [{ source: 'FILENAME', value: filenameRevision, confidence: 0.6 }] : []),
-  ];
-  const drnEvidenceSignals: EvidenceSignal[] = [
-    ...(emDrawingNumber ? [{ source: 'TITLE_BLOCK', value: emDrawingNumber, confidence: 0.95 }] : []),
-    ...(drawingNumberFromText ? [{ source: 'TEXT', value: drawingNumberFromText, confidence: 0.8 }] : []),
-    ...(drawingNumberFromFilename ? [{ source: 'FILENAME', value: drawingNumberFromFilename, confidence: 0.7 }] : []),
-  ];
+  const titleBlockTrusted = enforceTitleBlockSanity(mergedRegions);
+  const revisionFiltering = filterFieldSignals('REVISION', fieldCandidates.REVISION, { titleBlockTrusted });
+  const drawingFiltering = filterFieldSignals('DRAWING_NUMBER', fieldCandidates.DRAWING_NUMBER, { titleBlockTrusted });
+  const partFiltering = filterFieldSignals('PART_NUMBER', fieldCandidates.PART_NUMBER, { titleBlockTrusted });
+
+  const selectedRevisionCandidate = fieldLocks.REVISION
+    ? (lockedFieldCandidate.REVISION ?? null)
+    : selectCandidateByOrder(revisionFiltering.kept, FIELD_SELECTION_CHAIN.REVISION);
+  const selectedDrawingCandidate = fieldLocks.DRAWING_NUMBER
+    ? (lockedFieldCandidate.DRAWING_NUMBER ?? null)
+    : selectCandidateByOrder(drawingFiltering.kept, FIELD_SELECTION_CHAIN.DRAWING_NUMBER);
+  const partWinner = fieldLocks.PART_NUMBER
+    ? (lockedFieldCandidate.PART_NUMBER ?? null)
+    : selectCandidateByOrder(partFiltering.kept, FIELD_SELECTION_CHAIN.PART_NUMBER);
+
+  if (selectedRevisionCandidate) {
+    revision = selectedRevisionCandidate.value;
+    revisionSource = mapSignalSourceToRevisionSource(selectedRevisionCandidate.source);
+    if (!fieldResolutionMode.REVISION) {
+      fieldResolutionMode.REVISION = 'RESOLVED';
+      fieldResolutionSource.REVISION = selectedRevisionCandidate.source;
+    }
+  }
+  if (selectedDrawingCandidate && !fieldResolutionMode.DRAWING_NUMBER) {
+    fieldResolutionMode.DRAWING_NUMBER = 'RESOLVED';
+    fieldResolutionSource.DRAWING_NUMBER = selectedDrawingCandidate.source;
+  }
+  if (partWinner && !fieldResolutionMode.PART_NUMBER) {
+    fieldResolutionMode.PART_NUMBER = 'RESOLVED';
+    fieldResolutionSource.PART_NUMBER = partWinner.source;
+  }
+  const hasFilenameRev = Boolean(filenameRevision);
+
+  let proposedDrawingNumber = selectedDrawingCandidate?.value ?? null;
+  if (drawingNumberOverride) {
+    proposedDrawingNumber = drawingNumberOverride;
+  }
+
+  if (partWinner) {
+    partNumber = partWinner.value;
+  }
+
+  const revEvidenceSignals = revisionFiltering.keptEvidence;
+  const drnEvidenceSignals = drawingFiltering.keptEvidence;
+  const partEvidenceSignals = partFiltering.keptEvidence;
+  const discardedSignals: DocumentExtractionEvidence['discarded_signals'] = [];
+  if (revisionFiltering.discardedEvidence.length) {
+    discardedSignals.push({ field: 'REVISION', reason: 'Field-scope filter', signals: revisionFiltering.discardedEvidence });
+  }
+  if (drawingFiltering.discardedEvidence.length) {
+    discardedSignals.push({ field: 'DRAWING_NUMBER', reason: 'Field-scope filter', signals: drawingFiltering.discardedEvidence });
+  }
+  if (partFiltering.discardedEvidence.length) {
+    discardedSignals.push({ field: 'PART_NUMBER', reason: 'Field-scope filter', signals: partFiltering.discardedEvidence });
+  }
 
   // --- Alias / drawing lookup (read-only DB) ---
-  let partNumberIsProvisional = false;
+  let partNumberIsProvisional = !partWinner || partWinner.source === 'TABLE_TEXT' || partWinner.source === 'HEURISTIC';
   let resolvedViaAlias = false;
   if (!partNumber && proposedDrawingNumber) {
     let resolvedPN: string | null = null;
@@ -409,6 +793,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     if (resolvedPN) {
       partNumber = resolvedPN;
       resolvedViaAlias = true;
+      partNumberIsProvisional = false;
     }
   }
   if (!partNumber) partNumberIsProvisional = true;
@@ -418,16 +803,18 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     fragments: extractionFragments,
     revision_signals: revEvidenceSignals,
     drawing_number_signals: drnEvidenceSignals,
+    part_number_signals: partEvidenceSignals,
     document_structure: documentStructure,
-    resolved_revision: resolved.revision.value,
-    resolved_revision_source: resolved.revision.source !== 'NONE' ? resolved.revision.source : null,
-    resolved_drawing_number: resolved.drawingNumber.value,
-    resolved_drawing_number_source: resolved.drawingNumber.source !== 'NONE' ? resolved.drawingNumber.source : null,
+    resolved_revision: selectedRevisionCandidate?.value ?? null,
+    resolved_revision_source: selectedRevisionCandidate?.source ?? null,
+    resolved_drawing_number: selectedDrawingCandidate?.value ?? null,
+    resolved_drawing_number_source: selectedDrawingCandidate?.source ?? null,
     captured_at: new Date().toISOString(),
     confirmation_mode: null,
+    discarded_signals: discardedSignals.length > 0 ? discardedSignals : undefined,
   };
 
-  const revisionConfidence = getRevisionConfidence(revisionSource, Boolean(filenameRevision));
+  const revisionConfidence = getRevisionConfidence(revisionSource, hasFilenameRev);
   const partNumberConfidence = getPartNumberConfidence(partNumber, partNumberIsProvisional, resolvedViaAlias);
 
   // --- Field-to-region binding (Phase 3H.36) ---
@@ -435,37 +822,76 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   const partRegion = findRegionByLabel(mergedRegions, 'PART_NUMBER', 'TITLE_BLOCK');
   const drnRegion  = findRegionByLabel(mergedRegions, 'DRAWING_NUMBER', 'TITLE_BLOCK');
 
-  let drnFieldConf = 0.0;
-  let drnFieldSource: FieldExtractionSource = 'HEURISTIC';
-  if (emDrawingNumber)           { drnFieldSource = 'OCR';      drnFieldConf = 0.95; }
-  else if (drawingNumberFromText){ drnFieldSource = 'HEURISTIC'; drnFieldConf = 0.8;  }
-  else if (drawingNumberFromFilename) { drnFieldSource = 'FILENAME'; drnFieldConf = 0.7; }
+  const revisionRegionId = resolveRegionIdForCandidate(selectedRevisionCandidate, mergedRegions) ?? revRegion?.id ?? null;
+  const partRegionId = resolveRegionIdForCandidate(partWinner, mergedRegions) ?? partRegion?.id ?? null;
+  const drawingRegionId = resolveRegionIdForCandidate(selectedDrawingCandidate, mergedRegions) ?? drnRegion?.id ?? null;
+
+  if (!fieldResolutionMode.PART_NUMBER) fieldResolutionMode.PART_NUMBER = 'RESOLVED';
+  if (!fieldResolutionMode.REVISION) fieldResolutionMode.REVISION = 'RESOLVED';
+  if (!fieldResolutionMode.DRAWING_NUMBER) fieldResolutionMode.DRAWING_NUMBER = 'RESOLVED';
 
   const fieldExtractions: FieldExtraction[] = [
     {
       field: 'REVISION',
       value: revision,
-      confidence: revisionConfidence,
-      sourceRegionId: revRegion?.id ?? null,
-      source: mapRevisionSourceToFieldSource(revisionSource, revision, filenameRevision),
+      confidence: selectedRevisionCandidate?.confidence ?? revisionConfidence,
+      sourceRegionId: revisionRegionId,
+      source: mapSignalSourceToFieldExtractionSource(selectedRevisionCandidate?.source ?? null),
+      locked: fieldLocks.REVISION,
     },
     {
       field: 'PART_NUMBER',
       value: partNumber,
-      confidence: partNumberConfidence,
-      sourceRegionId: partRegion?.id ?? null,
-      source: resolvedViaAlias ? 'OCR' : 'HEURISTIC',
+      confidence: partWinner?.confidence ?? partNumberConfidence,
+      sourceRegionId: partRegionId,
+      source: partWinner
+        ? mapSignalSourceToFieldExtractionSource(partWinner.source)
+        : (resolvedViaAlias ? 'HEURISTIC' : 'HEURISTIC'),
+      locked: fieldLocks.PART_NUMBER,
     },
     {
       field: 'DRAWING_NUMBER',
       value: proposedDrawingNumber,
-      confidence: drnFieldConf,
-      sourceRegionId: drnRegion?.id ?? null,
-      source: drnFieldSource,
+      confidence: selectedDrawingCandidate?.confidence ?? (drawingNumberFromFilename ? 0.7 : 0.0),
+      sourceRegionId: drawingRegionId,
+      source: mapSignalSourceToFieldExtractionSource(selectedDrawingCandidate?.source ?? null),
+      locked: fieldLocks.DRAWING_NUMBER,
     },
   ];
 
   extractionEvidence.field_extractions = fieldExtractions;
+  extractionEvidence.resolution_audit = {
+    part_number: {
+      field: 'PART_NUMBER',
+      resolution_mode: fieldResolutionMode.PART_NUMBER!,
+      source: fieldResolutionSource.PART_NUMBER,
+      locked: fieldLocks.PART_NUMBER,
+      short_circuit_applied: fieldResolutionMode.PART_NUMBER === 'SHORT_CIRCUIT',
+      signals_considered: fieldCandidates.PART_NUMBER.length,
+      signals_discarded: partFiltering.discardedEvidence.length + lockedSignalBypass.PART_NUMBER.length,
+      enforcement_rules_applied: [...enforcementRules.PART_NUMBER],
+    },
+    revision: {
+      field: 'REVISION',
+      resolution_mode: fieldResolutionMode.REVISION!,
+      source: fieldResolutionSource.REVISION,
+      locked: fieldLocks.REVISION,
+      short_circuit_applied: fieldResolutionMode.REVISION === 'SHORT_CIRCUIT',
+      signals_considered: fieldCandidates.REVISION.length,
+      signals_discarded: revisionFiltering.discardedEvidence.length + lockedSignalBypass.REVISION.length,
+      enforcement_rules_applied: [...enforcementRules.REVISION],
+    },
+    drawing_number: {
+      field: 'DRAWING_NUMBER',
+      resolution_mode: fieldResolutionMode.DRAWING_NUMBER!,
+      source: fieldResolutionSource.DRAWING_NUMBER,
+      locked: fieldLocks.DRAWING_NUMBER,
+      short_circuit_applied: fieldResolutionMode.DRAWING_NUMBER === 'SHORT_CIRCUIT',
+      signals_considered: fieldCandidates.DRAWING_NUMBER.length,
+      signals_discarded: drawingFiltering.discardedEvidence.length + lockedSignalBypass.DRAWING_NUMBER.length,
+      enforcement_rules_applied: [...enforcementRules.DRAWING_NUMBER],
+    },
+  };
 
   // --- Questions ---
   const unresolvedQuestions = buildUnresolvedQuestions({
@@ -479,6 +905,11 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     drawingPatternDetected: drnEvidenceSignals.some(s => Boolean(s.value)),
     drawingSuggestion: drawingNumberFromFilename ?? emDrawingNumber,
     docTypeForced,
+  }).filter(q => {
+    if (q.fieldToResolve === 'partNumber' && fieldLocks.PART_NUMBER) return false;
+    if (q.fieldToResolve === 'revision' && fieldLocks.REVISION) return false;
+    if (q.fieldToResolve === 'drawingNumber' && fieldLocks.DRAWING_NUMBER) return false;
+    return true;
   });
   const readyToCommit = unresolvedQuestions.every(q => !q.blocksCommit);
 

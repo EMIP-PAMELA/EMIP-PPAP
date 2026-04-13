@@ -9,7 +9,7 @@
  * Flow:  DROP → EXTRACT TEXT → ANALYZE (advisory) → OPERATOR REVIEW → COMMIT (verified)
  */
 
-import React, { useCallback, useRef, useState, useMemo } from 'react';
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   docTypeRequiresField,
   type WorkbenchItem,
@@ -31,6 +31,30 @@ interface UploadWorkbenchProps {
   onCommitComplete?: () => void;
   /** Optional SKU pre-fill for corrective workflow context. */
   preselectedSku?: string;
+}
+
+function renderCandidateDropdown(
+  candidates: FieldCandidate[],
+  onSelect: (value: string) => void,
+): React.ReactNode {
+  if (!candidates.length) return null;
+  return (
+    <div className="border-t border-gray-200 pt-2">
+      <div className="text-[11px] font-semibold text-gray-500 mb-1">Other detected values</div>
+      <div className="flex flex-col gap-1">
+        {candidates.map(candidate => (
+          <button
+            key={candidate.id}
+            type="button"
+            onClick={() => onSelect(candidate.value)}
+            className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-left text-[11px] text-gray-700 hover:border-blue-300 hover:bg-blue-50"
+          >
+            {candidate.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function getFieldExtractionFor(analysis: IngestionAnalysisResult | undefined, key: FieldKey): FieldExtraction | null {
@@ -150,6 +174,7 @@ const FIELD_TO_EXTRACTION: Record<FieldKey, FieldExtraction['field']> = {
 const SOURCE_BADGES: Record<FieldExtractionSource | 'UNKNOWN', { label: string; className: string }> = {
   AI:        { label: 'AI Suggestion',   className: 'bg-purple-100 text-purple-900 border border-purple-200' },
   OCR:       { label: 'Extracted',       className: 'bg-blue-100 text-blue-900 border border-blue-200' },
+  USER:      { label: 'User Confirmed',  className: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
   FILENAME:  { label: 'From Filename',  className: 'bg-gray-100 text-gray-700 border border-gray-200' },
   HEURISTIC: { label: 'Heuristic',      className: 'bg-amber-100 text-amber-900 border border-amber-200' },
   UNKNOWN:   { label: 'Unknown Source', className: 'bg-gray-100 text-gray-600 border border-gray-200' },
@@ -403,6 +428,22 @@ function EvidencePanel({
             }
           </div>
           <div className="space-y-1">
+            <div className="font-medium text-gray-500">Part number signals</div>
+            {!evidence.part_number_signals?.length
+              ? <div className="text-gray-400">none detected</div>
+              : evidence.part_number_signals.map((s, i) => (
+                <div key={i} className="ml-2">
+                  <span className="text-blue-600">{s.source}</span>:{' '}
+                  <span className="font-semibold">{s.value ?? 'null'}</span>{' '}
+                  <span className="text-gray-400">(conf {s.confidence.toFixed(2)})</span>
+                  {s.ignored_reason && (
+                    <span className="ml-1 text-red-500">— {s.ignored_reason}</span>
+                  )}
+                </div>
+              ))
+            }
+          </div>
+          <div className="space-y-1">
             <div className="font-medium text-gray-500">Drawing number signals</div>
             {evidence.drawing_number_signals.length === 0
               ? <div className="text-gray-400">none detected</div>
@@ -411,10 +452,29 @@ function EvidencePanel({
                   <span className="text-blue-600">{s.source}</span>:{' '}
                   <span className="font-semibold">{s.value ?? 'null'}</span>{' '}
                   <span className="text-gray-400">(conf {s.confidence.toFixed(2)})</span>
+                  {s.ignored_reason && (
+                    <span className="ml-1 text-red-500">— {s.ignored_reason}</span>
+                  )}
                 </div>
               ))
             }
           </div>
+
+          {evidence.discarded_signals?.length ? (
+            <div className="space-y-1">
+              <div className="font-medium text-gray-500">Ignored signals</div>
+              {evidence.discarded_signals.map((entry, idx) => (
+                <div key={idx} className="ml-2">
+                  <div className="text-[11px] font-semibold text-gray-600">{entry.field} — {entry.reason}</div>
+                  {entry.signals.map((signal, i) => (
+                    <div key={i} className="text-[11px] text-gray-500">
+                      {signal.source}: {signal.value ?? 'null'}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {evidence.document_structure && (
             <div className="text-gray-500">
@@ -943,6 +1003,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                 const analysis = selectedItem.analysis;
                 const regionList = analysis?.extractionEvidence?.document_structure?.regions ?? [];
                 const regionMap = new Map<string, RegionOverlay>(regionList.map(region => [region.id, region] as [string, RegionOverlay]));
+                const partCandidates = buildCandidatesFromSignals(analysis?.extractionEvidence?.part_number_signals);
                 const revisionCandidates = buildCandidatesFromSignals(analysis?.extractionEvidence?.revision_signals);
                 const drawingCandidates = buildCandidatesFromSignals(analysis?.extractionEvidence?.drawing_number_signals);
 
@@ -963,8 +1024,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                     operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.partNumber),
                     confidence: analysis?.partNumberConfidence ?? partExtraction?.confidence ?? null,
                     extraction: partExtraction,
-                    warning: analysis?.partNumberIsProvisional ? 'Extraction could not resolve part number — enter manually.' : null,
-                    candidates: [] as FieldCandidate[],
+                    warning: (analysis?.partNumberIsProvisional && !partExtraction?.locked) ? 'Extraction could not resolve part number — enter manually.' : null,
+                    candidates: partCandidates,
                   },
                   {
                     key: 'revision' as const,
@@ -1002,7 +1063,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   const region = section.extraction?.sourceRegionId
                     ? regionMap.get(section.extraction.sourceRegionId) ?? null
                     : null;
-                  const badge = SOURCE_BADGES[section.extraction?.source ?? 'UNKNOWN'];
+                  const isLocked = Boolean(section.extraction?.locked && section.value === (section.extraction?.value ?? '').trim());
+                  const badge = isLocked
+                    ? { label: 'Locked (Authoritative Source)', className: 'bg-emerald-100 text-emerald-800 border border-emerald-300' }
+                    : SOURCE_BADGES[section.extraction?.source ?? 'UNKNOWN'];
                   const confidenceMeta = describeConfidence(section.confidence);
                   const snippet = region?.extractedText ?? section.extraction?.value ?? null;
                   const regionLabel = region
@@ -1057,7 +1121,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                           View Source
                         </button>
                       </div>
-                      <p className={`text-[11px] ${confidenceMeta.textClass}`}>{confidenceMeta.message}</p>
+                      {!isLocked && <p className={`text-[11px] ${confidenceMeta.textClass}`}>{confidenceMeta.message}</p>}
+                      {isLocked && <p className="text-[11px] text-emerald-700">Resolved from authoritative source — no review required.</p>}
                       <div className="flex gap-2">
                         <input
                           type="text"
@@ -1090,37 +1155,21 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                           </button>
                         )}
                       </div>
-                      {section.warning && (
+                      {section.warning && !isLocked && (
                         <p className="text-[10px] text-orange-600">{section.warning}</p>
                       )}
-                      {confidenceMeta.level === 'low' && (
+                      {confidenceMeta.level === 'low' && !isLocked && (
                         <p className="text-[10px] text-red-600 font-semibold">Low confidence — verify manually before confirming.</p>
                       )}
                       {snippet && (
-                        <p className="text-[10px] text-gray-500">
-                          Detected: <span className="font-mono font-semibold text-gray-700">{truncateSnippet(snippet)}</span>
-                          {regionLabel ? ` · from ${regionLabel}` : ''}
+                        <p className="text-[11px] truncate text-gray-500">
+                          <span className="font-semibold">Source snippet:</span>{' '}
+                          {truncateSnippet(snippet)}
                         </p>
                       )}
-                      {section.candidates.length > 1 && (
-                        <div className="space-y-1 text-[11px]">
-                          <label className="font-semibold text-gray-600">Other detected values</label>
-                          <select
-                            defaultValue=""
-                            className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs"
-                            onChange={e => {
-                              if (!e.target.value) return;
-                              setConfirmedField(selectedItem.id, section.key, e.target.value, { markConfirmed: false });
-                              e.target.selectedIndex = 0;
-                            }}
-                          >
-                            <option value="">Select alternative…</option>
-                            {section.candidates.map(candidate => (
-                              <option key={candidate.id} value={candidate.value}>{candidate.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
+                      {renderCandidateDropdown(section.candidates, candidateValue => {
+                        setConfirmedField(selectedItem.id, section.key, candidateValue, { markConfirmed: true });
+                      })}
                     </div>
                   );
                 };

@@ -9,14 +9,23 @@
  *   - All resolution paths must pass through resolveSignal / resolveDocumentSignals.
  *
  * Signal priority (descending):
- *   TITLE_BLOCK — structured extractor (Apogee revision box, Rheem title block, EM header)
- *   TEXT        — generic pattern match within document body
- *   FILENAME    — derived from the filename stem
- *   AI          — model inference (not yet active)
- *   NONE        — no signal; value is null
+ *   USER_CONFIRMED — operator-provided overrides or forced values
+ *   FILENAME       — derived directly from filename and considered authoritative
+ *   TITLE_BLOCK_OCR— structured extractor (Apogee revision box, Rheem title block, EM header)
+ *   AI_REGION      — AI-detected region suggestion
+ *   HEURISTIC      — heuristic/text-derived suggestion from trusted region
+ *   TABLE_TEXT     — low-confidence table/body text (never overrides higher tiers)
+ *   NONE           — no signal; value is null
  */
 
-export type SignalSource = 'TITLE_BLOCK' | 'TEXT' | 'FILENAME' | 'AI' | 'NONE';
+export type SignalSource =
+  | 'USER_CONFIRMED'
+  | 'FILENAME'
+  | 'TITLE_BLOCK_OCR'
+  | 'AI_REGION'
+  | 'HEURISTIC'
+  | 'TABLE_TEXT'
+  | 'NONE';
 
 export interface Signal<T> {
   value: T | null;
@@ -24,10 +33,12 @@ export interface Signal<T> {
 }
 
 export const SIGNAL_PRIORITY: Record<SignalSource, number> = {
-  TITLE_BLOCK: 4,
-  TEXT: 3,
-  FILENAME: 3,
-  AI: 2,
+  USER_CONFIRMED: 6,
+  FILENAME: 5,
+  TITLE_BLOCK_OCR: 4,
+  AI_REGION: 3,
+  HEURISTIC: 2,
+  TABLE_TEXT: 1,
   NONE: 0,
 };
 
@@ -122,16 +133,16 @@ export function resolveDocumentSignalsFromArrays(
 export function resolveDocumentSignals(input: DocumentSignalInput): ResolvedDocumentSignals {
   return resolveDocumentSignalsFromArrays(
     [
-      { value: input.titleBlockRevision ?? null, source: 'TITLE_BLOCK' },
-      { value: input.textRevision ?? null,        source: 'TEXT' },
+      { value: input.titleBlockRevision ?? null, source: 'TITLE_BLOCK_OCR' },
+      { value: input.textRevision ?? null,        source: 'HEURISTIC' },
       { value: input.filenameRevision ?? null,    source: 'FILENAME' },
-      { value: input.aiRevision ?? null,          source: 'AI' },
+      { value: input.aiRevision ?? null,          source: 'AI_REGION' },
     ],
     [
-      { value: input.emDrawingNumber ?? null,       source: 'TITLE_BLOCK' },
-      { value: input.textDrawingNumber ?? null,     source: 'TEXT' },
+      { value: input.emDrawingNumber ?? null,       source: 'TITLE_BLOCK_OCR' },
+      { value: input.textDrawingNumber ?? null,     source: 'HEURISTIC' },
       { value: input.filenameDrawingNumber ?? null, source: 'FILENAME' },
-      { value: input.aiDrawingNumber ?? null,       source: 'AI' },
+      { value: input.aiDrawingNumber ?? null,       source: 'AI_REGION' },
     ],
   );
 }
