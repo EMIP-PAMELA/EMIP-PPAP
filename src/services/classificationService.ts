@@ -5,7 +5,9 @@ import { resolveAliasFromDB, storeAliasMapping } from '@/src/features/harness-wo
 import { resolvePartNumberFromDrawing } from '@/src/features/harness-work-instructions/services/drawingLookupService';
 import { linkDocument } from '@/src/services/linkingService';
 import { extractPartNumberFromText } from '@/src/utils/extractPartNumber';
-import { extractDrawingNumberFromText } from '@/src/utils/extractDrawingNumber';
+import { extractDrawingNumberFromText, extractDrawingNumberFromFilename } from '@/src/utils/extractDrawingNumber';
+import { shouldOverwrite } from '@/src/features/harness-work-instructions/utils/resolveDocumentSignals';
+import type { SignalSource } from '@/src/features/harness-work-instructions/utils/resolveDocumentSignals';
 
 export const MAX_ATTEMPTS = 3;
 
@@ -89,11 +91,12 @@ function heuristicPass(document: RawDocument, extractedText: string | null): Cla
   return null;
 }
 
-function aiStubPass(): ClassificationOutcome {
+function heuristicFallbackPass(): ClassificationOutcome {
+  console.log('[DRAWING EXTRACT] ai classification inactive / stub — heuristic fallback only, no AI model active');
   return {
     status: 'PARTIAL',
     confidence: 0.35,
-    notes: 'AI classification stub executed — awaiting future model integration.',
+    notes: 'Heuristic classification only — no AI model active.',
     retry: true,
   };
 }
@@ -108,7 +111,7 @@ async function runClassificationPasses(
 
   const heuristic = heuristicPass(document, extractedText);
 
-  const aiFallback = aiStubPass();
+  const aiFallback = heuristicFallbackPass();
 
   if (heuristic) {
     return heuristic.retry ? heuristic : { ...heuristic, retry: true };
@@ -166,7 +169,7 @@ export async function classifyDocument(documentId: string): Promise<void> {
     }
   }
 
-  const signalContext = await buildSignalContext(extractedText);
+  const signalContext = await buildSignalContext(extractedText, document.file_name);
 
   const nextAttempts = attempts + 1;
   const outcome = await runClassificationPasses(document as RawDocument, extractedText, signalContext);
@@ -180,17 +183,35 @@ export async function classifyDocument(documentId: string): Promise<void> {
 
   const inferredPartNumber = signalContext.partNumber ?? signalContext.aliasResolution ?? null;
 
+  // Read the existing drawing_number before updating so we can apply the non-degrading rule.
+  // Async classification must ENRICH values, never erase them with weaker (null) signals.
+  const { data: existingRecord } = await supabase
+    .from('sku_documents')
+    .select('drawing_number')
+    .eq('id', documentId)
+    .maybeSingle();
+
+  const existingDrawingNumber = existingRecord?.drawing_number ?? null;
+  const existingSource: SignalSource = existingDrawingNumber ? 'TEXT' : 'NONE';
+  const incomingSource: SignalSource = signalContext.drawingNumber ? 'TEXT' : 'NONE';
+
+  const baseUpdate: Record<string, unknown> = {
+    classification_status: statusToPersist,
+    classification_attempts: nextAttempts,
+    classification_confidence: outcome.confidence,
+    classification_notes: outcome.notes,
+    last_classified_at: new Date().toISOString(),
+    inferred_part_number: inferredPartNumber,
+  };
+
+  // Only update drawing_number when the incoming signal would not degrade the stored value
+  if (shouldOverwrite({ existing: existingDrawingNumber, incoming: signalContext.drawingNumber, existingSource, incomingSource })) {
+    baseUpdate.drawing_number = signalContext.drawingNumber ?? null;
+  }
+
   await supabase
     .from('sku_documents')
-    .update({
-      classification_status: statusToPersist,
-      classification_attempts: nextAttempts,
-      classification_confidence: outcome.confidence,
-      classification_notes: outcome.notes,
-      last_classified_at: new Date().toISOString(),
-      inferred_part_number: inferredPartNumber,
-      drawing_number: signalContext.drawingNumber ?? null,
-    })
+    .update(baseUpdate)
     .eq('id', documentId);
 
   if (inferredPartNumber) {
@@ -270,17 +291,23 @@ async function resolveProvisionalSku(
   }
 }
 
-async function buildSignalContext(extractedText: string | null): Promise<SignalContext> {
-  if (!extractedText) {
+async function buildSignalContext(
+  extractedText: string | null,
+  fileName?: string | null,
+): Promise<SignalContext> {
+  const partNumber = extractedText ? extractPartNumberFromText(extractedText) : null;
+  const drawingNumberFromText     = extractedText ? extractDrawingNumberFromText(extractedText) : null;
+  const drawingNumberFromFilename = extractDrawingNumberFromFilename(fileName);
+  // Text signal takes priority; filename is the fallback (non-degrading: never null → value)
+  const drawingNumber = drawingNumberFromText ?? drawingNumberFromFilename;
+
+  if (!partNumber && !drawingNumber) {
     return {
       partNumber: null,
       drawingNumber: null,
       aliasResolution: null,
     };
   }
-
-  const partNumber = extractPartNumberFromText(extractedText);
-  const drawingNumber = extractDrawingNumberFromText(extractedText);
   let aliasResolution: string | null = null;
 
   if (!partNumber && drawingNumber) {

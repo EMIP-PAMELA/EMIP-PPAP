@@ -23,12 +23,13 @@ import type { CanonicalDrawingDraft } from '../types/drawingDraft';
 import type { ProcessInstructionBundle } from '../types/processInstructions';
 import type { UploadDocumentResult } from './skuService';
 import { extractPartNumberFromText } from '@/src/utils/extractPartNumber';
-import { extractDrawingNumberFromText } from '@/src/utils/extractDrawingNumber';
+import { extractDrawingNumberFromText, extractDrawingNumberFromFilename } from '@/src/utils/extractDrawingNumber';
 import { extractEngineeringMasterIdentifiers, type EngineeringMasterIdentifiers } from '@/src/utils/extractEngineeringMasterIdentifiers';
 import { extractEngineeringMasterRevision } from '@/src/utils/extractEngineeringMasterRevision';
 import { extractRheemDrawingRevision } from '@/src/utils/extractRheemDrawingRevision';
 import { extractApogeeDrawingRevision } from '@/src/utils/extractApogeeDrawingRevision';
-import type { RevisionSource } from '@/src/utils/revisionParser';
+import { extractRevisionSignal, type RevisionSource } from '@/src/utils/revisionParser';
+import { resolveDocumentSignals } from '../utils/resolveDocumentSignals';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -270,25 +271,66 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     if (derivedPN) partNumber = derivedPN;
   }
 
-  // For BOM: prefer the deterministic extractor drawing number; all other types use the generic extractor
-  const drawingNumber = emIds?.drawingNumber ?? (normalizedText ? extractDrawingNumberFromText(normalizedText) : null);
+  // ---------------------------------------------------------------------------
+  // Signal Resolution — Phase 3H.18
+  // All extraction paths feed into resolveDocumentSignals. The engine selects the
+  // highest-priority non-null signal for each field.
+  // ---------------------------------------------------------------------------
+
+  const drawingNumberFromText     = normalizedText ? extractDrawingNumberFromText(normalizedText) : null;
+  const drawingNumberFromFilename = extractDrawingNumberFromFilename(file.name);
+
+  // Explicit filename revision signal: captures Rev.XX from filename stem before delegating
+  // to uploadDocument so that meta.revision and the INGEST IDENTITY log are always accurate.
+  const filenameRevSignal = extractRevisionSignal({ fileName: file.name });
+  const filenameRevision  = (filenameRevSignal.normalized && filenameRevSignal.parseSource !== 'UNKNOWN')
+    ? filenameRevSignal.normalized
+    : null;
+
+  const isStructuredRevision =
+    revisionSource === 'REVISION_BOX_APOGEE' ||
+    revisionSource === 'TITLE_BLOCK_RHEEM'   ||
+    revisionSource === 'HEADER_EXPLICIT';
+
+  const resolved = resolveDocumentSignals({
+    titleBlockRevision:  isStructuredRevision ? revision : null,
+    textRevision:        !isStructuredRevision && revision ? revision : null,
+    filenameRevision,
+    emDrawingNumber:     emIds?.drawingNumber ?? null,
+    textDrawingNumber:   drawingNumberFromText,
+    filenameDrawingNumber: drawingNumberFromFilename,
+  });
+
+  // Apply resolved revision if it improves on what text extraction found
+  if (resolved.revision.value && !revision) {
+    revision = resolved.revision.value;
+    if (resolved.revision.source === 'FILENAME') revisionSource = 'FILENAME';
+  }
+
+  const drawingNumber = resolved.drawingNumber.value;
+
+  console.log('[SIGNAL RESOLUTION]', {
+    file: file.name,
+    revision:      { value: resolved.revision.value,      source: resolved.revision.source },
+    drawingNumber: { value: resolved.drawingNumber.value, source: resolved.drawingNumber.source },
+  });
 
   if (!partNumber && drawingNumber) {
-    let resolved: string | null = null;
+    let resolvedPN: string | null = null;
     try {
-      resolved = await resolveAliasFromDB(drawingNumber);
+      resolvedPN = await resolveAliasFromDB(drawingNumber);
     } catch (err) {
       console.warn('[HWI ALIAS DB LOOKUP ERROR]', err);
     }
 
-    if (!resolved) {
-      resolved = await resolvePartNumberFromDrawing(drawingNumber);
+    if (!resolvedPN) {
+      resolvedPN = await resolvePartNumberFromDrawing(drawingNumber);
     }
 
-    if (resolved) {
-      partNumber = resolved;
-      console.log('[HWI RESOLUTION SUCCESS]', drawingNumber, '→', resolved);
-      storeAliasMapping(drawingNumber, resolved).catch(err => {
+    if (resolvedPN) {
+      partNumber = resolvedPN;
+      console.log('[HWI RESOLUTION SUCCESS]', drawingNumber, '→', resolvedPN);
+      storeAliasMapping(drawingNumber, resolvedPN).catch(err => {
         console.warn('[HWI ALIAS STORE ERROR]', err);
       });
     } else {

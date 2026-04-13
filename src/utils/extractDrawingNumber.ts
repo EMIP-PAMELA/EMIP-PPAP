@@ -31,3 +31,19 @@ export function extractDrawingNumberFromText(
 
   return null;
 }
+
+/**
+ * Extract a drawing number (NNN-NNNN-NNN format) from a filename.
+ *
+ * Used as a last-resort fallback when the document text layer is sparse or absent.
+ * The extension is stripped first; the regex is applied to the stem only.
+ * Source should be tagged as FILENAME_FALLBACK by callers.
+ */
+export function extractDrawingNumberFromFilename(
+  fileName: string | null | undefined,
+): string | null {
+  if (!fileName) return null;
+  const stem = fileName.replace(/\.[^.]+$/, '');
+  const match = stem.match(DRAWING_REGEX);
+  return match ? match[0].trim().toUpperCase() : null;
+}

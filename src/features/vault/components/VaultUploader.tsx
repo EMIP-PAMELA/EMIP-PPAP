@@ -192,31 +192,32 @@ export default function VaultUploader({ preselectedSku, docTypeHint, expectedRev
 
   const extractRevisionForDoc = useCallback(
     (docType: DocumentType, text: string, fileName: string): ValidationExtractionResult => {
-      if (!text || text.trim().length === 0) {
-        return { revision: null, source: 'UNKNOWN' };
-      }
+      // Structured extractors only run when text is available
+      if (text && text.trim().length > 0) {
+        if (docType === 'BOM') {
+          const result = extractEngineeringMasterRevision(text);
+          return { revision: result.revision, source: 'BOM' };
+        }
 
-      if (docType === 'BOM') {
-        const result = extractEngineeringMasterRevision(text);
-        return { revision: result.revision, source: 'BOM' };
-      }
+        if (docType === 'CUSTOMER_DRAWING') {
+          const result = extractRheemDrawingRevision(text);
+          if (result.isRheemTitleBlock) {
+            return { revision: result.revision, source: 'RHEEM' };
+          }
+        }
 
-      if (docType === 'CUSTOMER_DRAWING') {
-        const result = extractRheemDrawingRevision(text);
-        if (result.isRheemTitleBlock) {
-          return { revision: result.revision, source: 'RHEEM' };
+        if (docType === 'INTERNAL_DRAWING') {
+          const result = extractApogeeDrawingRevision(text);
+          if (result.isApogeeDrawing) {
+            return { revision: result.revision, source: 'APOGEE' };
+          }
         }
       }
 
-      if (docType === 'INTERNAL_DRAWING') {
-        const result = extractApogeeDrawingRevision(text);
-        if (result.isApogeeDrawing) {
-          return { revision: result.revision, source: 'APOGEE' };
-        }
-      }
-
-      const generic = extractRevisionSignal({ extractedText: text, fileName });
-      return { revision: generic.normalized, source: 'GENERIC' };
+      // Generic fallback always runs — includes filename-based extraction when text is absent
+      // so that the client validation banner matches what the server will persist.
+      const generic = extractRevisionSignal({ extractedText: text || null, fileName });
+      return { revision: generic.normalized, source: generic.normalized ? 'GENERIC' : 'UNKNOWN' };
     },
     [],
   );

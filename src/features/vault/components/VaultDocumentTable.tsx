@@ -33,6 +33,8 @@ interface VaultDocumentRow {
   normalized_revision?: string | null;
   /** Single authoritative revision for display. Never a sentinel string. */
   canonical_revision?: string | null;
+  /** Which extraction path produced the stored revision (FILENAME, TEXT, TITLE_BLOCK, etc.). */
+  revision_source?: string | null;
   revision_state: RevisionState;
   sku_revision_status?: CrossSourceRevisionStatus | null;
   sku_readiness_status?: ReadinessStatus | null;
@@ -257,12 +259,15 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
           canonical_revision: doc.canonical_revision ?? null,
           raw_revision: doc.revision ?? null,
           normalized_revision: doc.normalized_revision ?? null,
+          revision_source: doc.revision_source ?? null,
           expected_revision: expectedRevision ?? null,
           validation_status: doc.sku_revision_status ?? 'UNKNOWN',
           extractor: extractionSource,
           confidence: doc.classification_confidence ?? null,
           extraction_status: extractionStatus,
           classification_status: doc.classification_status,
+          classification_notes: doc.classification_notes ?? null,
+          drawing_number: doc.drawing_number ?? null,
         }
       : null;
 

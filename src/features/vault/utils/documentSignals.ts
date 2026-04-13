@@ -23,6 +23,13 @@ export function detectDocumentType(extractedText: string, fileName: string): Vau
     return { detected: 'BOM', signals };
   }
 
+  // Apogee internal drawing number in filename is a definitive INTERNAL_DRAWING signal.
+  // 527-XXXX-010 is exclusively an Apogee internal drawing number format.
+  if (/\b527-\d{4}-010\b/.test(fileName)) {
+    signals.push('INTERNAL:APOGEE_FILENAME_PATTERN');
+    return { detected: 'INTERNAL_DRAWING', signals };
+  }
+
   const internalIndicators = [/INTERNAL DRAWING/i, /DWG NO\.?/i, /DRAWING NUMBER/i, /MANUFACTURING DRAWING/i, /ENGINEERING DRAWING/i];
   const customerIndicators = [/CUSTOMER DRAWING/i, /CUSTOMER PART/i, /SUPPLIER DRAWING/i];
 
