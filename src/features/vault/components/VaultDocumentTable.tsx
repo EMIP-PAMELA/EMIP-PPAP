@@ -18,6 +18,7 @@ import {
   type CanonicalDocumentStatus,
 } from '@/src/features/revision/utils/resolveCanonicalDocuments';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
+import type { DocumentExtractionEvidence } from '@/src/features/harness-work-instructions/types/extractionEvidence';
 
 const readinessBadgeTone: Record<ReadinessStatus, string> = {
   READY: 'bg-emerald-100 text-emerald-800',
@@ -64,6 +65,8 @@ interface VaultDocumentRow {
   conflict_flag: boolean;
   phantom_rev_flag?: boolean;
   phantom_rev_note?: string | null;
+  /** Structured extraction evidence captured at ingestion time. Dev debug only. */
+  extraction_evidence?: DocumentExtractionEvidence | null;
   linked_documents?: {
     document_id: string;
     filename: string;
@@ -446,6 +449,29 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
               <details className="rounded-lg bg-gray-900/80 p-2 text-[11px] text-emerald-200">
                 <summary className="cursor-pointer font-semibold">Extraction Debug</summary>
                 <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(debugPayload, null, 2)}</pre>
+              </details>
+            )}
+            {isDevelopment && doc.extraction_evidence && (
+              <details className="rounded-lg bg-gray-900/80 p-2 text-[11px] text-sky-200">
+                <summary className="cursor-pointer font-semibold">Evidence Chain</summary>
+                <div className="mt-2 space-y-1">
+                  <div className="text-sky-400 font-semibold">Document class: {doc.extraction_evidence.document_structure?.document_class_hint ?? '—'}</div>
+                  <div className="text-sky-300">Revision signals:</div>
+                  {doc.extraction_evidence.revision_signals.map((s, i) => (
+                    <div key={i} className="ml-2 text-emerald-300">{s.source}: <span className="text-white">{s.value ?? 'null'}</span> (conf {s.confidence.toFixed(2)})</div>
+                  ))}
+                  {doc.extraction_evidence.revision_signals.length === 0 && <div className="ml-2 text-gray-500">no revision signals</div>}
+                  <div className="text-sky-300">Drawing number signals:</div>
+                  {doc.extraction_evidence.drawing_number_signals.map((s, i) => (
+                    <div key={i} className="ml-2 text-emerald-300">{s.source}: <span className="text-white">{s.value ?? 'null'}</span> (conf {s.confidence.toFixed(2)})</div>
+                  ))}
+                  {doc.extraction_evidence.drawing_number_signals.length === 0 && <div className="ml-2 text-gray-500">no drawing signals</div>}
+                  <div className="text-sky-300">Resolved: rev=<span className="text-white">{doc.extraction_evidence.resolved_revision ?? '—'}</span> [{doc.extraction_evidence.resolved_revision_source ?? '—'}] · drn=<span className="text-white">{doc.extraction_evidence.resolved_drawing_number ?? '—'}</span> [{doc.extraction_evidence.resolved_drawing_number_source ?? '—'}]</div>
+                  {doc.extraction_evidence.document_structure && (
+                    <div className="text-sky-300">Structure: title_block={String(doc.extraction_evidence.document_structure.has_title_block)} · connectors={String(doc.extraction_evidence.document_structure.has_connector_tables)} · wire_map={String(doc.extraction_evidence.document_structure.has_wire_mapping)}</div>
+                  )}
+                  <div className="text-gray-500 text-[10px]">captured {doc.extraction_evidence.captured_at}</div>
+                </div>
               </details>
             )}
           </div>

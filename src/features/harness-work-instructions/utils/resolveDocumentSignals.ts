@@ -92,20 +92,46 @@ export interface ResolvedDocumentSignals {
   drawingNumber: Signal<string>;
 }
 
+/**
+ * Richer resolution result that exposes the full input signal arrays
+ * alongside the winning values — used for evidence capture (Phase 3H.29).
+ */
+export interface FullSignalResolution extends ResolvedDocumentSignals {
+  revisionSignals: Signal<string>[];
+  drawingNumberSignals: Signal<string>[];
+}
+
+/**
+ * Array-based resolver (Phase 3H.29 STEP 4).
+ * Accepts explicit Signal<string>[] arrays for revision and drawing number,
+ * resolves the winner from each, and returns the full resolution including
+ * the input arrays for downstream evidence capture.
+ */
+export function resolveDocumentSignalsFromArrays(
+  revisionSignals: Signal<string>[],
+  drawingNumberSignals: Signal<string>[],
+): FullSignalResolution {
+  return {
+    revision:             resolveSignal(revisionSignals),
+    drawingNumber:        resolveSignal(drawingNumberSignals),
+    revisionSignals,
+    drawingNumberSignals,
+  };
+}
+
 export function resolveDocumentSignals(input: DocumentSignalInput): ResolvedDocumentSignals {
-  const revision = resolveSignal<string>([
-    { value: input.titleBlockRevision ?? null, source: 'TITLE_BLOCK' },
-    { value: input.textRevision ?? null,        source: 'TEXT' },
-    { value: input.filenameRevision ?? null,    source: 'FILENAME' },
-    { value: input.aiRevision ?? null,          source: 'AI' },
-  ]);
-
-  const drawingNumber = resolveSignal<string>([
-    { value: input.emDrawingNumber ?? null,       source: 'TITLE_BLOCK' },
-    { value: input.textDrawingNumber ?? null,     source: 'TEXT' },
-    { value: input.filenameDrawingNumber ?? null, source: 'FILENAME' },
-    { value: input.aiDrawingNumber ?? null,       source: 'AI' },
-  ]);
-
-  return { revision, drawingNumber };
+  return resolveDocumentSignalsFromArrays(
+    [
+      { value: input.titleBlockRevision ?? null, source: 'TITLE_BLOCK' },
+      { value: input.textRevision ?? null,        source: 'TEXT' },
+      { value: input.filenameRevision ?? null,    source: 'FILENAME' },
+      { value: input.aiRevision ?? null,          source: 'AI' },
+    ],
+    [
+      { value: input.emDrawingNumber ?? null,       source: 'TITLE_BLOCK' },
+      { value: input.textDrawingNumber ?? null,     source: 'TEXT' },
+      { value: input.filenameDrawingNumber ?? null, source: 'FILENAME' },
+      { value: input.aiDrawingNumber ?? null,       source: 'AI' },
+    ],
+  );
 }

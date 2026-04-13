@@ -108,6 +108,7 @@ export async function GET(request: NextRequest) {
        last_classified_at,
        inferred_part_number,
        drawing_number,
+       extraction_evidence,
        sku:sku_id (part_number),
        storage_path
       `,
@@ -202,6 +203,7 @@ export async function GET(request: NextRequest) {
         normalizedRevision: doc.normalized_revision as string | null,
         rawRevision: doc.revision as string | null,
       }),
+      extraction_evidence: (doc as any).extraction_evidence ?? null,
       storage_path: doc.storage_path as string | null,
       extracted_text: null as string | null,
       sku_revision_status: null as CrossSourceRevisionStatus | null,

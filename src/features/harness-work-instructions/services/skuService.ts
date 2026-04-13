@@ -13,6 +13,7 @@ import { evaluateSKUReadiness, type SKUReadinessResult } from '@/src/utils/skuRe
 import { extractRevisionSignal, type RevisionSource } from '@/src/utils/revisionParser';
 import type { RevisionComparisonResult } from '@/src/utils/revisionComparator';
 import type { RevisionValidationAuditMetadata, RevisionValidationSource } from '@/src/types/revisionValidation';
+import type { DocumentExtractionEvidence } from '../types/extractionEvidence';
 import { hashBuffer, hashText } from '../utils/documentHash';
 import { summarizeLineDiff, type DocumentDiffSummary } from '../utils/documentDiff';
 import {
@@ -59,6 +60,8 @@ export interface DocumentMetadata {
   revisionSource?: RevisionSource;
   /** Optional validation audit context supplied by VaultUploader (advisory only). */
   revisionValidation?: RevisionValidationAuditMetadata;
+  /** Structured extraction evidence captured during ingestion (Phase 3H.29). */
+  extractionEvidence?: DocumentExtractionEvidence | null;
 }
 
 export interface DocumentFirstIngestResult {
@@ -170,6 +173,8 @@ export interface SKUDocumentRecord {
   revision_validation_source?: RevisionValidationSource | null;
   revision_override_used?: boolean | null;
   revision_validated_at?: string | null;
+  /** Structured extraction evidence (fragments, signals, structure, resolved values). */
+  extraction_evidence?: DocumentExtractionEvidence | null;
 }
 
 const SKU_BUCKET = 'sku-documents';
@@ -449,7 +454,11 @@ export async function uploadDocument(
   type: DocumentType | string,
   revision: string,
   extractedText?: string,
-  identifiers?: { drawingNumber?: string | null; revisionSource?: RevisionSource },
+  identifiers?: {
+    drawingNumber?: string | null;
+    revisionSource?: RevisionSource;
+    extractionEvidence?: DocumentExtractionEvidence | null;
+  },
   revisionAudit?: RevisionValidationAuditMetadata,
 ): Promise<UploadDocumentResult> {
   const supabase = createSupabaseAdmin();
@@ -630,6 +639,7 @@ export async function uploadDocument(
     revision_validation_source: revisionAudit?.revision_validation_source ?? null,
     revision_override_used: revisionAudit?.revision_override_used ?? null,
     revision_validated_at: revisionAudit?.revision_validated_at ?? null,
+    extraction_evidence: identifiers?.extractionEvidence ?? null,
   };
 
   const { data, error } = await supabase
@@ -846,7 +856,11 @@ export async function ingestDocumentFirstFlow(
     meta.sourceType,
     meta.revision ?? 'UNSPECIFIED',
     extractedText,
-    { drawingNumber: meta.drawing_number ?? null, revisionSource: meta.revisionSource ?? undefined },
+    {
+      drawingNumber:     meta.drawing_number ?? null,
+      revisionSource:    meta.revisionSource ?? undefined,
+      extractionEvidence: meta.extractionEvidence ?? null,
+    },
     meta.revisionValidation,
   );
 

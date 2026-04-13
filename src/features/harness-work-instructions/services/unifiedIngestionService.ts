@@ -29,7 +29,9 @@ import { extractEngineeringMasterRevision } from '@/src/utils/extractEngineering
 import { extractRheemDrawingRevision } from '@/src/utils/extractRheemDrawingRevision';
 import { extractApogeeDrawingRevision } from '@/src/utils/extractApogeeDrawingRevision';
 import { extractRevisionSignal, type RevisionSource } from '@/src/utils/revisionParser';
-import { resolveDocumentSignals } from '../utils/resolveDocumentSignals';
+import { resolveDocumentSignalsFromArrays, type Signal } from '../utils/resolveDocumentSignals';
+import { analyzeDocumentStructure } from './documentStructureAnalyzer';
+import type { ExtractionFragment, EvidenceSignal, DocumentExtractionEvidence } from '../types/extractionEvidence';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -272,16 +274,32 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   }
 
   // ---------------------------------------------------------------------------
-  // Signal Resolution — Phase 3H.18
-  // All extraction paths feed into resolveDocumentSignals. The engine selects the
-  // highest-priority non-null signal for each field.
+  // Phase 3H.29: Fragment capture — raw OCR regions and filename token
+  // ---------------------------------------------------------------------------
+
+  const rawLines = normalizedText?.split('\n') ?? [];
+  const titleBlockRaw = rawLines.slice(0, 60).join('\n').slice(0, 1500);
+  const extractionFragments: ExtractionFragment[] = [
+    ...(titleBlockRaw.trim().length > 0 ? [{
+      source: 'OCR_TITLE_BLOCK' as const,
+      raw_text: titleBlockRaw,
+      confidence: 1.0,
+      metadata: { total_lines: rawLines.length, captured_lines: Math.min(60, rawLines.length) },
+    }] : []),
+    { source: 'FILENAME' as const, raw_text: file.name, confidence: 1.0 },
+  ];
+
+  // Phase 3H.29 STEP 5: Structural analysis (heuristic — no value extraction)
+  const documentStructure = analyzeDocumentStructure(extractionFragments);
+
+  // ---------------------------------------------------------------------------
+  // Signal Resolution — Phase 3H.18 / 3H.29 STEP 3+4
+  // Build explicit Signal<string>[] arrays consumed by resolveDocumentSignalsFromArrays.
   // ---------------------------------------------------------------------------
 
   const drawingNumberFromText     = normalizedText ? extractDrawingNumberFromText(normalizedText) : null;
   const drawingNumberFromFilename = extractDrawingNumberFromFilename(file.name);
 
-  // Explicit filename revision signal: captures Rev.XX from filename stem before delegating
-  // to uploadDocument so that meta.revision and the INGEST IDENTITY log are always accurate.
   const filenameRevSignal = extractRevisionSignal({ fileName: file.name });
   const filenameRevision  = (filenameRevSignal.normalized && filenameRevSignal.parseSource !== 'UNKNOWN')
     ? filenameRevSignal.normalized
@@ -292,14 +310,18 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     revisionSource === 'TITLE_BLOCK_RHEEM'   ||
     revisionSource === 'HEADER_EXPLICIT';
 
-  const resolved = resolveDocumentSignals({
-    titleBlockRevision:  isStructuredRevision ? revision : null,
-    textRevision:        !isStructuredRevision && revision ? revision : null,
-    filenameRevision,
-    emDrawingNumber:     emIds?.drawingNumber ?? null,
-    textDrawingNumber:   drawingNumberFromText,
-    filenameDrawingNumber: drawingNumberFromFilename,
-  });
+  const revisionSignals: Signal<string>[] = [
+    { value: isStructuredRevision ? (revision ?? null) : null, source: 'TITLE_BLOCK' },
+    { value: !isStructuredRevision && revision ? revision : null, source: 'TEXT' },
+    { value: filenameRevision ?? null, source: 'FILENAME' },
+  ];
+  const drawingNumberSignals: Signal<string>[] = [
+    { value: emIds?.drawingNumber ?? null,    source: 'TITLE_BLOCK' },
+    { value: drawingNumberFromText,           source: 'TEXT' },
+    { value: drawingNumberFromFilename,       source: 'FILENAME' },
+  ];
+
+  const resolved = resolveDocumentSignalsFromArrays(revisionSignals, drawingNumberSignals);
 
   // Apply resolved revision if it improves on what text extraction found
   if (resolved.revision.value && !revision) {
@@ -314,6 +336,37 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     revision:      { value: resolved.revision.value,      source: resolved.revision.source },
     drawingNumber: { value: resolved.drawingNumber.value, source: resolved.drawingNumber.source },
   });
+
+  // ---------------------------------------------------------------------------
+  // Phase 3H.29 STEP 2+6: Build evidence bundle — all signals, fragments, resolved values
+  // ---------------------------------------------------------------------------
+
+  const revEvidenceSignals: EvidenceSignal[] = [
+    ...(isStructuredRevision && revision ? [{
+      source: 'TITLE_BLOCK',
+      value: revision,
+      confidence: revisionSource === 'REVISION_BOX_APOGEE' || revisionSource === 'TITLE_BLOCK_RHEEM' ? 1.0 : 0.95,
+    }] : []),
+    ...(!isStructuredRevision && revision ? [{ source: 'TEXT', value: revision, confidence: 0.7 }] : []),
+    ...(filenameRevision ? [{ source: 'FILENAME', value: filenameRevision, confidence: 0.6 }] : []),
+  ];
+  const drnEvidenceSignals: EvidenceSignal[] = [
+    ...(emIds?.drawingNumber ? [{ source: 'TITLE_BLOCK', value: emIds.drawingNumber, confidence: 0.95 }] : []),
+    ...(drawingNumberFromText ? [{ source: 'TEXT', value: drawingNumberFromText, confidence: 0.8 }] : []),
+    ...(drawingNumberFromFilename ? [{ source: 'FILENAME', value: drawingNumberFromFilename, confidence: 0.7 }] : []),
+  ];
+
+  const extractionEvidence: DocumentExtractionEvidence = {
+    fragments: extractionFragments,
+    revision_signals: revEvidenceSignals,
+    drawing_number_signals: drnEvidenceSignals,
+    document_structure: documentStructure,
+    resolved_revision: resolved.revision.value,
+    resolved_revision_source: resolved.revision.source !== 'NONE' ? resolved.revision.source : null,
+    resolved_drawing_number: resolved.drawingNumber.value,
+    resolved_drawing_number_source: resolved.drawingNumber.source !== 'NONE' ? resolved.drawingNumber.source : null,
+    captured_at: new Date().toISOString(),
+  };
 
   if (!partNumber && drawingNumber) {
     let resolvedPN: string | null = null;
@@ -364,6 +417,7 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
       drawing_number: drawingNumber ?? null,
       revisionSource: revisionSource ?? undefined,
       revisionValidation: validationContext,
+      extractionEvidence,
     },
     file,
     normalizedText ?? undefined,
