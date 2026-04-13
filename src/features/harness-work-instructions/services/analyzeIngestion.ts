@@ -95,10 +95,11 @@ function buildUnresolvedQuestions(params: {
   revisionSignals: EvidenceSignal[];
   partNumber: string | null;
   partNumberIsProvisional: boolean;
+  docTypeForced?: boolean;
 }): UnresolvedQuestion[] {
   const questions: UnresolvedQuestion[] = [];
 
-  if (params.docType === 'UNKNOWN' || params.docTypeConfidence < 0.5) {
+  if (!params.docTypeForced && (params.docType === 'UNKNOWN' || params.docTypeConfidence < 0.5)) {
     questions.push({
       id: 'q-doc-type',
       issueCode: 'DOC_TYPE_UNCERTAIN',
@@ -163,17 +164,20 @@ export interface AnalyzeIngestionParams {
   /** Optional caller-provided overrides (e.g. from corrective workflow context). */
   partNumberHint?: string | null;
   revisionHint?: string | null;
+  forcedDocumentType?: DocumentType | null;
 }
 
 export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Promise<IngestionAnalysisResult> {
-  const { fileName, fileSize, normalizedText, partNumberHint, revisionHint } = params;
+  const { fileName, fileSize, normalizedText, partNumberHint, revisionHint, forcedDocumentType } = params;
 
   // --- Document type detection ---
   const classification = normalizedText
     ? detectDocumentType(normalizedText, fileName)
     : { detected: 'UNKNOWN' as const, signals: ['NO_TEXT_AVAILABLE'] };
-  const docType = classification.detected;
-  const docTypeConfidence = getDocTypeConfidence(docType, classification.signals);
+  const docTypeForced = Boolean(forcedDocumentType && forcedDocumentType !== 'UNKNOWN');
+  const docType = docTypeForced ? (forcedDocumentType as DocumentType) : classification.detected;
+  const docTypeSignals = docTypeForced ? [`USER_PRESET:${docType}`] : classification.signals;
+  const docTypeConfidence = docTypeForced ? 1 : getDocTypeConfidence(docType, docTypeSignals);
 
   // --- Extraction state ---
   let partNumber = trimStr(partNumberHint);
@@ -342,6 +346,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     revisionSignals: revEvidenceSignals,
     partNumber,
     partNumberIsProvisional,
+    docTypeForced,
   });
   const readyToCommit = unresolvedQuestions.every(q => !q.blocksCommit);
 
@@ -350,7 +355,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     fileSize,
     proposedDocumentType: docType,
     docTypeConfidence,
-    docTypeSignals: classification.signals,
+    docTypeSignals,
     proposedPartNumber: partNumber,
     partNumberIsProvisional,
     partNumberConfidence,

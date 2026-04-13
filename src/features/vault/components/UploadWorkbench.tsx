@@ -16,6 +16,7 @@ import type {
   IngestionAnalysisResult,
   UnresolvedQuestion,
 } from '@/src/features/vault/types/ingestionReview';
+import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -38,6 +39,23 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   INTERNAL_DRAWING: 'Internal Drawing',
   UNKNOWN: '—',
 };
+
+type StrictDocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
+
+type UploadMode = 'MIXED' | StrictDocumentType;
+
+const MODE_OPTIONS: { label: string; value: UploadMode }[] = [
+  { label: 'Mixed', value: 'MIXED' },
+  { label: 'BOM', value: 'BOM' },
+  { label: 'Customer Drawing', value: 'CUSTOMER_DRAWING' },
+  { label: 'Internal Drawing', value: 'INTERNAL_DRAWING' },
+];
+
+const DOC_TYPE_OPTIONS: { label: string; value: StrictDocumentType }[] = [
+  { label: 'BOM', value: 'BOM' },
+  { label: 'Customer Drawing', value: 'CUSTOMER_DRAWING' },
+  { label: 'Internal Drawing', value: 'INTERNAL_DRAWING' },
+];
 
 const STATUS_BADGE: Record<WorkbenchItemStatus, string> = {
   queued:          'bg-gray-100 text-gray-600',
@@ -238,6 +256,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [filter, setFilter]       = useState<'all' | 'needs_review' | 'ready' | 'committed'>('all');
+  const [uploadMode, setUploadMode] = useState<UploadMode>('MIXED');
 
   const updateItem = useCallback((id: string, patch: Partial<WorkbenchItem>) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
@@ -269,7 +288,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     }));
   }, []);
 
-  const processFile = useCallback(async (id: string, file: File) => {
+  const processFile = useCallback(async (id: string, file: File, forcedType?: StrictDocumentType) => {
     updateItem(id, { status: 'extracting' });
 
     let extractedText: string | undefined;
@@ -288,6 +307,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       fd.append('file', file);
       if (extractedText) fd.append('extracted_text', extractedText);
       if (preselectedSku) fd.append('part_number_hint', preselectedSku);
+      if (forcedType) fd.append('forced_document_type', forcedType);
 
       const res  = await fetch('/api/upload/analyze', { method: 'POST', body: fd });
       const json = await res.json();
@@ -303,9 +323,9 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       updateItem(id, {
         analysis,
         status,
-        confirmedDocumentType: analysis.proposedDocumentType !== 'UNKNOWN'
+        confirmedDocumentType: forcedType ?? (analysis.proposedDocumentType !== 'UNKNOWN'
           ? (analysis.proposedDocumentType as WorkbenchItem['confirmedDocumentType'])
-          : undefined,
+          : undefined),
         confirmedPartNumber: (!analysis.partNumberIsProvisional && analysis.proposedPartNumber)
           ? analysis.proposedPartNumber
           : preselectedSku ?? undefined,
@@ -325,11 +345,12 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       file,
       status: 'queued' as WorkbenchItemStatus,
       answers: {},
+      confirmedDocumentType: uploadMode !== 'MIXED' ? uploadMode : undefined,
     }));
     setItems(prev => [...prev, ...entries]);
-    entries.forEach(e => processFile(e.id, e.file));
+    entries.forEach(e => processFile(e.id, e.file, uploadMode !== 'MIXED' ? uploadMode : undefined));
     if (!selectedId && entries.length > 0) setSelectedId(entries[0].id);
-  }, [processFile, selectedId]);
+  }, [processFile, selectedId, uploadMode]);
 
   const commitItem = useCallback(async (item: WorkbenchItem) => {
     if (!isItemCommittable(item)) return;
@@ -396,9 +417,9 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white">
+    <div className="fixed inset-0 z-50 flex h-screen flex-col bg-white">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4 border-b bg-gray-50 px-6 py-4 shrink-0">
+      <div className="flex items-center justify-between gap-4 border-b bg-gray-50 px-6 py-4">
         <div className="flex items-center gap-3 min-w-0">
           <h2 className="text-lg font-bold text-gray-900 whitespace-nowrap">Upload Workbench</h2>
           <span className="text-gray-300">·</span>
@@ -410,19 +431,23 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          {counts.all > 0 && (
-            <div className="flex gap-2 text-xs">
-              <span className="rounded-full bg-orange-100 px-2 py-0.5 font-semibold text-orange-800">
-                {counts.needs_review} review
-              </span>
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-800">
-                {counts.ready} ready
-              </span>
-              <span className="rounded-full bg-gray-200 px-2 py-0.5 font-semibold text-gray-700">
-                {counts.committed} committed
-              </span>
+          <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+            <span>Upload mode:</span>
+            <div className="flex gap-1">
+              {MODE_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setUploadMode(option.value)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                    uploadMode === option.value ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -453,212 +478,229 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
           </p>
           <p className="mt-0.5 text-xs text-gray-400">Files will be analyzed before any DB write</p>
         </div>
-        <input ref={inputRef} type="file" multiple accept=".pdf" className="hidden"
-          onChange={e => { if (e.target.files) { queueFiles(e.target.files); e.target.value = ''; } }} />
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept=".pdf"
+          className="hidden"
+          onChange={e => {
+            if (e.target.files) {
+              queueFiles(e.target.files);
+              e.target.value = '';
+            }
+          }}
+        />
       </div>
 
       {/* Body */}
-      {items.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center text-gray-400 text-sm">
-          No files queued yet. Drop PDFs above to start.
-        </div>
-      ) : (
-        <div className="flex flex-1 min-h-0 gap-0">
-          {/* Left: queue list */}
-          <div className="flex flex-col w-[55%] min-w-0 border-r">
-            {/* Filter tabs */}
-            <div className="flex gap-1 border-b px-4 py-2 shrink-0">
-              {(['all', 'needs_review', 'ready', 'committed'] as const).map(tab => (
-                <button key={tab} type="button" onClick={() => setFilter(tab)}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                    filter === tab ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {tab === 'all' ? `All (${counts.all})`
-                    : tab === 'needs_review' ? `Needs Review (${counts.needs_review})`
-                    : tab === 'ready' ? `Ready (${counts.ready})`
-                    : `Committed (${counts.committed})`}
-                </button>
-              ))}
-            </div>
-
-            {/* File list */}
-            <div className="flex-1 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-gray-50 border-b text-xs text-gray-500 uppercase tracking-wide">
-                  <tr>
-                    <th className="px-4 py-2 text-left font-semibold">File</th>
-                    <th className="px-3 py-2 text-left font-semibold">Type</th>
-                    <th className="px-3 py-2 text-left font-semibold">Rev</th>
-                    <th className="px-3 py-2 text-left font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredItems.map(item => {
-                    const vals = getCommitValues(item);
-                    const isSelected = item.id === selectedId;
-                    return (
-                      <tr
-                        key={item.id}
-                        onClick={() => setSelectedId(item.id)}
-                        className={`border-b cursor-pointer transition ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                      >
-                        <td className="px-4 py-2.5">
-                          <p className="font-medium text-gray-900 truncate max-w-[220px]" title={item.file.name}>
-                            {item.file.name}
-                          </p>
-                          <p className="text-xs text-gray-400">{formatBytes(item.file.size)}</p>
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">
-                          {vals.documentType ? DOC_TYPE_LABELS[vals.documentType] ?? vals.documentType : '—'}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs font-mono text-gray-700">
-                          {vals.revision || '—'}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_BADGE[item.status]}`}>
-                            {STATUS_LABEL[item.status]}
-                          </span>
-                          {item.error && (
-                            <p className="text-xs text-red-600 mt-0.5 truncate max-w-[120px]" title={item.error}>
-                              {item.error}
-                            </p>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+      <div className="flex flex-1 min-h-0 gap-0 overflow-hidden">
+        {/* Left: queue list */}
+        <div className="flex w-2/3 min-w-0 flex-col border-r">
+          <div className="flex gap-1 border-b px-4 py-2 shrink-0 bg-white">
+            {(['all', 'needs_review', 'ready', 'committed'] as const).map(mode => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setFilter(mode)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  filter === mode ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {mode === 'all'
+                  ? `All (${counts.all})`
+                  : mode === 'needs_review'
+                    ? `Needs Review (${counts.needs_review})`
+                    : mode === 'ready'
+                      ? `Ready (${counts.ready})`
+                      : `Committed (${counts.committed})`}
+              </button>
+            ))}
           </div>
 
-          {/* Right: detail panel */}
-          <div className="flex flex-col w-[45%] min-w-0 overflow-y-auto">
-            {!selectedItem ? (
-              <div className="flex flex-1 items-center justify-center text-gray-400 text-sm p-8">
-                Select a file to review
-              </div>
-            ) : (
-              <div className="p-5 space-y-4">
-                <div>
-                  <p className="text-base font-bold text-gray-900 truncate">{selectedItem.file.name}</p>
-                  <p className="text-xs text-gray-400">{formatBytes(selectedItem.file.size)}</p>
-                </div>
+          <div className="flex-1 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-gray-50 border-b text-xs text-gray-500 uppercase tracking-wide">
+                <tr>
+                  <th className="px-4 py-2 text-left font-semibold">File</th>
+                  <th className="px-3 py-2 text-left font-semibold">Type</th>
+                  <th className="px-3 py-2 text-left font-semibold">Rev</th>
+                  <th className="px-3 py-2 text-left font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.map(item => {
+                  const vals = getCommitValues(item);
+                  const isSelected = item.id === selectedId;
+                  const currentDocType = item.confirmedDocumentType ?? vals.documentType ?? '';
+                  return (
+                    <tr
+                      key={item.id}
+                      onClick={() => setSelectedId(item.id)}
+                      className={`border-b cursor-pointer transition ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                    >
+                      <td className="px-4 py-2.5">
+                        <p className="font-medium text-gray-900 truncate max-w-[220px]" title={item.file.name}>
+                          {item.file.name}
+                        </p>
+                        <p className="text-xs text-gray-400">{formatBytes(item.file.size)}</p>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">
+                        <select
+                          className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-semibold"
+                          value={currentDocType}
+                          onChange={e =>
+                            updateItem(item.id, {
+                              confirmedDocumentType: e.target.value === '' ? undefined : (e.target.value as StrictDocumentType),
+                            })
+                          }
+                        >
+                          <option value="">—</option>
+                          {DOC_TYPE_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs font-mono text-gray-700">{vals.revision || '—'}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_BADGE[item.status]}`}>
+                          {STATUS_LABEL[item.status]}
+                        </span>
+                        {item.error && (
+                          <p className="text-xs text-red-600 mt-0.5 truncate max-w-[120px]" title={item.error}>
+                            {item.error}
+                          </p>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-                {/* Proposed values summary (read-only from analysis) */}
-                {selectedItem.analysis && (
-                  <div className="rounded-xl bg-gray-50 border px-4 py-3 space-y-2 text-sm">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Suggested by extraction
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-xs text-gray-400">Document type</p>
-                        <p className="font-semibold text-gray-800">
-                          {DOC_TYPE_LABELS[selectedItem.analysis.proposedDocumentType]}
-                          <span className="ml-1 text-xs font-normal text-gray-400">
-                            ({Math.round(selectedItem.analysis.docTypeConfidence * 100)}%)
+        {/* Right: detail panel */}
+        <div className="flex w-[420px] min-w-[420px] flex-col overflow-y-auto">
+          {!selectedItem ? (
+            <div className="flex flex-1 items-center justify-center text-gray-400 text-sm p-8">Select a file to review</div>
+          ) : (
+            <div className="p-5 space-y-4">
+              <div>
+                <p className="text-base font-bold text-gray-900 truncate">{selectedItem.file.name}</p>
+                <p className="text-xs text-gray-400">{formatBytes(selectedItem.file.size)}</p>
+              </div>
+
+              {selectedItem.analysis && (
+                <div className="rounded-xl bg-gray-50 border px-4 py-3 space-y-2 text-sm">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Suggested by extraction</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs text-gray-400">Document type</p>
+                      <p className="font-semibold text-gray-800">
+                        {DOC_TYPE_LABELS[selectedItem.analysis.proposedDocumentType]}
+                        <span className="ml-1 text-xs font-normal text-gray-400">
+                          ({Math.round(selectedItem.analysis.docTypeConfidence * 100)}%)
+                        </span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">Revision</p>
+                      <p className="font-semibold font-mono text-gray-800">
+                        {selectedItem.analysis.proposedRevision ?? '—'}
+                        {selectedItem.analysis.proposedRevision && (
+                          <span className="ml-1 text-xs font-normal font-sans text-gray-400">
+                            ({Math.round(selectedItem.analysis.revisionConfidence * 100)}%)
                           </span>
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Revision</p>
-                        <p className="font-semibold font-mono text-gray-800">
-                          {selectedItem.analysis.proposedRevision ?? '—'}
-                          {selectedItem.analysis.proposedRevision && (
-                            <span className="ml-1 text-xs font-normal font-sans text-gray-400">
-                              ({Math.round(selectedItem.analysis.revisionConfidence * 100)}%)
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Part number</p>
-                        <p className={`font-semibold font-mono text-sm ${selectedItem.analysis.partNumberIsProvisional ? 'text-orange-600' : 'text-gray-800'}`}>
-                          {selectedItem.analysis.proposedPartNumber ?? '—'}
-                          {selectedItem.analysis.partNumberIsProvisional && (
-                            <span className="ml-1 text-xs font-normal font-sans text-orange-500">unresolved</span>
-                          )}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Drawing number</p>
-                        <p className="font-semibold font-mono text-gray-800">{selectedItem.analysis.proposedDrawingNumber ?? '—'}</p>
-                      </div>
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">Part number</p>
+                      <p
+                        className={`font-semibold font-mono text-sm ${
+                          selectedItem.analysis.partNumberIsProvisional ? 'text-orange-600' : 'text-gray-800'
+                        }`}
+                      >
+                        {selectedItem.analysis.proposedPartNumber ?? '—'}
+                        {selectedItem.analysis.partNumberIsProvisional && (
+                          <span className="ml-1 text-xs font-normal font-sans text-orange-500">unresolved</span>
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">Drawing number</p>
+                      <p className="font-semibold font-mono text-gray-800">{selectedItem.analysis.proposedDrawingNumber ?? '—'}</p>
                     </div>
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Questions queue */}
-                {(selectedItem.analysis?.unresolvedQuestions.length ?? 0) > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Resolution required
-                    </p>
-                    {selectedItem.analysis!.unresolvedQuestions.map(q => (
-                      <QuestionCard
-                        key={q.id}
-                        question={q}
-                        answer={selectedItem.answers[q.id] ?? ''}
-                        onAnswer={value => answerQuestion(selectedItem.id, q.id, value)}
-                      />
-                    ))}
-                  </div>
-                )}
+              {selectedItem.analysis?.unresolvedQuestions.length ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Resolution required</p>
+                  {selectedItem.analysis.unresolvedQuestions.map(q => (
+                    <QuestionCard
+                      key={q.id}
+                      question={q}
+                      answer={selectedItem.answers[q.id] ?? ''}
+                      onAnswer={value => answerQuestion(selectedItem.id, q.id, value)}
+                    />
+                  ))}
+                </div>
+              ) : null}
 
-                {/* Evidence chain */}
-                {selectedItem.analysis?.extractionEvidence && (
-                  <EvidencePanel evidence={selectedItem.analysis.extractionEvidence} />
-                )}
+              {selectedItem.analysis?.extractionEvidence ? (
+                <EvidencePanel evidence={selectedItem.analysis.extractionEvidence} />
+              ) : null}
 
-                {/* Per-file commit button (for targeted commit) */}
-                {selectedItem.status === 'ready_to_commit' && (
+              {selectedItem.status === 'ready_to_commit' ? (
+                <button
+                  type="button"
+                  onClick={() => commitItem(selectedItem)}
+                  className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition"
+                >
+                  Commit This File
+                </button>
+              ) : null}
+
+              {selectedItem.status === 'committed' && selectedItem.commitResult ? (
+                <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800">
+                  <p className="font-semibold">Committed</p>
+                  <p className="text-xs mt-0.5">SKU: {selectedItem.commitResult.sku?.part_number ?? '—'}</p>
+                  {selectedItem.commitResult.message ? (
+                    <p className="text-xs mt-0.5 text-emerald-600">{selectedItem.commitResult.message}</p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {selectedItem.status === 'failed' && selectedItem.error ? (
+                <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">
+                  <p className="font-semibold">Failed</p>
+                  <p className="text-xs mt-0.5">{selectedItem.error}</p>
                   <button
                     type="button"
-                    onClick={() => commitItem(selectedItem)}
-                    className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition"
+                    onClick={() => {
+                      updateItem(selectedItem.id, { status: 'queued', error: undefined });
+                      processFile(selectedItem.id, selectedItem.file, uploadMode !== 'MIXED' ? uploadMode : undefined);
+                    }}
+                    className="mt-2 text-xs font-semibold text-red-700 underline"
                   >
-                    Commit This File
+                    Retry Analysis
                   </button>
-                )}
-
-                {selectedItem.status === 'committed' && selectedItem.commitResult && (
-                  <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800">
-                    <p className="font-semibold">Committed</p>
-                    <p className="text-xs mt-0.5">SKU: {selectedItem.commitResult.sku?.part_number ?? '—'}</p>
-                    {selectedItem.commitResult.message && (
-                      <p className="text-xs mt-0.5 text-emerald-600">{selectedItem.commitResult.message}</p>
-                    )}
-                  </div>
-                )}
-
-                {selectedItem.status === 'failed' && selectedItem.error && (
-                  <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">
-                    <p className="font-semibold">Failed</p>
-                    <p className="text-xs mt-0.5">{selectedItem.error}</p>
-                    <button
-                      type="button"
-                      onClick={() => { updateItem(selectedItem.id, { status: 'queued', error: undefined }); processFile(selectedItem.id, selectedItem.file); }}
-                      className="mt-2 text-xs font-semibold text-red-700 underline"
-                    >
-                      Retry Analysis
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
-      {/* Bottom commit bar */}
       {items.length > 0 && (
-        <div className="border-t bg-gray-50 px-6 py-3 flex items-center justify-between shrink-0">
+        <div className="flex items-center justify-between border-t bg-gray-50 px-6 py-3">
           <p className="text-xs text-gray-500">
-            {counts.ready} file{counts.ready !== 1 ? 's' : ''} ready to commit ·{' '}
-            {counts.needs_review} need{counts.needs_review !== 1 ? '' : 's'} review ·{' '}
-            {counts.committed} committed
+            {counts.ready} file{counts.ready !== 1 ? 's' : ''} ready · {counts.needs_review} need review · {counts.committed} committed
           </p>
           <button
             type="button"
