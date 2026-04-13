@@ -982,6 +982,19 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   ];
 
   extractionEvidence.field_extractions = fieldExtractions;
+
+  // Phase 3H.43.Y: Tag usedForField on each winning region for overlay debug visibility
+  for (const fe of fieldExtractions) {
+    if (!fe.sourceRegionId || !fe.value) continue;
+    const targetRegion = mergedRegions.find(r => r.id === fe.sourceRegionId);
+    if (targetRegion) {
+      targetRegion.usedForField = [
+        ...(targetRegion.usedForField ?? []),
+        fe.field as 'REVISION' | 'PART_NUMBER' | 'DRAWING_NUMBER',
+      ];
+    }
+  }
+
   extractionEvidence.resolution_audit = {
     part_number: {
       field: 'PART_NUMBER',

@@ -65,6 +65,10 @@ export interface RheemDrawingModel {
     connectorCount: number;
     toleranceCount: number;
   };
+  /** Phase 3H.43.Y: Normalized title block text after vertical reinterpretation, if applied. */
+  normalizedTitleBlockText?: string | null;
+  /** Phase 3H.43.Y: True when vertical normalization was applied before title block parsing. */
+  verticalNormalizationApplied?: boolean;
 }
 
 export interface RheemTableRegion {
@@ -433,6 +437,78 @@ export function extractRheemNotes(textLines: string[]): RheemNotes {
 }
 
 // ---------------------------------------------------------------------------
+// Step 4 — Vertical Title Block Text Normalization (Phase 3H.43.Y)
+// ---------------------------------------------------------------------------
+
+/**
+ * Detect if lines look like they originate from a vertically-oriented text strip.
+ * Signals: high proportion of short lines (1–6 chars), or many single-token lines
+ * that form coherent patterns when read sequentially.
+ */
+export function looksLikeVerticalStrip(lines: string[]): boolean {
+  if (lines.length < 8) return false;
+  const shortLines = lines.filter(l => l.length >= 1 && l.length <= 8);
+  return shortLines.length / lines.length >= 0.55;
+}
+
+/**
+ * Attempt to normalize vertical title block text into horizontal reading order.
+ *
+ * When a Rheem drawing's left-side title block is OCR'd, the text can be extracted
+ * column-by-column rather than row-by-row, resulting in many very short lines.
+ * This normalizer tries to reconstruct logical lines by grouping short fragments
+ * that are likely part of the same label/value pair.
+ *
+ * Returns: { normalized: string[], wasNormalized: boolean }
+ *   - normalized: the best set of lines to parse from (may be original if not vertical)
+ *   - wasNormalized: true if vertical strip was detected and lines were reassembled
+ */
+export function normalizeVerticalTitleBlockText(
+  lines: string[],
+): { normalized: string[]; wasNormalized: boolean } {
+  const isVertical = looksLikeVerticalStrip(lines);
+  if (!isVertical) return { normalized: lines, wasNormalized: false };
+
+  // Reassembly strategy: group runs of short (<= 8 char) lines into one token-line,
+  // separated whenever we hit a longer line or a known delimiter token.
+  const result: string[] = [];
+  let buffer: string[] = [];
+
+  const flush = () => {
+    if (buffer.length > 0) {
+      result.push(buffer.join(' ').trim());
+      buffer = [];
+    }
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) { flush(); continue; }
+
+    if (trimmed.length > 12) {
+      // Long line — flush buffer then add as-is
+      flush();
+      result.push(trimmed);
+    } else if (/^[A-Z]{2,}$/.test(trimmed) && trimmed.length >= 3) {
+      // Looks like a keyword (DATE, SHEET, REV, etc.) — start a new group
+      flush();
+      buffer.push(trimmed);
+    } else {
+      buffer.push(trimmed);
+    }
+  }
+  flush();
+
+  console.log('[RHEEM VERTICAL NORMALIZE]', {
+    inputLines: lines.length,
+    outputLines: result.length,
+    shortLineFraction: (lines.filter(l => l.length <= 8).length / lines.length).toFixed(2),
+  });
+
+  return { normalized: result, wasNormalized: true };
+}
+
+// ---------------------------------------------------------------------------
 // Step 7 — Main Entry Point
 // ---------------------------------------------------------------------------
 
@@ -441,8 +517,22 @@ export function parseRheemDrawing(text: string, fileName: string): RheemDrawingM
 
   console.log('[RHEEM PARSER START]', { fileName, lineCount: textLines.length, textLength: text.length });
 
-  // Step 2: Title block extraction
-  const titleBlock = extractRheemTitleBlock(textLines);
+  // Step 4 (Phase 3H.43.Y): Try vertical normalization on title block candidate lines
+  // Primary: last 40 lines (title block is typically at the bottom of Rheem drawings)
+  const titleBlockCandidateLines = textLines.length > 40
+    ? [...textLines.slice(-40), ...textLines.slice(0, 40)]
+    : textLines;
+  const { normalized: normalizedTbLines, wasNormalized } =
+    normalizeVerticalTitleBlockText(titleBlockCandidateLines);
+
+  // Step 2: Title block extraction — try normalized first, fall back to original
+  let titleBlock = extractRheemTitleBlock(normalizedTbLines);
+  if (!titleBlock.partNumber || !titleBlock.anchorFound) {
+    const fallback = extractRheemTitleBlock(textLines);
+    if (fallback.confidence > titleBlock.confidence) {
+      titleBlock = fallback;
+    }
+  }
 
   // Step 3: Table detection
   const tableRegions = detectTableRegions(textLines);
@@ -476,6 +566,8 @@ export function parseRheemDrawing(text: string, fileName: string): RheemDrawingM
       connectorCount: connectors.length,
       toleranceCount: notes.tolerances.length,
     },
+    normalizedTitleBlockText: wasNormalized ? normalizedTbLines.join('\n').slice(0, 600) : null,
+    verticalNormalizationApplied: wasNormalized,
   };
 
   console.log('[RHEEM PARSER COMPLETE]', {
