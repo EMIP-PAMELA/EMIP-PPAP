@@ -32,6 +32,7 @@ import { extractRevisionSignal, type RevisionSource } from '@/src/utils/revision
 import { resolveDocumentSignalsFromArrays, type Signal } from '../utils/resolveDocumentSignals';
 import { analyzeDocumentStructure } from './documentStructureAnalyzer';
 import type { ExtractionFragment, EvidenceSignal, DocumentExtractionEvidence } from '../types/extractionEvidence';
+import type { IngestionAnalysisResult } from '@/src/features/vault/types/ingestionReview';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -44,6 +45,11 @@ interface IngestAndProcessParams {
   validationContext?: RevisionValidationAuditMetadata;
   /** Phase 3H.31: How this commit was authorized. Stored in extraction_evidence. */
   confirmationMode?: 'AUTO_VERIFIED' | 'USER_CONFIRMED' | 'ADMIN_CONFIRMED';
+  /** Phase 3H.33: Operator audit trail. */
+  confirmedBy?: string;
+  confirmedAt?: string;
+  analysisSnapshot?: Partial<IngestionAnalysisResult> | null;
+  drawingNumberOverride?: string;
 }
 
 interface PipelineResult {
@@ -202,12 +208,27 @@ async function buildPipelineFromDocuments(
 }
 
 export async function ingestAndProcessDocument(params: IngestAndProcessParams): Promise<UnifiedIngestionResult> {
-  const { file, documentType, extractedText, partNumberOverride, revisionOverride, validationContext, confirmationMode } = params;
+  const {
+    file,
+    documentType,
+    extractedText,
+    partNumberOverride,
+    revisionOverride,
+    validationContext,
+    confirmationMode,
+    confirmedBy,
+    confirmedAt,
+    analysisSnapshot,
+    drawingNumberOverride,
+  } = params;
 
   const normalizedType = documentType;
   const normalizedText = normalizeOptionalString(extractedText);
-  let partNumber = normalizeOptionalString(partNumberOverride);
-  let revision = normalizeOptionalString(revisionOverride);
+  const operatorConfirmedPart = normalizeOptionalString(partNumberOverride);
+  const operatorConfirmedRevision = normalizeOptionalString(revisionOverride);
+  const operatorConfirmedDrawing = normalizeOptionalString(drawingNumberOverride);
+  let partNumber = operatorConfirmedPart;
+  let revision = operatorConfirmedRevision;
   let description: string | null = null;
   let emIds: EngineeringMasterIdentifiers | null = null;
   let revisionSource: RevisionSource | null = null;
@@ -331,7 +352,10 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     if (resolved.revision.source === 'FILENAME') revisionSource = 'FILENAME';
   }
 
-  const drawingNumber = resolved.drawingNumber.value;
+  let drawingNumber = resolved.drawingNumber.value;
+  if (operatorConfirmedDrawing) {
+    drawingNumber = operatorConfirmedDrawing;
+  }
 
   console.log('[SIGNAL RESOLUTION]', {
     file: file.name,
@@ -358,6 +382,7 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     ...(drawingNumberFromFilename ? [{ source: 'FILENAME', value: drawingNumberFromFilename, confidence: 0.7 }] : []),
   ];
 
+  const captureTimestamp = new Date().toISOString();
   const extractionEvidence: DocumentExtractionEvidence = {
     fragments: extractionFragments,
     revision_signals: revEvidenceSignals,
@@ -367,8 +392,33 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     resolved_revision_source: resolved.revision.source !== 'NONE' ? resolved.revision.source : null,
     resolved_drawing_number: resolved.drawingNumber.value,
     resolved_drawing_number_source: resolved.drawingNumber.source !== 'NONE' ? resolved.drawingNumber.source : null,
-    captured_at: new Date().toISOString(),
+    captured_at: captureTimestamp,
     confirmation_mode: confirmationMode ?? null,
+    confirmation_details: confirmationMode
+      ? {
+          confirmed_by: confirmedBy ?? null,
+          confirmed_at: confirmedAt ?? captureTimestamp,
+          document_type: normalizedType,
+          part_number: operatorConfirmedPart ?? partNumber ?? null,
+          revision: operatorConfirmedRevision ?? revision ?? null,
+          drawing_number: operatorConfirmedDrawing ?? drawingNumber ?? null,
+        }
+      : null,
+    original_suggestions: analysisSnapshot
+      ? {
+          document_type: analysisSnapshot.proposedDocumentType ?? null,
+          part_number: analysisSnapshot.proposedPartNumber ?? null,
+          revision: analysisSnapshot.proposedRevision ?? null,
+          drawing_number: analysisSnapshot.proposedDrawingNumber ?? null,
+          doc_type_confidence: analysisSnapshot.docTypeConfidence ?? null,
+        }
+      : null,
+    original_unresolved_questions: analysisSnapshot?.unresolvedQuestions?.map(q => ({
+      id: q.id,
+      issueCode: q.issueCode,
+      fieldToResolve: q.fieldToResolve,
+      blocksCommit: q.blocksCommit,
+    })),
   };
 
   if (!partNumber && drawingNumber) {

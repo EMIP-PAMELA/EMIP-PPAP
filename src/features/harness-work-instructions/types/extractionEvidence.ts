@@ -116,4 +116,28 @@ export interface DocumentExtractionEvidence {
    * null            — committed via legacy path (before Phase 3H.31).
    */
   confirmation_mode?: 'AUTO_VERIFIED' | 'USER_CONFIRMED' | 'ADMIN_CONFIRMED' | null;
+  /** Phase 3H.33: Operator confirmation metadata. */
+  confirmation_details?: {
+    confirmed_by?: string | null;
+    confirmed_at?: string | null;
+    document_type?: string | null;
+    part_number?: string | null;
+    revision?: string | null;
+    drawing_number?: string | null;
+  } | null;
+  /** Snapshot of original extraction suggestions prior to operator overrides. */
+  original_suggestions?: {
+    document_type?: string | null;
+    part_number?: string | null;
+    revision?: string | null;
+    drawing_number?: string | null;
+    doc_type_confidence?: number | null;
+  } | null;
+  /** Any unresolved questions present at the time of analysis (for audit trail). */
+  original_unresolved_questions?: {
+    id: string;
+    issueCode: string;
+    fieldToResolve?: string;
+    blocksCommit: boolean;
+  }[];
 }

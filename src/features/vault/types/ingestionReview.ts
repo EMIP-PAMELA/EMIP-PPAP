@@ -6,6 +6,7 @@
  */
 
 import type { DocumentExtractionEvidence } from '@/src/features/harness-work-instructions/types/extractionEvidence';
+import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
 
 // ---------------------------------------------------------------------------
 // Mode
@@ -13,6 +14,22 @@ import type { DocumentExtractionEvidence } from '@/src/features/harness-work-ins
 
 /** Which upload path produced this item. */
 export type IngestionMode = 'ADMIN_BATCH_WORKBENCH' | 'OPERATIONAL_UPLOAD';
+
+export type ConfirmableDocumentType = Exclude<DocumentType, 'UNKNOWN'>;
+
+export type RequiredFieldKey = 'documentType' | 'partNumber' | 'revision' | 'drawingNumber';
+
+export const REQUIRED_FIELDS: Record<ConfirmableDocumentType, RequiredFieldKey[]> = {
+  BOM: ['partNumber', 'revision'],
+  CUSTOMER_DRAWING: ['partNumber', 'revision'],
+  INTERNAL_DRAWING: ['partNumber', 'revision', 'drawingNumber'],
+};
+
+export function docTypeRequiresField(docType: DocumentType | string | null | undefined, field: RequiredFieldKey): boolean {
+  if (!docType || docType === 'UNKNOWN') return false;
+  const required = REQUIRED_FIELDS[docType as ConfirmableDocumentType];
+  return Boolean(required?.includes(field));
+}
 
 /** How a commit was authorized. Persisted in extraction_evidence. */
 export type ConfirmationMode = 'AUTO_VERIFIED' | 'USER_CONFIRMED' | 'ADMIN_CONFIRMED';
@@ -26,11 +43,12 @@ export type IssueCode =
   | 'DOC_TYPE_UNCERTAIN'
   | 'PART_NUMBER_UNCERTAIN'
   | 'SIGNAL_CONFLICT'
-  | 'SKU_LINK_UNCERTAIN';
+  | 'SKU_LINK_UNCERTAIN'
+  | 'DRAWING_NUMBER_MISSING';
 
 export type IssueSeverity = 'BLOCKING' | 'WARNING';
 
-export type FieldToResolve = 'documentType' | 'revision' | 'partNumber';
+export type FieldToResolve = 'documentType' | 'revision' | 'partNumber' | 'drawingNumber';
 
 export interface UnresolvedQuestion {
   id: string;
@@ -105,7 +123,14 @@ export interface WorkbenchItem {
   confirmedDocumentType?: 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
   confirmedPartNumber?: string;
   confirmedRevision?: string;
+  confirmedDrawingNumber?: string;
   confirmationMode?: ConfirmationMode;
+
+  /**
+   * Tracks which fields the operator has explicitly confirmed (vs auto-populated from analysis).
+   * Used to label fields as "Suggested" or "Confirmed" in the UI.
+   */
+  operatorConfirmed?: Partial<Record<'documentType' | 'partNumber' | 'revision' | 'drawingNumber', boolean>>;
 
   /** questionId → operator answer string. */
   answers: Record<string, string>;

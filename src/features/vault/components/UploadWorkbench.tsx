@@ -10,11 +10,12 @@
  */
 
 import React, { useCallback, useRef, useState, useMemo } from 'react';
-import type {
-  WorkbenchItem,
-  WorkbenchItemStatus,
-  IngestionAnalysisResult,
-  UnresolvedQuestion,
+import {
+  docTypeRequiresField,
+  type WorkbenchItem,
+  type WorkbenchItemStatus,
+  type IngestionAnalysisResult,
+  type UnresolvedQuestion,
 } from '@/src/features/vault/types/ingestionReview';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
 
@@ -95,27 +96,28 @@ function getCommitValues(item: WorkbenchItem): {
   documentType: string;
   partNumber: string;
   revision: string;
+  drawingNumber: string;
 } {
   const a = item.analysis;
   return {
-    documentType: item.confirmedDocumentType
+    documentType:  item.confirmedDocumentType
       ?? (a?.proposedDocumentType !== 'UNKNOWN' ? (a?.proposedDocumentType ?? '') : ''),
-    partNumber:   item.confirmedPartNumber   ?? (!a?.partNumberIsProvisional ? (a?.proposedPartNumber ?? '') : ''),
-    revision:     item.confirmedRevision     ?? (a?.proposedRevision ?? ''),
+    partNumber:    item.confirmedPartNumber   ?? (!a?.partNumberIsProvisional ? (a?.proposedPartNumber ?? '') : ''),
+    revision:      item.confirmedRevision     ?? (a?.proposedRevision ?? ''),
+    drawingNumber: item.confirmedDrawingNumber ?? (a?.proposedDrawingNumber ?? ''),
   };
 }
 
-function isItemCommittable(item: WorkbenchItem): boolean {
-  if (!item.analysis) return false;
-  const { documentType, partNumber } = getCommitValues(item);
-  if (!documentType || documentType === 'UNKNOWN') return false;
-  if (!partNumber) return false;
-  const blockingUnanswered = item.analysis.unresolvedQuestions.filter(q => {
-    if (!q.blocksCommit) return false;
-    const answer = item.answers[q.id];
-    return !answer || !answer.trim();
-  });
-  return blockingUnanswered.length === 0;
+function isItemReady(item: WorkbenchItem): boolean {
+  const dt = item.confirmedDocumentType;
+  if (!dt) return false;
+  if (!item.confirmedPartNumber?.trim()) return false;
+  if (docTypeRequiresField(dt, 'revision') && !item.confirmedRevision?.trim()) return false;
+  if (docTypeRequiresField(dt, 'drawingNumber') && !item.confirmedDrawingNumber?.trim()) return false;
+  const blocking = item.analysis?.unresolvedQuestions.filter(
+    q => q.blocksCommit && !item.answers[q.id]?.trim(),
+  ) ?? [];
+  return blocking.length === 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -262,28 +264,36 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
   }, []);
 
+  const setConfirmedField = useCallback((itemId: string, field: 'documentType' | 'partNumber' | 'revision' | 'drawingNumber', value: string) => {
+    setItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      const patch: Partial<WorkbenchItem> = {
+        operatorConfirmed: { ...item.operatorConfirmed, [field]: true },
+      };
+      if (field === 'documentType') patch.confirmedDocumentType = value as WorkbenchItem['confirmedDocumentType'];
+      if (field === 'partNumber') patch.confirmedPartNumber = value;
+      if (field === 'revision') patch.confirmedRevision = value;
+      if (field === 'drawingNumber') patch.confirmedDrawingNumber = value;
+      const updated = { ...item, ...patch };
+      patch.status = isItemReady(updated) ? 'ready_to_commit' : 'needs_review';
+      return { ...item, ...patch };
+    }));
+  }, []);
+
   const answerQuestion = useCallback((itemId: string, questionId: string, value: string) => {
     setItems(prev => prev.map(item => {
       if (item.id !== itemId) return item;
       const answers = { ...item.answers, [questionId]: value };
-      // Apply answer to confirmed fields automatically
       const question = item.analysis?.unresolvedQuestions.find(q => q.id === questionId);
       if (!question) return { ...item, answers };
       const patch: Partial<WorkbenchItem> = { answers };
-      if (question.fieldToResolve === 'documentType' && value) {
+      if (question.fieldToResolve === 'documentType' && value)
         patch.confirmedDocumentType = value as WorkbenchItem['confirmedDocumentType'];
-      }
-      if (question.fieldToResolve === 'revision' && value) {
-        patch.confirmedRevision = value;
-      }
-      if (question.fieldToResolve === 'partNumber' && value) {
-        patch.confirmedPartNumber = value;
-      }
-      // Recompute status
+      if (question.fieldToResolve === 'revision' && value) patch.confirmedRevision = value;
+      if (question.fieldToResolve === 'partNumber' && value) patch.confirmedPartNumber = value;
+      if (question.fieldToResolve === 'drawingNumber' && value) patch.confirmedDrawingNumber = value;
       const updated = { ...item, ...patch };
-      const committable = isItemCommittable(updated);
-      const hasQuestions = (updated.analysis?.unresolvedQuestions.length ?? 0) > 0;
-      patch.status = committable ? 'ready_to_commit' : (hasQuestions ? 'needs_review' : item.status);
+      patch.status = isItemReady(updated) ? 'ready_to_commit' : 'needs_review';
       return { ...item, ...patch };
     }));
   }, []);
@@ -318,18 +328,29 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       }
 
       const analysis: IngestionAnalysisResult = json.analysis;
-      const status: WorkbenchItemStatus = analysis.readyToCommit ? 'ready_to_commit' : 'needs_review';
-
+      const confirmedDocumentType = forcedType ?? (analysis.proposedDocumentType !== 'UNKNOWN'
+        ? (analysis.proposedDocumentType as WorkbenchItem['confirmedDocumentType'])
+        : undefined);
+      const confirmedPartNumber = (!analysis.partNumberIsProvisional && analysis.proposedPartNumber)
+        ? analysis.proposedPartNumber
+        : (preselectedSku ?? undefined);
+      const confirmedRevision = analysis.proposedRevision ?? undefined;
+      const confirmedDrawingNumber = analysis.proposedDrawingNumber ?? undefined;
+      const meetsFields = Boolean(
+        confirmedDocumentType &&
+        confirmedPartNumber?.trim() &&
+        (!docTypeRequiresField(confirmedDocumentType, 'revision') || confirmedRevision?.trim()) &&
+        (!docTypeRequiresField(confirmedDocumentType, 'drawingNumber') || confirmedDrawingNumber?.trim()),
+      );
+      const status: WorkbenchItemStatus =
+        (meetsFields && analysis.readyToCommit) ? 'ready_to_commit' : 'needs_review';
       updateItem(id, {
         analysis,
         status,
-        confirmedDocumentType: forcedType ?? (analysis.proposedDocumentType !== 'UNKNOWN'
-          ? (analysis.proposedDocumentType as WorkbenchItem['confirmedDocumentType'])
-          : undefined),
-        confirmedPartNumber: (!analysis.partNumberIsProvisional && analysis.proposedPartNumber)
-          ? analysis.proposedPartNumber
-          : preselectedSku ?? undefined,
-        confirmedRevision: analysis.proposedRevision ?? undefined,
+        confirmedDocumentType,
+        confirmedPartNumber,
+        confirmedRevision,
+        confirmedDrawingNumber,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Analysis request failed.';
@@ -353,8 +374,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   }, [processFile, selectedId, uploadMode]);
 
   const commitItem = useCallback(async (item: WorkbenchItem) => {
-    if (!isItemCommittable(item)) return;
-    const { documentType, partNumber, revision } = getCommitValues(item);
+    if (!isItemReady(item)) return;
+    const { documentType, partNumber, revision, drawingNumber } = getCommitValues(item);
     updateItem(item.id, { status: 'committing' });
 
     try {
@@ -364,7 +385,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       fd.append('confirmed_document_type', documentType);
       fd.append('confirmed_part_number', partNumber);
       if (revision) fd.append('confirmed_revision', revision);
+      if (drawingNumber) fd.append('confirmed_drawing_number', drawingNumber);
       fd.append('confirmation_mode', 'ADMIN_CONFIRMED');
+      fd.append('confirmed_by', 'ADMIN_BATCH_WORKBENCH');
+      if (item.analysis) fd.append('analysis_snapshot', JSON.stringify(item.analysis));
 
       const res  = await fetch('/api/upload/commit', { method: 'POST', body: fd });
       const json = await res.json();
@@ -387,7 +411,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   }, [onCommitComplete, updateItem]);
 
   const commitAllVerified = useCallback(async () => {
-    const ready = items.filter(i => i.status === 'ready_to_commit' && isItemCommittable(i));
+    const ready = items.filter(i => i.status === 'ready_to_commit' && isItemReady(i));
     for (const item of ready) {
       await commitItem(item);
     }
@@ -410,7 +434,9 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   }, [items, filter]);
 
   const selectedItem = items.find(i => i.id === selectedId) ?? null;
-  const canCommitAll = counts.ready > 0;
+  const nonCommitted = items.filter(i => i.status !== 'committed' && i.status !== 'committing');
+  const canCommitAll = counts.ready > 0 && nonCommitted.every(i => i.status === 'ready_to_commit');
+  const blockedCount = nonCommitted.filter(i => i.status !== 'ready_to_commit').length;
 
   // ---------------------------------------------------------------------------
   // Render
@@ -497,6 +523,63 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       <div className="flex flex-1 min-h-0 gap-0 overflow-hidden">
         {/* Left: queue list */}
         <div className="flex w-2/3 min-w-0 flex-col border-r">
+          {selectedItem && items.some(i => i.status === 'needs_review') && (
+            <div className="flex flex-wrap gap-2 border-b px-4 py-2 shrink-0 bg-amber-50 text-xs items-center">
+              <span className="font-semibold text-amber-800 shrink-0">Apply to all needs-review:</span>
+              {getCommitValues(selectedItem).partNumber && (
+                <button
+                  type="button"
+                  onClick={() => setItems(prev => prev.map(i =>
+                    i.status === 'needs_review'
+                      ? { ...i,
+                          confirmedPartNumber: getCommitValues(selectedItem).partNumber,
+                          operatorConfirmed: { ...i.operatorConfirmed, partNumber: true },
+                          status: isItemReady({ ...i, confirmedPartNumber: getCommitValues(selectedItem).partNumber }) ? 'ready_to_commit' : 'needs_review',
+                        }
+                      : i
+                  ))}
+                  className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
+                >
+                  Part # "{getCommitValues(selectedItem).partNumber}"
+                </button>
+              )}
+              {getCommitValues(selectedItem).revision && (
+                <button
+                  type="button"
+                  onClick={() => setItems(prev => prev.map(i =>
+                    i.status === 'needs_review'
+                      ? { ...i,
+                          confirmedRevision: getCommitValues(selectedItem).revision,
+                          operatorConfirmed: { ...i.operatorConfirmed, revision: true },
+                          status: isItemReady({ ...i, confirmedRevision: getCommitValues(selectedItem).revision }) ? 'ready_to_commit' : 'needs_review',
+                        }
+                      : i
+                  ))}
+                  className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
+                >
+                  Rev "{getCommitValues(selectedItem).revision}"
+                </button>
+              )}
+              {selectedItem.confirmedDocumentType && (
+                <button
+                  type="button"
+                  onClick={() => setItems(prev => prev.map(i =>
+                    i.status === 'needs_review'
+                      ? { ...i,
+                          confirmedDocumentType: selectedItem.confirmedDocumentType,
+                          operatorConfirmed: { ...i.operatorConfirmed, documentType: true },
+                          status: isItemReady({ ...i, confirmedDocumentType: selectedItem.confirmedDocumentType }) ? 'ready_to_commit' : 'needs_review',
+                        }
+                      : i
+                  ))}
+                  className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
+                >
+                  Type "{DOC_TYPE_LABELS[selectedItem.confirmedDocumentType]}"
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-1 border-b px-4 py-2 shrink-0 bg-white">
             {(['all', 'needs_review', 'ready', 'committed'] as const).map(mode => (
               <button
@@ -524,6 +607,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                 <tr>
                   <th className="px-4 py-2 text-left font-semibold">File</th>
                   <th className="px-3 py-2 text-left font-semibold">Type</th>
+                  <th className="px-3 py-2 text-left font-semibold">Part #</th>
                   <th className="px-3 py-2 text-left font-semibold">Rev</th>
                   <th className="px-3 py-2 text-left font-semibold">Status</th>
                 </tr>
@@ -547,13 +631,19 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                       </td>
                       <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">
                         <select
-                          className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-semibold"
+                          className={`rounded-lg border bg-white px-2 py-1 text-xs font-semibold ${
+                            !currentDocType ? 'border-red-400 text-red-700' : 'border-gray-300'
+                          }`}
                           value={currentDocType}
-                          onChange={e =>
+                          onChange={e => {
+                            const newType = e.target.value === '' ? undefined : (e.target.value as StrictDocumentType);
                             updateItem(item.id, {
-                              confirmedDocumentType: e.target.value === '' ? undefined : (e.target.value as StrictDocumentType),
-                            })
-                          }
+                              confirmedDocumentType: newType,
+                              operatorConfirmed: { ...item.operatorConfirmed, documentType: true },
+                              status: 'queued',
+                            });
+                            if (newType) processFile(item.id, item.file, newType);
+                          }}
                         >
                           <option value="">—</option>
                           {DOC_TYPE_OPTIONS.map(option => (
@@ -562,6 +652,21 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                             </option>
                           ))}
                         </select>
+                        {item.operatorConfirmed?.documentType
+                          ? <span className="ml-1 text-[10px] font-semibold text-emerald-700">✓</span>
+                          : currentDocType ? <span className="ml-1 text-[10px] text-amber-600">~</span> : null}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs font-mono text-gray-700">
+                        <span className={!vals.partNumber && item.status !== 'queued' && item.status !== 'extracting' && item.status !== 'analyzing' ? 'text-red-500' : ''}>
+                          {vals.partNumber || '—'}
+                        </span>
+                        {vals.partNumber && (
+                          <span className={`ml-1 text-[10px] font-semibold ${
+                            item.operatorConfirmed?.partNumber ? 'text-emerald-700' : 'text-amber-600'
+                          }`}>
+                            {item.operatorConfirmed?.partNumber ? '✓' : '~'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-xs font-mono text-gray-700">{vals.revision || '—'}</td>
                       <td className="px-3 py-2.5">
@@ -593,50 +698,145 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                 <p className="text-xs text-gray-400">{formatBytes(selectedItem.file.size)}</p>
               </div>
 
-              {selectedItem.analysis && (
-                <div className="rounded-xl bg-gray-50 border px-4 py-3 space-y-2 text-sm">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Suggested by extraction</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <p className="text-xs text-gray-400">Document type</p>
-                      <p className="font-semibold text-gray-800">
-                        {DOC_TYPE_LABELS[selectedItem.analysis.proposedDocumentType]}
-                        <span className="ml-1 text-xs font-normal text-gray-400">
-                          ({Math.round(selectedItem.analysis.docTypeConfidence * 100)}%)
-                        </span>
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400">Revision</p>
-                      <p className="font-semibold font-mono text-gray-800">
-                        {selectedItem.analysis.proposedRevision ?? '—'}
-                        {selectedItem.analysis.proposedRevision && (
-                          <span className="ml-1 text-xs font-normal font-sans text-gray-400">
-                            ({Math.round(selectedItem.analysis.revisionConfidence * 100)}%)
-                          </span>
+              {/* Inline Confirmation Fields */}
+              {(() => {
+                const vals = getCommitValues(selectedItem);
+                const dt = selectedItem.confirmedDocumentType;
+                const needsDrawing = docTypeRequiresField(dt, 'drawingNumber');
+                const needsRevision = docTypeRequiresField(dt, 'revision');
+                const missingPart = dt && !vals.partNumber?.trim();
+                const missingRevision = needsRevision && !vals.revision?.trim();
+                const missingDrawing = needsDrawing && !vals.drawingNumber?.trim();
+                return (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Confirm Fields</p>
+
+                    {/* Part Number */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-gray-600">Part Number <span className="text-red-500">*</span></label>
+                        {selectedItem.operatorConfirmed?.partNumber
+                          ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">Confirmed</span>
+                          : vals.partNumber
+                            ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Suggested</span>
+                            : <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">Required</span>}
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={vals.partNumber}
+                          placeholder="e.g. NH45-110858-01"
+                          onChange={e => setConfirmedField(selectedItem.id, 'partNumber', e.target.value)}
+                          className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-blue-100 ${
+                            missingPart ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                          }`}
+                        />
+                        {selectedItem.analysis?.proposedPartNumber && !selectedItem.operatorConfirmed?.partNumber && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmedField(selectedItem.id, 'partNumber', selectedItem.analysis!.proposedPartNumber!)}
+                            className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                          >
+                            Accept
+                          </button>
                         )}
-                      </p>
+                      </div>
+                      {selectedItem.analysis?.partNumberIsProvisional && (
+                        <p className="text-[10px] text-orange-600">Extraction could not resolve part number — enter manually</p>
+                      )}
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-400">Part number</p>
-                      <p
-                        className={`font-semibold font-mono text-sm ${
-                          selectedItem.analysis.partNumberIsProvisional ? 'text-orange-600' : 'text-gray-800'
-                        }`}
-                      >
-                        {selectedItem.analysis.proposedPartNumber ?? '—'}
-                        {selectedItem.analysis.partNumberIsProvisional && (
-                          <span className="ml-1 text-xs font-normal font-sans text-orange-500">unresolved</span>
+
+                    {/* Revision */}
+                    {(needsRevision || selectedItem.analysis?.proposedRevision) && (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-gray-600">
+                            Revision {needsRevision && <span className="text-red-500">*</span>}
+                          </label>
+                          {selectedItem.operatorConfirmed?.revision
+                            ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">Confirmed</span>
+                            : vals.revision
+                              ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Suggested</span>
+                              : needsRevision
+                                ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">Required</span>
+                                : null}
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={vals.revision}
+                            placeholder="e.g. B, 02, Rev A"
+                            onChange={e => setConfirmedField(selectedItem.id, 'revision', e.target.value)}
+                            className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-blue-100 ${
+                              missingRevision ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                            }`}
+                          />
+                          {selectedItem.analysis?.proposedRevision && !selectedItem.operatorConfirmed?.revision && (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmedField(selectedItem.id, 'revision', selectedItem.analysis!.proposedRevision!)}
+                              className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                            >
+                              Accept
+                            </button>
+                          )}
+                        </div>
+                        {selectedItem.analysis?.revisionConfidence != null && selectedItem.analysis.proposedRevision && (
+                          <p className="text-[10px] text-gray-400">
+                            Extraction confidence: {Math.round(selectedItem.analysis.revisionConfidence * 100)}%
+                            {selectedItem.analysis.revisionSource ? ` · ${selectedItem.analysis.revisionSource}` : ''}
+                          </p>
                         )}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400">Drawing number</p>
-                      <p className="font-semibold font-mono text-gray-800">{selectedItem.analysis.proposedDrawingNumber ?? '—'}</p>
-                    </div>
+                      </div>
+                    )}
+
+                    {/* Drawing Number — INTERNAL_DRAWING only */}
+                    {(needsDrawing || selectedItem.analysis?.proposedDrawingNumber) && (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-gray-600">
+                            Drawing Number {needsDrawing && <span className="text-red-500">*</span>}
+                          </label>
+                          {selectedItem.operatorConfirmed?.drawingNumber
+                            ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">Confirmed</span>
+                            : vals.drawingNumber
+                              ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Suggested</span>
+                              : needsDrawing
+                                ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">Required</span>
+                                : null}
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={vals.drawingNumber}
+                            placeholder="e.g. DWG-45-1085"
+                            onChange={e => setConfirmedField(selectedItem.id, 'drawingNumber', e.target.value)}
+                            className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-blue-100 ${
+                              missingDrawing ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                            }`}
+                          />
+                          {selectedItem.analysis?.proposedDrawingNumber && !selectedItem.operatorConfirmed?.drawingNumber && (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmedField(selectedItem.id, 'drawingNumber', selectedItem.analysis!.proposedDrawingNumber!)}
+                              className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                            >
+                              Accept
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Extraction summary */}
+                    {selectedItem.analysis && (
+                      <div className="border-t border-gray-200 pt-2 text-[10px] text-gray-400 space-y-0.5">
+                        <p>Extraction type suggestion: <span className="font-semibold text-gray-600">{DOC_TYPE_LABELS[selectedItem.analysis.proposedDocumentType]}</span> ({Math.round(selectedItem.analysis.docTypeConfidence * 100)}% confidence)</p>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {selectedItem.analysis?.unresolvedQuestions.length ? (
                 <div className="space-y-2">
@@ -700,7 +900,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       {items.length > 0 && (
         <div className="flex items-center justify-between border-t bg-gray-50 px-6 py-3">
           <p className="text-xs text-gray-500">
-            {counts.ready} file{counts.ready !== 1 ? 's' : ''} ready · {counts.needs_review} need review · {counts.committed} committed
+            {counts.ready} ready · {counts.needs_review} need review · {counts.committed} committed
+            {blockedCount > 0 && (
+              <span className="ml-2 font-semibold text-orange-600">{blockedCount} blocked</span>
+            )}
           </p>
           <button
             type="button"

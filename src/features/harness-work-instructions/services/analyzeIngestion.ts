@@ -95,6 +95,9 @@ function buildUnresolvedQuestions(params: {
   revisionSignals: EvidenceSignal[];
   partNumber: string | null;
   partNumberIsProvisional: boolean;
+  drawingNumber: string | null;
+  drawingPatternDetected: boolean;
+  drawingSuggestion?: string | null;
   docTypeForced?: boolean;
 }): UnresolvedQuestion[] {
   const questions: UnresolvedQuestion[] = [];
@@ -136,6 +139,18 @@ function buildUnresolvedQuestions(params: {
     });
   }
 
+  if (params.docType === 'INTERNAL_DRAWING' && params.drawingPatternDetected && !params.drawingNumber) {
+    questions.push({
+      id: 'q-drawing-number',
+      issueCode: 'DRAWING_NUMBER_MISSING',
+      severity: 'BLOCKING',
+      blocksCommit: true,
+      promptText: 'Drawing number pattern detected but no value captured. Enter the drawing number to continue.',
+      suggestedValue: params.drawingSuggestion ?? null,
+      fieldToResolve: 'drawingNumber',
+    });
+  }
+
   const revValues = [...new Set(params.revisionSignals.filter(s => s.value !== null).map(s => s.value))];
   if (revValues.length > 1) {
     questions.push({
@@ -164,11 +179,12 @@ export interface AnalyzeIngestionParams {
   /** Optional caller-provided overrides (e.g. from corrective workflow context). */
   partNumberHint?: string | null;
   revisionHint?: string | null;
+  drawingNumberHint?: string | null;
   forcedDocumentType?: DocumentType | null;
 }
 
 export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Promise<IngestionAnalysisResult> {
-  const { fileName, fileSize, normalizedText, partNumberHint, revisionHint, forcedDocumentType } = params;
+  const { fileName, fileSize, normalizedText, partNumberHint, revisionHint, drawingNumberHint, forcedDocumentType } = params;
 
   // --- Document type detection ---
   const classification = normalizedText
@@ -284,7 +300,10 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     revision = resolved.revision.value;
     if (resolved.revision.source === 'FILENAME') revisionSource = 'FILENAME';
   }
-  const proposedDrawingNumber = resolved.drawingNumber.value;
+  let proposedDrawingNumber = resolved.drawingNumber.value;
+  if (typeof drawingNumberHint === 'string' && drawingNumberHint.trim().length > 0) {
+    proposedDrawingNumber = drawingNumberHint.trim();
+  }
 
   // --- Evidence signals ---
   const revEvidenceSignals: EvidenceSignal[] = [
@@ -346,6 +365,9 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     revisionSignals: revEvidenceSignals,
     partNumber,
     partNumberIsProvisional,
+    drawingNumber: proposedDrawingNumber,
+    drawingPatternDetected: drnEvidenceSignals.some(s => Boolean(s.value)),
+    drawingSuggestion: drawingNumberFromFilename ?? emDrawingNumber,
     docTypeForced,
   });
   const readyToCommit = unresolvedQuestions.every(q => !q.blocksCommit);
