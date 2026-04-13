@@ -18,7 +18,7 @@ import type { RegionOverlay } from './documentRegionOverlay';
 // ---------------------------------------------------------------------------
 
 /** How a FieldExtraction value was obtained. */
-export type FieldExtractionSource = 'OCR' | 'HEURISTIC' | 'AI' | 'FILENAME' | 'USER';
+export type FieldExtractionSource = 'OCR' | 'HEURISTIC' | 'AI' | 'FILENAME' | 'USER' | 'USER_CONFIRMED';
 
 /**
  * Links one extracted field (revision, part number, drawing number) to the

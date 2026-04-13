@@ -16,6 +16,7 @@ import {
   type WorkbenchItemStatus,
   type IngestionAnalysisResult,
   type UnresolvedQuestion,
+  type FieldToResolve,
 } from '@/src/features/vault/types/ingestionReview';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
 import type { FieldExtraction, FieldExtractionSource, EvidenceSignal } from '@/src/features/harness-work-instructions/types/extractionEvidence';
@@ -171,10 +172,20 @@ const FIELD_TO_EXTRACTION: Record<FieldKey, FieldExtraction['field']> = {
   drawingNumber: 'DRAWING_NUMBER',
 };
 
+type ConfirmableField = 'documentType' | FieldKey;
+
+const FIELD_TO_RESOLVE: Record<ConfirmableField, FieldToResolve | null> = {
+  documentType: 'documentType',
+  partNumber: 'partNumber',
+  revision: 'revision',
+  drawingNumber: 'drawingNumber',
+};
+
 const SOURCE_BADGES: Record<FieldExtractionSource | 'UNKNOWN', { label: string; className: string }> = {
   AI:        { label: 'AI Suggestion',   className: 'bg-purple-100 text-purple-900 border border-purple-200' },
   OCR:       { label: 'Extracted',       className: 'bg-blue-100 text-blue-900 border border-blue-200' },
   USER:      { label: 'User Confirmed',  className: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
+  USER_CONFIRMED: { label: 'Confirmed by Operator', className: 'bg-emerald-100 text-emerald-800 border border-emerald-300' },
   FILENAME:  { label: 'From Filename',  className: 'bg-gray-100 text-gray-700 border border-gray-200' },
   HEURISTIC: { label: 'Heuristic',      className: 'bg-amber-100 text-amber-900 border border-amber-200' },
   UNKNOWN:   { label: 'Unknown Source', className: 'bg-gray-100 text-gray-600 border border-gray-200' },
@@ -245,13 +256,11 @@ function getCommitValues(item: WorkbenchItem): {
   revision: string;
   drawingNumber: string;
 } {
-  const a = item.analysis;
   return {
-    documentType:  item.confirmedDocumentType
-      ?? (a?.proposedDocumentType !== 'UNKNOWN' ? (a?.proposedDocumentType ?? '') : ''),
-    partNumber:    item.confirmedPartNumber   ?? (!a?.partNumberIsProvisional ? (a?.proposedPartNumber ?? '') : ''),
-    revision:      item.confirmedRevision     ?? (a?.proposedRevision ?? ''),
-    drawingNumber: item.confirmedDrawingNumber ?? (a?.proposedDrawingNumber ?? ''),
+    documentType:  item.confirmedDocumentType ?? '',
+    partNumber:    item.confirmedPartNumber ?? '',
+    revision:      item.confirmedRevision ?? '',
+    drawingNumber: item.confirmedDrawingNumber ?? '',
   };
 }
 
@@ -537,27 +546,45 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
 
   const setConfirmedField = useCallback((
     itemId: string,
-    field: 'documentType' | 'partNumber' | 'revision' | 'drawingNumber',
-    value: string,
-    options?: { markConfirmed?: boolean },
+    field: ConfirmableField,
+    rawValue: string,
   ) => {
     setItems(prev => prev.map(item => {
       if (item.id !== itemId) return item;
       const patch: Partial<WorkbenchItem> = {};
+      const value = typeof rawValue === 'string' ? rawValue : '';
 
-      if (field === 'documentType') patch.confirmedDocumentType = value as WorkbenchItem['confirmedDocumentType'];
-      if (field === 'partNumber') patch.confirmedPartNumber = value;
-      if (field === 'revision') patch.confirmedRevision = value;
-      if (field === 'drawingNumber') patch.confirmedDrawingNumber = value;
+      if (field === 'documentType') {
+        patch.confirmedDocumentType = value ? (value as WorkbenchItem['confirmedDocumentType']) : undefined;
+      } else if (field === 'partNumber') {
+        patch.confirmedPartNumber = value;
+      } else if (field === 'revision') {
+        patch.confirmedRevision = value;
+      } else if (field === 'drawingNumber') {
+        patch.confirmedDrawingNumber = value;
+      }
 
-      if (options && typeof options.markConfirmed === 'boolean') {
-        const nextOperatorConfirmed = { ...item.operatorConfirmed };
-        nextOperatorConfirmed[field] = options.markConfirmed;
-        patch.operatorConfirmed = nextOperatorConfirmed;
+      const nextOperatorConfirmed = { ...item.operatorConfirmed, [field]: true };
+      patch.operatorConfirmed = nextOperatorConfirmed;
+
+      const questionField = FIELD_TO_RESOLVE[field];
+      if (questionField && item.analysis) {
+        const filteredQuestions = item.analysis.unresolvedQuestions.filter(q => q.fieldToResolve !== questionField);
+        if (filteredQuestions.length !== item.analysis.unresolvedQuestions.length) {
+          patch.analysis = { ...item.analysis, unresolvedQuestions: filteredQuestions };
+        }
       }
 
       const updated = { ...item, ...patch };
       patch.status = isItemReady(updated) ? 'ready_to_commit' : 'needs_review';
+
+      console.log('[CONFIRM OVERRIDE]', {
+        file: item.file.name,
+        field,
+        value,
+        locked: true,
+      });
+
       return { ...item, ...patch };
     }));
   }, []);
@@ -573,23 +600,16 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     setOverlayOpen(true);
   }, []);
 
-  const answerQuestion = useCallback((itemId: string, questionId: string, value: string) => {
-    setItems(prev => prev.map(item => {
-      if (item.id !== itemId) return item;
-      const answers = { ...item.answers, [questionId]: value };
-      const question = item.analysis?.unresolvedQuestions.find(q => q.id === questionId);
-      if (!question) return { ...item, answers };
-      const patch: Partial<WorkbenchItem> = { answers };
-      if (question.fieldToResolve === 'documentType' && value)
-        patch.confirmedDocumentType = value as WorkbenchItem['confirmedDocumentType'];
-      if (question.fieldToResolve === 'revision' && value) patch.confirmedRevision = value;
-      if (question.fieldToResolve === 'partNumber' && value) patch.confirmedPartNumber = value;
-      if (question.fieldToResolve === 'drawingNumber' && value) patch.confirmedDrawingNumber = value;
-      const updated = { ...item, ...patch };
-      patch.status = isItemReady(updated) ? 'ready_to_commit' : 'needs_review';
-      return { ...item, ...patch };
-    }));
-  }, []);
+  const answerQuestion = useCallback((itemId: string, question: UnresolvedQuestion, value: string) => {
+    setItems(prev => prev.map(item => (
+      item.id === itemId
+        ? { ...item, answers: { ...item.answers, [question.id]: value } }
+        : item
+    )));
+    if (value.trim() && question.fieldToResolve) {
+      setConfirmedField(itemId, question.fieldToResolve, value);
+    }
+  }, [setConfirmedField]);
 
   const processFile = useCallback(async (id: string, file: File, forcedType?: StrictDocumentType) => {
     updateItem(id, { status: 'extracting' });
@@ -822,15 +842,12 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               {getCommitValues(selectedItem).partNumber && (
                 <button
                   type="button"
-                  onClick={() => setItems(prev => prev.map(i =>
-                    i.status === 'needs_review'
-                      ? { ...i,
-                          confirmedPartNumber: getCommitValues(selectedItem).partNumber,
-                          operatorConfirmed: { ...i.operatorConfirmed, partNumber: true },
-                          status: isItemReady({ ...i, confirmedPartNumber: getCommitValues(selectedItem).partNumber }) ? 'ready_to_commit' : 'needs_review',
-                        }
-                      : i
-                  ))}
+                  onClick={() => {
+                    const value = getCommitValues(selectedItem).partNumber;
+                    items
+                      .filter(i => i.status === 'needs_review')
+                      .forEach(i => setConfirmedField(i.id, 'partNumber', value));
+                  }}
                   className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
                 >
                   Part # "{getCommitValues(selectedItem).partNumber}"
@@ -839,15 +856,12 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               {getCommitValues(selectedItem).revision && (
                 <button
                   type="button"
-                  onClick={() => setItems(prev => prev.map(i =>
-                    i.status === 'needs_review'
-                      ? { ...i,
-                          confirmedRevision: getCommitValues(selectedItem).revision,
-                          operatorConfirmed: { ...i.operatorConfirmed, revision: true },
-                          status: isItemReady({ ...i, confirmedRevision: getCommitValues(selectedItem).revision }) ? 'ready_to_commit' : 'needs_review',
-                        }
-                      : i
-                  ))}
+                  onClick={() => {
+                    const value = getCommitValues(selectedItem).revision;
+                    items
+                      .filter(i => i.status === 'needs_review')
+                      .forEach(i => setConfirmedField(i.id, 'revision', value));
+                  }}
                   className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
                 >
                   Rev "{getCommitValues(selectedItem).revision}"
@@ -856,15 +870,13 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               {selectedItem.confirmedDocumentType && (
                 <button
                   type="button"
-                  onClick={() => setItems(prev => prev.map(i =>
-                    i.status === 'needs_review'
-                      ? { ...i,
-                          confirmedDocumentType: selectedItem.confirmedDocumentType,
-                          operatorConfirmed: { ...i.operatorConfirmed, documentType: true },
-                          status: isItemReady({ ...i, confirmedDocumentType: selectedItem.confirmedDocumentType }) ? 'ready_to_commit' : 'needs_review',
-                        }
-                      : i
-                  ))}
+                  onClick={() => {
+                    const value = selectedItem.confirmedDocumentType ?? '';
+                    if (!value) return;
+                    items
+                      .filter(i => i.status === 'needs_review')
+                      .forEach(i => setConfirmedField(i.id, 'documentType', value));
+                  }}
                   className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
                 >
                   Type "{DOC_TYPE_LABELS[selectedItem.confirmedDocumentType]}"
@@ -929,13 +941,18 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                           }`}
                           value={currentDocType}
                           onChange={e => {
-                            const newType = e.target.value === '' ? undefined : (e.target.value as StrictDocumentType);
-                            updateItem(item.id, {
-                              confirmedDocumentType: newType,
-                              operatorConfirmed: { ...item.operatorConfirmed, documentType: true },
-                              status: 'queued',
-                            });
-                            if (newType) processFile(item.id, item.file, newType);
+                            const nextValue = e.target.value;
+                            if (!nextValue) {
+                              updateItem(item.id, {
+                                confirmedDocumentType: undefined,
+                                operatorConfirmed: { ...item.operatorConfirmed, documentType: false },
+                                status: 'needs_review',
+                              });
+                              return;
+                            }
+                            const typed = nextValue as StrictDocumentType;
+                            setConfirmedField(item.id, 'documentType', typed);
+                            processFile(item.id, item.file, typed);
                           }}
                         >
                           <option value="">—</option>
@@ -1060,24 +1077,30 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                 ].filter(section => section.shouldRender);
 
                 const renderFieldSection = (section: FieldSectionConfig) => {
-                  const region = section.extraction?.sourceRegionId
-                    ? regionMap.get(section.extraction.sourceRegionId) ?? null
+                  const operatorExtraction: FieldExtraction | null = section.operatorConfirmed
+                    ? {
+                        field: FIELD_TO_EXTRACTION[section.key],
+                        value: section.value ?? null,
+                        confidence: 1,
+                        sourceRegionId: null,
+                        source: 'USER_CONFIRMED',
+                        locked: true,
+                      }
                     : null;
-                  const isLocked = Boolean(section.extraction?.locked && section.value === (section.extraction?.value ?? '').trim());
-                  const badge = isLocked
-                    ? { label: 'Locked (Authoritative Source)', className: 'bg-emerald-100 text-emerald-800 border border-emerald-300' }
-                    : SOURCE_BADGES[section.extraction?.source ?? 'UNKNOWN'];
-                  const confidenceMeta = describeConfidence(section.confidence);
-                  const snippet = region?.extractedText ?? section.extraction?.value ?? null;
-                  const regionLabel = region
-                    ? `${region.label.replace('_', ' ')} (${region.source})`
-                    : section.extraction?.source ?? null;
+                  const baseExtraction = operatorExtraction ?? section.extraction;
+                  const region = baseExtraction?.sourceRegionId
+                    ? regionMap.get(baseExtraction.sourceRegionId) ?? null
+                    : null;
+                  const isLocked = section.operatorConfirmed || Boolean(baseExtraction?.locked && section.value === (baseExtraction?.value ?? '').trim());
+                  const badge = SOURCE_BADGES[operatorExtraction ? 'USER_CONFIRMED' : (baseExtraction?.source ?? 'UNKNOWN')];
+                  const effectiveConfidence = section.operatorConfirmed ? 1 : section.confidence;
+                  const confidenceMeta = describeConfidence(effectiveConfidence);
+                  const snippet = region?.extractedText ?? baseExtraction?.value ?? null;
                   const value = section.value ?? '';
                   const suggestionAvailable = Boolean(section.suggestedValue);
-                  const acceptDisabled = !suggestionAvailable || confidenceMeta.level === 'low';
                   const showAcceptButton = suggestionAvailable && !section.operatorConfirmed;
                   const showConfirmButton = Boolean(value.trim()) && !section.operatorConfirmed;
-                  const viewSourceEnabled = Boolean(section.extraction?.sourceRegionId && region);
+                  const viewSourceEnabled = Boolean(baseExtraction?.sourceRegionId && region) && !section.operatorConfirmed;
                   const statusChip = section.operatorConfirmed
                     ? { label: 'Confirmed', className: 'bg-emerald-100 text-emerald-800' }
                     : value
@@ -1088,9 +1111,18 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   const viewSourceTone = confidenceMeta.level === 'medium'
                     ? 'border border-amber-300 text-amber-800 hover:bg-amber-50'
                     : 'border border-blue-200 text-blue-700 hover:bg-blue-50';
-                  const confidenceValue = typeof section.confidence === 'number'
-                    ? `${Math.round(section.confidence * 100)}%`
-                    : '—';
+                  const confidenceValue = section.operatorConfirmed
+                    ? '100%'
+                    : typeof section.confidence === 'number'
+                      ? `${Math.round(section.confidence * 100)}%`
+                      : '—';
+                  const descriptiveMessage = section.operatorConfirmed
+                    ? 'Confirmed by operator — treated as authoritative.'
+                    : isLocked
+                      ? 'Resolved from authoritative source — no review required.'
+                      : confidenceMeta.message;
+                  const messageClass = section.operatorConfirmed || isLocked ? 'text-emerald-700' : confidenceMeta.textClass;
+                  const showLowConfidenceNotice = confidenceMeta.level === 'low' && !section.operatorConfirmed && !isLocked;
 
                   return (
                     <div key={section.key} className="rounded-lg border border-gray-200 bg-white/60 px-3 py-2 space-y-2">
@@ -1114,33 +1146,33 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                         </span>
                         <button
                           type="button"
-                          onClick={() => viewSourceEnabled && openEvidenceAtRegion(section.extraction?.sourceRegionId)}
+                          onClick={() => viewSourceEnabled && openEvidenceAtRegion(baseExtraction?.sourceRegionId)}
                           disabled={!viewSourceEnabled}
                           className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition ${viewSourceEnabled ? viewSourceTone : 'border border-gray-200 text-gray-400 cursor-not-allowed opacity-60'}`}
                         >
                           View Source
                         </button>
                       </div>
-                      {!isLocked && <p className={`text-[11px] ${confidenceMeta.textClass}`}>{confidenceMeta.message}</p>}
-                      {isLocked && <p className="text-[11px] text-emerald-700">Resolved from authoritative source — no review required.</p>}
+                      <p className={`text-[11px] ${messageClass}`}>
+                        {descriptiveMessage}
+                      </p>
                       <div className="flex gap-2">
                         <input
                           type="text"
                           value={value}
                           placeholder={section.placeholder}
-                          onChange={e => setConfirmedField(selectedItem.id, section.key, e.target.value, { markConfirmed: false })}
-                          onFocus={() => focusRegion(section.extraction?.sourceRegionId ?? null)}
+                          onChange={e => setConfirmedField(selectedItem.id, section.key, e.target.value)}
+                          onFocus={() => focusRegion(baseExtraction?.sourceRegionId ?? null)}
                           className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-blue-100 ${confidenceInputClasses(confidenceMeta.level, 'border-gray-300 bg-white', section.missing)}`}
                         />
                         {showAcceptButton && (
                           <button
                             type="button"
-                            disabled={acceptDisabled}
                             onClick={() => {
-                              if (!section.suggestedValue || acceptDisabled) return;
-                              setConfirmedField(selectedItem.id, section.key, section.suggestedValue, { markConfirmed: true });
+                              if (!section.suggestedValue) return;
+                              setConfirmedField(selectedItem.id, section.key, section.suggestedValue);
                             }}
-                            className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed ${acceptButtonClasses(confidenceMeta.level)}`}
+                            className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${acceptButtonClasses(confidenceMeta.level)}`}
                           >
                             Accept
                           </button>
@@ -1148,17 +1180,17 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                         {showConfirmButton && (
                           <button
                             type="button"
-                            onClick={() => setConfirmedField(selectedItem.id, section.key, value, { markConfirmed: true })}
+                            onClick={() => setConfirmedField(selectedItem.id, section.key, value)}
                             className="shrink-0 rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
                           >
                             Confirm
                           </button>
                         )}
                       </div>
-                      {section.warning && !isLocked && (
+                      {section.warning && !isLocked && !section.operatorConfirmed && (
                         <p className="text-[10px] text-orange-600">{section.warning}</p>
                       )}
-                      {confidenceMeta.level === 'low' && !isLocked && (
+                      {showLowConfidenceNotice && (
                         <p className="text-[10px] text-red-600 font-semibold">Low confidence — verify manually before confirming.</p>
                       )}
                       {snippet && (
@@ -1168,7 +1200,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                         </p>
                       )}
                       {renderCandidateDropdown(section.candidates, candidateValue => {
-                        setConfirmedField(selectedItem.id, section.key, candidateValue, { markConfirmed: true });
+                        setConfirmedField(selectedItem.id, section.key, candidateValue);
                       })}
                     </div>
                   );
@@ -1217,7 +1249,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                       key={q.id}
                       question={q}
                       answer={selectedItem.answers[q.id] ?? ''}
-                      onAnswer={value => answerQuestion(selectedItem.id, q.id, value)}
+                      onAnswer={value => answerQuestion(selectedItem.id, q, value)}
                     />
                   ))}
                 </div>

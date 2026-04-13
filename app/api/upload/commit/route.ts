@@ -19,10 +19,10 @@ import { ingestAndProcessDocument } from '@/src/features/harness-work-instructio
 import { normalizeDocumentType } from '@/src/features/harness-work-instructions/services/skuService';
 import { classifyDocument } from '@/src/services/classificationService';
 import type { RevisionValidationAuditMetadata } from '@/src/types/revisionValidation';
-import { analyzeFileIngestion } from '@/src/features/harness-work-instructions/services/analyzeIngestion';
 import {
   docTypeRequiresField,
   type IngestionAnalysisResult,
+  type FieldToResolve,
 } from '@/src/features/vault/types/ingestionReview';
 
 const VALID_CONFIRMATION_MODES = ['AUTO_VERIFIED', 'USER_CONFIRMED', 'ADMIN_CONFIRMED'] as const;
@@ -119,9 +119,19 @@ export async function POST(request: NextRequest) {
     || (confirmationMode === 'ADMIN_CONFIRMED' ? 'ADMIN_BATCH_WORKBENCH' : 'OPERATIONAL_UPLOAD');
   const confirmedAt = new Date().toISOString();
 
+  const confirmedFieldMap: Record<FieldToResolve, boolean> = {
+    documentType: Boolean(documentType),
+    partNumber: Boolean(trimmedPartNumber),
+    revision: Boolean(trimmedRevision),
+    drawingNumber: Boolean(trimmedDrawingNumber),
+  };
+
+  const operatorOverrideActive = confirmedFieldMap.partNumber || confirmedFieldMap.revision || confirmedFieldMap.drawingNumber;
+
   let confirmAnalysis: IngestionAnalysisResult | null = null;
-  if (extractedText) {
+  if (extractedText && !operatorOverrideActive) {
     try {
+      const { analyzeFileIngestion } = await import('@/src/features/harness-work-instructions/services/analyzeIngestion');
       confirmAnalysis = await analyzeFileIngestion({
         fileName: file.name,
         fileSize: file.size,
@@ -154,6 +164,10 @@ export async function POST(request: NextRequest) {
 
   const blockingQuestions = [...(analysisSnapshot?.unresolvedQuestions ?? []), ...(confirmAnalysis?.unresolvedQuestions ?? [])]
     .filter(q => q.blocksCommit)
+    .filter(q => {
+      if (!q.fieldToResolve) return true;
+      return !confirmedFieldMap[q.fieldToResolve as FieldToResolve];
+    })
     .reduce<UnresolvedQuestionSummary[]>((acc, q) => {
       if (acc.some(existing => existing.id === q.id)) return acc;
       acc.push({ id: q.id, issueCode: q.issueCode, fieldToResolve: q.fieldToResolve, blocksCommit: q.blocksCommit });
