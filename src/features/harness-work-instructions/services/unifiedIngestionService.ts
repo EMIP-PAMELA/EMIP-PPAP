@@ -29,7 +29,7 @@ import type { IngestionAnalysisResult } from '@/src/features/vault/types/ingesti
 import { resolveWiresFromDrawing, mergeDrawingWiresIntoJob, isRheemDrawingModel, buildPinMap, type PinMapRow } from './wireResolutionService';
 import { computeExtractionCoverage, type ExtractionCoverage } from './extractionCoverageService';
 import { interpretRheemDrawingModel, type DrawingInterpretationResult } from './drawingInterpretationService';
-import { detectRheemDrawing, parseRheemDrawing } from './rheemDrawingParser';
+import { runAdaptiveDrawingPipeline, type AdaptiveDrawingAnalysis } from './adaptiveDrawingPipelineService';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -60,6 +60,10 @@ interface PipelineResult {
   coverage?: ExtractionCoverage;
   /** Phase 3H.47 C9: Structured interpretation of drawing wires/connectors. Additive diagnostics only. */
   interpretation?: DrawingInterpretationResult;
+  /** Phase 3H.48 C10: Mode classification + signal scores from adaptive drawing pipeline. */
+  adaptiveAnalysis?: AdaptiveDrawingAnalysis;
+  /** Phase 3H.48 C10: Structured data from adaptive pipeline (VectorStructuredModel or RheemDrawingModel). */
+  adaptiveStructuredData?: unknown;
 }
 
 export interface UnifiedIngestionResult {
@@ -209,24 +213,23 @@ async function buildPipelineFromDocuments(
     console.warn('[HWI LEARNING] persist usage events failed (pipeline)', err);
   });
 
-  // Phase 3H.47 C9.1: Additive interpretation layer — Rheem drawings only.
-  // Does not affect wire resolution, job construction, or any existing pipeline output.
-  let pipelineCoverage: ExtractionCoverage | undefined;
-  let pipelineInterpretation: DrawingInterpretationResult | undefined;
-  if (detectRheemDrawing(drawingText, drawingDoc.file_name)) {
-    const rheemModel = parseRheemDrawing(drawingText, drawingDoc.file_name);
-    const rheemWires = resolveWiresFromDrawing(rheemModel);
-    pipelineCoverage       = computeExtractionCoverage(rheemModel, rheemWires);
-    pipelineInterpretation = interpretRheemDrawingModel(rheemModel);
-  }
+  // Phase 3H.48 C10: Adaptive drawing pipeline — routes to VECTOR_STRUCTURED, RASTER_OCR, or HYBRID_UNKNOWN.
+  // Supersedes the C9.1 Rheem-only block; Rheem path remains active via RASTER_OCR routing in adaptive service.
+  const adaptiveResult = await runAdaptiveDrawingPipeline({
+    extractedText: drawingText,
+    fileName:      drawingDoc.file_name,
+    docType:       drawingDoc.document_type,
+  });
 
   return {
     status: 'READY',
     job: resolved,
     drawing,
     processBundle: bundle,
-    ...(pipelineCoverage       !== undefined ? { coverage:       pipelineCoverage       } : {}),
-    ...(pipelineInterpretation !== undefined ? { interpretation: pipelineInterpretation } : {}),
+    ...(adaptiveResult.analysis                     ? { adaptiveAnalysis:       adaptiveResult.analysis }       : {}),
+    ...(adaptiveResult.structuredData !== undefined  ? { adaptiveStructuredData: adaptiveResult.structuredData } : {}),
+    ...(adaptiveResult.coverage       !== undefined  ? { coverage:               adaptiveResult.coverage }       : {}),
+    ...(adaptiveResult.interpretation !== undefined  ? { interpretation:          adaptiveResult.interpretation } : {}),
   };
 }
 
