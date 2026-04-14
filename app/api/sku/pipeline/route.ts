@@ -24,8 +24,10 @@ export async function GET(request: NextRequest) {
     documents,
     revision_validation,
     readiness,
-    pipeline_status: pipeline.status,
-    job: pipeline.job,
-    process_bundle: pipeline.processBundle,
+    pipeline_status:  pipeline.status,
+    job:              pipeline.job,
+    process_bundle:   pipeline.processBundle,
+    coverage:         pipeline.coverage         ?? null,
+    interpretation:   pipeline.interpretation   ?? null,
   });
 }

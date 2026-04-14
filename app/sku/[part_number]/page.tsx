@@ -26,7 +26,9 @@ import HarnessStructurePanel from '@/src/features/sku/components/HarnessStructur
 import TruthVerificationPanel from '@/src/features/sku/components/TruthVerificationPanel';
 import HarnessVisualizationPanel from '@/src/features/sku/components/HarnessVisualizationPanel';
 import BOMDrawer from '@/src/features/sku/components/BOMDrawer';
+import InterpretationDebugPanel from '@/src/features/sku/components/InterpretationDebugPanel';
 import type { ExtractionCoverage } from '@/src/features/harness-work-instructions/services/extractionCoverageService';
+import type { DrawingInterpretationResult } from '@/src/features/harness-work-instructions/services/drawingInterpretationService';
 import {
   applyWireOverrides,
   loadOverrides,
@@ -113,7 +115,8 @@ export default function SKUDashboardPage() {
   const [bomOpen, setBomOpen] = useState(false);
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
   const [pipelineJob, setPipelineJob] = useState<HarnessInstructionJob | null>(null);
-  const [pipelineCoverage, setPipelineCoverage] = useState<ExtractionCoverage | undefined>(undefined);
+  const [pipelineCoverage, setPipelineCoverage]           = useState<ExtractionCoverage | undefined>(undefined);
+  const [pipelineInterpretation, setPipelineInterpretation] = useState<DrawingInterpretationResult | undefined>(undefined);
   const [wireOverrides, setWireOverrides] = useState<Record<string, WireOverride>>({});
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'READY' | 'PARTIAL'>('idle');
   const autoRunSignature = useRef<string | null>(null);
@@ -341,10 +344,12 @@ export default function SKUDashboardPage() {
         });
         setPipelineJob(job);
         setPipelineCoverage((json.coverage as ExtractionCoverage | undefined) ?? undefined);
+        setPipelineInterpretation((json.interpretation as DrawingInterpretationResult | undefined) ?? undefined);
       } else {
         setSummary(null);
         setPipelineJob(null);
         setPipelineCoverage(undefined);
+        setPipelineInterpretation(undefined);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -588,6 +593,13 @@ export default function SKUDashboardPage() {
           <HarnessVisualizationPanel
             wires={effectiveWires}
             pinMapCount={pinMapCount > 0 ? pinMapCount : undefined}
+          />
+        </div>
+
+        <div className="mt-2">
+          <InterpretationDebugPanel
+            interpretation={pipelineInterpretation}
+            isHighlighted={highlightSection === 'truth'}
           />
         </div>
 

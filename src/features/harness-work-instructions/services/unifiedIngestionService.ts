@@ -29,6 +29,7 @@ import type { IngestionAnalysisResult } from '@/src/features/vault/types/ingesti
 import { resolveWiresFromDrawing, mergeDrawingWiresIntoJob, isRheemDrawingModel, buildPinMap, type PinMapRow } from './wireResolutionService';
 import { computeExtractionCoverage, type ExtractionCoverage } from './extractionCoverageService';
 import { interpretRheemDrawingModel, type DrawingInterpretationResult } from './drawingInterpretationService';
+import { detectRheemDrawing, parseRheemDrawing } from './rheemDrawingParser';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -208,11 +209,24 @@ async function buildPipelineFromDocuments(
     console.warn('[HWI LEARNING] persist usage events failed (pipeline)', err);
   });
 
+  // Phase 3H.47 C9.1: Additive interpretation layer — Rheem drawings only.
+  // Does not affect wire resolution, job construction, or any existing pipeline output.
+  let pipelineCoverage: ExtractionCoverage | undefined;
+  let pipelineInterpretation: DrawingInterpretationResult | undefined;
+  if (detectRheemDrawing(drawingText, drawingDoc.file_name)) {
+    const rheemModel = parseRheemDrawing(drawingText, drawingDoc.file_name);
+    const rheemWires = resolveWiresFromDrawing(rheemModel);
+    pipelineCoverage       = computeExtractionCoverage(rheemModel, rheemWires);
+    pipelineInterpretation = interpretRheemDrawingModel(rheemModel);
+  }
+
   return {
     status: 'READY',
     job: resolved,
     drawing,
     processBundle: bundle,
+    ...(pipelineCoverage       !== undefined ? { coverage:       pipelineCoverage       } : {}),
+    ...(pipelineInterpretation !== undefined ? { interpretation: pipelineInterpretation } : {}),
   };
 }
 
