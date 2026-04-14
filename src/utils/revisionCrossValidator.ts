@@ -214,6 +214,21 @@ export function validateSKURevisionSet(documents: RevisionDocumentInput[]): Cros
   const hasGreater = comparisons.some(entry => entry.comparison === 'GREATER');
   const hasLess = comparisons.some(entry => entry.comparison === 'LESS');
 
+  // Phase 3H.45 C1: Consensus check — if all documents with non-null revisions share the
+  // same value, auto-resolve to SYNCHRONIZED rather than requiring two authority sources.
+  // Requires at least two documents to avoid trivially accepting a single-document set.
+  const allDocRevisions = documents
+    .map(d => normalizeValue(d.normalized_revision ?? d.revision))
+    .filter((r): r is string => Boolean(r));
+  const uniqueRevs = new Set(allDocRevisions);
+  const hasConsensus = uniqueRevs.size === 1 && allDocRevisions.length >= 2;
+
+  console.log('[REVISION AUTO-RESOLUTION]', {
+    revisions:         allDocRevisions,
+    hasConsensus,
+    canonicalRevision: canonical?.snapshot.revision ?? null,
+  });
+
   let status: CrossSourceRevisionStatus = 'SYNCHRONIZED';
   let recommended_action = STATUS_RECOMMENDATIONS.SYNCHRONIZED;
 
@@ -221,7 +236,8 @@ export function validateSKURevisionSet(documents: RevisionDocumentInput[]): Cros
     status = 'INCOMPLETE';
     recommended_action = STATUS_RECOMMENDATIONS.INCOMPLETE;
     details.push('No canonical revision (BOM → Apogee → Rheem) is available.');
-  } else if (availableSourceCount < 2 || hasMissingSources) {
+  } else if ((availableSourceCount < 2 || hasMissingSources) && !hasConsensus) {
+    // Phase 3H.45 C1: Skip INCOMPLETE when all present sources agree — promote to SYNCHRONIZED.
     status = 'INCOMPLETE';
     recommended_action = STATUS_RECOMMENDATIONS.INCOMPLETE;
     if (availableSourceCount < 2) {

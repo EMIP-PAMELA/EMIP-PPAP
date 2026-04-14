@@ -369,7 +369,9 @@ export function evaluateSKUReadiness(input: SKUReadinessInput): SKUReadinessResu
   if (bomDocs.length > 1) {
     addIssue(wiBlockers, 'MULTIPLE_BOMS');
   }
-  if (drawingDocs.length > 1) {
+  // Phase 3H.45 C1: Only flag MULTIPLE_DRAWINGS when revisions are not in consensus.
+  // A customer + internal drawing pair sharing the same revision is valid, not a conflict.
+  if (drawingDocs.length > 1 && revisionValidation.status !== 'SYNCHRONIZED') {
     addIssue(wiBlockers, 'MULTIPLE_DRAWINGS');
   }
 
