@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * HarnessVisualizationPanel — Phase 3H.46 C5
+ * HarnessVisualizationPanel — Phase 3H.46 C5 / C5.1
  *
- * Lightweight structural representation of harness wire connections.
- * Shows wire ID, source (connector/pin), and destination (terminal or unknown).
+ * Connector-grouped structural representation of harness wire connections.
+ * Groups wires by end_a.connector_id; UNASSIGNED group rendered last.
  *
  * Governance:
  *   - UI ONLY. No data mutation, no pipeline modification.
@@ -14,6 +14,8 @@
 
 import React, { useEffect } from 'react';
 import type { WireInstance } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
+
+const UNASSIGNED = 'UNASSIGNED';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -28,17 +30,11 @@ export interface HarnessVisualizationPanelProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function fromLabel(wire: WireInstance): string {
-  if (wire.end_a?.connector_id) {
-    return `${wire.end_a.connector_id}-${wire.end_a.cavity ?? '?'}`;
-  }
-  if (wire.end_a?.cavity) {
-    return `Pin ${wire.end_a.cavity}`;
-  }
-  return 'Unknown';
+function groupedFromLabel(wire: WireInstance): string {
+  return wire.end_a?.cavity ?? '?';
 }
 
-function toLabel(wire: WireInstance): string {
+function groupedToLabel(wire: WireInstance): string {
   if (wire.end_b?.terminal_part_number) return wire.end_b.terminal_part_number;
   if (wire.end_a?.terminal_part_number) return wire.end_a.terminal_part_number;
   return 'Unknown';
@@ -53,6 +49,25 @@ function sortWires(wires: WireInstance[]): WireInstance[] {
   });
 }
 
+function groupWires(wires: WireInstance[]): [string, WireInstance[]][] {
+  const map: Record<string, WireInstance[]> = {};
+  for (const wire of wires) {
+    const key = wire.end_a?.connector_id ?? UNASSIGNED;
+    if (!map[key]) map[key] = [];
+    map[key].push(wire);
+  }
+
+  const entries = Object.entries(map).map(
+    ([key, group]): [string, WireInstance[]] => [key, sortWires(group)],
+  );
+
+  return entries.sort(([a], [b]) => {
+    if (a === UNASSIGNED) return 1;
+    if (b === UNASSIGNED) return -1;
+    return a.localeCompare(b);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -61,11 +76,19 @@ export default function HarnessVisualizationPanel({
   wires,
   pinMapCount,
 }: HarnessVisualizationPanelProps) {
+  const groups = groupWires(wires);
+
   useEffect(() => {
     console.log('[HARNESS VISUALIZATION]', { wireCount: wires.length });
   }, [wires.length]);
 
-  const sorted = sortWires(wires);
+  useEffect(() => {
+    console.log('[GROUPED HARNESS]', { groupCount: groups.length });
+  }, [groups.length]);
+
+  const totalMissing = wires.filter(
+    w => groupedFromLabel(w) === '?' || groupedToLabel(w) === 'Unknown',
+  ).length;
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -73,7 +96,7 @@ export default function HarnessVisualizationPanel({
       <div className="px-6 py-4 border-b border-gray-100">
         <p className="text-xs uppercase tracking-[0.4em] text-gray-400">Wire-Level View</p>
         <h2 className="text-lg font-semibold text-gray-900">Harness Visualization</h2>
-        <p className="text-sm text-gray-500">System representation of wire connections</p>
+        <p className="text-sm text-gray-500">Wires grouped by connector</p>
       </div>
 
       {/* ── Pin map hint ────────────────────────────────────────────────────── */}
@@ -86,71 +109,93 @@ export default function HarnessVisualizationPanel({
       )}
 
       {/* ── Body ────────────────────────────────────────────────────────────── */}
-      {sorted.length === 0 ? (
+      {wires.length === 0 ? (
         <div className="px-6 py-8 text-center">
           <p className="text-sm font-semibold text-gray-400">No wire data available</p>
           <p className="text-xs text-gray-400 mt-0.5">Run the pipeline with a BOM and drawing to populate wire connections</p>
         </div>
       ) : (
         <>
-          {/* Column header */}
-          <div className="grid grid-cols-[6rem_1fr_auto_1fr] gap-x-4 px-6 py-2 bg-gray-50 border-b border-gray-100">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Wire</span>
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">From</span>
-            <span />
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">To (Terminal)</span>
-          </div>
-
-          {/* Scrollable wire list */}
-          <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
-            {sorted.map(wire => {
-              const from = fromLabel(wire);
-              const to   = toLabel(wire);
-              const fromMissing = from === 'Unknown';
-              const toMissing   = to   === 'Unknown';
+          {/* Scrollable grouped list */}
+          <div className="max-h-[30rem] overflow-y-auto">
+            {groups.map(([groupKey, groupWireList]) => {
+              const isUnassigned = groupKey === UNASSIGNED;
 
               return (
-                <div
-                  key={wire.wire_id}
-                  className="grid grid-cols-[6rem_1fr_auto_1fr] gap-x-4 items-center px-6 py-2.5 hover:bg-gray-50 transition"
-                >
-                  {/* Wire ID */}
-                  <span className="font-mono text-sm font-semibold text-gray-800">
-                    {wire.wire_id}
-                  </span>
+                <div key={groupKey} className="border-b border-gray-100 last:border-b-0">
+                  {/* Group header */}
+                  <div className="flex items-center gap-2 px-6 py-2 bg-gray-50 border-b border-gray-100">
+                    <span className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                      {isUnassigned ? 'Unassigned Wires' : `Connector ${groupKey}`}
+                    </span>
+                    <span className="text-[11px] text-gray-400">
+                      ({groupWireList.length} wire{groupWireList.length > 1 ? 's' : ''})
+                    </span>
+                    {isUnassigned && (
+                      <span className="ml-auto text-[11px] font-semibold text-amber-600">
+                        ⚠ No connector assigned
+                      </span>
+                    )}
+                  </div>
 
-                  {/* FROM */}
-                  <span className={`font-mono text-sm rounded px-1.5 py-0.5 w-fit ${
-                    fromMissing
-                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                      : 'text-gray-700'
-                  }`}>
-                    {from}
-                  </span>
+                  {/* Column sub-header */}
+                  <div className="grid grid-cols-[5rem_1fr_auto_1fr] gap-x-3 px-6 py-1 bg-gray-50/60">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Wire</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Cavity / Pin</span>
+                    <span />
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Terminal</span>
+                  </div>
 
-                  {/* Arrow */}
-                  <span className="text-gray-300 font-semibold select-none">→</span>
+                  {/* Wire rows */}
+                  <div className="divide-y divide-gray-100">
+                    {groupWireList.map(wire => {
+                      const from       = groupedFromLabel(wire);
+                      const to         = groupedToLabel(wire);
+                      const fromMissing = from === '?';
+                      const toMissing   = to   === 'Unknown';
 
-                  {/* TO */}
-                  <span className={`font-mono text-sm rounded px-1.5 py-0.5 w-fit ${
-                    toMissing
-                      ? 'bg-red-50 text-red-700 border border-red-200'
-                      : 'text-gray-700'
-                  }`}>
-                    {to}
-                  </span>
+                      return (
+                        <div
+                          key={wire.wire_id}
+                          className="grid grid-cols-[5rem_1fr_auto_1fr] gap-x-3 items-center px-6 py-2 hover:bg-gray-50/80 transition"
+                        >
+                          <span className="font-mono text-sm font-semibold text-gray-700">
+                            {wire.wire_id}
+                          </span>
+
+                          <span className={`font-mono text-sm rounded px-1.5 py-0.5 w-fit ${
+                            fromMissing
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                              : 'text-gray-700'
+                          }`}>
+                            {fromMissing ? 'No cavity' : from}
+                          </span>
+
+                          <span className="text-gray-300 font-semibold select-none text-sm">→</span>
+
+                          <span className={`font-mono text-sm rounded px-1.5 py-0.5 w-fit ${
+                            toMissing
+                              ? 'bg-red-50 text-red-700 border border-red-200'
+                              : 'text-gray-700'
+                          }`}>
+                            {to}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Footer count */}
+          {/* Footer */}
           <div className="px-6 py-2.5 border-t border-gray-100 bg-gray-50">
             <p className="text-xs text-gray-400">
-              {sorted.length} wire{sorted.length > 1 ? 's' : ''} shown
-              {sorted.filter(w => fromLabel(w) === 'Unknown' || toLabel(w) === 'Unknown').length > 0 && (
+              {groups.length} connector group{groups.length > 1 ? 's' : ''} · {wires.length} wire{wires.length > 1 ? 's' : ''}
+              {totalMissing > 0 && (
                 <span className="ml-2 text-amber-600 font-semibold">
-                  · {sorted.filter(w => fromLabel(w) === 'Unknown' || toLabel(w) === 'Unknown').length} with missing endpoints
+                  · {totalMissing} with missing endpoints
                 </span>
               )}
             </p>
