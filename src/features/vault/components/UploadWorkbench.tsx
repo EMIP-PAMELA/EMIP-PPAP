@@ -20,6 +20,7 @@ import {
 } from '@/src/features/vault/types/ingestionReview';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
 import type { FieldExtraction, FieldExtractionSource, EvidenceSignal } from '@/src/features/harness-work-instructions/types/extractionEvidence';
+import { resolveDocumentFields, type FieldAuthoritySource } from '@/src/features/harness-work-instructions/services/fieldAuthorityResolver';
 import type { RegionOverlay } from '@/src/features/harness-work-instructions/types/documentRegionOverlay';
 import DocumentOverlayViewer from './DocumentOverlayViewer';
 
@@ -189,6 +190,17 @@ const SOURCE_BADGES: Record<FieldExtractionSource | 'UNKNOWN', { label: string; 
   FILENAME:  { label: 'From Filename',  className: 'bg-gray-100 text-gray-700 border border-gray-200' },
   HEURISTIC: { label: 'Heuristic',      className: 'bg-amber-100 text-amber-900 border border-amber-200' },
   UNKNOWN:   { label: 'Unknown Source', className: 'bg-gray-100 text-gray-600 border border-gray-200' },
+};
+
+const AUTHORITY_SOURCE_BADGES: Record<FieldAuthoritySource, { label: string; className: string }> = {
+  OPERATOR_CONFIRMED: { label: 'Confirmed by Operator', className: 'bg-emerald-100 text-emerald-800 border border-emerald-300' },
+  PARSED_DRAWING:     { label: 'Parsed Drawing',        className: 'bg-blue-100 text-blue-800 border border-blue-300' },
+  ADAPTIVE_VECTOR:    { label: 'Adaptive Vector',       className: 'bg-cyan-100 text-cyan-800 border border-cyan-200' },
+  INTERPRETATION:     { label: 'Interpretation',        className: 'bg-indigo-100 text-indigo-800 border border-indigo-200' },
+  AI_ASSIST:          { label: 'AI Assist',             className: 'bg-purple-100 text-purple-900 border border-purple-200' },
+  HEURISTIC:          { label: 'Heuristic',             className: 'bg-amber-100 text-amber-900 border border-amber-200' },
+  FILENAME:           { label: 'From Filename',         className: 'bg-gray-100 text-gray-700 border border-gray-200' },
+  UNKNOWN:            { label: 'Unknown Source',        className: 'bg-gray-100 text-gray-600 border border-gray-200' },
 };
 
 type ConfidenceLevel = 'high' | 'medium' | 'low' | 'unknown';
@@ -792,13 +804,39 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       }
 
       const analysis: IngestionAnalysisResult = json.analysis;
+
+      // C11: Run field authority resolver to promote Parsed Drawing PN/Rev above
+      // the heuristic pipeline — fixes the case where Rheem title-block sanity
+      // filtering drops the PN before it can reach the confirm field.
+      const arrivedResolved = resolveDocumentFields({
+        parsedDrawingData:   analysis.structuredData,
+        heuristicCandidates: [
+          ...(!analysis.partNumberIsProvisional && analysis.proposedPartNumber ? [{
+            field: 'partNumber' as const,
+            value: analysis.proposedPartNumber,
+            source: 'HEURISTIC' as const,
+            confidence: analysis.partNumberConfidence ?? 0.5,
+          }] : []),
+          ...(analysis.proposedRevision ? [{
+            field: 'revision' as const,
+            value: analysis.proposedRevision,
+            source: 'HEURISTIC' as const,
+            confidence: analysis.revisionConfidence ?? 0.5,
+          }] : []),
+        ],
+        filename:       analysis.fileName,
+        currentDocType: analysis.proposedDocumentType,
+      });
+
       const confirmedDocumentType = forcedType ?? (analysis.proposedDocumentType !== 'UNKNOWN'
         ? (analysis.proposedDocumentType as WorkbenchItem['confirmedDocumentType'])
         : undefined);
-      const confirmedPartNumber = (!analysis.partNumberIsProvisional && analysis.proposedPartNumber)
-        ? analysis.proposedPartNumber
-        : (preselectedSku ?? undefined);
-      const confirmedRevision = analysis.proposedRevision ?? undefined;
+      const confirmedPartNumber =
+        arrivedResolved.partNumber.value
+        ?? (!analysis.partNumberIsProvisional ? analysis.proposedPartNumber : undefined)
+        ?? preselectedSku
+        ?? undefined;
+      const confirmedRevision = arrivedResolved.revision.value ?? analysis.proposedRevision ?? undefined;
       const confirmedDrawingNumber = analysis.proposedDrawingNumber ?? undefined;
       const meetsFields = Boolean(
         confirmedDocumentType &&
@@ -1179,6 +1217,32 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                 const revisionExtraction = getFieldExtractionFor(analysis, 'revision');
                 const drawingExtraction = getFieldExtractionFor(analysis, 'drawingNumber');
 
+                // C11: Re-run resolver in render for up-to-date suggestedValue + source badge.
+                const renderResolved = resolveDocumentFields({
+                  operatorConfirmed: {
+                    partNumber:   selectedItem.operatorConfirmed?.partNumber   ? (selectedItem.confirmedPartNumber   ?? undefined) : undefined,
+                    revision:     selectedItem.operatorConfirmed?.revision     ? (selectedItem.confirmedRevision     ?? undefined) : undefined,
+                    documentType: selectedItem.operatorConfirmed?.documentType ? (selectedItem.confirmedDocumentType ?? undefined) : undefined,
+                  },
+                  parsedDrawingData:   analysis?.structuredData,
+                  heuristicCandidates: [
+                    ...(!analysis?.partNumberIsProvisional && analysis?.proposedPartNumber ? [{
+                      field: 'partNumber' as const,
+                      value: analysis.proposedPartNumber,
+                      source: 'HEURISTIC' as const,
+                      confidence: analysis.partNumberConfidence ?? 0.5,
+                    }] : []),
+                    ...(analysis?.proposedRevision ? [{
+                      field: 'revision' as const,
+                      value: analysis.proposedRevision,
+                      source: 'HEURISTIC' as const,
+                      confidence: analysis.revisionConfidence ?? 0.5,
+                    }] : []),
+                  ],
+                  filename:       selectedItem.file.name,
+                  currentDocType: selectedItem.confirmedDocumentType ?? analysis?.proposedDocumentType,
+                });
+
                 const sections: FieldSectionConfig[] = [
                   {
                     key: 'partNumber' as const,
@@ -1188,9 +1252,9 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                     missing: Boolean(missingPart),
                     shouldRender: true,
                     value: vals.partNumber,
-                    suggestedValue: analysis?.proposedPartNumber ?? null,
+                    suggestedValue: renderResolved.partNumber.value ?? analysis?.proposedPartNumber ?? null,
                     operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.partNumber),
-                    confidence: analysis?.partNumberConfidence ?? partExtraction?.confidence ?? null,
+                    confidence: renderResolved.partNumber.source !== 'UNKNOWN' ? renderResolved.partNumber.confidence : (analysis?.partNumberConfidence ?? partExtraction?.confidence ?? null),
                     extraction: partExtraction,
                     warning: (analysis?.partNumberIsProvisional && !partExtraction?.locked) ? 'Extraction could not resolve part number — enter manually.' : null,
                     candidates: partCandidates,
@@ -1203,9 +1267,9 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                     missing: Boolean(missingRevision),
                     shouldRender: Boolean(needsRevision || analysis?.proposedRevision),
                     value: vals.revision,
-                    suggestedValue: analysis?.proposedRevision ?? null,
+                    suggestedValue: renderResolved.revision.value ?? analysis?.proposedRevision ?? null,
                     operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.revision),
-                    confidence: analysis?.revisionConfidence ?? revisionExtraction?.confidence ?? null,
+                    confidence: renderResolved.revision.source !== 'UNKNOWN' ? renderResolved.revision.confidence : (analysis?.revisionConfidence ?? revisionExtraction?.confidence ?? null),
                     extraction: revisionExtraction,
                     warning: null,
                     candidates: revisionCandidates,
@@ -1243,7 +1307,12 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                     ? regionMap.get(baseExtraction.sourceRegionId) ?? null
                     : null;
                   const isLocked = section.operatorConfirmed || Boolean(baseExtraction?.locked && section.value === (baseExtraction?.value ?? '').trim());
-                  const badge = SOURCE_BADGES[operatorExtraction ? 'USER_CONFIRMED' : (baseExtraction?.source ?? 'UNKNOWN')];
+                  const resolvedSrc = renderResolved[section.key as 'partNumber' | 'revision']?.source;
+                  const badge = operatorExtraction
+                    ? AUTHORITY_SOURCE_BADGES.OPERATOR_CONFIRMED
+                    : (resolvedSrc && resolvedSrc !== 'HEURISTIC' && resolvedSrc !== 'UNKNOWN')
+                      ? AUTHORITY_SOURCE_BADGES[resolvedSrc]
+                      : SOURCE_BADGES[baseExtraction?.source ?? 'UNKNOWN'];
                   const effectiveConfidence = section.operatorConfirmed ? 1 : section.confidence;
                   const confidenceMeta = describeConfidence(effectiveConfidence);
                   const snippet = region?.extractedText ?? baseExtraction?.value ?? null;
