@@ -12,7 +12,7 @@
  *   - Isolated component; all data passed as props.
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { WireInstance } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
 
 const UNASSIGNED = 'UNASSIGNED';
@@ -79,6 +79,57 @@ function groupWires(wires: WireInstance[]): [string, WireInstance[]][] {
 }
 
 // ---------------------------------------------------------------------------
+// Connector summary helper — Phase 3H.46 C5.4
+// ---------------------------------------------------------------------------
+
+interface ConnectorSummary {
+  totalWires: number;
+  terminalSummary: string;
+  uniqueTerminalCount: number;
+  cavityRange: string;
+  gaugeSummary: string;
+}
+
+function computeConnectorSummary(groupWires: WireInstance[]): ConnectorSummary {
+  const totalWires = groupWires.length;
+
+  const terminalSet = new Set(
+    groupWires
+      .map(w => w.end_b?.terminal_part_number ?? w.end_a?.terminal_part_number)
+      .filter((t): t is string => Boolean(t)),
+  );
+  const terminalSummary =
+    terminalSet.size === 0 ? '—'
+    : terminalSet.size === 1 ? [...terminalSet][0]
+    : `${terminalSet.size} types`;
+
+  const cavities = groupWires
+    .map(w => w.end_a?.cavity)
+    .filter((c): c is string => Boolean(c));
+  let cavityRange = '—';
+  if (cavities.length > 0) {
+    const nums = cavities.map(c => parseInt(c, 10));
+    if (nums.every(n => !isNaN(n))) {
+      const min = Math.min(...nums);
+      const max = Math.max(...nums);
+      cavityRange = min === max ? String(min) : `${min}–${max}`;
+    } else {
+      cavityRange = `${cavities.length} pin${cavities.length > 1 ? 's' : ''}`;
+    }
+  }
+
+  const gaugeSet = new Set(
+    groupWires.map(w => w.gauge).filter((g): g is string => Boolean(g)),
+  );
+  const gaugeSummary =
+    gaugeSet.size === 0 ? '—'
+    : gaugeSet.size === 1 ? `${[...gaugeSet][0]} AWG`
+    : 'Mixed';
+
+  return { totalWires, terminalSummary, uniqueTerminalCount: terminalSet.size, cavityRange, gaugeSummary };
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -87,6 +138,24 @@ export default function HarnessVisualizationPanel({
   pinMapCount,
 }: HarnessVisualizationPanelProps) {
   const groups = groupWires(wires);
+
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
+  const toggleGroup = (groupKey: string) => {
+    setExpandedGroups(prev => ({ ...prev, [groupKey]: prev[groupKey] === false }));
+  };
+
+  useEffect(() => {
+    groups.forEach(([groupKey, groupWireList]) => {
+      const summary = computeConnectorSummary(groupWireList);
+      console.log('[CONNECTOR SUMMARY]', {
+        groupKey,
+        totalWires: summary.totalWires,
+        terminals: summary.uniqueTerminalCount,
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wires.length]);
 
   useEffect(() => {
     console.log('[HARNESS VISUALIZATION]', { wireCount: wires.length });
@@ -140,94 +209,120 @@ export default function HarnessVisualizationPanel({
           <div className="max-h-[30rem] overflow-y-auto">
             {groups.map(([groupKey, groupWireList]) => {
               const isUnassigned = groupKey === UNASSIGNED;
+              const isExpanded   = expandedGroups[groupKey] !== false;
+              const summary      = computeConnectorSummary(groupWireList);
 
               return (
                 <div key={groupKey} className="border-b border-gray-100 last:border-b-0">
-                  {/* Group header */}
-                  <div className="flex items-center gap-2 px-6 py-2 bg-gray-50 border-b border-gray-100">
-                    <span className="text-xs font-bold uppercase tracking-wider text-gray-600">
-                      {isUnassigned ? 'Unassigned Wires' : `Connector ${groupKey}`}
-                    </span>
-                    <span className="text-[11px] text-gray-400">
-                      ({groupWireList.length} wire{groupWireList.length > 1 ? 's' : ''})
-                    </span>
-                    {isUnassigned && (
-                      <span className="ml-auto text-[11px] font-semibold text-amber-600">
-                        ⚠ No connector assigned
+                  {/* Collapsible group header */}
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(groupKey)}
+                    className={`w-full flex items-center justify-between px-6 py-2.5 border-b border-gray-100 text-left transition ${
+                      isUnassigned
+                        ? 'bg-amber-50/60 hover:bg-amber-50'
+                        : 'bg-gray-50 hover:bg-gray-100'
+                    }`}
+                  >
+                    {/* Left: icon + label + count */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400 text-[11px] select-none shrink-0 font-mono">
+                        {isExpanded ? '▼' : '▶'}
                       </span>
-                    )}
-                  </div>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        isUnassigned ? 'text-amber-700' : 'text-gray-700'
+                      }`}>
+                        {isUnassigned ? 'Unassigned Wires ⚠' : `Connector ${groupKey}`}
+                      </span>
+                      <span className="text-[11px] text-gray-400">
+                        ({groupWireList.length} wire{groupWireList.length > 1 ? 's' : ''})
+                      </span>
+                    </div>
+                    {/* Right: inline summary */}
+                    <div className="flex items-center gap-1.5 text-[11px] text-gray-400 shrink-0 ml-4">
+                      <span>Pins: <span className="text-gray-600 font-semibold">{summary.cavityRange}</span></span>
+                      <span className="text-gray-300">·</span>
+                      <span className="truncate max-w-[10rem]">Terminal: <span className="text-gray-600 font-semibold">{summary.terminalSummary}</span></span>
+                      <span className="text-gray-300">·</span>
+                      <span>Gauge: <span className="text-gray-600 font-semibold">{summary.gaugeSummary}</span></span>
+                    </div>
+                  </button>
 
-                  {/* Column sub-header */}
-                  <div className="grid grid-cols-[4rem_2fr_5rem_4rem_4rem] gap-x-3 pl-10 pr-6 py-1 bg-gray-50/60">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Wire</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Connection Flow</span>
-                    <span title="Cut length used for processing" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Length</span>
-                    <span title="Wire gauge (AWG)" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Gauge</span>
-                    <span title="Wire insulation color" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Color</span>
-                  </div>
+                  {/* Collapsible content */}
+                  {isExpanded && (
+                    <>
+                      {/* Column sub-header */}
+                      <div className="grid grid-cols-[4rem_2fr_5rem_4rem_4rem] gap-x-3 pl-10 pr-6 py-1 bg-gray-50/60">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Wire</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Connection Flow</span>
+                        <span title="Cut length used for processing" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Length</span>
+                        <span title="Wire gauge (AWG)" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Gauge</span>
+                        <span title="Wire insulation color" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Color</span>
+                      </div>
 
-                  {/* Wire rows */}
-                  <div className="divide-y divide-gray-100">
-                    {groupWireList.map(wire => {
-                      const fromNode    = flowFromNode(wire);
-                      const toNode      = groupedToLabel(wire);
-                      const fromMissing = fromNode === 'Unknown';
-                      const toMissing   = toNode   === 'Unknown';
-                      const lengthMissing = wire.cut_length == null;
+                      {/* Wire rows */}
+                      <div className="divide-y divide-gray-100">
+                        {groupWireList.map(wire => {
+                          const fromNode      = flowFromNode(wire);
+                          const toNode        = groupedToLabel(wire);
+                          const fromMissing   = fromNode === 'Unknown';
+                          const toMissing     = toNode   === 'Unknown';
+                          const lengthMissing = wire.cut_length == null;
 
-                      return (
-                        <div
-                          key={wire.wire_id}
-                          className="grid grid-cols-[4rem_2fr_5rem_4rem_4rem] gap-x-3 items-center pl-10 pr-6 py-2 hover:bg-gray-50/80 transition"
-                        >
-                          {/* Wire ID */}
-                          <span className="font-mono text-sm font-semibold text-gray-700">
-                            {wire.wire_id}
-                          </span>
+                          return (
+                            <div
+                              key={wire.wire_id}
+                              className="grid grid-cols-[4rem_2fr_5rem_4rem_4rem] gap-x-3 items-center pl-10 pr-6 py-2 hover:bg-gray-50/80 transition"
+                            >
+                              {/* Wire ID */}
+                              <span className="font-mono text-sm font-semibold text-gray-700">
+                                {wire.wire_id}
+                              </span>
 
-                          {/* Flow: FROM ────→ TO */}
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className={`font-mono text-sm rounded px-1.5 py-0.5 shrink-0 ${
-                              fromMissing
-                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                : 'text-gray-700'
-                            }`}>
-                              {fromNode}
-                            </span>
-                            <span className="font-mono text-gray-300 text-sm select-none shrink-0">────→</span>
-                            <span className={`font-mono text-sm rounded px-1.5 py-0.5 min-w-0 truncate ${
-                              toMissing
-                                ? 'bg-red-50 text-red-700 border border-red-200'
-                                : 'text-gray-700'
-                            }`}>
-                              {toNode}
-                            </span>
-                          </div>
+                              {/* Flow: FROM ────→ TO */}
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`font-mono text-sm rounded px-1.5 py-0.5 shrink-0 ${
+                                  fromMissing
+                                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                    : 'text-gray-700'
+                                }`}>
+                                  {fromNode}
+                                </span>
+                                <span className="font-mono text-gray-300 text-sm select-none shrink-0">────→</span>
+                                <span className={`font-mono text-sm rounded px-1.5 py-0.5 min-w-0 truncate ${
+                                  toMissing
+                                    ? 'bg-red-50 text-red-700 border border-red-200'
+                                    : 'text-gray-700'
+                                }`}>
+                                  {toNode}
+                                </span>
+                              </div>
 
-                          {/* Length */}
-                          <span
-                            title="Cut length used for processing"
-                            className={`font-mono text-sm ${
-                              lengthMissing ? 'text-amber-600 font-semibold' : 'text-gray-700'
-                            }`}
-                          >
-                            {wire.cut_length != null ? `${wire.cut_length} mm` : '—'}
-                          </span>
+                              {/* Length */}
+                              <span
+                                title="Cut length used for processing"
+                                className={`font-mono text-sm ${
+                                  lengthMissing ? 'text-amber-600 font-semibold' : 'text-gray-700'
+                                }`}
+                              >
+                                {wire.cut_length != null ? `${wire.cut_length} mm` : '—'}
+                              </span>
 
-                          {/* Gauge */}
-                          <span title="Wire gauge (AWG)" className="font-mono text-sm text-gray-500">
-                            {wire.gauge ?? '—'}
-                          </span>
+                              {/* Gauge */}
+                              <span title="Wire gauge (AWG)" className="font-mono text-sm text-gray-500">
+                                {wire.gauge ?? '—'}
+                              </span>
 
-                          {/* Color */}
-                          <span title="Wire insulation color" className="font-mono text-sm text-gray-500 truncate">
-                            {wire.color ?? '—'}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                              {/* Color */}
+                              <span title="Wire insulation color" className="font-mono text-sm text-gray-500 truncate">
+                                {wire.color ?? '—'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })}
