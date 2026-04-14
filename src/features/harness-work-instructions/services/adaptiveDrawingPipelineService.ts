@@ -14,7 +14,8 @@
  * Governance:
  *   - ADDITIVE ONLY. Does not modify any existing parser or service.
  *   - Rheem parser path remains active — routed through RASTER_OCR mode.
- *   - No AI calls. No DB writes. No side effects. Pure extraction + routing.
+ *   - AI assist is conditional (Phase C10.2): stub-only, fail-safe, never blocking.
+ *   - No DB writes. No mandatory AI dependency.
  *   - All failures fall back gracefully; never crashes the ingestion pipeline.
  *   - Vector path is conservative — only extracts clearly present fields.
  *     No topology reconstruction. No connector-to-wire linking in this phase.
@@ -24,6 +25,7 @@ import { detectRheemDrawing, parseRheemDrawing } from './rheemDrawingParser';
 import { resolveWiresFromDrawing } from './wireResolutionService';
 import { computeExtractionCoverage, type ExtractionCoverage } from './extractionCoverageService';
 import { interpretRheemDrawingModel, type DrawingInterpretationResult } from './drawingInterpretationService';
+import { runAIDrawingAssist, mergeAIAssist } from './aiDrawingAssistService';
 
 // ---------------------------------------------------------------------------
 // Core Types
@@ -47,6 +49,8 @@ export interface AdaptiveDrawingResult {
   structuredData?: unknown;
   interpretation?: DrawingInterpretationResult;
   coverage?: ExtractionCoverage;
+  /** Phase 3H.48 C10.2: True when AI assist ran and filled at least one wire field. */
+  aiAssistApplied?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -261,14 +265,72 @@ export async function runAdaptiveDrawingPipeline(args: {
     result = { analysis };
   }
 
+  // Phase 3H.48 C10.2: Conditional AI assist — activates only on weak interpretation cases.
+  let aiAssistApplied = false;
+  if (shouldRunAIAssist({ mode: analysis.mode, interpretation: result.interpretation })) {
+    try {
+      const aiResult = await runAIDrawingAssist({
+        rawText:        args.extractedText,
+        mode:           analysis.mode,
+        interpretation: result.interpretation,
+      });
+
+      console.log('[AI ASSIST RESULT]', {
+        applied:       Boolean(aiResult),
+        wiresEnhanced: aiResult?.wires?.length ?? 0,
+      });
+
+      if (aiResult && result.interpretation) {
+        result = {
+          ...result,
+          interpretation: mergeAIAssist(result.interpretation, aiResult),
+        };
+        aiAssistApplied = true;
+      }
+    } catch (err) {
+      console.warn('[AI ASSIST] AI assist step failed — continuing with base interpretation', {
+        fileName,
+        mode:  analysis.mode,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  result = { ...result, aiAssistApplied };
+
   console.log('[ADAPTIVE DRAWING RESULT]', {
     mode:              result.analysis.mode,
     hasStructuredData: Boolean(result.structuredData),
     hasInterpretation: Boolean(result.interpretation),
     hasCoverage:       Boolean(result.coverage),
+    aiAssistApplied,
   });
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Activation Guard — shouldRunAIAssist
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine whether the AI assist layer should be invoked for this drawing.
+ *
+ * Conditions (any one triggers AI):
+ *   - Mode is HYBRID_UNKNOWN (ambiguous; deterministic result likely incomplete)
+ *   - Mode is RASTER_OCR AND interpretation score is below 75
+ *   - Any unresolved fields remain in the interpretation
+ *
+ * NEVER triggers for strong VECTOR_STRUCTURED results.
+ */
+function shouldRunAIAssist(args: {
+  mode: DrawingProcessingMode;
+  interpretation?: DrawingInterpretationResult;
+}): boolean {
+  if (args.mode === 'HYBRID_UNKNOWN') return true;
+  if (args.mode === 'RASTER_OCR' && (args.interpretation?.interpretationScore ?? 0) < 75) return true;
+  if ((args.interpretation?.unresolved.length ?? 0) > 0) return true;
+  return false;
 }
 
 // ---------------------------------------------------------------------------
