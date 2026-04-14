@@ -28,7 +28,11 @@ export interface ResolvedWire {
     connector?: string;
     pin?: string | number;
   };
+  /** Phase 3H.44 C5: TO-side endpoint with explicit type classification. */
   to?: {
+    /** Phase 3H.44 C5: Endpoint kind. TERMINAL = terminal PN known. OPEN = intentionally unterminated. UNKNOWN = insufficient data. Future: CONNECTOR when connector table provides mapping (Phase 3H.44.2). */
+    type: 'TERMINAL' | 'OPEN' | 'UNKNOWN';
+    terminal?: string;
     connector?: string;
     pin?: string | number;
   };
@@ -224,10 +228,27 @@ export function resolveWiresFromDrawing(structuredData: RheemDrawingModel): Reso
       wire.from = { pin: row.pin };
     }
 
+    // Phase 3H.44 C5: TO-side endpoint resolution
+    if (terminal) {
+      wire.to = { type: 'TERMINAL', terminal };
+    } else {
+      // Future: type = 'CONNECTOR' when connector table provides mapping (Phase 3H.44.2)
+      wire.to = { type: 'UNKNOWN' };
+    }
+
     resolved.push(wire);
   }
 
   resolved.sort(wireIdComparator);
+
+  const withTerminal = resolved.filter(w => w.to?.type === 'TERMINAL').length;
+  const withUnknown  = resolved.filter(w => w.to?.type === 'UNKNOWN').length;
+
+  console.log('[DUAL END RESOLUTION]', {
+    withTerminal,
+    unknown: withUnknown,
+    total:   resolved.length,
+  });
 
   console.log('[WIRE RESOLUTION]', {
     inputWireCount:    structuredData.wires.length,
