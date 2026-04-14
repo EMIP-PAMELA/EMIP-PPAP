@@ -86,9 +86,15 @@ export default function HarnessVisualizationPanel({
     console.log('[GROUPED HARNESS]', { groupCount: groups.length });
   }, [groups.length]);
 
-  const totalMissing = wires.filter(
-    w => groupedFromLabel(w) === '?' || groupedToLabel(w) === 'Unknown',
-  ).length;
+  const missingLength   = wires.filter(w => w.cut_length == null).length;
+  const missingTerminal = wires.filter(w => groupedToLabel(w) === 'Unknown').length;
+  const missingCavity   = wires.filter(w => groupedFromLabel(w) === '?').length;
+
+  useEffect(() => {
+    const wiresWithLength    = wires.filter(w => w.cut_length != null).length;
+    const wiresMissingLength = wires.filter(w => w.cut_length == null).length;
+    console.log('[WIRE ATTRIBUTES]', { wiresWithLength, wiresMissingLength });
+  }, [wires.length]);
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -139,11 +145,14 @@ export default function HarnessVisualizationPanel({
                   </div>
 
                   {/* Column sub-header */}
-                  <div className="grid grid-cols-[5rem_1fr_auto_1fr] gap-x-3 px-6 py-1 bg-gray-50/60">
+                  <div className="grid grid-cols-[4rem_1fr_auto_1fr_5rem_4rem_4rem] gap-x-3 px-6 py-1 bg-gray-50/60">
                     <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Wire</span>
                     <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Cavity / Pin</span>
                     <span />
                     <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Terminal</span>
+                    <span title="Cut length used for processing" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Length</span>
+                    <span title="Wire gauge (AWG)" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Gauge</span>
+                    <span title="Wire insulation color" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Color</span>
                   </div>
 
                   {/* Wire rows */}
@@ -154,10 +163,12 @@ export default function HarnessVisualizationPanel({
                       const fromMissing = from === '?';
                       const toMissing   = to   === 'Unknown';
 
+                      const lengthMissing = wire.cut_length == null;
+
                       return (
                         <div
                           key={wire.wire_id}
-                          className="grid grid-cols-[5rem_1fr_auto_1fr] gap-x-3 items-center px-6 py-2 hover:bg-gray-50/80 transition"
+                          className="grid grid-cols-[4rem_1fr_auto_1fr_5rem_4rem_4rem] gap-x-3 items-center px-6 py-2 hover:bg-gray-50/80 transition"
                         >
                           <span className="font-mono text-sm font-semibold text-gray-700">
                             {wire.wire_id}
@@ -180,6 +191,32 @@ export default function HarnessVisualizationPanel({
                           }`}>
                             {to}
                           </span>
+
+                          {/* Length */}
+                          <span
+                            title="Cut length used for processing"
+                            className={`font-mono text-sm ${
+                              lengthMissing ? 'text-amber-600 font-semibold' : 'text-gray-700'
+                            }`}
+                          >
+                            {wire.cut_length != null ? `${wire.cut_length} mm` : '—'}
+                          </span>
+
+                          {/* Gauge */}
+                          <span
+                            title="Wire gauge (AWG)"
+                            className="font-mono text-sm text-gray-500"
+                          >
+                            {wire.gauge ?? '—'}
+                          </span>
+
+                          {/* Color */}
+                          <span
+                            title="Wire insulation color"
+                            className="font-mono text-sm text-gray-500 truncate"
+                          >
+                            {wire.color ?? '—'}
+                          </span>
                         </div>
                       );
                     })}
@@ -190,15 +227,17 @@ export default function HarnessVisualizationPanel({
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-2.5 border-t border-gray-100 bg-gray-50">
+          <div className="px-6 py-2.5 border-t border-gray-100 bg-gray-50 space-y-0.5">
             <p className="text-xs text-gray-400">
               {groups.length} connector group{groups.length > 1 ? 's' : ''} · {wires.length} wire{wires.length > 1 ? 's' : ''}
-              {totalMissing > 0 && (
-                <span className="ml-2 text-amber-600 font-semibold">
-                  · {totalMissing} with missing endpoints
-                </span>
-              )}
             </p>
+            {(missingTerminal > 0 || missingCavity > 0 || missingLength > 0) && (
+              <p className="text-xs text-amber-600 font-semibold flex flex-wrap gap-x-3">
+                {missingTerminal > 0 && <span>Missing terminal: {missingTerminal}</span>}
+                {missingCavity   > 0 && <span>Missing cavity: {missingCavity}</span>}
+                {missingLength   > 0 && <span>Missing length: {missingLength}</span>}
+              </p>
+            )}
           </div>
         </>
       )}
