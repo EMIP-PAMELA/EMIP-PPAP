@@ -21,8 +21,7 @@ import type { RevisionState } from '@/src/utils/revisionEvaluator';
 import type { HarnessInstructionJob } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
 import type { ProcessInstructionBundle } from '@/src/features/harness-work-instructions/types/processInstructions';
 import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
-import RevisionSummaryCard from '@/src/features/revision/components/RevisionSummaryCard';
-import RevisionRiskSignalsCard from '@/src/features/revision/components/RevisionRiskSignalsCard';
+import SKUControlPanel from '@/src/features/sku/components/SKUControlPanel';
 import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
 import CorrectiveContextBanner from '@/src/components/CorrectiveContextBanner';
 import { deriveIssueKind, parseActionIntentParam } from '@/src/features/revision/utils/correctiveIntent';
@@ -64,42 +63,7 @@ const CANONICAL_BADGE: Record<CanonicalDocumentStatus, { label: string; tone: st
   UNKNOWN:   { label: '—',                   tone: 'bg-gray-100 text-gray-500 border border-gray-200' },
 };
 
-const readinessStatusTone: Record<ReadinessStatus, { container: string; badge: string; icon: string }> = {
-  READY: {
-    container: 'border-emerald-200 bg-emerald-50',
-    badge: 'bg-emerald-600 text-white',
-    icon: '✅',
-  },
-  PARTIAL: {
-    container: 'border-amber-200 bg-amber-50',
-    badge: 'bg-amber-600 text-white',
-    icon: '⚠️',
-  },
-  BLOCKED: {
-    container: 'border-red-200 bg-red-50',
-    badge: 'bg-red-600 text-white',
-    icon: '🛑',
-  },
-};
 
-const readinessStatusLabel: Record<ReadinessStatus, string> = {
-  READY: 'Ready',
-  PARTIAL: 'Partial',
-  BLOCKED: 'Blocked',
-};
-
-type DocumentDefinition = {
-  type: SupportedDocumentType;
-  label: string;
-  description: string;
-  presenceKey: keyof Pick<DocumentPresence, 'hasBOM' | 'hasCustomerDrawing' | 'hasInternalDrawing'>;
-};
-
-const DOCUMENT_DEFINITIONS: DocumentDefinition[] = [
-  { type: 'BOM', label: 'BOM', description: 'Bill of Materials', presenceKey: 'hasBOM' },
-  { type: 'CUSTOMER_DRAWING', label: 'Customer Drawing', description: 'Customer-supplied drawing', presenceKey: 'hasCustomerDrawing' },
-  { type: 'INTERNAL_DRAWING', label: 'Internal Drawing', description: 'Internal / Apogee drawing', presenceKey: 'hasInternalDrawing' },
-];
 
 interface PipelineSummary {
   wires: number;
@@ -131,7 +95,6 @@ export default function SKUDashboardPage() {
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'READY' | 'PARTIAL'>('idle');
   const autoRunSignature = useRef<string | null>(null);
-  const readinessSectionRef = useRef<HTMLElement | null>(null);
   const revisionSectionRef = useRef<HTMLDivElement | null>(null);
   const [revisionHighlightActive, setRevisionHighlightActive] = useState(false);
   const [readinessHighlightActive, setReadinessHighlightActive] = useState(false);
@@ -219,11 +182,8 @@ export default function SKUDashboardPage() {
 
   useEffect(() => {
     if (loading) return;
-    if (tabParam === 'revision' && revisionSectionRef.current) {
+    if ((tabParam === 'revision' || tabParam === 'readiness') && revisionSectionRef.current) {
       revisionSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-    if (tabParam === 'readiness' && readinessSectionRef.current) {
-      readinessSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [tabParam, loading]);
 
@@ -455,151 +415,30 @@ export default function SKUDashboardPage() {
           />
         )}
 
-        <section id="sku-documents" className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-2 min-w-[220px]">
-              <h2 className="text-xl font-semibold text-gray-900">Documents for this SKU</h2>
-              <p className="text-sm text-gray-600">These are the authoritative sources for revision validation and readiness.</p>
-              <div className={`inline-flex items-center gap-2 text-sm font-semibold ${documentConfidence.tone}`}>
-                <span aria-hidden>{documentConfidence.icon}</span>
-                <span>{documentConfidence.label}</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {DOCUMENT_DEFINITIONS.map(def => {
-                  const present = documentPresence[def.presenceKey];
-                  return (
-                    <span
-                      key={def.type}
-                      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                        present
-                          ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-                          : 'border-gray-200 bg-gray-100 text-gray-500'
-                      }`}
-                    >
-                      {present ? '✓' : '✗'} {def.label}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-            {sku && (
-              <Link
-                href={vaultLink}
-                className="inline-flex items-center rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
-              >
-                Open in Document Vault →
-              </Link>
-            )}
-          </div>
-
-          {isDevelopment && documentDebug && (
-            <pre className="rounded-xl bg-gray-900/90 p-3 text-xs text-emerald-200 overflow-x-auto">
-              {JSON.stringify(documentDebug, null, 2)}
-            </pre>
-          )}
-
-          <div className="grid gap-6 lg:grid-cols-3">
-            {DOCUMENT_DEFINITIONS.map(def => {
-              const doc = docByType[def.type];
-              const present = documentPresence[def.presenceKey];
-              const currentDoc = present ? doc : null;
-              return (
-                <div key={def.type} className="rounded-2xl border border-gray-200 bg-white/80 p-5 shadow-sm">
-                  <p className="text-sm uppercase tracking-widest text-gray-500">{def.label}</p>
-                  <p className="text-xs text-gray-500">{def.description}</p>
-                  {currentDoc ? (
-                    <div className="mt-4 space-y-2">
-                      <p className="text-lg font-semibold text-gray-900">Revision {currentDoc.revision}</p>
-                      <p className="text-sm text-gray-600">{currentDoc.file_name}</p>
-                      <p className="text-xs text-gray-400">Uploaded {new Date(currentDoc.uploaded_at).toLocaleString()}</p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${revisionStateTone[currentDoc.revision_state ?? 'UNKNOWN']}`}
-                        >
-                          {revisionStateLabel[currentDoc.revision_state ?? 'UNKNOWN']}
-                        </span>
-                        {currentDoc.phantom_rev_flag && (
-                          <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
-                            PHANTOM REV
-                          </span>
-                        )}
-                        {currentDoc.phantom_diff_summary && (
-                          <span
-                            className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ${
-                              currentDoc.phantom_diff_summary.likely_functional_change
-                                ? 'bg-red-50 text-red-700'
-                                : 'bg-blue-50 text-blue-700'
-                            }`}
-                          >
-                            {currentDoc.phantom_diff_summary.likely_functional_change
-                              ? 'Functional Change Likely'
-                              : 'Minor/Unclear Change'}
-                          </span>
-                        )}
-                      </div>
-                      {currentDoc.phantom_rev_flag && currentDoc.phantom_rev_note && (
-                        <p className="text-xs text-amber-600">{currentDoc.phantom_rev_note}</p>
-                      )}
-                      {currentDoc.phantom_rev_flag && !currentDoc.phantom_diff_summary && (
-                        <p className="text-xs text-amber-600">Diff summary unavailable for this upload.</p>
-                      )}
-                      {currentDoc.phantom_diff_summary && (
-                        <details className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
-                          <summary className="cursor-pointer font-semibold">View summary</summary>
-                          <p className="mt-1 text-amber-800">{currentDoc.phantom_diff_summary.summary_message}</p>
-                          <p className="mt-1 text-amber-800">
-                            Δ Lines: {currentDoc.phantom_diff_summary.changed_line_count} · Functional change:{' '}
-                            {currentDoc.phantom_diff_summary.likely_functional_change ? 'YES' : 'NO'}
-                          </p>
-                          <div className="mt-2 grid gap-2 md:grid-cols-2">
-                            {currentDoc.phantom_diff_summary.added_lines.length > 0 && (
-                              <div>
-                                <p className="text-[11px] uppercase text-amber-600">Added</p>
-                                <ul className="mt-1 space-y-1 font-mono text-[11px]">
-                                  {currentDoc.phantom_diff_summary.added_lines.map((line: string) => (
-                                    <li key={line}>{line}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            {currentDoc.phantom_diff_summary.removed_lines.length > 0 && (
-                              <div>
-                                <p className="text-[11px] uppercase text-amber-600">Removed</p>
-                                <ul className="mt-1 space-y-1 font-mono text-[11px]">
-                                  {currentDoc.phantom_diff_summary.removed_lines.map((line: string) => (
-                                    <li key={line}>{line}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        </details>
-                      )}
-                      <a
-                        href={currentDoc.file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
-                      >
-                        View document →
-                      </a>
-                    </div>
-                  ) : (
-                    <div className="mt-4 space-y-3">
-                      <p className="text-sm text-gray-500">No {def.label.toLowerCase()} uploaded yet.</p>
-                      <Link
-                        href={buildUploadLink(def.type)}
-                        className="inline-flex items-center rounded-lg border border-dashed border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
-                      >
-                        Upload {def.label}
-                      </Link>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
+        {!loading && sku && (
+          <SKUControlPanel
+            partNumber={partNumber}
+            vaultLink={vaultLink}
+            sectionRef={revisionSectionRef}
+            highlightActive={revisionHighlightActive || readinessHighlightActive}
+            docByType={docByType}
+            documentPresence={documentPresence}
+            documentConfidence={documentConfidence}
+            buildUploadLink={buildUploadLink}
+            canonicalContext={canonicalContext}
+            revisionValidation={revisionValidation}
+            revisionRisk={revisionRisk}
+            readiness={readiness}
+            overallReadinessStatus={overallReadinessStatus}
+            readinessNextAction={readinessNextAction}
+            readinessReasons={readinessReasons}
+            pipelineStatus={pipelineStatus}
+            running={running}
+            loading={loading}
+            pipelineRequirementsMet={pipelineRequirementsMet}
+            onRunPipeline={() => runPipeline('manual')}
+          />
+        )}
 
         {sku && !sku.description && !loading && (
           <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
@@ -608,63 +447,7 @@ export default function SKUDashboardPage() {
           </div>
         )}
 
-        {!loading && sku && (
-          <div id="revision-summary" ref={revisionSectionRef}>
-            <RevisionSummaryCard
-              validation={revisionValidation}
-              partNumber={sku.part_number}
-              focusIntent={focusParam}
-              highlight={revisionHighlightActive}
-              expectedRevisionHint={expectedRevisionHint}
-              canonicalSourceHint={canonicalSourceHint}
-              actionIntent={actionIntent}
-              defaultExpanded={Boolean(revisionIntentActive)}
-              riskSummary={revisionRisk}
-              expectedDrawings={expectedDrawings}
-              readinessTier={sku.readiness?.readiness_tier ?? null}
-              confidenceScore={sku.readiness?.confidence_score ?? null}
-              confidenceFactors={sku.readiness?.confidence_factors ?? null}
-            />
 
-            <div className="mt-4">
-              <RevisionRiskSignalsCard risk={revisionRisk} />
-            </div>
-          </div>
-        )}
-
-        {!loading && sku && readiness && overallReadinessStatus && (
-          <section
-            id="sku-readiness"
-            ref={readinessSectionRef}
-            className={`rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-4 ${readinessHighlightActive ? 'ring-2 ring-blue-100 shadow-lg shadow-blue-50' : ''}`}
-          >
-            <div className="flex flex-wrap items-start gap-4">
-              <span className="text-2xl" aria-hidden>
-                {readinessStatusTone[overallReadinessStatus].icon}
-              </span>
-              <div className="flex-1 min-w-[240px] space-y-1">
-                <p className="text-xs uppercase tracking-[0.4em] text-gray-500">SKU Readiness</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-xl font-semibold text-gray-900">{readinessStatusLabel[overallReadinessStatus]}</h2>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${readinessStatusTone[overallReadinessStatus].badge}`}>
-                    {readinessStatusLabel[overallReadinessStatus]}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-700">{readinessNextAction}</p>
-              </div>
-            </div>
-            {readinessReasons.length > 0 ? (
-              <ul className="list-disc pl-5 text-sm text-gray-700 space-y-1">
-                {readinessReasons.map(reason => (
-                  <li key={reason}>{reason}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-gray-500">No outstanding blockers or warnings.</p>
-            )}
-            <p className="text-xs text-gray-400">Readiness updates automatically after new documents are processed.</p>
-          </section>
-        )}
 
         <section className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5 space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
