@@ -11,6 +11,7 @@
  */
 
 import type { RheemDrawingModel, RheemWireRow } from './rheemDrawingParser';
+import type { HarnessInstructionJob, WireInstance } from '../types/harnessInstruction.schema';
 
 // ---------------------------------------------------------------------------
 // Output Model
@@ -31,6 +32,24 @@ export interface ResolvedWire {
   };
   source: 'DRAWING' | 'BOM' | 'MERGED';
   confidence: number;
+}
+
+// ---------------------------------------------------------------------------
+// Type guard
+// ---------------------------------------------------------------------------
+
+/**
+ * Phase 3H.44 C2: Type guard to verify structuredData is a RheemDrawingModel
+ * before passing it to the wire resolution engine.
+ */
+export function isRheemDrawingModel(data: unknown): data is RheemDrawingModel {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    'wires' in data &&
+    Array.isArray((data as RheemDrawingModel).wires) &&
+    'titleBlock' in data
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +103,46 @@ function wireIdComparator(a: ResolvedWire, b: ResolvedWire): number {
 }
 
 // ---------------------------------------------------------------------------
+// Drawing wire lookup maps
+// ---------------------------------------------------------------------------
+
+interface DrawingLookupMaps {
+  byWireId:    Map<string, ResolvedWire>;
+  byGaugeColor: Map<string, ResolvedWire>;
+}
+
+/**
+ * Build two lookup maps from resolved drawing wires for efficient BOM matching.
+ *
+ * byWireId:    keyed by normalized wireId (strips leading W, tries both forms).
+ * byGaugeColor: keyed by "GAUGE|COLOR" — fallback when ID-based match fails.
+ *               First wire of each gauge+color pair wins (stable ordering assumed).
+ */
+function buildDrawingLookupMaps(resolvedWires: ResolvedWire[]): DrawingLookupMaps {
+  const byWireId     = new Map<string, ResolvedWire>();
+  const byGaugeColor = new Map<string, ResolvedWire>();
+
+  for (const dw of resolvedWires) {
+    const rawId      = dw.wireId.trim().toUpperCase();
+    const strippedId = rawId.replace(/^W/, '');       // "W1" → "1"
+    const paddedId   = strippedId.match(/^\d+$/)      // "1"  → "W1"
+      ? `W${strippedId}`
+      : null;
+
+    byWireId.set(rawId, dw);
+    byWireId.set(strippedId, dw);
+    if (paddedId) byWireId.set(paddedId, dw);
+
+    if (dw.gauge && dw.color) {
+      const key = `${dw.gauge.toUpperCase()}|${dw.color.toUpperCase()}`;
+      if (!byGaugeColor.has(key)) byGaugeColor.set(key, dw);
+    }
+  }
+
+  return { byWireId, byGaugeColor };
+}
+
+// ---------------------------------------------------------------------------
 // Core Resolution Function
 // ---------------------------------------------------------------------------
 
@@ -132,4 +191,81 @@ export function resolveWiresFromDrawing(structuredData: RheemDrawingModel): Reso
   });
 
   return resolved;
+}
+
+// ---------------------------------------------------------------------------
+// Merge Layer — Phase 3H.44 C2
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge drawing-derived wire data into an existing BOM-built HarnessInstructionJob.
+ *
+ * Matching strategy (in priority order):
+ *   1. Wire ID match — normalizes BOM "W1" vs drawing "1" (both forms tried)
+ *   2. Gauge + color match — fallback when IDs don't align
+ *
+ * Override rules:
+ *   - cut_length  ← drawing value ONLY if not null (drawing is truth for geometry)
+ *   - gauge       ← drawing value ONLY if not null
+ *   - color       ← drawing value ONLY if not null
+ *   - source      changes to 'DRAWING_SPEC' when cut_length is resolved
+ *
+ * BOM wires with no drawing match are returned unchanged (source stays BOM).
+ */
+export function mergeDrawingWiresIntoJob(
+  job: HarnessInstructionJob,
+  resolvedWires: ResolvedWire[],
+): HarnessInstructionJob {
+  if (resolvedWires.length === 0) return job;
+
+  const { byWireId, byGaugeColor } = buildDrawingLookupMaps(resolvedWires);
+  const usedDrawingIds = new Set<string>();
+  let mergedCount = 0;
+  const unmatchedBOM: string[] = [];
+
+  const mergedWireInstances: WireInstance[] = job.wire_instances.map(wire => {
+    const normalizedId = wire.wire_id.trim().toUpperCase();
+    let match = byWireId.get(normalizedId);
+
+    if (!match && wire.gauge !== undefined && wire.color) {
+      const gaugeStr = typeof wire.gauge === 'number' ? String(wire.gauge) : wire.gauge;
+      const gcKey = `${gaugeStr.toUpperCase()}|${wire.color.toUpperCase()}`;
+      match = byGaugeColor.get(gcKey);
+    }
+
+    if (!match) {
+      unmatchedBOM.push(wire.wire_id);
+      return wire;
+    }
+
+    mergedCount++;
+    usedDrawingIds.add(match.wireId);
+
+    const overriddenCutLength = match.length !== null ? match.length : wire.cut_length ?? null;
+    const cutLengthSource = match.length !== null
+      ? ('DRAWING_SPEC' as const)
+      : (wire.cut_length_source ?? 'UNKNOWN');
+
+    return {
+      ...wire,
+      cut_length:        overriddenCutLength,
+      cut_length_source: cutLengthSource,
+      gauge:             match.gauge ?? wire.gauge,
+      color:             match.color ?? wire.color,
+    };
+  });
+
+  const unmatchedDrawing = resolvedWires
+    .filter(dw => !usedDrawingIds.has(dw.wireId))
+    .map(dw => dw.wireId);
+
+  console.log('[WIRE MERGE RESULT]', {
+    bomCount:        job.wire_instances.length,
+    drawingCount:    resolvedWires.length,
+    mergedCount,
+    unmatchedBOM:    unmatchedBOM.length > 0 ? unmatchedBOM : 'none',
+    unmatchedDrawing: unmatchedDrawing.length > 0 ? unmatchedDrawing : 'none',
+  });
+
+  return { ...job, wire_instances: mergedWireInstances };
 }

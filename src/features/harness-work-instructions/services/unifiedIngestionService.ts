@@ -26,6 +26,7 @@ import type { RevisionSource } from '@/src/utils/revisionParser';
 import { analyzeFileIngestion } from './analyzeIngestion';
 import type { DocumentExtractionEvidence } from '../types/extractionEvidence';
 import type { IngestionAnalysisResult } from '@/src/features/vault/types/ingestionReview';
+import { resolveWiresFromDrawing, mergeDrawingWiresIntoJob, isRheemDrawingModel } from './wireResolutionService';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -388,7 +389,21 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   }
 
   const { documents, revision_validation, readiness } = await getCurrentDocuments(ingestResult.sku.id);
-  const pipeline = await buildPipelineFromDocuments(ingestResult.sku, documents);
+  const rawPipeline = await buildPipelineFromDocuments(ingestResult.sku, documents);
+
+  // Phase 3H.44 C2: Merge Rheem drawing wire data into pipeline if available from analysis snapshot.
+  // analysisSnapshot.structuredData contains RheemDrawingModel when a Rheem CUSTOMER_DRAWING was analyzed.
+  // This is additive: BOM-only SKUs are unaffected (isRheemDrawingModel returns false for null/non-model data).
+  let pipeline = rawPipeline;
+  if (rawPipeline.job && isRheemDrawingModel(analysisSnapshot?.structuredData)) {
+    const drawingWires = resolveWiresFromDrawing(analysisSnapshot.structuredData);
+    if (drawingWires.length > 0) {
+      pipeline = {
+        ...rawPipeline,
+        job: mergeDrawingWiresIntoJob(rawPipeline.job, drawingWires),
+      };
+    }
+  }
 
   return {
     sku: ingestResult.sku,
