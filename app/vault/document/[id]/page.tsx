@@ -116,9 +116,11 @@ export default async function VaultDocumentDetailPage({ params }: { params: Prom
   }
 
   const readinessBadgeTone: Record<ReadinessStatus, string> = {
-    READY: 'bg-emerald-100 text-emerald-800',
-    PARTIAL: 'bg-amber-100 text-amber-800',
-    BLOCKED: 'bg-red-100 text-red-700',
+    READY:                'bg-emerald-100 text-emerald-800',
+    READY_LOW_CONFIDENCE: 'bg-emerald-50 text-emerald-700',
+    NEEDS_REVIEW:         'bg-amber-100 text-amber-800',
+    PARTIAL:              'bg-amber-100 text-amber-800',
+    BLOCKED:              'bg-red-100 text-red-700',
   };
 
   return (

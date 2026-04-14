@@ -73,6 +73,14 @@ const CANONICAL_BADGE: Record<CanonicalDocumentStatus, { label: string; tone: st
 
 
 
+const ALIGNED_READINESS_MESSAGES: Record<ReadinessStatus, string> = {
+  READY:                'Ready for work instruction generation',
+  READY_LOW_CONFIDENCE: 'Ready (some fields inferred or user-corrected)',
+  NEEDS_REVIEW:         'Requires review — incomplete or uncertain data',
+  PARTIAL:              'Partially ready — some data is missing or unresolved',
+  BLOCKED:              'Cannot proceed — missing critical data',
+};
+
 interface PipelineSummary {
   wires: number;
   pinMapRows: number;
@@ -381,6 +389,34 @@ export default function SKUDashboardPage() {
   const pinMapCount    = pipelineJob?.pin_map_rows?.length ?? 0;
   const hasStructureData = wireCount > 0;
 
+  const hasWires         = effectiveWires.length > 0;
+  const hasValidRevision = revisionValidation?.status === 'SYNCHRONIZED';
+  const coverageScore    = pipelineCoverage?.coverageScore ?? 0;
+
+  let alignedReadiness: ReadinessStatus;
+  if (!hasWires) {
+    alignedReadiness = 'BLOCKED';
+  } else if (!hasValidRevision) {
+    alignedReadiness = 'NEEDS_REVIEW';
+  } else if (coverageScore >= 90) {
+    alignedReadiness = 'READY';
+  } else if (coverageScore >= 70) {
+    alignedReadiness = 'READY_LOW_CONFIDENCE';
+  } else {
+    alignedReadiness = 'NEEDS_REVIEW';
+  }
+
+  const alignedMessage = ALIGNED_READINESS_MESSAGES[alignedReadiness];
+
+  useEffect(() => {
+    console.log('[READINESS ALIGNMENT]', {
+      coverageScore,
+      hasWires,
+      hasValidRevision,
+      status: alignedReadiness,
+    });
+  }, [coverageScore, hasWires, hasValidRevision, alignedReadiness]);
+
   useEffect(() => {
     console.log('[HARNESS STRUCTURE]', {
       wireCount,
@@ -479,6 +515,9 @@ export default function SKUDashboardPage() {
             overallReadinessStatus={overallReadinessStatus}
             readinessNextAction={readinessNextAction}
             readinessReasons={readinessReasons}
+            alignedReadiness={alignedReadiness}
+            alignedMessage={alignedMessage}
+            coverageScore={pipelineCoverage?.coverageScore}
             pipelineStatus={pipelineStatus}
             running={running}
             loading={loading}

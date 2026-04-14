@@ -58,9 +58,11 @@ const CANONICAL_BADGE: Record<CanonicalDocumentStatus, { label: string; tone: st
 };
 
 const readinessTone: Record<ReadinessStatus, { badge: string; icon: string; label: string }> = {
-  READY:   { badge: 'bg-emerald-600 text-white', icon: '✅', label: 'Ready' },
-  PARTIAL: { badge: 'bg-amber-600 text-white',   icon: '⚠️', label: 'Partial' },
-  BLOCKED: { badge: 'bg-red-600 text-white',     icon: '🛑', label: 'Blocked' },
+  READY:                { badge: 'bg-emerald-600 text-white', icon: '✅', label: 'Ready' },
+  READY_LOW_CONFIDENCE: { badge: 'bg-emerald-500 text-white', icon: '✅', label: 'Ready · Low Confidence' },
+  NEEDS_REVIEW:         { badge: 'bg-amber-500 text-white',   icon: '⚠️', label: 'Needs Review' },
+  PARTIAL:              { badge: 'bg-amber-600 text-white',   icon: '⚠️', label: 'Partial' },
+  BLOCKED:              { badge: 'bg-red-600 text-white',     icon: '🛑', label: 'Blocked' },
 };
 
 const revisionStatusMeta: Record<string, { icon: string; summary: string; tone: string }> = {
@@ -113,6 +115,10 @@ export interface SKUControlPanelProps {
   overallReadinessStatus: ReadinessStatus | null;
   readinessNextAction: string;
   readinessReasons: string[];
+  /** Phase 3H.46 C4: Confidence-aligned readiness status computed from effective wires + coverage. */
+  alignedReadiness?: ReadinessStatus;
+  alignedMessage?: string;
+  coverageScore?: number;
   pipelineStatus: 'idle' | 'READY' | 'PARTIAL';
   running: boolean;
   loading: boolean;
@@ -138,16 +144,20 @@ export default function SKUControlPanel({
   overallReadinessStatus,
   readinessNextAction,
   readinessReasons,
+  alignedReadiness,
+  alignedMessage,
+  coverageScore,
   pipelineStatus,
   running,
   loading,
   pipelineRequirementsMet,
   onRunPipeline,
 }: SKUControlPanelProps) {
-  const canonicalRev = revisionValidation?.canonical_revision ?? null;
-  const revStatus    = revisionValidation?.status ?? null;
-  const revMeta      = revStatus ? (revisionStatusMeta[revStatus] ?? null) : null;
-  const readinessT   = overallReadinessStatus ? readinessTone[overallReadinessStatus] : null;
+  const canonicalRev   = revisionValidation?.canonical_revision ?? null;
+  const revStatus      = revisionValidation?.status ?? null;
+  const revMeta        = revStatus ? (revisionStatusMeta[revStatus] ?? null) : null;
+  const effectiveStatus = alignedReadiness ?? overallReadinessStatus;
+  const readinessT      = effectiveStatus ? readinessTone[effectiveStatus] : null;
 
   return (
     <div
@@ -321,6 +331,28 @@ export default function SKUControlPanel({
             ) : (
               <p className="text-gray-700">{readinessNextAction}</p>
             )}
+          </div>
+        )}
+
+        {/* System Assessment — Phase 3H.46 C4 */}
+        {alignedReadiness && alignedMessage && (
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">System Assessment</span>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${readinessTone[alignedReadiness].badge}`}>
+                {readinessTone[alignedReadiness].icon} {readinessTone[alignedReadiness].label}
+              </span>
+              {coverageScore !== undefined && (
+                <span className={`text-xs font-semibold ${
+                  coverageScore > 90 ? 'text-emerald-700'
+                    : coverageScore > 70 ? 'text-amber-700'
+                    : 'text-red-700'
+                }`}>
+                  Coverage: {coverageScore}%
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-700">{alignedMessage}</p>
           </div>
         )}
       </div>

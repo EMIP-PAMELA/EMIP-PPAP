@@ -11,7 +11,12 @@ type DocumentClassificationStatus =
   | 'PARTIAL_MISMATCH'
   | 'NEEDS_REVIEW';
 
-export type ReadinessStatus = 'READY' | 'PARTIAL' | 'BLOCKED';
+export type ReadinessStatus =
+  | 'READY'
+  | 'READY_LOW_CONFIDENCE'
+  | 'NEEDS_REVIEW'
+  | 'PARTIAL'
+  | 'BLOCKED';
 
 export type ReadinessTier = 'READY' | 'READY_WITH_WARNINGS' | 'INCOMPLETE' | 'BLOCKED';
 
