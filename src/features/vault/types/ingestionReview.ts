@@ -113,6 +113,20 @@ export interface IngestionAnalysisResult {
     confidence:              number;
   } | null;
 
+  /**
+   * Phase T1: Wire/connectivity table detection and structured row capture.
+   * INTERMEDIATE DATA — not authoritative. Does not affect field resolution.
+   * Available for downstream topology and BOM correlation phases.
+   */
+  wireTableResult?: {
+    region: { x: number; y: number; w: number; h: number } | null;
+    confidence: number;
+    rows: import('@/src/features/harness-work-instructions/services/wireTableParser').WireRow[];
+    rowCount: number;
+    parseQuality: 'GOOD' | 'PARTIAL' | 'POOR';
+    headerText: string | null;
+  } | null;
+
   analyzedAt: string;
 }
 

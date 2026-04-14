@@ -29,6 +29,8 @@ import { parseRheemDrawing, detectRheemDrawing, type RheemDrawingModel } from '.
 import type { SignalSource } from '../utils/resolveDocumentSignals';
 import { analyzeDocumentStructure } from './documentStructureAnalyzer';
 import { extractTitleBlockAndRevisionRegions, scanForApogeePN45, type TitleBlockExtractionResult } from './titleBlockRegionExtractor';
+import { detectWireTableRegion } from './wireTableRegionExtractor';
+import { parseWireTableRows } from './wireTableParser';
 import {
   runAIDrawingVisionParse,
   runTitleBlockCropVisionParse,
@@ -1001,6 +1003,35 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     });
   }
 
+  // --- T1: Wire table region detection and structured row extraction ---
+  let wireTableResult: IngestionAnalysisResult['wireTableResult'] = null;
+  if (drawingSubtype === 'INTERNAL_DRAWING' && normalizedText) {
+    try {
+      const ocrLines = normalizedText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+      const detected  = detectWireTableRegion(ocrLines);
+      if (detected) {
+        const parsed = parseWireTableRows(detected.bodyLines);
+        wireTableResult = {
+          region:       detected.region,
+          confidence:   detected.confidence,
+          rows:         parsed.rows,
+          rowCount:     parsed.rowCount,
+          parseQuality: parsed.parseQuality,
+          headerText:   detected.headerText,
+        };
+        console.log('[T1 WIRE TABLE]', {
+          drawingSubtype,
+          headerText:   detected.headerText.slice(0, 80),
+          confidence:   detected.confidence,
+          rowCount:     parsed.rowCount,
+          parseQuality: parsed.parseQuality,
+        });
+      }
+    } catch (err) {
+      console.warn('[T1 WIRE TABLE] Non-fatal — continuing without wire table result.', err);
+    }
+  }
+
   // --- C13: Universal AI vision parse ---
   let visionParsedResult: VisionParsedDrawingResult | null = null;
   if (pipelineMode === 'DRAWING' && normalizedText) {
@@ -1334,6 +1365,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     titleBlockRegionResult,
     visionParsedResult,
     titleBlockCropResult,
+    wireTableResult,
     analyzedAt: new Date().toISOString(),
   };
 }
