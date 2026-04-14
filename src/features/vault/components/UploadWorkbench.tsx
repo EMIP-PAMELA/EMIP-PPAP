@@ -1554,7 +1554,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               ) : null}
 
               {selectedItem.analysis?.harnessConnectivity ? (
-                <HarnessConnectivityPanel harnessConnectivity={selectedItem.analysis.harnessConnectivity} />
+                <HarnessConnectivityPanel
+                  harnessConnectivity={selectedItem.analysis.harnessConnectivity}
+                  reconciliation={selectedItem.analysis.harnessReconciliation}
+                />
               ) : null}
 
               {selectedItem.status === 'ready_to_commit' ? (

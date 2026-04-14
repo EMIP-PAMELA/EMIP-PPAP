@@ -33,6 +33,7 @@ import { detectWireTableRegion } from './wireTableRegionExtractor';
 import { parseWireTableRows } from './wireTableParser';
 import { buildHarnessConnectivity, type HarnessConnectivityResult } from './harnessConnectivityService';
 import { isolateDiagramLines, extractDiagramComponents, mergeWithVisionResult, type DiagramExtractionResult } from './diagramExtractor';
+import { reconcileHarnessConnectivity, type HarnessReconciliationResult } from './harnessReconciliationService';
 import {
   runAIDrawingVisionParse,
   runTitleBlockCropVisionParse,
@@ -1085,6 +1086,19 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     }
   }
 
+  // --- T5: HC-BOM ↔ diagram reconciliation ---
+  let harnessReconciliation: HarnessReconciliationResult | null = null;
+  if (harnessConnectivity && diagramExtraction) {
+    try {
+      harnessReconciliation = reconcileHarnessConnectivity({
+        harnessConnectivity,
+        diagramExtraction,
+      });
+    } catch (err) {
+      console.warn('[T5 RECONCILIATION] Non-fatal — continuing without reconciliation.', err);
+    }
+  }
+
   // --- C13: Universal AI vision parse ---
   let visionParsedResult: VisionParsedDrawingResult | null = null;
   if (pipelineMode === 'DRAWING' && normalizedText) {
@@ -1421,6 +1435,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     wireTableResult,
     harnessConnectivity,
     diagramExtraction,
+    harnessReconciliation,
     analyzedAt: new Date().toISOString(),
   };
 }

@@ -20,6 +20,10 @@ import type {
   HarnessConnectivityResult,
   WireConnectivity,
 } from '@/src/features/harness-work-instructions/services/harnessConnectivityService';
+import type {
+  HarnessReconciliationResult,
+  ReconciledWire,
+} from '@/src/features/harness-work-instructions/services/harnessReconciliationService';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -80,10 +84,38 @@ function inferUnresolvedReason(w: WireConnectivity): string | null {
 const dash = '—';
 
 // ---------------------------------------------------------------------------
+// Reconciliation match indicator
+// ---------------------------------------------------------------------------
+
+const STRONG_MATCH = new Set(['EXACT', 'PN_MATCH']);
+
+function matchIndicator(
+  rw: ReconciledWire | undefined,
+): { symbol: string; label: string; className: string } | null {
+  if (!rw) return null;
+  if (rw.from.matchType === 'AMBIGUOUS' || rw.to.matchType === 'AMBIGUOUS') {
+    return { symbol: '?', label: 'Ambiguous', className: 'bg-purple-100 text-purple-700' };
+  }
+  const fromOk = STRONG_MATCH.has(rw.from.matchType);
+  const toOk   = STRONG_MATCH.has(rw.to.matchType);
+  if (fromOk && toOk)   return { symbol: '\u2714', label: 'Matched', className: 'bg-emerald-100 text-emerald-700' };
+  if (fromOk || toOk)   return { symbol: '\u26a0', label: 'Partial',   className: 'bg-amber-100 text-amber-800' };
+  return { symbol: '\u2717', label: 'Unmatched', className: 'bg-red-100 text-red-700' };
+}
+
+// ---------------------------------------------------------------------------
 // Sub-component: expandable wire row evidence
 // ---------------------------------------------------------------------------
 
-function WireEvidenceRow({ wire }: { wire: WireConnectivity }) {
+function WireEvidenceRow({
+  wire,
+  reconciledWire,
+  hasReconciliation,
+}: {
+  wire: WireConnectivity;
+  reconciledWire?: ReconciledWire;
+  hasReconciliation: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const status = classifyWire(wire);
   const statusStyle = STATUS_STYLES[status];
@@ -93,6 +125,7 @@ function WireEvidenceRow({ wire }: { wire: WireConnectivity }) {
     : status === 'PARTIAL'
       ? 'bg-amber-50/30'
       : '';
+  const indicator = matchIndicator(reconciledWire);
 
   return (
     <>
@@ -121,10 +154,22 @@ function WireEvidenceRow({ wire }: { wire: WireConnectivity }) {
             {statusStyle.label}
           </span>
         </td>
+        {hasReconciliation && (
+          <td className="px-2 py-1 text-center">
+            {indicator ? (
+              <span className={`inline-block rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${indicator.className}`}
+                title={indicator.label}>
+                {indicator.symbol}
+              </span>
+            ) : (
+              <span className="text-gray-300">—</span>
+            )}
+          </td>
+        )}
       </tr>
       {expanded && (
         <tr className={rowBg}>
-          <td colSpan={9} className="px-3 py-2">
+          <td colSpan={hasReconciliation ? 10 : 9} className="px-3 py-2">
             <div className="rounded-lg border border-gray-200 bg-white/80 p-2 space-y-1.5 text-[10px] text-gray-700">
               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                 <div><span className="font-semibold text-gray-500">Source row:</span> #{wire.sourceRowIndex}</div>
@@ -143,6 +188,37 @@ function WireEvidenceRow({ wire }: { wire: WireConnectivity }) {
                   </div>
                 )}
               </div>
+              {reconciledWire && (
+                <div className="border-t border-gray-100 pt-1.5 grid grid-cols-2 gap-x-4 gap-y-1">
+                  <div className="col-span-2 font-semibold text-gray-500">Diagram Match (T5)</div>
+                  <div><span className="font-semibold text-gray-500">From match:</span>{' '}
+                    <span className="font-mono">{reconciledWire.from.matchType}</span>
+                    {reconciledWire.from.matchedLabel ? ` → ${reconciledWire.from.matchedLabel}` : ''}
+                  </div>
+                  <div><span className="font-semibold text-gray-500">From conf:</span>{' '}
+                    {(reconciledWire.from.confidence * 100).toFixed(0)}%
+                  </div>
+                  <div><span className="font-semibold text-gray-500">To match:</span>{' '}
+                    <span className="font-mono">{reconciledWire.to.matchType}</span>
+                    {reconciledWire.to.matchedLabel ? ` → ${reconciledWire.to.matchedLabel}` : ''}
+                  </div>
+                  <div><span className="font-semibold text-gray-500">To conf:</span>{' '}
+                    {(reconciledWire.to.confidence * 100).toFixed(0)}%
+                  </div>
+                  {reconciledWire.from.candidateComponentIds && (
+                    <div className="col-span-2 text-purple-700">
+                      <span className="font-semibold">Ambiguous from candidates:</span>{' '}
+                      {reconciledWire.from.candidateComponentIds.join(', ')}
+                    </div>
+                  )}
+                  {reconciledWire.to.candidateComponentIds && (
+                    <div className="col-span-2 text-purple-700">
+                      <span className="font-semibold">Ambiguous to candidates:</span>{' '}
+                      {reconciledWire.to.candidateComponentIds.join(', ')}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="border-t border-gray-100 pt-1.5">
                 <span className="font-semibold text-gray-500">Raw OCR text:</span>
                 <pre className="mt-0.5 whitespace-pre-wrap break-all font-mono text-[10px] text-gray-600 bg-gray-50 rounded px-1.5 py-1 border border-gray-100">
@@ -163,10 +239,12 @@ function WireEvidenceRow({ wire }: { wire: WireConnectivity }) {
 
 export interface HarnessConnectivityPanelProps {
   harnessConnectivity: HarnessConnectivityResult | null | undefined;
+  reconciliation?: HarnessReconciliationResult | null;
 }
 
 export default function HarnessConnectivityPanel({
   harnessConnectivity,
+  reconciliation,
 }: HarnessConnectivityPanelProps) {
   const [open, setOpen] = useState(false);
 
@@ -192,6 +270,11 @@ export default function HarnessConnectivityPanel({
   });
 
   const { total, resolved, partial, unresolved } = confidenceSummary;
+
+  const reconciledByWireId = new Map<string, ReconciledWire>(
+    reconciliation?.wires.map(rw => [rw.wireId, rw]) ?? [],
+  );
+  const hasReconciliation = reconciledByWireId.size > 0;
 
   console.log('[T3 HC-BOM PANEL]', { total, resolved, partial, unresolved: unresolvedWires.length });
 
@@ -222,6 +305,20 @@ export default function HarnessConnectivityPanel({
             <span className="rounded-full bg-teal-100 px-2 py-0.5 font-semibold text-teal-800">
               {total} total
             </span>
+            {reconciliation && (
+              <>
+                <span className={`rounded-full px-2 py-0.5 font-semibold ${
+                  reconciliation.summary.fullyMatched > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {reconciliation.summary.fullyMatched} matched
+                </span>
+                {reconciliation.summary.ambiguous > 0 && (
+                  <span className="rounded-full px-2 py-0.5 font-semibold bg-purple-100 text-purple-700">
+                    {reconciliation.summary.ambiguous} ambiguous
+                  </span>
+                )}
+              </>
+            )}
             <span className={`rounded-full px-2 py-0.5 font-semibold ${
               resolved > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'
             }`}>
@@ -258,11 +355,17 @@ export default function HarnessConnectivityPanel({
                   <th className="px-2 py-1 text-left">To</th>
                   <th className="px-2 py-1 text-center">Conf</th>
                   <th className="px-2 py-1 text-center">Status</th>
+                  {hasReconciliation && <th className="px-2 py-1 text-center">Match</th>}
                 </tr>
               </thead>
               <tbody>
                 {sortedWires.slice(0, 100).map(wire => (
-                  <WireEvidenceRow key={`${wire.wireId}-${wire.sourceRowIndex}`} wire={wire} />
+                  <WireEvidenceRow
+                    key={`${wire.wireId}-${wire.sourceRowIndex}`}
+                    wire={wire}
+                    reconciledWire={reconciledByWireId.get(wire.wireId)}
+                    hasReconciliation={hasReconciliation}
+                  />
                 ))}
               </tbody>
             </table>

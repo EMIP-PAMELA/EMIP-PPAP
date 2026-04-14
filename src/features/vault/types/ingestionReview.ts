@@ -141,6 +141,13 @@ export interface IngestionAnalysisResult {
    */
   diagramExtraction?: import('@/src/features/harness-work-instructions/services/diagramExtractor').DiagramExtractionResult | null;
 
+  /**
+   * Phase T5: HC-BOM ↔ diagram reconciliation layer.
+   * INTERMEDIATE DATA — not authoritative. Does not affect field resolution.
+   * Maps HC-BOM endpoint labels to diagram ComponentNodes with match quality.
+   */
+  harnessReconciliation?: import('@/src/features/harness-work-instructions/services/harnessReconciliationService').HarnessReconciliationResult | null;
+
   analyzedAt: string;
 }
 
