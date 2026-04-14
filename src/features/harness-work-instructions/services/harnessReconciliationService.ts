@@ -146,6 +146,18 @@ function tokenize(s: string): Set<string> {
   );
 }
 
+/**
+ * Word-boundary-aware containment check.
+ * Returns true only when `needle` appears as a whole word (or the entire
+ * string) inside `haystack`.  Prevents "COM" matching "COMPONENT" or
+ * "J10" matching "J100".
+ */
+function containsWholeWord(haystack: string, needle: string): boolean {
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(?:^|[\\s\\-_/\\\\])${escaped}(?:[\\s\\-_/\\\\]|$)`, 'i');
+  return re.test(haystack);
+}
+
 function fuzzySearchItems(query: string, items: MatchableItem[]): MatchableItem[] {
   const qNorm   = query.toLowerCase().trim();
   const qTokens = tokenize(query);
@@ -154,8 +166,8 @@ function fuzzySearchItems(query: string, items: MatchableItem[]): MatchableItem[
   return items.filter(item => {
     const iNorm = item.label.toLowerCase().trim();
 
-    // Whole-string containment (longer absorbs shorter)
-    if (iNorm.includes(qNorm) || qNorm.includes(iNorm)) return true;
+    // Whole-word containment (prevents COM→COMPONENT, J10→J100)
+    if (containsWholeWord(iNorm, qNorm) || containsWholeWord(qNorm, iNorm)) return true;
 
     // Token overlap (at least one shared token of length >= 3)
     const iTokens = tokenize(item.label);
@@ -163,10 +175,10 @@ function fuzzySearchItems(query: string, items: MatchableItem[]): MatchableItem[
       if (iTokens.has(qt)) return true;
     }
 
-    // PN substring containment
+    // PN whole-word containment
     if (item.normalizedPartNumber) {
       const pnNorm = item.normalizedPartNumber.toLowerCase();
-      if (pnNorm.includes(qNorm) || qNorm.includes(pnNorm)) return true;
+      if (containsWholeWord(pnNorm, qNorm) || containsWholeWord(qNorm, pnNorm)) return true;
     }
 
     return false;
@@ -341,12 +353,20 @@ export function reconcileHarnessConnectivity(args: {
 
   const summary = computeSummary(wires);
 
+  // Per-match-type breakdown for audit traceability
+  const matchTypeCounts = { EXACT: 0, PN_MATCH: 0, FUZZY: 0, AMBIGUOUS: 0, NONE: 0 };
+  for (const rw of wires) {
+    matchTypeCounts[rw.from.matchType]++;
+    matchTypeCounts[rw.to.matchType]++;
+  }
+
   console.log('[T5 RECONCILIATION]', {
-    total:        summary.total,
-    fullyMatched: summary.fullyMatched,
+    total:          summary.total,
+    fullyMatched:   summary.fullyMatched,
     partialMatched: summary.partialMatched,
-    unmatched:    summary.unmatched,
-    ambiguous:    summary.ambiguous,
+    unmatched:      summary.unmatched,
+    ambiguous:      summary.ambiguous,
+    matchTypes:     matchTypeCounts,
   });
 
   return { wires, summary };

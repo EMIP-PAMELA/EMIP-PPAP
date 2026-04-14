@@ -391,6 +391,99 @@ describe('T5 summary', () => {
 });
 
 // ---------------------------------------------------------------------------
+// T5-AUDIT: Misclassification hardening
+// ---------------------------------------------------------------------------
+
+describe('T5-AUDIT fuzzy false-positive rejection', () => {
+  it('COM must NOT fuzzy-match COMPONENT BLOCK (substring false positive)', () => {
+    const hc = makeHc([[makeWire('W1', 'COM', null)]]);
+    const diagram = makeDiagram([{ id: 'CONN_1', label: 'COMPONENT BLOCK' }]);
+    const result = reconcileHarnessConnectivity({ harnessConnectivity: hc, diagramExtraction: diagram });
+    assert.equal(result.wires[0].from.matchType, 'NONE');
+  });
+
+  it('GND must NOT fuzzy-match GROUNDING_PAD (substring false positive)', () => {
+    const hc = makeHc([[makeWire('W1', 'GND', null)]]);
+    const diagram = makeDiagram([{ id: 'CONN_1', label: 'GROUNDING_PAD' }]);
+    const result = reconcileHarnessConnectivity({ harnessConnectivity: hc, diagramExtraction: diagram });
+    assert.equal(result.wires[0].from.matchType, 'NONE');
+  });
+
+  it('J10 must NOT fuzzy-match J100 (suffix absorption false positive)', () => {
+    const hc = makeHc([[makeWire('W1', 'J10', null)]]);
+    const diagram = makeDiagram([{ id: 'CONN_1', label: 'J100' }]);
+    const result = reconcileHarnessConnectivity({ harnessConnectivity: hc, diagramExtraction: diagram });
+    assert.equal(result.wires[0].from.matchType, 'NONE');
+  });
+
+  it('SHLD must NOT fuzzy-match SHIELDED CONNECTOR (substring false positive)', () => {
+    const hc = makeHc([[makeWire('W1', 'SHLD', null)]]);
+    const diagram = makeDiagram([{ id: 'CONN_1', label: 'SHIELDED CONNECTOR' }]);
+    const result = reconcileHarnessConnectivity({ harnessConnectivity: hc, diagramExtraction: diagram });
+    assert.equal(result.wires[0].from.matchType, 'NONE');
+  });
+
+  it('PHOENIX still fuzzy-matches PHOENIX CONTACT (legitimate whole-word match)', () => {
+    const hc = makeHc([[makeWire('W1', 'PHOENIX', null)]]);
+    const diagram = makeDiagram([{ id: 'CONN_1', label: 'PHOENIX CONTACT' }]);
+    const result = reconcileHarnessConnectivity({ harnessConnectivity: hc, diagramExtraction: diagram });
+    assert.equal(result.wires[0].from.matchType, 'FUZZY');
+  });
+});
+
+describe('T5-AUDIT PN-like label edge cases', () => {
+  it('label looks like PN but no match exists → NONE', () => {
+    const hc = makeHc([[makeWire('W1', '9999999-99', null)]]);
+    const diagram = makeDiagram([{ id: 'CONN_1', label: 'J1', pn: '1700443' }]);
+    const result = reconcileHarnessConnectivity({ harnessConnectivity: hc, diagramExtraction: diagram });
+    assert.equal(result.wires[0].from.matchType, 'NONE');
+  });
+
+  it('pure PN_MATCH from component (not callout) → PN_MATCH 0.90', () => {
+    const hc = makeHc([[makeWire('W1', '1700443', null)]]);
+    const diagram = makeDiagram([{ id: 'CONN_1', label: 'PHOENIX 1700443', pn: '1700443' }]);
+    const result = reconcileHarnessConnectivity({ harnessConnectivity: hc, diagramExtraction: diagram });
+    assert.equal(result.wires[0].from.matchType, 'PN_MATCH');
+    assert.equal(result.wires[0].from.matchedComponentId, 'CONN_1');
+    assert.equal(result.wires[0].from.confidence, 0.90);
+  });
+});
+
+describe('T5-AUDIT both endpoints AMBIGUOUS', () => {
+  it('both from and to AMBIGUOUS → unresolved + ambiguous=1', () => {
+    const hc = makeHc([[makeWire('W1', 'J1', 'P2')]]);
+    const diagram = makeDiagram([
+      { id: 'CONN_1', label: 'J1' },
+      { id: 'CONN_2', label: 'J1' },
+      { id: 'CONN_3', label: 'P2' },
+      { id: 'CONN_4', label: 'P2' },
+    ]);
+    const result = reconcileHarnessConnectivity({ harnessConnectivity: hc, diagramExtraction: diagram });
+    assert.equal(result.wires[0].from.matchType, 'AMBIGUOUS');
+    assert.equal(result.wires[0].to.matchType, 'AMBIGUOUS');
+    assert.equal(result.wires[0].unresolved, true);
+    assert.equal(result.summary.ambiguous, 1);
+  });
+});
+
+describe('T5-AUDIT FUZZY+NONE summary gap', () => {
+  it('FUZZY from + NONE to → not counted in fullyMatched/partial/unmatched (expected gap)', () => {
+    // This documents a known spec design choice: FUZZY+NONE falls outside all 4 categories.
+    // It only appears in summary.total. This is correct per the category definitions.
+    const hc = makeHc([[makeWire('W1', 'PHOENIX', null)]]);
+    const diagram = makeDiagram([{ id: 'CONN_1', label: 'PHOENIX CONTACT' }]);
+    const result = reconcileHarnessConnectivity({ harnessConnectivity: hc, diagramExtraction: diagram });
+    assert.equal(result.wires[0].from.matchType, 'FUZZY');
+    assert.equal(result.wires[0].to.matchType, 'NONE');
+    assert.equal(result.summary.total, 1);
+    assert.equal(result.summary.fullyMatched, 0);
+    assert.equal(result.summary.partialMatched, 0);
+    assert.equal(result.summary.unmatched, 0);
+    assert.equal(result.summary.ambiguous, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Original label preservation
 // ---------------------------------------------------------------------------
 
