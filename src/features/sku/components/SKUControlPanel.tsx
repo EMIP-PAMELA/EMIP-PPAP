@@ -124,6 +124,8 @@ export interface SKUControlPanelProps {
   loading: boolean;
   pipelineRequirementsMet: boolean;
   onRunPipeline: () => void;
+  /** Phase 3H.46 C6: Opens the inline BOM inspection drawer. */
+  onViewBOM?: () => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -152,6 +154,7 @@ export default function SKUControlPanel({
   loading,
   pipelineRequirementsMet,
   onRunPipeline,
+  onViewBOM,
 }: SKUControlPanelProps) {
   const canonicalRev   = revisionValidation?.canonical_revision ?? null;
   const revStatus      = revisionValidation?.status ?? null;
@@ -200,6 +203,15 @@ export default function SKUControlPanel({
 
         {/* Right: pipeline actions */}
         <div className="flex items-center gap-2">
+          {onViewBOM && documentPresence.hasBOM && (
+            <button
+              type="button"
+              onClick={onViewBOM}
+              className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+            >
+              📋 View BOM
+            </button>
+          )}
           <button
             onClick={onRunPipeline}
             disabled={running || loading || !pipelineRequirementsMet}

@@ -25,6 +25,7 @@ import SKUControlPanel from '@/src/features/sku/components/SKUControlPanel';
 import HarnessStructurePanel from '@/src/features/sku/components/HarnessStructurePanel';
 import TruthVerificationPanel from '@/src/features/sku/components/TruthVerificationPanel';
 import HarnessVisualizationPanel from '@/src/features/sku/components/HarnessVisualizationPanel';
+import BOMDrawer from '@/src/features/sku/components/BOMDrawer';
 import type { ExtractionCoverage } from '@/src/features/harness-work-instructions/services/extractionCoverageService';
 import {
   applyWireOverrides,
@@ -109,6 +110,7 @@ export default function SKUDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [bomOpen, setBomOpen] = useState(false);
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
   const [pipelineJob, setPipelineJob] = useState<HarnessInstructionJob | null>(null);
   const [pipelineCoverage, setPipelineCoverage] = useState<ExtractionCoverage | undefined>(undefined);
@@ -524,6 +526,7 @@ export default function SKUDashboardPage() {
             loading={loading}
             pipelineRequirementsMet={pipelineRequirementsMet}
             onRunPipeline={() => runPipeline('manual')}
+            onViewBOM={() => setBomOpen(true)}
           />
         )}
 
@@ -760,6 +763,11 @@ export default function SKUDashboardPage() {
           </div>
         </section>
       </div>
+      <BOMDrawer
+        isOpen={bomOpen}
+        onClose={() => setBomOpen(false)}
+        partNumber={partNumber}
+      />
     </EMIPLayout>
   );
 }
