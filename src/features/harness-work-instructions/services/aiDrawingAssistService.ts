@@ -1,20 +1,23 @@
 /**
- * AI Drawing Assist Service — Phase 3H.48 C10.2
+ * AI Drawing Assist Service — Phase 3H.48 C10.3
  *
  * Conditional AI interpretation layer for weak or ambiguous drawing cases.
  * Activates ONLY when the deterministic pipeline produces low-confidence results.
  *
  * Architecture:
- *   - runAIDrawingAssist: async stub — real API integration deferred to future phase.
- *   - mergeAIAssist: non-destructive merge — deterministic results always win.
- *   - AI-derived fields are clearly distinguished via evidence strings.
+ *   - callAIModel:          posts to /api/ai/drawing-assist (Anthropic Claude proxy)
+ *   - buildAIPrompt:        constructs structured prompt with missing-field context
+ *   - safeParseAIResponse:  parses and validates the raw Claude JSON output
+ *   - sanitizeAIResult:     strips malformed wire records before merge
+ *   - runAIDrawingAssist:   orchestrates all of the above; returns null on any failure
+ *   - mergeAIAssist:        non-destructive merge — deterministic results always win
  *
  * Governance:
  *   - AI is OPTIONAL and FAIL-SAFE. Never blocks the pipeline.
- *   - Deterministic extraction is ALWAYS the baseline.
+ *   - Deterministic extraction is ALWAYS the baseline — AI fills gaps only.
  *   - AI may only FILL missing fields, NEVER overwrite confident existing values.
+ *   - All AI-derived fields are tagged in evidence strings for auditability.
  *   - No DB writes. No side effects outside of interpretation enrichment.
- *   - Real AI API (e.g. GPT-4o) must be injected in a future phase — not here.
  */
 
 import type {
@@ -60,31 +63,171 @@ export interface AIAssistResult {
 }
 
 // ---------------------------------------------------------------------------
-// AI Invocation — Stub
+// AI Invocation — Real Implementation (Phase C10.3)
 // ---------------------------------------------------------------------------
+
+/** Base URL for internal API calls from server-side service code. */
+const AI_ROUTE_BASE =
+  process.env.NEXT_PUBLIC_APP_URL ??
+  process.env.NEXTAUTH_URL ??
+  'http://localhost:3000';
+
+/**
+ * POST the pre-built prompt to the /api/ai/drawing-assist route.
+ * Returns the raw text content string on success, or null on any failure.
+ * The caller owns all JSON parsing and validation.
+ */
+async function callAIModel(prompt: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${AI_ROUTE_BASE}/api/ai/drawing-assist`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ prompt }),
+    });
+
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    return json?.content ?? null;
+  } catch (err) {
+    console.error('[AI CALL ERROR]', err);
+    return null;
+  }
+}
+
+/**
+ * Build the structured prompt sent to the AI model.
+ *
+ * Constraints enforced in the prompt:
+ *   - Explicitly prohibits overwriting existing values.
+ *   - Requires null for any field that cannot be determined.
+ *   - Limits drawing text to 8 000 chars to avoid token overflow.
+ *   - Passes both the current interpretation and the unresolved field list
+ *     so the model has precise, scoped context.
+ */
+function buildAIPrompt(input: AIAssistInput): string {
+  return `You are an electrical harness engineer.
+
+You are given:
+1. Extracted drawing text
+2. A partially interpreted wire model
+3. Known missing fields
+
+Your job:
+ONLY fill in missing values. DO NOT overwrite existing values.
+
+If a value cannot be determined, return null.
+
+Return STRICT JSON only.
+
+Schema:
+{
+  "wires": [
+    {
+      "wireId": "string",
+      "from": { "connectorId": "string|null", "pin": "string|number|null" },
+      "to": { "terminalPartNumber": "string|null" },
+      "attributes": {
+        "length": "number|null",
+        "gauge": "string|null",
+        "color": "string|null"
+      },
+      "confidence": "number (0–1)",
+      "reasoning": "short explanation"
+    }
+  ]
+}
+
+Context:
+Extracted Text:
+${input.rawText?.slice(0, 8000) ?? ''}
+
+Existing Interpretation:
+${JSON.stringify(input.interpretation?.wires ?? [], null, 2)}
+
+Missing Fields:
+${JSON.stringify(input.interpretation?.unresolved ?? [], null, 2)}`;
+}
+
+/**
+ * Parse and minimally validate the raw text returned by the AI model.
+ * Returns null if the text is not valid JSON or does not contain a wires array.
+ */
+function safeParseAIResponse(text: string): AIAssistResult | null {
+  try {
+    // Extract first JSON object — Claude may occasionally prepend/append whitespace
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed: unknown = JSON.parse(jsonMatch[0]);
+
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (!Array.isArray((parsed as { wires?: unknown }).wires)) return null;
+
+    return parsed as AIAssistResult;
+  } catch (err) {
+    console.warn('[AI PARSE FAILED]', err);
+    return null;
+  }
+}
+
+/**
+ * Strip malformed wire records from the AI result.
+ * A wire record is valid only when wireId is a non-empty string.
+ * Confidence is clamped to [0, 1].
+ */
+function sanitizeAIResult(result: AIAssistResult): AIAssistResult {
+  return {
+    ...result,
+    wires: result.wires
+      ?.filter(w => typeof w.wireId === 'string' && w.wireId.trim().length > 0)
+      .map(w => ({
+        ...w,
+        confidence: Math.max(0, Math.min(1, w.confidence ?? 0)),
+      })),
+  };
+}
 
 /**
  * Invoke AI-assisted drawing interpretation.
  *
- * CURRENT STATE: Stub only. Returns null (no-op).
- * This preserves the full integration surface (types, logging, activation logic)
- * without introducing a real API dependency in this phase.
- *
- * When activating the real AI path:
- *   1. Replace the stub body with an LLM API call (e.g. GPT-4o structured output).
- *   2. Pass input.rawText as the user message.
- *   3. Parse the structured JSON response into AIAssistResult.
- *   4. Keep the try-catch in the caller — never let AI failure surface.
+ * Flow:
+ *   1. Log trigger context.
+ *   2. Guard: return null immediately if no raw text available.
+ *   3. Build prompt, POST to Claude proxy route.
+ *   4. Log raw output preview.
+ *   5. Parse + validate response.
+ *   6. Sanitize (strip invalid wires, clamp confidence).
+ *   7. Return sanitized result, or null on any failure.
  */
 export async function runAIDrawingAssist(input: AIAssistInput): Promise<AIAssistResult | null> {
   console.log('[AI ASSIST TRIGGERED]', {
-    mode:               input.mode,
+    mode:                input.mode,
     interpretationScore: input.interpretation?.interpretationScore,
   });
 
-  // Phase C10.2: Stub — real AI integration is deferred.
-  // Returning null is safe: callers skip the merge step when null is received.
-  return null;
+  if (!input.rawText) return null;
+
+  const prompt = buildAIPrompt(input);
+
+  const raw = await callAIModel(prompt);
+
+  console.log('[AI RAW OUTPUT]', raw?.slice(0, 500));
+
+  if (!raw) return null;
+
+  const parsed = safeParseAIResponse(raw);
+
+  if (!parsed) {
+    console.warn('[AI INVALID OUTPUT]', { rawPreview: raw.slice(0, 200) });
+    return null;
+  }
+
+  console.log('[AI PARSED OUTPUT]', {
+    wires: parsed.wires?.length ?? 0,
+  });
+
+  return sanitizeAIResult(parsed);
 }
 
 // ---------------------------------------------------------------------------
