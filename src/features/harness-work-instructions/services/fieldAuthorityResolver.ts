@@ -22,6 +22,8 @@
  *   - All competing candidates are preserved in ResolvedField for future UI evidence.
  */
 
+import type { TitleBlockExtractionResult } from './titleBlockRegionExtractor';
+
 // ---------------------------------------------------------------------------
 // Core Types
 // ---------------------------------------------------------------------------
@@ -34,6 +36,10 @@ export type FieldName =
 export type FieldAuthoritySource =
   | 'OPERATOR_CONFIRMED'
   | 'PARSED_DRAWING'
+  /** Phase 3H.50 C12: explicit title block zone extraction (Apogee lower-right, Rheem left strip). */
+  | 'TITLE_BLOCK_REGION'
+  /** Phase 3H.50 C12: explicit revision record zone extraction (Apogee upper-right box, Rheem title strip). */
+  | 'REVISION_REGION'
   | 'ADAPTIVE_VECTOR'
   | 'INTERPRETATION'
   | 'AI_ASSIST'
@@ -65,6 +71,8 @@ export interface ResolvedField {
 const SOURCE_PRIORITY: FieldAuthoritySource[] = [
   'OPERATOR_CONFIRMED',
   'PARSED_DRAWING',
+  'TITLE_BLOCK_REGION',
+  'REVISION_REGION',
   'ADAPTIVE_VECTOR',
   'INTERPRETATION',
   'AI_ASSIST',
@@ -83,14 +91,16 @@ function sourcePriority(source: FieldAuthoritySource): number {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CONFIDENCE: Record<FieldAuthoritySource, number> = {
-  OPERATOR_CONFIRMED: 1.00,
-  PARSED_DRAWING:     0.85,
-  ADAPTIVE_VECTOR:    0.80,
-  INTERPRETATION:     0.70,
-  AI_ASSIST:          0.65,  // capped at 0.75 for field authority, but 0.65 default
-  HEURISTIC:          0.50,
-  FILENAME:           0.60,
-  UNKNOWN:            0.10,
+  OPERATOR_CONFIRMED:  1.00,
+  PARSED_DRAWING:      0.85,
+  TITLE_BLOCK_REGION:  0.90,
+  REVISION_REGION:     0.90,
+  ADAPTIVE_VECTOR:     0.80,
+  INTERPRETATION:      0.70,
+  AI_ASSIST:           0.65,  // capped at 0.75 for field authority, but 0.65 default
+  HEURISTIC:           0.50,
+  FILENAME:            0.60,
+  UNKNOWN:             0.10,
 };
 
 // ---------------------------------------------------------------------------
@@ -186,14 +196,16 @@ export interface ResolveDocumentFieldsArgs {
   filename?: string | null;
   /** Current/default document type string. */
   currentDocType?: string | null;
+  /** Phase 3H.50 C12: region-aware title block extraction result. */
+  titleBlockResult?: TitleBlockExtractionResult | null;
 }
 
 /**
  * Resolve the best candidate for each field from all available sources.
  *
  * Priority order (per SOURCE_PRIORITY constant):
- *   OPERATOR_CONFIRMED > PARSED_DRAWING > ADAPTIVE_VECTOR > INTERPRETATION
- *   > AI_ASSIST > HEURISTIC > FILENAME > UNKNOWN
+ *   OPERATOR_CONFIRMED > PARSED_DRAWING > TITLE_BLOCK_REGION > REVISION_REGION
+ *   > ADAPTIVE_VECTOR > INTERPRETATION > AI_ASSIST > HEURISTIC > FILENAME > UNKNOWN
  *
  * All competing candidates are preserved in the returned ResolvedField.
  * The function never throws — degraded results are returned on bad input.
@@ -226,6 +238,38 @@ export function resolveDocumentFields(
     }
     if (parsedRev) {
       allCandidates.push({ field: 'revision', value: parsedRev, source: 'PARSED_DRAWING', confidence: 0.85, evidence: ['parsed drawing title block revision'] });
+    }
+
+    // ── TITLE_BLOCK_REGION / REVISION_REGION (C12 region-aware extractor) ────
+    const tbr = args.titleBlockResult;
+    if (tbr) {
+      if (tbr.partNumber.value) {
+        allCandidates.push({
+          field: 'partNumber',
+          value: tbr.partNumber.value,
+          source: 'TITLE_BLOCK_REGION',
+          confidence: tbr.partNumber.confidence || DEFAULT_CONFIDENCE.TITLE_BLOCK_REGION,
+          evidence: tbr.partNumber.evidence.length ? tbr.partNumber.evidence : ['region-aware title block extraction'],
+        });
+      }
+      if (tbr.drawingNumber.value && tbr.drawingNumber.value !== tbr.partNumber.value) {
+        allCandidates.push({
+          field: 'partNumber',
+          value: tbr.drawingNumber.value,
+          source: 'TITLE_BLOCK_REGION',
+          confidence: tbr.drawingNumber.confidence || DEFAULT_CONFIDENCE.TITLE_BLOCK_REGION,
+          evidence: tbr.drawingNumber.evidence.length ? tbr.drawingNumber.evidence : ['region-aware drawing number extraction'],
+        });
+      }
+      if (tbr.revision.value) {
+        allCandidates.push({
+          field: 'revision',
+          value: tbr.revision.value,
+          source: tbr.revision.source === 'REVISION_REGION' ? 'REVISION_REGION' : 'TITLE_BLOCK_REGION',
+          confidence: tbr.revision.confidence || DEFAULT_CONFIDENCE.REVISION_REGION,
+          evidence: tbr.revision.evidence.length ? tbr.revision.evidence : ['region-aware revision extraction'],
+        });
+      }
     }
 
     // ── ADAPTIVE_VECTOR document type hints ───────────────────────────────

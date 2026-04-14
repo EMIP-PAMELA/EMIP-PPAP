@@ -98,6 +98,9 @@ export interface IngestionAnalysisResult {
   /** Phase 3H.43.X: Structured drawing data from domain-specific parser (e.g. RheemDrawingModel). */
   structuredData?: Record<string, unknown> | null;
 
+  /** Phase 3H.50 C12: Region-aware title block + revision extraction result. */
+  titleBlockRegionResult?: import('@/src/features/harness-work-instructions/services/titleBlockRegionExtractor').TitleBlockExtractionResult | null;
+
   analyzedAt: string;
 }
 

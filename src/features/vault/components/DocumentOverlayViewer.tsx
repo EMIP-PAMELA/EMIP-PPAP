@@ -13,12 +13,16 @@ interface DocumentOverlayViewerProps {
 }
 
 const REGION_COLORS: Record<RegionOverlay['label'], string> = {
-  REVISION: 'border-red-500 bg-red-500/10 text-red-700',
-  PART_NUMBER: 'border-blue-500 bg-blue-500/10 text-blue-700',
-  DRAWING_NUMBER: 'border-green-500 bg-green-500/10 text-green-700',
-  TITLE_BLOCK: 'border-purple-500 bg-purple-500/10 text-purple-700',
-  TABLE: 'border-orange-500 bg-orange-500/10 text-orange-700',
-  UNKNOWN: 'border-gray-400 bg-gray-400/10 text-gray-600',
+  REVISION:           'border-red-500 bg-red-500/10 text-red-700',
+  PART_NUMBER:        'border-blue-500 bg-blue-500/10 text-blue-700',
+  DRAWING_NUMBER:     'border-green-500 bg-green-500/10 text-green-700',
+  TITLE_BLOCK:        'border-purple-500 bg-purple-500/10 text-purple-700',
+  TABLE:              'border-orange-500 bg-orange-500/10 text-orange-700',
+  UNKNOWN:            'border-gray-400 bg-gray-400/10 text-gray-600',
+  /** C12: region-aware title block (distinct from generic TITLE_BLOCK) */
+  TITLE_BLOCK_REGION: 'border-violet-600 bg-violet-600/10 text-violet-800',
+  /** C12: region-aware revision record (distinct from generic REVISION) */
+  REVISION_REGION:    'border-rose-600 bg-rose-600/10 text-rose-800',
 };
 
 const ORIENTATION_BADGE: Record<string, string> = {

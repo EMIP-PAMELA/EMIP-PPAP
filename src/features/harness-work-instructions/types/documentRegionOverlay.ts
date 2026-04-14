@@ -17,7 +17,11 @@ export type RegionOverlayLabel =
   | 'DRAWING_NUMBER'
   | 'TITLE_BLOCK'
   | 'TABLE'
-  | 'UNKNOWN';
+  | 'UNKNOWN'
+  /** Phase 3H.50 C12: Explicit title block region identified by region-aware extractor. */
+  | 'TITLE_BLOCK_REGION'
+  /** Phase 3H.50 C12: Explicit revision record / revision strip region identified by region-aware extractor. */
+  | 'REVISION_REGION';
 
 export type RegionOverlaySource = 'OCR' | 'HEURISTIC' | 'AI';
 
