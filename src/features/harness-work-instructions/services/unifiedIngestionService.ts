@@ -28,6 +28,7 @@ import type { DocumentExtractionEvidence } from '../types/extractionEvidence';
 import type { IngestionAnalysisResult } from '@/src/features/vault/types/ingestionReview';
 import { resolveWiresFromDrawing, mergeDrawingWiresIntoJob, isRheemDrawingModel, buildPinMap, type PinMapRow } from './wireResolutionService';
 import { computeExtractionCoverage, type ExtractionCoverage } from './extractionCoverageService';
+import { interpretRheemDrawingModel, type DrawingInterpretationResult } from './drawingInterpretationService';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -56,6 +57,8 @@ interface PipelineResult {
   pinMap?: PinMapRow[];
   /** Phase 3H.44 C7.1: Extraction coverage + gap detection metrics. Present only when a Rheem drawing was resolved. */
   coverage?: ExtractionCoverage;
+  /** Phase 3H.47 C9: Structured interpretation of drawing wires/connectors. Additive diagnostics only. */
+  interpretation?: DrawingInterpretationResult;
 }
 
 export interface UnifiedIngestionResult {
@@ -409,14 +412,16 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   let preBuiltBOMJob: HarnessInstructionJob | null = null;
   let pinMapRows: PinMapRow[] = [];
   let coverage: ExtractionCoverage | undefined;
+  let interpretation: DrawingInterpretationResult | undefined;
   if (isRheemDrawingModel(analysisSnapshot?.structuredData)) {
     const bomDoc = documents.find(d => d.document_type === 'BOM');
     if (bomDoc?.storage_path) {
       const bomText = await loadExtractedText(bomDoc.storage_path);
       if (bomText) {
-        const rawBOMJob = await parseBOMToHWI(bomText, ingestResult.sku.part_number, bomDoc.revision);
+        const rawBOMJob    = await parseBOMToHWI(bomText, ingestResult.sku.part_number, bomDoc.revision);
         const drawingWires = resolveWiresFromDrawing(analysisSnapshot.structuredData);
-        coverage = computeExtractionCoverage(analysisSnapshot.structuredData, drawingWires);
+        coverage       = computeExtractionCoverage(analysisSnapshot.structuredData, drawingWires);
+        interpretation = interpretRheemDrawingModel(analysisSnapshot.structuredData);
         preBuiltBOMJob = drawingWires.length > 0
           ? mergeDrawingWiresIntoJob(rawBOMJob, drawingWires)
           : rawBOMJob;
@@ -430,11 +435,11 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
         });
 
         console.log('[WIRE AUTHORITY LAYER]', {
-          phase:           '3H.44C3',
-          mode:            'pre-build',
-          bomWireCount:    rawBOMJob.wire_instances.length,
+          phase:            '3H.44C3',
+          mode:             'pre-build',
+          bomWireCount:     rawBOMJob.wire_instances.length,
           drawingWireCount: drawingWires.length,
-          resolvedLengths: preBuiltBOMJob.wire_instances.filter(w => w.cut_length !== null).length,
+          resolvedLengths:  preBuiltBOMJob.wire_instances.filter(w => w.cut_length !== null).length,
         });
       }
     }
@@ -444,7 +449,8 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   const pipeline: PipelineResult = {
     ...rawPipeline,
     ...(pinMapRows.length > 0 ? { pinMap: pinMapRows } : {}),
-    ...(coverage !== undefined ? { coverage } : {}),
+    ...(coverage       !== undefined ? { coverage }       : {}),
+    ...(interpretation  !== undefined ? { interpretation } : {}),
   };
 
   return {
