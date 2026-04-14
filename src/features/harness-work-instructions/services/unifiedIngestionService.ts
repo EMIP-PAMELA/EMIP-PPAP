@@ -27,6 +27,7 @@ import { analyzeFileIngestion } from './analyzeIngestion';
 import type { DocumentExtractionEvidence } from '../types/extractionEvidence';
 import type { IngestionAnalysisResult } from '@/src/features/vault/types/ingestionReview';
 import { resolveWiresFromDrawing, mergeDrawingWiresIntoJob, isRheemDrawingModel, buildPinMap, type PinMapRow } from './wireResolutionService';
+import { computeExtractionCoverage, type ExtractionCoverage } from './extractionCoverageService';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -53,6 +54,8 @@ interface PipelineResult {
   processBundle: ProcessInstructionBundle | null;
   /** Phase 3H.44 C6: Deterministic pin map derived from resolved drawing wires. Empty for BOM-only SKUs. */
   pinMap?: PinMapRow[];
+  /** Phase 3H.44 C7.1: Extraction coverage + gap detection metrics. Present only when a Rheem drawing was resolved. */
+  coverage?: ExtractionCoverage;
 }
 
 export interface UnifiedIngestionResult {
@@ -405,6 +408,7 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   // BOM-only SKUs are unaffected: isRheemDrawingModel returns false for null/non-Rheem data.
   let preBuiltBOMJob: HarnessInstructionJob | null = null;
   let pinMapRows: PinMapRow[] = [];
+  let coverage: ExtractionCoverage | undefined;
   if (isRheemDrawingModel(analysisSnapshot?.structuredData)) {
     const bomDoc = documents.find(d => d.document_type === 'BOM');
     if (bomDoc?.storage_path) {
@@ -412,6 +416,7 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
       if (bomText) {
         const rawBOMJob = await parseBOMToHWI(bomText, ingestResult.sku.part_number, bomDoc.revision);
         const drawingWires = resolveWiresFromDrawing(analysisSnapshot.structuredData);
+        coverage = computeExtractionCoverage(analysisSnapshot.structuredData, drawingWires);
         preBuiltBOMJob = drawingWires.length > 0
           ? mergeDrawingWiresIntoJob(rawBOMJob, drawingWires)
           : rawBOMJob;
@@ -436,9 +441,11 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   }
 
   const rawPipeline = await buildPipelineFromDocuments(ingestResult.sku, documents, preBuiltBOMJob);
-  const pipeline: PipelineResult = pinMapRows.length > 0
-    ? { ...rawPipeline, pinMap: pinMapRows }
-    : rawPipeline;
+  const pipeline: PipelineResult = {
+    ...rawPipeline,
+    ...(pinMapRows.length > 0 ? { pinMap: pinMapRows } : {}),
+    ...(coverage !== undefined ? { coverage } : {}),
+  };
 
   return {
     sku: ingestResult.sku,
