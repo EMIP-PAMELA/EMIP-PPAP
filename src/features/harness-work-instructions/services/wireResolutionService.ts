@@ -22,6 +22,8 @@ export interface ResolvedWire {
   length: number | null;
   gauge: string | null;
   color: string | null;
+  /** Phase 3H.44 C4.2: Terminal part number resolved from drawing pin map. */
+  terminal: string | null;
   from?: {
     connector?: string;
     pin?: string | number;
@@ -103,6 +105,24 @@ function wireIdComparator(a: ResolvedWire, b: ResolvedWire): number {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 3H.44 C4.2: Terminal map
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a pin → terminal part number map from all wire rows that carry both fields.
+ * Used by resolveWiresFromDrawing to assign terminal PNs by pin number.
+ */
+export function buildTerminalMap(model: RheemDrawingModel): Map<number, string> {
+  const map = new Map<number, string>();
+  for (const row of model.wires) {
+    if (row.pin !== null && row.terminal) {
+      map.set(row.pin, row.terminal);
+    }
+  }
+  return map;
+}
+
+// ---------------------------------------------------------------------------
 // Drawing wire lookup maps
 // ---------------------------------------------------------------------------
 
@@ -155,6 +175,11 @@ function buildDrawingLookupMaps(resolvedWires: ResolvedWire[]): DrawingLookupMap
 export function resolveWiresFromDrawing(structuredData: RheemDrawingModel): ResolvedWire[] {
   const resolved: ResolvedWire[] = [];
 
+  // Phase 3H.44 C4.2: Build terminal map once for the whole model
+  const terminalMap = buildTerminalMap(structuredData);
+  let terminalAssigned = 0;
+  let terminalMissing  = 0;
+
   for (const row of structuredData.wires) {
     if (!row.id || row.id.trim().length === 0) continue;
 
@@ -162,13 +187,33 @@ export function resolveWiresFromDrawing(structuredData: RheemDrawingModel): Reso
     const gauge  = normalizeGauge(row.gauge);
     const color  = row.color?.trim() || null;
 
+    let baseConfidence = computeConfidence(row);
+
+    // Phase 3H.44 C4.2: Resolve terminal via pin map, boost confidence if found
+    let terminal: string | null = null;
+    if (row.pin !== null) {
+      terminal = terminalMap.get(row.pin) ?? row.terminal ?? null;
+      if (terminal) {
+        baseConfidence = Math.min(baseConfidence + 0.05, 1.0);
+        terminalAssigned++;
+      } else {
+        terminalMissing++;
+      }
+    } else if (row.terminal) {
+      terminal = row.terminal;
+      terminalAssigned++;
+    } else {
+      terminalMissing++;
+    }
+
     const wire: ResolvedWire = {
       wireId:     row.id.trim(),
       length,
       gauge,
       color,
+      terminal,
       source:     'DRAWING',
-      confidence: computeConfidence(row),
+      confidence: baseConfidence,
     };
 
     if (row.pin !== null) {
@@ -188,6 +233,12 @@ export function resolveWiresFromDrawing(structuredData: RheemDrawingModel): Reso
     withGauge:         resolved.filter(w => w.gauge !== null).length,
     withColor:         resolved.filter(w => w.color !== null).length,
     withPin:           resolved.filter(w => w.from?.pin !== undefined).length,
+  });
+
+  console.log('[TERMINAL RESOLUTION]', {
+    assigned: terminalAssigned,
+    missing:  terminalMissing,
+    total:    resolved.length,
   });
 
   return resolved;
@@ -246,12 +297,19 @@ export function mergeDrawingWiresIntoJob(
       ? ('DRAWING_SPEC' as const)
       : (wire.cut_length_source ?? 'UNKNOWN');
 
+    // Phase 3H.44 C4.2: Apply terminal to end_a only if drawing has one and BOM slot is empty.
+    // Preserves existing BOM terminal attribution — never overwrites.
+    const endA = (match.terminal && wire.end_a.terminal_part_number === null)
+      ? { ...wire.end_a, terminal_part_number: match.terminal }
+      : wire.end_a;
+
     return {
       ...wire,
       cut_length:        overriddenCutLength,
       cut_length_source: cutLengthSource,
       gauge:             match.gauge ?? wire.gauge,
       color:             match.color ?? wire.color,
+      end_a:             endA,
     };
   });
 

@@ -25,6 +25,8 @@ export interface RheemWireRow {
   gauge: string | null;
   color: string | null;
   pin: number | null;
+  /** Phase 3H.44 C4.2: Terminal part number extracted from wire table (e.g. "929504-1"). */
+  terminal: string | null;
   rawText: string;
 }
 
@@ -104,6 +106,8 @@ const GAUGE_BARE_RE = /\b(1[0-8]|[2-9])\b/;
 const COLOR_RE = /\b(RED|BLK|BLACK|WHT|WHITE|BLU|BLUE|GRN|GREEN|YEL|YELLOW|ORN|ORANGE|PNK|PINK|VIO|VIOLET|GRA|GRAY|GRY|GREY|BRN|BROWN|TAN|NAT|NATURAL|PUR|PURPLE)\b/i;
 const PIN_RE = /\bPIN\s*[-#]?\s*(\d{1,3})\b/i;
 const PIN_BARE_RE = /\b(\d{1,2})\s*$/;
+/** Phase 3H.44 C4.2: Matches dash-separated terminal/connector part numbers (e.g. "929504-1", "1-1293578-4"). */
+const TERMINAL_RE = /\b(\d{1,4}-\d{4,9}(?:-\d{1,4})?)\b/g;
 
 const TOLERANCE_PATTERN = /\b(?:TOLERANCE|TOL\.?)\b/i;
 const WIRE_LENGTH_TOLERANCE_PATTERN = /WIRE\s+LENGTH\s+TOLERANCE/i;
@@ -324,12 +328,29 @@ export function parseWireTable(rows: string[]): RheemWireRow[] {
       }
     }
 
+    // Phase 3H.44 C4.2: Terminal — dash-separated part number not already captured as length/gauge/pin
+    const knownNums = new Set<string>([
+      lengthMatch?.[1],
+      gaugeMatch?.[1],
+      pinMatch?.[1],
+    ].filter((v): v is string => v != null));
+    TERMINAL_RE.lastIndex = 0;
+    let termMatch: RegExpExecArray | null;
+    let terminal: string | null = null;
+    while ((termMatch = TERMINAL_RE.exec(raw)) !== null) {
+      if (!knownNums.has(termMatch[1])) {
+        terminal = termMatch[1];
+        break;
+      }
+    }
+
     wires.push({
       id: wireId,
       length: lengthMatch ? parseFloat(lengthMatch[1]) : null,
       gauge: gaugeMatch ? gaugeMatch[1] : null,
       color: colorMatch ? colorMatch[1].toUpperCase() : null,
       pin,
+      terminal,
       rawText: raw,
     });
   }
