@@ -22,6 +22,7 @@ import type { HarnessInstructionJob } from '@/src/features/harness-work-instruct
 import type { ProcessInstructionBundle } from '@/src/features/harness-work-instructions/types/processInstructions';
 import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
 import SKUControlPanel from '@/src/features/sku/components/SKUControlPanel';
+import HarnessStructurePanel from '@/src/features/sku/components/HarnessStructurePanel';
 import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
 import CorrectiveContextBanner from '@/src/components/CorrectiveContextBanner';
 import { deriveIssueKind, parseActionIntentParam } from '@/src/features/revision/utils/correctiveIntent';
@@ -93,6 +94,7 @@ export default function SKUDashboardPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
+  const [pipelineJob, setPipelineJob] = useState<HarnessInstructionJob | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'READY' | 'PARTIAL'>('idle');
   const autoRunSignature = useRef<string | null>(null);
   const revisionSectionRef = useRef<HTMLDivElement | null>(null);
@@ -306,8 +308,10 @@ export default function SKUDashboardPage() {
           pressSetup: bundle.press_setup.length,
           generatedAt: bundle.generated_at,
         });
+        setPipelineJob(job);
       } else {
         setSummary(null);
+        setPipelineJob(null);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -342,6 +346,25 @@ export default function SKUDashboardPage() {
     autoRunSignature.current = sig;
     runPipeline('auto');
   }, [docByType, documentPresence.hasBOM, documentPresence.hasAnyDrawing, sku?.id, loading]);
+
+  const wireCount      = pipelineJob?.wire_instances?.length ?? 0;
+  const terminalCount  = pipelineJob?.wire_instances?.filter(
+    w => w.end_a.terminal_part_number || w.end_b.terminal_part_number,
+  ).length ?? 0;
+  const connectorCount = pipelineJob?.wire_instances?.filter(
+    w => w.end_a.connector_id || w.end_b.connector_id,
+  ).length ?? 0;
+  const pinMapCount    = pipelineJob?.pin_map_rows?.length ?? 0;
+  const hasStructureData = wireCount > 0;
+
+  useEffect(() => {
+    console.log('[HARNESS STRUCTURE]', {
+      wireCount,
+      terminalCount,
+      connectorCount,
+      pinMapCount,
+    });
+  }, [wireCount, terminalCount, connectorCount, pinMapCount]);
 
   const canonicalContext = useMemo<CanonicalDocumentContext | null>(() => {
     if (!revisionValidation?.canonical_revision) return null;
@@ -448,6 +471,14 @@ export default function SKUDashboardPage() {
         )}
 
 
+
+        <HarnessStructurePanel
+          wireCount={wireCount}
+          terminalCount={terminalCount}
+          connectorCount={connectorCount}
+          pinMapCount={pinMapCount}
+          hasData={hasStructureData}
+        />
 
         <section className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5 space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
