@@ -229,29 +229,70 @@ function mapRevisionStatusToActions(input: CorrectionInput): RecommendedFixActio
   }
 
   if (revisionValidation.status === 'INCOMPLETE') {
+    // Phase 3H.45 C3: Only route to Vault upload when documents are genuinely absent.
+    // If all authority comparisons resolved (no MISSING entries), the documents exist but
+    // the revision signal was ambiguous — route to revision review, not the upload flow.
+    const hasActualMissingSources = missingSources.length > 0;
+
+    console.log('[REVISION ROUTING DECISION]', {
+      actualMissingSources: missingSources,
+      routeMode: hasActualMissingSources ? 'UPLOAD_MISSING' : 'REVIEW_REVISION',
+    });
+
+    if (hasActualMissingSources) {
+      return [
+        {
+          id: 'review-missing-documents',
+          label: 'Review missing revision sources',
+          description: revisionValidation.recommended_action,
+          actionType: 'OPEN_VAULT',
+          href: buildVaultRoute(partNumber, {
+            issue: 'missing',
+            sources: missingSources,
+            docType: deriveDocumentType(missingSources[0]),
+            expectedRevision: revisionValidation.canonical_revision,
+            actionIntent: 'UPLOAD_MISSING_DOC',
+            canonicalSource: revisionValidation.canonical_source,
+          }),
+          severity: 'danger',
+          intent: 'UPLOAD_MISSING_DOC',
+          context: {
+            partNumber,
+            revisionStatus: revisionValidation.status,
+            canonicalRevision: revisionValidation.canonical_revision,
+            canonicalSource: revisionValidation.canonical_source,
+            missingSources,
+            documentType: deriveDocumentType(missingSources[0]),
+          },
+        },
+        base,
+      ];
+    }
+
+    // Documents present but revision signal weak — soft route to revision details
     return [
       {
-        id: 'review-missing-documents',
-        label: 'Review missing revision sources',
+        id: 'review-revision-sources',
+        label: 'Review revision sources',
         description: revisionValidation.recommended_action,
-        actionType: 'OPEN_VAULT',
-        href: buildVaultRoute(partNumber, {
-          issue: 'missing',
-          sources: missingSources,
-          docType: deriveDocumentType(missingSources[0]),
+        actionType: 'OPEN_SKU',
+        href: buildSkuRoute(partNumber, {
+          tab: 'revision',
+          focus: 'review',
+          highlight: 'revision',
+          anchor: 'revision-summary',
           expectedRevision: revisionValidation.canonical_revision,
-          actionIntent: 'UPLOAD_MISSING_DOC',
-          canonicalSource: revisionValidation.canonical_source,
+          actionIntent: 'VIEW_REVISION',
+          source: revisionValidation.canonical_source,
         }),
-        severity: 'danger',
-        intent: 'UPLOAD_MISSING_DOC',
+        severity: 'warning',
+        intent: 'VIEW_REVISION',
         context: {
           partNumber,
           revisionStatus: revisionValidation.status,
           canonicalRevision: revisionValidation.canonical_revision,
           canonicalSource: revisionValidation.canonical_source,
           missingSources,
-          documentType: deriveDocumentType(missingSources[0]),
         },
       },
       base,

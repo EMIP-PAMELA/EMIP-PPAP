@@ -25,6 +25,15 @@ const AUTHORITIES: AuthorityConfig[] = [
 
 const CANONICAL_PRIORITY: AuthorityLabel[] = ['BOM', 'APOGEE', 'RHEEM'];
 
+// Phase 3H.45 C3: Fallback document_type per authority for documents ingested without a
+// recognised revision_source (e.g., TEXT / FILENAME / FALLBACK). Allows authority snapshot
+// hydration to succeed even when the revision parser did not recognise a title-block or header.
+const AUTHORITY_FALLBACK_DOC_TYPE: Record<AuthorityLabel, string> = {
+  BOM:    'BOM',
+  APOGEE: 'INTERNAL_DRAWING',
+  RHEEM:  'CUSTOMER_DRAWING',
+};
+
 const STATUS_RECOMMENDATIONS: Record<string, string> = {
   SYNCHRONIZED: 'No action required — all sources share the canonical revision.',
   OUT_OF_SYNC_GENERAL: 'Align the non-canonical sources with the canonical revision.',
@@ -93,7 +102,15 @@ function snapshotAuthority(
   config: AuthorityConfig,
 ): RevisionSourceSnapshot {
   const currentDocs = documents.filter(doc => doc.revision_state === 'CURRENT');
-  const matches = currentDocs.filter(doc => doc.revision_source === config.revisionSource);
+  // Primary: match by canonical revision_source (HEADER_EXPLICIT, TITLE_BLOCK_RHEEM, etc.)
+  let matches = currentDocs.filter(doc => doc.revision_source === config.revisionSource);
+  // Phase 3H.45 C3: Fallback — match by document_type when no revision_source match.
+  // Documents ingested via generic text extraction (TEXT/FILENAME/FALLBACK) are still
+  // valid authority inputs when their document_type aligns with the authority slot.
+  if (matches.length === 0) {
+    const fallbackType = AUTHORITY_FALLBACK_DOC_TYPE[config.label];
+    matches = currentDocs.filter(doc => doc.document_type === fallbackType);
+  }
   const selected = pickLatestDocument(matches);
 
   if (!selected) {
@@ -214,28 +231,59 @@ export function validateSKURevisionSet(documents: RevisionDocumentInput[]): Cros
   const hasGreater = comparisons.some(entry => entry.comparison === 'GREATER');
   const hasLess = comparisons.some(entry => entry.comparison === 'LESS');
 
-  // Phase 3H.45 C1: Consensus check — if all documents with non-null revisions share the
-  // same value, auto-resolve to SYNCHRONIZED rather than requiring two authority sources.
-  // Requires at least two documents to avoid trivially accepting a single-document set.
-  const allDocRevisions = documents
+  // Phase 3H.45 C1/C3: Consensus check — use only CURRENT documents, matching snapshotAuthority
+  // scope. If all CURRENT docs with non-null revisions share the same value, treat as SYNCHRONIZED
+  // without requiring two distinct authority-source-matched documents.
+  const currentDocuments = documents.filter(d => d.revision_state === 'CURRENT');
+  const allDocRevisions = currentDocuments
     .map(d => normalizeValue(d.normalized_revision ?? d.revision))
     .filter((r): r is string => Boolean(r));
   const uniqueRevs = new Set(allDocRevisions);
   const hasConsensus = uniqueRevs.size === 1 && allDocRevisions.length >= 2;
 
+  // Phase 3H.45 C3: Safety net — when canonical authority is null but all present docs agree,
+  // derive canonical revision from the consensus value for display and routing.
+  const autoConsensusRevision = (!canonical || !canonical.snapshot.revision) && hasConsensus
+    ? (allDocRevisions[0] ?? null)
+    : null;
+
+  console.log('[REVISION AUTHORITY HYDRATION]', {
+    currentDocsByType: currentDocuments.reduce<Record<string, number>>((acc, d) => {
+      const t = d.document_type ?? 'UNKNOWN';
+      acc[t] = (acc[t] ?? 0) + 1;
+      return acc;
+    }, {}),
+    hydratedAuthoritySources: {
+      BOM:    Boolean(snapshots.BOM.revision),
+      APOGEE: Boolean(snapshots.APOGEE.revision),
+      RHEEM:  Boolean(snapshots.RHEEM.revision),
+    },
+    hasConsensus,
+    canonicalRevision: canonical?.snapshot.revision ?? autoConsensusRevision ?? null,
+    missingSources: comparisons.filter(c => c.comparison === 'MISSING').map(c => c.source),
+  });
+
   console.log('[REVISION AUTO-RESOLUTION]', {
     revisions:         allDocRevisions,
     hasConsensus,
-    canonicalRevision: canonical?.snapshot.revision ?? null,
+    canonicalRevision: canonical?.snapshot.revision ?? autoConsensusRevision ?? null,
   });
 
   let status: CrossSourceRevisionStatus = 'SYNCHRONIZED';
   let recommended_action = STATUS_RECOMMENDATIONS.SYNCHRONIZED;
 
   if (!canonical || !canonical.snapshot.revision) {
-    status = 'INCOMPLETE';
-    recommended_action = STATUS_RECOMMENDATIONS.INCOMPLETE;
-    details.push('No canonical revision (BOM → Apogee → Rheem) is available.');
+    if (hasConsensus) {
+      // Phase 3H.45 C3: All CURRENT docs agree but no authority-pattern canonical matched.
+      // Documents were likely ingested without a parseable title-block or explicit header.
+      // Treat as SYNCHRONIZED using auto-consensus canonical.
+      status = 'SYNCHRONIZED';
+      recommended_action = STATUS_RECOMMENDATIONS.SYNCHRONIZED;
+    } else {
+      status = 'INCOMPLETE';
+      recommended_action = STATUS_RECOMMENDATIONS.INCOMPLETE;
+      details.push('No canonical revision (BOM → Apogee → Rheem) is available.');
+    }
   } else if ((availableSourceCount < 2 || hasMissingSources) && !hasConsensus) {
     // Phase 3H.45 C1: Skip INCOMPLETE when all present sources agree — promote to SYNCHRONIZED.
     status = 'INCOMPLETE';
@@ -270,7 +318,8 @@ export function validateSKURevisionSet(documents: RevisionDocumentInput[]): Cros
     bom_revision: snapshots.BOM.revision,
     customer_revision: snapshots.RHEEM.revision,
     internal_revision: snapshots.APOGEE.revision,
-    canonical_revision: canonical?.snapshot.revision ?? null,
+    // Phase 3H.45 C3: Fall back to auto-consensus value when no authority-pattern canonical matched
+    canonical_revision: canonical?.snapshot.revision ?? autoConsensusRevision ?? null,
     canonical_source: canonical?.label ?? null,
     sources: snapshots,
     comparisons,
