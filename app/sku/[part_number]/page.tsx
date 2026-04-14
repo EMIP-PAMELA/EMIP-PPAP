@@ -117,9 +117,12 @@ export default function SKUDashboardPage() {
   const [wireOverrides, setWireOverrides] = useState<Record<string, WireOverride>>({});
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'READY' | 'PARTIAL'>('idle');
   const autoRunSignature = useRef<string | null>(null);
-  const revisionSectionRef = useRef<HTMLDivElement | null>(null);
-  const [revisionHighlightActive, setRevisionHighlightActive] = useState(false);
+  const revisionSectionRef    = useRef<HTMLDivElement | null>(null);
+  const truthRef               = useRef<HTMLDivElement | null>(null);
+  const visualizationRef       = useRef<HTMLDivElement | null>(null);
+  const [revisionHighlightActive,  setRevisionHighlightActive]  = useState(false);
   const [readinessHighlightActive, setReadinessHighlightActive] = useState(false);
+  const [highlightSection,         setHighlightSection]         = useState<'truth' | 'visualization' | null>(null);
 
   const partNumber = sku?.part_number ?? partNumberParam?.toUpperCase() ?? '';
   const vaultLink = sku ? `/vault?sku=${encodeURIComponent(sku.part_number)}` : '/vault';
@@ -420,6 +423,34 @@ export default function SKUDashboardPage() {
     });
   }, [coverageScore, hasWires, hasValidRevision, alignedReadiness]);
 
+  const routeToIssue = useCallback(() => {
+    const hasCoverageIssues = coverageScore < 90;
+    const missingWireCount  = effectiveWires.filter(w =>
+      !w.cut_length || !w.end_a?.terminal_part_number || !w.end_a?.connector_id
+    ).length;
+    const hasMissingWires = missingWireCount > 0;
+
+    let target: 'truth' | 'visualization' | null = null;
+
+    if (hasCoverageIssues) {
+      truthRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setHighlightSection('truth');
+      target = 'truth';
+    } else if (hasMissingWires) {
+      visualizationRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setHighlightSection('visualization');
+      target = 'visualization';
+    }
+
+    console.log('[GUIDED ROUTING]', { target, coverageScore, missingWireCount });
+  }, [pipelineCoverage, effectiveWires, coverageScore]);
+
+  useEffect(() => {
+    if (!highlightSection) return;
+    const t = setTimeout(() => setHighlightSection(null), 3000);
+    return () => clearTimeout(t);
+  }, [highlightSection]);
+
   useEffect(() => {
     console.log('[HARNESS STRUCTURE]', {
       wireCount,
@@ -527,6 +558,7 @@ export default function SKUDashboardPage() {
             pipelineRequirementsMet={pipelineRequirementsMet}
             onRunPipeline={() => runPipeline('manual')}
             onViewBOM={() => setBomOpen(true)}
+            onResolveIssues={routeToIssue}
           />
         )}
 
@@ -547,17 +579,31 @@ export default function SKUDashboardPage() {
           hasData={hasStructureData}
         />
 
-        <HarnessVisualizationPanel
-          wires={effectiveWires}
-          pinMapCount={pinMapCount > 0 ? pinMapCount : undefined}
-        />
+        <div
+          ref={visualizationRef}
+          className={`rounded-2xl transition-all duration-300 ${
+            highlightSection === 'visualization' ? 'ring-2 ring-amber-400 shadow-lg shadow-amber-100' : ''
+          }`}
+        >
+          <HarnessVisualizationPanel
+            wires={effectiveWires}
+            pinMapCount={pinMapCount > 0 ? pinMapCount : undefined}
+          />
+        </div>
 
-        <TruthVerificationPanel
-          partNumber={partNumber}
-          coverage={pipelineCoverage}
-          wires={effectiveWires}
-          onOverridesUpdated={setWireOverrides}
-        />
+        <div
+          ref={truthRef}
+          className={`rounded-2xl transition-all duration-300 ${
+            highlightSection === 'truth' ? 'ring-2 ring-amber-400 shadow-lg shadow-amber-100' : ''
+          }`}
+        >
+          <TruthVerificationPanel
+            partNumber={partNumber}
+            coverage={pipelineCoverage}
+            wires={effectiveWires}
+            onOverridesUpdated={setWireOverrides}
+          />
+        </div>
 
         <section className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5 space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

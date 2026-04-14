@@ -126,6 +126,8 @@ export interface SKUControlPanelProps {
   onRunPipeline: () => void;
   /** Phase 3H.46 C6: Opens the inline BOM inspection drawer. */
   onViewBOM?: () => void;
+  /** Phase 3H.46 C8: Routes user to the panel requiring attention. */
+  onResolveIssues?: () => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -155,6 +157,7 @@ export default function SKUControlPanel({
   pipelineRequirementsMet,
   onRunPipeline,
   onViewBOM,
+  onResolveIssues,
 }: SKUControlPanelProps) {
   const canonicalRev   = revisionValidation?.canonical_revision ?? null;
   const revStatus      = revisionValidation?.status ?? null;
@@ -179,9 +182,19 @@ export default function SKUControlPanel({
           </span>
 
           {readinessT && (
-            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${readinessT.badge}`}>
-              {readinessT.icon} {readinessT.label}
-            </span>
+            onResolveIssues && effectiveStatus !== 'READY' ? (
+              <button
+                type="button"
+                onClick={onResolveIssues}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition hover:opacity-75 cursor-pointer ${readinessT.badge}`}
+              >
+                {readinessT.icon} {readinessT.label} →
+              </button>
+            ) : (
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${readinessT.badge}`}>
+                {readinessT.icon} {readinessT.label}
+              </span>
+            )
           )}
 
           {canonicalRev && (
@@ -364,7 +377,13 @@ export default function SKUControlPanel({
                 </span>
               )}
             </div>
-            <p className="text-sm text-gray-700">{alignedMessage}</p>
+            <p className="text-sm text-gray-700">
+              {alignedReadiness === 'NEEDS_REVIEW'
+                ? (coverageScore !== undefined && coverageScore < 90
+                    ? 'Incomplete extraction data — rerun pipeline after uploading corrected documents.'
+                    : 'Missing wire definitions — review wire attributes in the harness panel.')
+                : alignedMessage}
+            </p>
           </div>
         )}
       </div>
