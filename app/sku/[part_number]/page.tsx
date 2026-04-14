@@ -23,6 +23,8 @@ import type { ProcessInstructionBundle } from '@/src/features/harness-work-instr
 import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
 import SKUControlPanel from '@/src/features/sku/components/SKUControlPanel';
 import HarnessStructurePanel from '@/src/features/sku/components/HarnessStructurePanel';
+import TruthVerificationPanel from '@/src/features/sku/components/TruthVerificationPanel';
+import type { ExtractionCoverage } from '@/src/features/harness-work-instructions/services/extractionCoverageService';
 import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
 import CorrectiveContextBanner from '@/src/components/CorrectiveContextBanner';
 import { deriveIssueKind, parseActionIntentParam } from '@/src/features/revision/utils/correctiveIntent';
@@ -95,6 +97,7 @@ export default function SKUDashboardPage() {
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
   const [pipelineJob, setPipelineJob] = useState<HarnessInstructionJob | null>(null);
+  const [pipelineCoverage, setPipelineCoverage] = useState<ExtractionCoverage | undefined>(undefined);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'READY' | 'PARTIAL'>('idle');
   const autoRunSignature = useRef<string | null>(null);
   const revisionSectionRef = useRef<HTMLDivElement | null>(null);
@@ -309,9 +312,11 @@ export default function SKUDashboardPage() {
           generatedAt: bundle.generated_at,
         });
         setPipelineJob(job);
+        setPipelineCoverage((json.coverage as ExtractionCoverage | undefined) ?? undefined);
       } else {
         setSummary(null);
         setPipelineJob(null);
+        setPipelineCoverage(undefined);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -478,6 +483,11 @@ export default function SKUDashboardPage() {
           connectorCount={connectorCount}
           pinMapCount={pinMapCount}
           hasData={hasStructureData}
+        />
+
+        <TruthVerificationPanel
+          coverage={pipelineCoverage}
+          wires={pipelineJob?.wire_instances ?? []}
         />
 
         <section className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5 space-y-4">
