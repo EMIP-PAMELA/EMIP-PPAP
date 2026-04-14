@@ -204,6 +204,7 @@ const AUTHORITY_SOURCE_BADGES: Record<FieldAuthoritySource, { label: string; cla
   UNKNOWN:            { label: 'Unknown Source',        className: 'bg-gray-100 text-gray-600 border border-gray-200' },
   TITLE_BLOCK_REGION: { label: 'Title Block Region',    className: 'bg-violet-100 text-violet-800 border border-violet-300' },
   REVISION_REGION:    { label: 'Revision Record',       className: 'bg-rose-100 text-rose-800 border border-rose-300' },
+  AI_VISION:          { label: 'AI Vision Parse',       className: 'bg-fuchsia-100 text-fuchsia-900 border border-fuchsia-300' },
 };
 
 type ConfidenceLevel = 'high' | 'medium' | 'low' | 'unknown';
@@ -830,6 +831,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
         filename:            analysis.fileName,
         currentDocType:      analysis.proposedDocumentType,
         titleBlockResult:    analysis.titleBlockRegionResult ?? null,
+        visionResult:        analysis.visionParsedResult      ?? null,
       });
 
       const confirmedDocumentType = forcedType ?? (analysis.proposedDocumentType !== 'UNKNOWN'
@@ -1246,6 +1248,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   filename:         selectedItem.file.name,
                   currentDocType:   selectedItem.confirmedDocumentType ?? analysis?.proposedDocumentType,
                   titleBlockResult: analysis?.titleBlockRegionResult ?? null,
+                  visionResult:     analysis?.visionParsedResult      ?? null,
                 });
 
                 const sections: FieldSectionConfig[] = [

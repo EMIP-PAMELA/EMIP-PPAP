@@ -29,6 +29,11 @@ import { parseRheemDrawing, detectRheemDrawing, type RheemDrawingModel } from '.
 import type { SignalSource } from '../utils/resolveDocumentSignals';
 import { analyzeDocumentStructure } from './documentStructureAnalyzer';
 import { extractTitleBlockAndRevisionRegions, type TitleBlockExtractionResult } from './titleBlockRegionExtractor';
+import {
+  runAIDrawingVisionParse,
+  mergeVisionParsedData,
+  type VisionParsedDrawingResult,
+} from './aiDrawingVisionService';
 import { extractRegionsWithAI } from './aiRegionExtractor';
 import { resolveAliasFromDB } from './aliasService';
 import { resolvePartNumberFromDrawing } from './drawingLookupService';
@@ -883,6 +888,47 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     }
   }
 
+  // --- C13: Universal AI vision parse ---
+  let visionParsedResult: VisionParsedDrawingResult | null = null;
+  if (pipelineMode === 'DRAWING' && normalizedText) {
+    try {
+      visionParsedResult = await runAIDrawingVisionParse({
+        fileName,
+        documentType: drawingSubtype !== 'N/A' ? drawingSubtype : docType,
+        extractedText: normalizedText,
+      });
+
+      // Add AI_REGION candidates to signal pool for part number and revision.
+      // The field authority resolver will treat these as AI_VISION source.
+      if (visionParsedResult?.metadata.partNumber) {
+        addCandidate('PART_NUMBER', {
+          value:       visionParsedResult.metadata.partNumber,
+          source:      'AI_REGION',
+          confidence:  Math.min(visionParsedResult.confidence, 0.80),
+          regionLabel: 'UNKNOWN',
+        });
+      }
+      if (visionParsedResult?.metadata.drawingNumber) {
+        addCandidate('DRAWING_NUMBER', {
+          value:       visionParsedResult.metadata.drawingNumber,
+          source:      'AI_REGION',
+          confidence:  Math.min(visionParsedResult.confidence * 0.9, 0.72),
+          regionLabel: 'UNKNOWN',
+        });
+      }
+      if (visionParsedResult?.metadata.revision) {
+        addCandidate('REVISION', {
+          value:       visionParsedResult.metadata.revision,
+          source:      'AI_REGION',
+          confidence:  Math.min(visionParsedResult.confidence * 0.95, 0.76),
+          regionLabel: 'UNKNOWN',
+        });
+      }
+    } catch (err) {
+      console.warn('[ANALYZE INGESTION] C13 vision parse failed, continuing without it.', err);
+    }
+  }
+
   // --- Signal resolution ---
   const drawingNumberFromText     = normalizedText ? extractDrawingNumberFromText(normalizedText) : null;
   const drawingNumberFromFilename = extractDrawingNumberFromFilename(fileName);
@@ -1155,8 +1201,18 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     extractionEvidence,
     unresolvedQuestions,
     readyToCommit,
-    structuredData: rheemStructuredData ? (rheemStructuredData as unknown as Record<string, unknown>) : null,
+    structuredData: (() => {
+      // C13: Produce structuredData for ALL drawing types.
+      // Rheem model remains authoritative when present.
+      // Apogee / other drawings use merged vision display model when available.
+      const merged = mergeVisionParsedData({
+        deterministicStructuredData: rheemStructuredData ?? undefined,
+        visionResult: visionParsedResult,
+      });
+      return merged ? (merged as Record<string, unknown>) : null;
+    })(),
     titleBlockRegionResult,
+    visionParsedResult,
     analyzedAt: new Date().toISOString(),
   };
 }

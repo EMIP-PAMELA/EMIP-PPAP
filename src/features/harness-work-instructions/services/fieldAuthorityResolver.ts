@@ -23,6 +23,7 @@
  */
 
 import type { TitleBlockExtractionResult } from './titleBlockRegionExtractor';
+import type { VisionParsedDrawingResult } from './aiDrawingVisionService';
 
 // ---------------------------------------------------------------------------
 // Core Types
@@ -42,6 +43,8 @@ export type FieldAuthoritySource =
   | 'REVISION_REGION'
   | 'ADAPTIVE_VECTOR'
   | 'INTERPRETATION'
+  /** Phase 3H.51 C13: universal AI vision parse metadata (below deterministic regions, above weak heuristic). */
+  | 'AI_VISION'
   | 'AI_ASSIST'
   | 'HEURISTIC'
   | 'FILENAME'
@@ -75,6 +78,7 @@ const SOURCE_PRIORITY: FieldAuthoritySource[] = [
   'REVISION_REGION',
   'ADAPTIVE_VECTOR',
   'INTERPRETATION',
+  'AI_VISION',
   'AI_ASSIST',
   'HEURISTIC',
   'FILENAME',
@@ -97,6 +101,7 @@ const DEFAULT_CONFIDENCE: Record<FieldAuthoritySource, number> = {
   REVISION_REGION:     0.90,
   ADAPTIVE_VECTOR:     0.80,
   INTERPRETATION:      0.70,
+  AI_VISION:           0.72,
   AI_ASSIST:           0.65,  // capped at 0.75 for field authority, but 0.65 default
   HEURISTIC:           0.50,
   FILENAME:            0.60,
@@ -198,6 +203,8 @@ export interface ResolveDocumentFieldsArgs {
   currentDocType?: string | null;
   /** Phase 3H.50 C12: region-aware title block extraction result. */
   titleBlockResult?: TitleBlockExtractionResult | null;
+  /** Phase 3H.51 C13: universal AI vision parse result (metadata candidates only). */
+  visionResult?: VisionParsedDrawingResult | null;
 }
 
 /**
@@ -205,7 +212,7 @@ export interface ResolveDocumentFieldsArgs {
  *
  * Priority order (per SOURCE_PRIORITY constant):
  *   OPERATOR_CONFIRMED > PARSED_DRAWING > TITLE_BLOCK_REGION > REVISION_REGION
- *   > ADAPTIVE_VECTOR > INTERPRETATION > AI_ASSIST > HEURISTIC > FILENAME > UNKNOWN
+ *   > ADAPTIVE_VECTOR > INTERPRETATION > AI_VISION > AI_ASSIST > HEURISTIC > FILENAME > UNKNOWN
  *
  * All competing candidates are preserved in the returned ResolvedField.
  * The function never throws — degraded results are returned on bad input.
@@ -268,6 +275,39 @@ export function resolveDocumentFields(
           source: tbr.revision.source === 'REVISION_REGION' ? 'REVISION_REGION' : 'TITLE_BLOCK_REGION',
           confidence: tbr.revision.confidence || DEFAULT_CONFIDENCE.REVISION_REGION,
           evidence: tbr.revision.evidence.length ? tbr.revision.evidence : ['region-aware revision extraction'],
+        });
+      }
+    }
+
+    // ── AI_VISION (C13 universal vision parse metadata) ────────────────────
+    const vis = args.visionResult;
+    if (vis?.metadata) {
+      const visConf = Math.min(vis.confidence ?? 0, 0.80);  // cap to stay below deterministic region
+      if (vis.metadata.partNumber) {
+        allCandidates.push({
+          field:      'partNumber',
+          value:      vis.metadata.partNumber,
+          source:     'AI_VISION',
+          confidence: visConf,
+          evidence:   ['AI vision parse — drawing metadata'],
+        });
+      }
+      if (vis.metadata.drawingNumber && vis.metadata.drawingNumber !== vis.metadata.partNumber) {
+        allCandidates.push({
+          field:      'partNumber',
+          value:      vis.metadata.drawingNumber,
+          source:     'AI_VISION',
+          confidence: visConf * 0.9,  // drawing number slightly less confident than PN
+          evidence:   ['AI vision parse — drawing number'],
+        });
+      }
+      if (vis.metadata.revision) {
+        allCandidates.push({
+          field:      'revision',
+          value:      vis.metadata.revision,
+          source:     'AI_VISION',
+          confidence: visConf * 0.95,
+          evidence:   ['AI vision parse — revision metadata'],
         });
       }
     }

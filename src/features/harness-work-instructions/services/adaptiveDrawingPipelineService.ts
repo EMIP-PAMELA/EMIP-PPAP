@@ -26,6 +26,11 @@ import { resolveWiresFromDrawing } from './wireResolutionService';
 import { computeExtractionCoverage, type ExtractionCoverage } from './extractionCoverageService';
 import { interpretRheemDrawingModel, type DrawingInterpretationResult } from './drawingInterpretationService';
 import { runAIDrawingAssist, mergeAIAssist } from './aiDrawingAssistService';
+import {
+  runAIDrawingVisionParse,
+  mergeVisionParsedData,
+  type VisionParsedDrawingResult,
+} from './aiDrawingVisionService';
 
 // ---------------------------------------------------------------------------
 // Core Types
@@ -51,6 +56,10 @@ export interface AdaptiveDrawingResult {
   coverage?: ExtractionCoverage;
   /** Phase 3H.48 C10.2: True when AI assist ran and filled at least one wire field. */
   aiAssistApplied?: boolean;
+  /** Phase 3H.51 C13: Universal AI vision parse result for field authority resolver. */
+  visionParsedResult?: VisionParsedDrawingResult | null;
+  /** Phase 3H.51 C13: True when vision parse ran and produced a result. */
+  visionParseApplied?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +306,35 @@ export async function runAdaptiveDrawingPipeline(args: {
   }
 
   result = { ...result, aiAssistApplied };
+
+  // Phase 3H.51 C13: Universal AI vision parse — supplements ALL modes.
+  // Runs after deterministic paths; never overwrites trusted structured data.
+  let visionParsedResult: VisionParsedDrawingResult | null = null;
+  let visionParseApplied = false;
+  try {
+    visionParsedResult = await runAIDrawingVisionParse({
+      fileName:      fileName,
+      documentType:  args.docType,
+      extractedText: text,
+    });
+
+    if (visionParsedResult) {
+      visionParseApplied = true;
+      // Merge vision output into structuredData additively (deterministic wins)
+      const mergedStructured = mergeVisionParsedData({
+        deterministicStructuredData: result.structuredData,
+        visionResult:                visionParsedResult,
+      });
+      result = { ...result, structuredData: mergedStructured ?? result.structuredData };
+    }
+  } catch (err) {
+    console.warn('[ADAPTIVE DRAWING PIPELINE] C13 vision parse failed — continuing', {
+      fileName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  result = { ...result, visionParsedResult, visionParseApplied };
 
   console.log('[ADAPTIVE DRAWING RESULT]', {
     mode:              result.analysis.mode,

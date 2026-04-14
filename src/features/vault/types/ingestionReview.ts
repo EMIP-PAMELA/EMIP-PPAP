@@ -101,6 +101,9 @@ export interface IngestionAnalysisResult {
   /** Phase 3H.50 C12: Region-aware title block + revision extraction result. */
   titleBlockRegionResult?: import('@/src/features/harness-work-instructions/services/titleBlockRegionExtractor').TitleBlockExtractionResult | null;
 
+  /** Phase 3H.51 C13: Universal AI vision parse result (structured drawing model). */
+  visionParsedResult?: import('@/src/features/harness-work-instructions/services/aiDrawingVisionService').VisionParsedDrawingResult | null;
+
   analyzedAt: string;
 }
 

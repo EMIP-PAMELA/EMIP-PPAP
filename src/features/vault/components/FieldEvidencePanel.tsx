@@ -35,6 +35,7 @@ const AUTHORITY_BADGE: Record<FieldAuthoritySource, { label: string; className: 
   UNKNOWN:            { label: 'Unknown Source',        className: 'bg-gray-100 text-gray-600 border-gray-200' },
   TITLE_BLOCK_REGION: { label: 'Title Block Region',    className: 'bg-violet-100 text-violet-800 border-violet-300' },
   REVISION_REGION:    { label: 'Revision Record',       className: 'bg-rose-100 text-rose-800 border-rose-300' },
+  AI_VISION:          { label: 'AI Vision Parse',       className: 'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300' },
 };
 
 // ---------------------------------------------------------------------------
