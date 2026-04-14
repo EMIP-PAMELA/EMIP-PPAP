@@ -202,9 +202,11 @@ const AUTHORITY_SOURCE_BADGES: Record<FieldAuthoritySource, { label: string; cla
   HEURISTIC:          { label: 'Heuristic',             className: 'bg-amber-100 text-amber-900 border border-amber-200' },
   FILENAME:           { label: 'From Filename',         className: 'bg-gray-100 text-gray-700 border border-gray-200' },
   UNKNOWN:            { label: 'Unknown Source',        className: 'bg-gray-100 text-gray-600 border border-gray-200' },
-  TITLE_BLOCK_REGION: { label: 'Title Block Region',    className: 'bg-violet-100 text-violet-800 border border-violet-300' },
-  REVISION_REGION:    { label: 'Revision Record',       className: 'bg-rose-100 text-rose-800 border border-rose-300' },
-  AI_VISION:          { label: 'AI Vision Parse',       className: 'bg-fuchsia-100 text-fuchsia-900 border border-fuchsia-300' },
+  TITLE_BLOCK_REGION:      { label: 'Title Block Region',     className: 'bg-violet-100 text-violet-800 border border-violet-300' },
+  REVISION_REGION:         { label: 'Revision Record',        className: 'bg-rose-100 text-rose-800 border border-rose-300' },
+  TITLE_BLOCK_OCR_CROP:    { label: 'Title Block OCR Crop',   className: 'bg-teal-100 text-teal-800 border border-teal-300' },
+  TITLE_BLOCK_VISION_CROP: { label: 'Title Block Vision Crop',className: 'bg-sky-100 text-sky-800 border border-sky-300' },
+  AI_VISION:               { label: 'AI Vision Parse',        className: 'bg-fuchsia-100 text-fuchsia-900 border border-fuchsia-300' },
 };
 
 type ConfidenceLevel = 'high' | 'medium' | 'low' | 'unknown';
@@ -792,12 +794,49 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
 
     updateItem(id, { status: 'analyzing', extractedText });
 
+    // C12.2: For INTERNAL_DRAWING, generate coordinate-filtered region text and
+    // a cropped title block image for targeted OCR/vision extraction.
+    const isLikelyInternal = forcedType === 'INTERNAL_DRAWING' ||
+      (extractedText != null && /\b527-\d{4}-010\b/.test(extractedText));
+
+    const TB_REGION = { x: 0.55, y: 0.78, w: 0.42, h: 0.20 };
+    let titleBlockRegionText: string[] | null = null;
+    let titleBlockCropDataUrl: string | null   = null;
+
+    if (isLikelyInternal) {
+      const blobUrl = URL.createObjectURL(file);
+      try {
+        const [{ extractPDFRegionText }, { renderPdfToImage }, { cropImageRegion }] = await Promise.all([
+          import('@/src/utils/extractPDFRegionText'),
+          import('@/src/utils/renderPdfToImage'),
+          import('@/src/utils/cropImageRegion'),
+        ]);
+        const [regionLines, fullImage] = await Promise.all([
+          extractPDFRegionText(file, TB_REGION).catch(() => null),
+          renderPdfToImage(blobUrl).catch(() => null),
+        ]);
+        if (regionLines?.length)     titleBlockRegionText  = regionLines;
+        if (fullImage)               titleBlockCropDataUrl = await cropImageRegion(fullImage, TB_REGION).catch(() => null);
+        console.log('[C12.2 CROP DISPATCH]', {
+          file: file.name,
+          regionLines: regionLines?.length ?? 0,
+          cropDataUrlLength: titleBlockCropDataUrl?.length ?? 0,
+        });
+      } catch (err) {
+        console.warn('[C12.2 CROP DISPATCH] Non-fatal crop step failed', err);
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+    }
+
     try {
       const fd = new FormData();
       fd.append('file', file);
-      if (extractedText) fd.append('extracted_text', extractedText);
-      if (preselectedSku) fd.append('part_number_hint', preselectedSku);
-      if (forcedType) fd.append('forced_document_type', forcedType);
+      if (extractedText)             fd.append('extracted_text',          extractedText);
+      if (preselectedSku)            fd.append('part_number_hint',         preselectedSku);
+      if (forcedType)                fd.append('forced_document_type',     forcedType);
+      if (titleBlockRegionText)      fd.append('title_block_region_text',  JSON.stringify(titleBlockRegionText));
+      if (titleBlockCropDataUrl)     fd.append('title_block_crop',         titleBlockCropDataUrl);
 
       const res  = await fetch('/api/upload/analyze', { method: 'POST', body: fd });
       const json = await res.json();
@@ -828,10 +867,11 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
             confidence: analysis.revisionConfidence ?? 0.5,
           }] : []),
         ],
-        filename:            analysis.fileName,
-        currentDocType:      analysis.proposedDocumentType,
-        titleBlockResult:    analysis.titleBlockRegionResult ?? null,
-        visionResult:        analysis.visionParsedResult      ?? null,
+        filename:             analysis.fileName,
+        currentDocType:       analysis.proposedDocumentType,
+        titleBlockResult:     analysis.titleBlockRegionResult  ?? null,
+        visionResult:         analysis.visionParsedResult      ?? null,
+        titleBlockCropResult: analysis.titleBlockCropResult    ?? null,
       });
 
       const confirmedDocumentType = forcedType ?? (analysis.proposedDocumentType !== 'UNKNOWN'

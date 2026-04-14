@@ -104,6 +104,15 @@ export interface IngestionAnalysisResult {
   /** Phase 3H.51 C13: Universal AI vision parse result (structured drawing model). */
   visionParsedResult?: import('@/src/features/harness-work-instructions/services/aiDrawingVisionService').VisionParsedDrawingResult | null;
 
+  /** Phase 3H.52 C12.2: crop-based extraction result (coordinate-filtered OCR + AI vision on title block image). */
+  titleBlockCropResult?: {
+    ocrCropPartNumber:       string | null;
+    visionCropPartNumber:    string | null;
+    visionCropDrawingNumber: string | null;
+    visionCropRevision:      string | null;
+    confidence:              number;
+  } | null;
+
   analyzedAt: string;
 }
 

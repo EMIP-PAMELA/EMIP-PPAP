@@ -162,3 +162,54 @@ test('live failing case: 45-110858-10 co-located with 527-5236-010', () => {
   assert.equal(result.value, '45-110858-10');
   assert.equal(result.source, 'drn-proximity');
 });
+
+// ---------------------------------------------------------------------------
+// C12.2 — Coordinate-filtered crop OCR path
+// ---------------------------------------------------------------------------
+
+test('C12.2: OCR miss on full text — PN only visible in crop region text', () => {
+  // Simulates the scenario where full-page OCR doesn't include the title block
+  // (e.g. PDF renders the area as a graphical bitmap), but extractPDFRegionText
+  // retrieves it via coordinate-filtered pdfjs text items.
+  // The cropLines are what extractPDFRegionText would return for the title block.
+  const cropLines = lines(
+    '527-5236-010',     // DRN in the crop — acts as anchor (index -1 since no DRN index known at crop time)
+    'CUSTOMER PN',
+    '45-110858-10',     // PN only present in the crop
+  );
+  // drnLineIdx = -1: no DRN index pre-computed — falls through to zone strategies
+  const result = scanForApogeePN45(cropLines, -1);
+  assert.ok(result.value === '45-110858-10', `expected 45-110858-10, got ${result.value}`);
+  assert.ok(result.source !== null, 'source must not be null for a successful match');
+});
+
+test('C12.2: crop region with only noise lines returns null', () => {
+  // Wire table BOM lines should not yield a PN even in a crop
+  const cropLines = lines(
+    '45-16851-08 20AWG WHT J1/1',
+    '45-22345-02 SPLICE BLK',
+    '45-11011-01 HEAT SHRINK 4.0',
+  );
+  const result = scanForApogeePN45(cropLines, -1);
+  assert.equal(result.value, null);
+  assert.equal(result.source, null);
+});
+
+test('C12.2: empty crop region returns null safely', () => {
+  const result = scanForApogeePN45([], -1);
+  assert.equal(result.value, null);
+  assert.equal(result.source, null);
+});
+
+test('C12.2: crop region with DRN proximity gives best result (drn-proximity preferred)', () => {
+  // When DRN IS found in the crop at a known index, proximity beats zone strategies
+  const cropLines = lines(
+    '45-16851-08 20AWG RED',   // noise, should be rejected
+    '527-5236-010',             // DRN at index 1
+    '45-110858-10',             // PN adjacent to DRN — should be picked by proximity
+  );
+  const drnIdx = 1;
+  const result = scanForApogeePN45(cropLines, drnIdx);
+  assert.equal(result.value, '45-110858-10');
+  assert.equal(result.source, 'drn-proximity');
+});

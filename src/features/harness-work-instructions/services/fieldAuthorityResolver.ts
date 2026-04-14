@@ -43,6 +43,10 @@ export type FieldAuthoritySource =
   | 'REVISION_REGION'
   | 'ADAPTIVE_VECTOR'
   | 'INTERPRETATION'
+  /** Phase 3H.52 C12.2: coordinate-filtered PDF region text (below full-region OCR, above AI). */
+  | 'TITLE_BLOCK_OCR_CROP'
+  /** Phase 3H.52 C12.2: AI vision (Claude) on cropped title block image. */
+  | 'TITLE_BLOCK_VISION_CROP'
   /** Phase 3H.51 C13: universal AI vision parse metadata (below deterministic regions, above weak heuristic). */
   | 'AI_VISION'
   | 'AI_ASSIST'
@@ -76,6 +80,8 @@ const SOURCE_PRIORITY: FieldAuthoritySource[] = [
   'PARSED_DRAWING',
   'TITLE_BLOCK_REGION',
   'REVISION_REGION',
+  'TITLE_BLOCK_OCR_CROP',     // C12.2 — coordinate-filtered region text
+  'TITLE_BLOCK_VISION_CROP',  // C12.2 — AI vision on cropped image
   'ADAPTIVE_VECTOR',
   'INTERPRETATION',
   'AI_VISION',
@@ -95,17 +101,19 @@ function sourcePriority(source: FieldAuthoritySource): number {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CONFIDENCE: Record<FieldAuthoritySource, number> = {
-  OPERATOR_CONFIRMED:  1.00,
-  PARSED_DRAWING:      0.85,
-  TITLE_BLOCK_REGION:  0.90,
-  REVISION_REGION:     0.90,
-  ADAPTIVE_VECTOR:     0.80,
-  INTERPRETATION:      0.70,
-  AI_VISION:           0.72,
-  AI_ASSIST:           0.65,  // capped at 0.75 for field authority, but 0.65 default
-  HEURISTIC:           0.50,
-  FILENAME:            0.60,
-  UNKNOWN:             0.10,
+  OPERATOR_CONFIRMED:      1.00,
+  PARSED_DRAWING:          0.85,
+  TITLE_BLOCK_REGION:      0.90,
+  REVISION_REGION:         0.90,
+  TITLE_BLOCK_OCR_CROP:    0.88,  // C12.2 — slightly below full-region OCR
+  TITLE_BLOCK_VISION_CROP: 0.82,  // C12.2 — AI vision on crop, below deterministic
+  ADAPTIVE_VECTOR:         0.80,
+  INTERPRETATION:          0.70,
+  AI_VISION:               0.72,
+  AI_ASSIST:               0.65,  // capped at 0.75 for field authority, but 0.65 default
+  HEURISTIC:               0.50,
+  FILENAME:                0.60,
+  UNKNOWN:                 0.10,
 };
 
 // ---------------------------------------------------------------------------
@@ -224,6 +232,14 @@ export interface ResolveDocumentFieldsArgs {
   titleBlockResult?: TitleBlockExtractionResult | null;
   /** Phase 3H.51 C13: universal AI vision parse result (metadata candidates only). */
   visionResult?: VisionParsedDrawingResult | null;
+  /** Phase 3H.52 C12.2: crop-based extraction result (region OCR + vision on cropped image). */
+  titleBlockCropResult?: {
+    ocrCropPartNumber:       string | null;
+    visionCropPartNumber:    string | null;
+    visionCropDrawingNumber: string | null;
+    visionCropRevision:      string | null;
+    confidence:              number;
+  } | null;
 }
 
 /**
@@ -296,6 +312,39 @@ export function resolveDocumentFields(
           source: tbr.revision.source === 'REVISION_REGION' ? 'REVISION_REGION' : 'TITLE_BLOCK_REGION',
           confidence: tbr.revision.confidence || DEFAULT_CONFIDENCE.REVISION_REGION,
           evidence: tbr.revision.evidence.length ? tbr.revision.evidence : ['region-aware revision extraction'],
+        });
+      }
+    }
+
+    // ── TITLE_BLOCK_OCR_CROP / TITLE_BLOCK_VISION_CROP (C12.2 crop paths) ──
+    const crop = args.titleBlockCropResult;
+    if (crop) {
+      if (crop.ocrCropPartNumber && classifyIdentifierRole(crop.ocrCropPartNumber) !== 'DRAWING_NUMBER') {
+        allCandidates.push({
+          field:      'partNumber',
+          value:      crop.ocrCropPartNumber,
+          source:     'TITLE_BLOCK_OCR_CROP',
+          confidence: DEFAULT_CONFIDENCE.TITLE_BLOCK_OCR_CROP,
+          evidence:   ['coordinate-filtered title block region OCR (C12.2)'],
+        });
+      }
+      const cropVisConf = Math.min(crop.confidence, DEFAULT_CONFIDENCE.TITLE_BLOCK_VISION_CROP);
+      if (crop.visionCropPartNumber && classifyIdentifierRole(crop.visionCropPartNumber) !== 'DRAWING_NUMBER') {
+        allCandidates.push({
+          field:      'partNumber',
+          value:      crop.visionCropPartNumber,
+          source:     'TITLE_BLOCK_VISION_CROP',
+          confidence: cropVisConf,
+          evidence:   ['AI vision on cropped title block image (C12.2)'],
+        });
+      }
+      if (crop.visionCropRevision) {
+        allCandidates.push({
+          field:      'revision',
+          value:      crop.visionCropRevision,
+          source:     'TITLE_BLOCK_VISION_CROP',
+          confidence: cropVisConf * 0.95,
+          evidence:   ['AI vision on cropped title block image — revision (C12.2)'],
         });
       }
     }

@@ -379,6 +379,78 @@ export async function runAIDrawingVisionParse(args: {
 }
 
 // ---------------------------------------------------------------------------
+// Step 5b — C12.2: Focused crop-region vision parse
+// ---------------------------------------------------------------------------
+
+const CROP_VISION_PROMPT = [
+  'You are analysing a CROPPED image of the bottom-right title block of an Apogee internal harness drawing.',
+  'Extract ONLY the following fields that are VISIBLE in this image:',
+  '  - partNumber    : customer part number (pattern 45-XXXXXX-XX, e.g. 45-110858-10)',
+  '  - drawingNumber : Apogee drawing number (pattern 527-XXXX-010, e.g. 527-5236-010)',
+  '  - revision      : revision token (e.g. 00, A, B)',
+  'Return ONLY valid JSON — no markdown fences, no extra text:',
+  '{"partNumber": string|null, "drawingNumber": string|null, "revision": string|null, "confidence": number}',
+].join('\n');
+
+export interface TitleBlockCropVisionResult {
+  partNumber:    string | null;
+  drawingNumber: string | null;
+  revision:      string | null;
+  confidence:    number;
+}
+
+/**
+ * Run a targeted Claude vision call on a cropped title block image.
+ * Returns null on any failure — the caller must treat this as optional enrichment.
+ */
+export async function runTitleBlockCropVisionParse(
+  cropDataUrl: string,
+): Promise<TitleBlockCropVisionResult | null> {
+  if (!cropDataUrl) return null;
+  console.log('[C12.2 VISION CROP] invoking Claude on title block crop', {
+    dataUrlLength: cropDataUrl.length,
+  });
+
+  try {
+    const raw = await callVisionRoute(CROP_VISION_PROMPT, [cropDataUrl]);
+    if (!raw) {
+      console.warn('[C12.2 VISION CROP] Empty response');
+      return null;
+    }
+
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn('[C12.2 VISION CROP] No JSON in response', raw.slice(0, 200));
+      return null;
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+
+    const APOGEE_DRN_PATTERN = /^527-\d{4}-010$/i;
+    const rawPN  = cleanString(parsed.partNumber);
+    const rawDRN = cleanString(parsed.drawingNumber);
+
+    // Role guard: if the model returned a DRN as partNumber, rescue it
+    const pnIsDrawingNumber = Boolean(rawPN && APOGEE_DRN_PATTERN.test(rawPN.trim()));
+    const partNumber    = pnIsDrawingNumber ? null : rawPN;
+    const drawingNumber = rawDRN ?? (pnIsDrawingNumber ? rawPN : null);
+
+    const result: TitleBlockCropVisionResult = {
+      partNumber,
+      drawingNumber,
+      revision:   cleanString(parsed.revision),
+      confidence: clampConf(parsed.confidence ?? 0.75),
+    };
+
+    console.log('[C12.2 VISION CROP RESULT]', result);
+    return result;
+  } catch (err) {
+    console.warn('[C12.2 VISION CROP] Failed — returning null', err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Step 6 — Normalize to ParsedDrawingDataPanel Display Model
 // ---------------------------------------------------------------------------
 

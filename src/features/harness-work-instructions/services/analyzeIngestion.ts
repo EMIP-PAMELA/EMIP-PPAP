@@ -31,8 +31,10 @@ import { analyzeDocumentStructure } from './documentStructureAnalyzer';
 import { extractTitleBlockAndRevisionRegions, scanForApogeePN45, type TitleBlockExtractionResult } from './titleBlockRegionExtractor';
 import {
   runAIDrawingVisionParse,
+  runTitleBlockCropVisionParse,
   mergeVisionParsedData,
   type VisionParsedDrawingResult,
+  type TitleBlockCropVisionResult,
 } from './aiDrawingVisionService';
 import { extractRegionsWithAI } from './aiRegionExtractor';
 import { resolveAliasFromDB } from './aliasService';
@@ -127,6 +129,7 @@ const FIELD_REGION_MAP: Record<FieldKey, Set<RegionOverlay['label']>> = {
   DRAWING_NUMBER: new Set(['DRAWING_NUMBER', 'TITLE_BLOCK', 'TITLE_BLOCK_REGION']),
   PART_NUMBER:    new Set(['TITLE_BLOCK', 'TITLE_BLOCK_REGION']),
 };
+// C12.2: Crop sources use TITLE_BLOCK_REGION label — already in FIELD_REGION_MAP above.
 
 const BOM_FIELD_REGION_MAP: Record<FieldKey, Set<RegionOverlay['label']>> = {
   REVISION: new Set(['REVISION', 'TITLE_BLOCK', 'TABLE', 'UNKNOWN']),
@@ -165,19 +168,23 @@ function enforceTitleBlockSanity(regions: RegionOverlay[]): boolean {
 }
 
 function mapSignalSourceToFieldExtractionSource(source: SignalSource | null | undefined): FieldExtractionSource {
-  if (source === 'FILENAME') return 'FILENAME';
-  if (source === 'TITLE_BLOCK_OCR') return 'OCR';
-  if (source === 'AI_REGION') return 'AI';
-  if (source === 'USER_CONFIRMED') return 'USER';
+  if (source === 'FILENAME')               return 'FILENAME';
+  if (source === 'TITLE_BLOCK_OCR')         return 'OCR';
+  if (source === 'TITLE_BLOCK_OCR_CROP')    return 'OCR';    // C12.2
+  if (source === 'TITLE_BLOCK_VISION_CROP') return 'AI';     // C12.2
+  if (source === 'AI_REGION')               return 'AI';
+  if (source === 'USER_CONFIRMED')          return 'USER';
   return 'HEURISTIC';
 }
 
 function mapSignalSourceToRevisionSource(source: SignalSource | null | undefined): RevisionSource | null {
-  if (!source || source === 'NONE') return null;
-  if (source === 'USER_CONFIRMED') return 'MANUAL';
-  if (source === 'FILENAME') return 'FILENAME';
-  if (source === 'TITLE_BLOCK_OCR') return 'TITLE_BLOCK_RHEEM';
-  if (source === 'AI_REGION') return 'FALLBACK';
+  if (!source || source === 'NONE')          return null;
+  if (source === 'USER_CONFIRMED')           return 'MANUAL';
+  if (source === 'FILENAME')                 return 'FILENAME';
+  if (source === 'TITLE_BLOCK_OCR')          return 'TITLE_BLOCK_RHEEM';
+  if (source === 'TITLE_BLOCK_OCR_CROP')     return 'TITLE_BLOCK_RHEEM'; // C12.2
+  if (source === 'TITLE_BLOCK_VISION_CROP')  return 'FALLBACK';           // C12.2
+  if (source === 'AI_REGION')                return 'FALLBACK';
   if (source === 'HEURISTIC' || source === 'TABLE_TEXT') return 'TEXT';
   return 'UNKNOWN';
 }
@@ -192,8 +199,8 @@ function resolveRegionIdForCandidate(
 }
 
 const FIELD_SELECTION_CHAIN: Record<FieldKey, CandidateSignalSource[]> = {
-  PART_NUMBER: ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'AI_REGION', 'TABLE_TEXT'],
-  REVISION:    ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'AI_REGION', 'HEURISTIC'],
+  PART_NUMBER:    ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'TITLE_BLOCK_OCR_CROP', 'TITLE_BLOCK_VISION_CROP', 'AI_REGION', 'TABLE_TEXT'],
+  REVISION:       ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'TITLE_BLOCK_VISION_CROP', 'AI_REGION', 'HEURISTIC'],
   DRAWING_NUMBER: ['USER_CONFIRMED', 'FILENAME', 'TITLE_BLOCK_OCR', 'AI_REGION', 'HEURISTIC', 'TABLE_TEXT'],
 };
 
@@ -561,10 +568,18 @@ export interface AnalyzeIngestionParams {
   revisionHint?: string | null;
   drawingNumberHint?: string | null;
   forcedDocumentType?: DocumentType | null;
+  /** C12.2: coordinate-filtered PDF region text lines (browser-side pdfjs extraction). */
+  titleBlockRegionLines?: string[] | null;
+  /** C12.2: base64 PNG data URL of the cropped title block image (browser-rendered). */
+  titleBlockCropDataUrl?: string | null;
 }
 
 export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Promise<IngestionAnalysisResult> {
-  const { fileName, fileSize, normalizedText, partNumberHint, revisionHint, drawingNumberHint, forcedDocumentType } = params;
+  const {
+    fileName, fileSize, normalizedText,
+    partNumberHint, revisionHint, drawingNumberHint, forcedDocumentType,
+    titleBlockRegionLines, titleBlockCropDataUrl,
+  } = params;
 
   // --- Document type detection ---
   const classification = normalizedText
@@ -915,6 +930,77 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     }
   }
 
+  // --- C12.2: Title block OCR crop (coordinate-filtered PDF region text) ---
+  let titleBlockCropResult: {
+    ocrCropPartNumber:       string | null;
+    visionCropPartNumber:    string | null;
+    visionCropDrawingNumber: string | null;
+    visionCropRevision:      string | null;
+    confidence:              number;
+  } | null = null;
+
+  if (drawingSubtype === 'INTERNAL_DRAWING' && (titleBlockRegionLines?.length || titleBlockCropDataUrl)) {
+    const ocrCropPN = (() => {
+      if (!titleBlockRegionLines?.length) return null;
+      const { value } = scanForApogeePN45(titleBlockRegionLines, -1);
+      return value;
+    })();
+
+    let visionCropRaw: TitleBlockCropVisionResult | null = null;
+    if (titleBlockCropDataUrl) {
+      try {
+        visionCropRaw = await runTitleBlockCropVisionParse(titleBlockCropDataUrl);
+      } catch (err) {
+        console.warn('[C12.2 VISION CROP] Failed — non-fatal', err);
+      }
+    }
+
+    const hasCropResult = ocrCropPN || visionCropRaw?.partNumber;
+    if (hasCropResult) {
+      titleBlockCropResult = {
+        ocrCropPartNumber:       ocrCropPN,
+        visionCropPartNumber:    visionCropRaw?.partNumber    ?? null,
+        visionCropDrawingNumber: visionCropRaw?.drawingNumber ?? null,
+        visionCropRevision:      visionCropRaw?.revision      ?? null,
+        confidence:              visionCropRaw?.confidence    ?? 0,
+      };
+
+      if (ocrCropPN) {
+        addCandidate('PART_NUMBER', {
+          value:       ocrCropPN,
+          source:      'TITLE_BLOCK_OCR_CROP',
+          confidence:  0.88,
+          regionLabel: 'TITLE_BLOCK_REGION',
+        });
+      }
+      if (visionCropRaw?.partNumber && !(/^527-\d{4}-010$/i.test(visionCropRaw.partNumber))) {
+        addCandidate('PART_NUMBER', {
+          value:       visionCropRaw.partNumber,
+          source:      'TITLE_BLOCK_VISION_CROP',
+          confidence:  Math.min(visionCropRaw.confidence, 0.82),
+          regionLabel: 'TITLE_BLOCK_REGION',
+        });
+      }
+      if (visionCropRaw?.revision) {
+        addCandidate('REVISION', {
+          value:       visionCropRaw.revision,
+          source:      'TITLE_BLOCK_VISION_CROP',
+          confidence:  Math.min(visionCropRaw.confidence * 0.95, 0.78),
+          regionLabel: 'REVISION_REGION',
+        });
+      }
+    }
+
+    console.log('[C12.2 CROP]', {
+      drawingSubtype,
+      ocrCropPN,
+      visionCropPN:  visionCropRaw?.partNumber ?? null,
+      visionCropDRN: visionCropRaw?.drawingNumber ?? null,
+      visionCropRev: visionCropRaw?.revision ?? null,
+      hasCropResult,
+    });
+  }
+
   // --- C13: Universal AI vision parse ---
   let visionParsedResult: VisionParsedDrawingResult | null = null;
   if (pipelineMode === 'DRAWING' && normalizedText) {
@@ -1247,6 +1333,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     })(),
     titleBlockRegionResult,
     visionParsedResult,
+    titleBlockCropResult,
     analyzedAt: new Date().toISOString(),
   };
 }

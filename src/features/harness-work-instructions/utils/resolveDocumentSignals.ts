@@ -22,6 +22,10 @@ export type SignalSource =
   | 'USER_CONFIRMED'
   | 'FILENAME'
   | 'TITLE_BLOCK_OCR'
+  /** C12.2: coordinate-filtered PDF region text extraction. */
+  | 'TITLE_BLOCK_OCR_CROP'
+  /** C12.2: AI vision (Claude) on cropped title block image. */
+  | 'TITLE_BLOCK_VISION_CROP'
   | 'AI_REGION'
   | 'HEURISTIC'
   | 'TABLE_TEXT'
@@ -35,13 +39,15 @@ export interface Signal<T> {
 }
 
 export const SIGNAL_PRIORITY: Record<SignalSource, number> = {
-  USER_CONFIRMED: 6,
-  FILENAME: 5,
-  TITLE_BLOCK_OCR: 4,
-  AI_REGION: 3,
-  HEURISTIC: 2,
-  TABLE_TEXT: 1,
-  NONE: 0,
+  USER_CONFIRMED:          6,
+  FILENAME:                5,
+  TITLE_BLOCK_OCR:         4,
+  TITLE_BLOCK_OCR_CROP:    3.7,  // C12.2 — below full-region OCR, above AI
+  TITLE_BLOCK_VISION_CROP: 3.3,  // C12.2 — below OCR crop, above general AI
+  AI_REGION:               3,
+  HEURISTIC:               2,
+  TABLE_TEXT:              1,
+  NONE:                    0,
 };
 
 /**

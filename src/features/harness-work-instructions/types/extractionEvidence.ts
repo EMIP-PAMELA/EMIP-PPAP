@@ -12,6 +12,7 @@
  *   - Resolved values mirror what was actually persisted in revision / drawing_number.
  */
 import type { RegionOverlay } from './documentRegionOverlay';
+import type { SignalSource } from '../utils/resolveDocumentSignals';
 
 // ---------------------------------------------------------------------------
 // Field Extraction — a specific field value bound to a source region (Phase 3H.36)
@@ -68,8 +69,8 @@ export interface EvidenceSignal {
   region_label?: RegionOverlay['label'] | 'FILENAME' | 'UNKNOWN';
   /** Optional reason describing why this signal was ignored downstream (wrong region, noise, etc.). */
   ignored_reason?: string | null;
-  /** Priority bucket used during resolution (USER_CONFIRMED, FILENAME, TITLE_BLOCK_OCR, etc.). */
-  priority_tag?: 'USER_CONFIRMED' | 'FILENAME' | 'TITLE_BLOCK_OCR' | 'AI_REGION' | 'HEURISTIC' | 'TABLE_TEXT';
+  /** Priority bucket used during resolution — matches SignalSource. */
+  priority_tag?: Exclude<SignalSource, 'NONE'>;
 }
 
 export type ResolutionMode = 'SHORT_CIRCUIT' | 'RESOLVED' | 'USER_OVERRIDE';

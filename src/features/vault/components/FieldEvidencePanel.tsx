@@ -33,9 +33,11 @@ const AUTHORITY_BADGE: Record<FieldAuthoritySource, { label: string; className: 
   HEURISTIC:          { label: 'Heuristic',             className: 'bg-amber-100 text-amber-900 border-amber-200' },
   FILENAME:           { label: 'From Filename',         className: 'bg-gray-100 text-gray-700 border-gray-200' },
   UNKNOWN:            { label: 'Unknown Source',        className: 'bg-gray-100 text-gray-600 border-gray-200' },
-  TITLE_BLOCK_REGION: { label: 'Title Block Region',    className: 'bg-violet-100 text-violet-800 border-violet-300' },
-  REVISION_REGION:    { label: 'Revision Record',       className: 'bg-rose-100 text-rose-800 border-rose-300' },
-  AI_VISION:          { label: 'AI Vision Parse',       className: 'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300' },
+  TITLE_BLOCK_REGION:      { label: 'Title Block Region',     className: 'bg-violet-100 text-violet-800 border-violet-300' },
+  REVISION_REGION:         { label: 'Revision Record',        className: 'bg-rose-100 text-rose-800 border-rose-300' },
+  TITLE_BLOCK_OCR_CROP:    { label: 'Title Block OCR Crop',   className: 'bg-teal-100 text-teal-800 border-teal-300' },
+  TITLE_BLOCK_VISION_CROP: { label: 'Title Block Vision Crop',className: 'bg-sky-100 text-sky-800 border-sky-300' },
+  AI_VISION:               { label: 'AI Vision Parse',        className: 'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300' },
 };
 
 // ---------------------------------------------------------------------------
