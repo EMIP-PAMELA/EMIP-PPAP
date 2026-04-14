@@ -26,7 +26,7 @@ import type { RevisionSource } from '@/src/utils/revisionParser';
 import { analyzeFileIngestion } from './analyzeIngestion';
 import type { DocumentExtractionEvidence } from '../types/extractionEvidence';
 import type { IngestionAnalysisResult } from '@/src/features/vault/types/ingestionReview';
-import { resolveWiresFromDrawing, mergeDrawingWiresIntoJob, isRheemDrawingModel } from './wireResolutionService';
+import { resolveWiresFromDrawing, mergeDrawingWiresIntoJob, isRheemDrawingModel, buildPinMap, type PinMapRow } from './wireResolutionService';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -51,6 +51,8 @@ interface PipelineResult {
   job: HarnessInstructionJob | null;
   drawing: CanonicalDrawingDraft | null;
   processBundle: ProcessInstructionBundle | null;
+  /** Phase 3H.44 C6: Deterministic pin map derived from resolved drawing wires. Empty for BOM-only SKUs. */
+  pinMap?: PinMapRow[];
 }
 
 export interface UnifiedIngestionResult {
@@ -402,6 +404,7 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   // fuseDrawingWithBOM and buildProcessInstructions see canonical merged data from the start.
   // BOM-only SKUs are unaffected: isRheemDrawingModel returns false for null/non-Rheem data.
   let preBuiltBOMJob: HarnessInstructionJob | null = null;
+  let pinMapRows: PinMapRow[] = [];
   if (isRheemDrawingModel(analysisSnapshot?.structuredData)) {
     const bomDoc = documents.find(d => d.document_type === 'BOM');
     if (bomDoc?.storage_path) {
@@ -412,6 +415,15 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
         preBuiltBOMJob = drawingWires.length > 0
           ? mergeDrawingWiresIntoJob(rawBOMJob, drawingWires)
           : rawBOMJob;
+
+        // Phase 3H.44 C6: Build pin map from resolved drawing wires
+        pinMapRows = buildPinMap(drawingWires);
+        console.log('[PIN MAP BUILT]', {
+          totalRows: pinMapRows.length,
+          terminals: pinMapRows.filter(r => r.toType === 'TERMINAL').length,
+          unknown:   pinMapRows.filter(r => r.toType === 'UNKNOWN').length,
+        });
+
         console.log('[WIRE AUTHORITY LAYER]', {
           phase:           '3H.44C3',
           mode:            'pre-build',
@@ -423,7 +435,10 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     }
   }
 
-  const pipeline = await buildPipelineFromDocuments(ingestResult.sku, documents, preBuiltBOMJob);
+  const rawPipeline = await buildPipelineFromDocuments(ingestResult.sku, documents, preBuiltBOMJob);
+  const pipeline: PipelineResult = pinMapRows.length > 0
+    ? { ...rawPipeline, pinMap: pinMapRows }
+    : rawPipeline;
 
   return {
     sku: ingestResult.sku,

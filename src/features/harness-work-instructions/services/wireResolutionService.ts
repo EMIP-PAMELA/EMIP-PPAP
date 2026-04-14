@@ -289,6 +289,48 @@ export function resolveWiresFromDrawing(structuredData: RheemDrawingModel): Reso
 }
 
 // ---------------------------------------------------------------------------
+// Pin Map Layer — Phase 3H.44 C6
+// ---------------------------------------------------------------------------
+
+/**
+ * Deterministic row model for pin-to-terminal mapping.
+ * Derived purely from ResolvedWire — no schema or pipeline dependencies.
+ */
+export interface PinMapRow {
+  wireId: string;
+  from:   string;
+  to:     string;
+  toType: 'TERMINAL' | 'UNKNOWN';
+}
+
+/**
+ * Build a flat pin map table from an array of resolved wires.
+ * FROM is formatted as "connector-pin" (connector falls back to 'C?' when not yet resolved).
+ * TO is the terminal part number when type === 'TERMINAL', otherwise 'UNKNOWN'.
+ */
+export function buildPinMap(wires: ResolvedWire[]): PinMapRow[] {
+  return wires.map(wire => {
+    // FROM: prefer connector+pin, fall back gracefully
+    let from = 'UNKNOWN';
+    if (wire.from) {
+      const connector = wire.from.connector ?? 'C?';
+      const pin       = wire.from.pin       ?? '?';
+      from = `${connector}-${pin}`;
+    }
+
+    // TO: terminal PN when type is TERMINAL, otherwise 'UNKNOWN'
+    let to:     string                    = 'UNKNOWN';
+    let toType: 'TERMINAL' | 'UNKNOWN'   = 'UNKNOWN';
+    if (wire.to?.type === 'TERMINAL' && wire.to.terminal) {
+      to     = wire.to.terminal;
+      toType = 'TERMINAL';
+    }
+
+    return { wireId: wire.wireId, from, to, toType };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Merge Layer — Phase 3H.44 C2
 // ---------------------------------------------------------------------------
 
