@@ -163,6 +163,7 @@ function generateProvisionalPartNumber(fileName: string): string {
 async function buildPipelineFromDocuments(
   sku: SKURecord,
   documents: SKUDocumentRecord[],
+  preBuiltBOMJob: HarnessInstructionJob | null = null,
 ): Promise<PipelineResult> {
   const bomDoc = documents.find(doc => doc.document_type === 'BOM');
   const drawingDoc =
@@ -178,11 +179,17 @@ async function buildPipelineFromDocuments(
     loadExtractedText(drawingDoc.storage_path),
   ]);
 
-  if (!bomText || !drawingText) {
+  // Phase 3H.44 C3: When a pre-built merged job is present, BOM text is not required
+  // for job construction (already consumed upstream). Drawing text is always required.
+  if (!drawingText || (!preBuiltBOMJob && !bomText)) {
     return { status: 'PARTIAL', job: null, drawing: null, processBundle: null };
   }
 
-  const job = await parseBOMToHWI(bomText, sku.part_number, bomDoc.revision);
+  // Phase 3H.44 C3: Use pre-merged job if provided; otherwise build from BOM text as usual.
+  const job = preBuiltBOMJob ?? await parseBOMToHWI(bomText!, sku.part_number, bomDoc.revision);
+  if (preBuiltBOMJob) {
+    console.log('[WIRE AUTHORITY LAYER] Pre-merged BOM job injected — parseBOMToHWI bypassed');
+  }
   const drawing = ingestDrawingPdf({ drawingText, fileName: drawingDoc.file_name });
   const hints = await loadFusionHints(drawing, job);
   const fused = fuseDrawingWithBOM(drawing, job, hints);
@@ -389,21 +396,34 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   }
 
   const { documents, revision_validation, readiness } = await getCurrentDocuments(ingestResult.sku.id);
-  const rawPipeline = await buildPipelineFromDocuments(ingestResult.sku, documents);
 
-  // Phase 3H.44 C2: Merge Rheem drawing wire data into pipeline if available from analysis snapshot.
-  // analysisSnapshot.structuredData contains RheemDrawingModel when a Rheem CUSTOMER_DRAWING was analyzed.
-  // This is additive: BOM-only SKUs are unaffected (isRheemDrawingModel returns false for null/non-model data).
-  let pipeline = rawPipeline;
-  if (rawPipeline.job && isRheemDrawingModel(analysisSnapshot?.structuredData)) {
-    const drawingWires = resolveWiresFromDrawing(analysisSnapshot.structuredData);
-    if (drawingWires.length > 0) {
-      pipeline = {
-        ...rawPipeline,
-        job: mergeDrawingWiresIntoJob(rawPipeline.job, drawingWires),
-      };
+  // Phase 3H.44 C3: Pre-build wire authority injection.
+  // Merge Rheem drawing wires into the BOM job BEFORE pipeline construction so that
+  // fuseDrawingWithBOM and buildProcessInstructions see canonical merged data from the start.
+  // BOM-only SKUs are unaffected: isRheemDrawingModel returns false for null/non-Rheem data.
+  let preBuiltBOMJob: HarnessInstructionJob | null = null;
+  if (isRheemDrawingModel(analysisSnapshot?.structuredData)) {
+    const bomDoc = documents.find(d => d.document_type === 'BOM');
+    if (bomDoc?.storage_path) {
+      const bomText = await loadExtractedText(bomDoc.storage_path);
+      if (bomText) {
+        const rawBOMJob = await parseBOMToHWI(bomText, ingestResult.sku.part_number, bomDoc.revision);
+        const drawingWires = resolveWiresFromDrawing(analysisSnapshot.structuredData);
+        preBuiltBOMJob = drawingWires.length > 0
+          ? mergeDrawingWiresIntoJob(rawBOMJob, drawingWires)
+          : rawBOMJob;
+        console.log('[WIRE AUTHORITY LAYER]', {
+          phase:           '3H.44C3',
+          mode:            'pre-build',
+          bomWireCount:    rawBOMJob.wire_instances.length,
+          drawingWireCount: drawingWires.length,
+          resolvedLengths: preBuiltBOMJob.wire_instances.filter(w => w.cut_length !== null).length,
+        });
+      }
     }
   }
+
+  const pipeline = await buildPipelineFromDocuments(ingestResult.sku, documents, preBuiltBOMJob);
 
   return {
     sku: ingestResult.sku,
