@@ -129,6 +129,8 @@ export function buildVisionParsePrompt(args: {
   fileName?: string | null;
   documentType?: string | null;
   extractedText?: string | null;
+  /** C12.1: Optional title block layout hint for region-targeted extraction. */
+  titleBlockHint?: string | null;
 }): string {
   const docHint = args.documentType
     ? `Document type: ${args.documentType}.`
@@ -136,11 +138,14 @@ export function buildVisionParsePrompt(args: {
   const fileHint = args.fileName
     ? `File name: ${args.fileName}.`
     : '';
+  const tbHint = args.titleBlockHint
+    ? `\nTITLE BLOCK CONTEXT: ${args.titleBlockHint}`
+    : '';
 
   const text = (args.extractedText ?? '').slice(0, EXTRACT_TEXT_LIMIT);
 
   return `You are analyzing an electrical harness drawing.
-${fileHint} ${docHint}
+${fileHint} ${docHint}${tbHint}
 
 Extract a COMPLETE structured drawing model from the text below.
 
@@ -326,6 +331,8 @@ export async function runAIDrawingVisionParse(args: {
   documentType?: string | null;
   extractedText?: string | null;
   imageDataUrls?: string[];
+  /** C12.1: Optional title block layout hint forwarded to the vision prompt. */
+  titleBlockHint?: string | null;
 }): Promise<VisionParsedDrawingResult | null> {
   console.log('[AI VISION PARSE TRIGGERED]', {
     fileName:     args.fileName,

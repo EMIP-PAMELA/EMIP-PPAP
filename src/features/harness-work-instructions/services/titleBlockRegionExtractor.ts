@@ -122,30 +122,89 @@ type RegionExtracted = Pick<
   'partNumber' | 'drawingNumber' | 'revision'
 >;
 
-// C11.3: 45-pattern search used inside extractApogee for customer PN cross-references
 const RHEEM_PN_IN_APOGEE_RE = /\b(45-\d{5,6}-\d{2,4}[A-Z]?)\b/;
+
+// C12.1: Wire-table noise filter for Apogee drawings.
+// Rejects 45-pattern lines containing assembly-process terms that signal a harness BOM row
+// (e.g. "45-16851-08  20AWG  WHT") rather than a title block part number field.
+const APOGEE_WIRE_TABLE_NOISE_RE = /\b(?:AWG|SPLICE|HEAT[\s-]?SHRINK)\b/i;
+
+/**
+ * C12.1: Scan allLines for a 45-pattern PN using zone-priority and DRN proximity anchoring.
+ * Exported for direct unit testing without invoking the full region extractor.
+ *
+ * Priority order:
+ *   1. DRN proximity (±20 lines in allLines) — strongest cluster signal; title block co-location
+ *   2. Last-40 zone — Apogee title block bias (lower-right of page, emitted last in OCR stream)
+ *   3. First-40 zone — reversed PDF column-order fallback
+ *   4. Full text — last resort; still noise-filtered
+ *
+ * All strategies reject lines matching APOGEE_WIRE_TABLE_NOISE_RE.
+ */
+export function scanForApogeePN45(
+  allLines: string[],
+  drnLineIdx: number,
+): { value: string | null; source: 'drn-proximity' | 'last40-zone' | 'first40-zone' | 'full-text' | null } {
+  // Strategy 1: proximity to DRN
+  if (drnLineIdx >= 0) {
+    const start = Math.max(0, drnLineIdx - 20);
+    const end   = Math.min(allLines.length, drnLineIdx + 22);
+    for (let i = start; i < end; i++) {
+      const m = allLines[i].match(RHEEM_PN_IN_APOGEE_RE);
+      if (!m) continue;
+      if (APOGEE_WIRE_TABLE_NOISE_RE.test(allLines[i])) continue;
+      return { value: m[1], source: 'drn-proximity' };
+    }
+  }
+  // Strategy 2: last-40 zone
+  for (const line of allLines.slice(-40)) {
+    const m = line.match(RHEEM_PN_IN_APOGEE_RE);
+    if (!m) continue;
+    if (APOGEE_WIRE_TABLE_NOISE_RE.test(line)) continue;
+    return { value: m[1], source: 'last40-zone' };
+  }
+  // Strategy 3: first-40 zone
+  for (const line of allLines.slice(0, 40)) {
+    const m = line.match(RHEEM_PN_IN_APOGEE_RE);
+    if (!m) continue;
+    if (APOGEE_WIRE_TABLE_NOISE_RE.test(line)) continue;
+    return { value: m[1], source: 'first40-zone' };
+  }
+  // Strategy 4: full-text fallback
+  for (const line of allLines) {
+    const m = line.match(RHEEM_PN_IN_APOGEE_RE);
+    if (!m) continue;
+    if (APOGEE_WIRE_TABLE_NOISE_RE.test(line)) continue;
+    return { value: m[1], source: 'full-text' };
+  }
+  return { value: null, source: null };
+}
 
 function extractApogee(text: string, allLines: string[]): RegionExtracted {
   // ── Drawing Number (527-xxxx-010) ─────────────────────────────────────
-  // This is the Apogee DRAWING NUMBER, not the part number.
+  // Track zone label and absolute line index so the 45-PN cluster search can proximity-anchor.
   let drnValue: string | null = null;
   let drnInContext = false;
+  let drnZoneLabel: 'last40' | 'first40' | 'full' = 'full';
+  let drnLineIdx = -1;   // index into full allLines array
 
-  // Prefer last-40 first (Apogee title block is lower-right; OCR may emit it last)
-  // then first-40, then full document as a fallback
-  const scanZones: string[][] = [
-    allLines.slice(-40),
-    allLines.slice(0, 40),
-    allLines,
+  const zoneSpec: Array<{ label: 'last40' | 'first40' | 'full'; lines: string[] }> = [
+    { label: 'last40',  lines: allLines.slice(-40) },
+    { label: 'first40', lines: allLines.slice(0, 40) },
+    { label: 'full',    lines: allLines },
   ];
 
-  outer: for (const zone of scanZones) {
-    for (let i = 0; i < zone.length; i++) {
-      const m = zone[i].match(APOGEE_DRN_RE);
+  outer: for (const { label, lines } of zoneSpec) {
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(APOGEE_DRN_RE);
       if (!m) continue;
-      drnValue = m[1];
-      const windowText = zone
-        .slice(Math.max(0, i - 5), Math.min(zone.length, i + 7))
+      drnValue     = m[1];
+      drnZoneLabel = label;
+      // Convert zone-local index to full allLines index
+      drnLineIdx   = label === 'last40'  ? Math.max(0, allLines.length - 40) + i
+                   : /* first40 | full */  i;
+      const windowText = lines
+        .slice(Math.max(0, i - 5), Math.min(lines.length, i + 7))
         .join('\n')
         .toUpperCase();
       drnInContext = APOGEE_TB_CONTEXT_KW.some(kw => windowText.includes(kw));
@@ -155,18 +214,27 @@ function extractApogee(text: string, allLines: string[]): RegionExtracted {
 
   const drnConfidence = drnInContext ? 0.96 : 0.88;
 
-  // ── Part Number — search for 45-pattern Rheem PN in drawing text ─────
-  // Apogee drawings sometimes cross-reference the Rheem customer part number.
-  // If absent, leave partNumber null — alias lookup will resolve 527 DRN → 45 PN downstream.
-  const rheem45Match = text.match(RHEEM_PN_IN_APOGEE_RE);
-  const rheem45Val   = rheem45Match?.[1] ?? null;
+  // ── Part Number — proximity-anchored cluster search (C12.1) ────────────
+  // Pass the full allLines with the DRN's absolute index. scanForApogeePN45
+  // handles all zone-priority and noise-filter strategies internally.
+  const pnResult       = scanForApogeePN45(allLines, drnLineIdx);
+  const rheem45Val     = pnResult.value;
+  const pnClusterSrc   = pnResult.source;
+
+  const pnConfidence = pnClusterSrc === 'drn-proximity' ? 0.90
+                     : pnClusterSrc === 'last40-zone'   ? 0.82
+                     : pnClusterSrc === 'first40-zone'  ? 0.72
+                     :                                    0.62;
 
   const partNumber: RegionDerivedField = rheem45Val
     ? {
         value:      rheem45Val,
-        confidence: 0.82,
+        confidence: pnConfidence,
         source:     'TITLE_BLOCK_REGION',
-        evidence:   ['Apogee drawing — 45-pattern Rheem part number cross-reference'],
+        evidence:   [
+          `Apogee drawing — 45-pattern PN [${pnClusterSrc}]`,
+          ...(pnClusterSrc === 'drn-proximity' ? ['co-located with 527 DRN in title block cluster'] : []),
+        ],
       }
     : nullField();
 
@@ -183,7 +251,6 @@ function extractApogee(text: string, allLines: string[]): RegionExtracted {
     : nullField();
 
   // ── Revision — use the dedicated Apogee revision record box extractor ────
-  // This is authoritative: date-anchored scan of the upper-right revision table.
   const apogeeRev = extractApogeeDrawingRevision(text);
   const revision: RegionDerivedField =
     apogeeRev.isApogeeDrawing && isValidRevision(apogeeRev.revision)
@@ -195,9 +262,27 @@ function extractApogee(text: string, allLines: string[]): RegionExtracted {
         }
       : nullField();
 
+  // ── Overlay box — zone-anchored (C12.1) ──────────────────────────────
+  // Apogee title block is always lower-right on the physical page.
+  // y-position is refined from which text zone found the DRN:
+  //   last40  → lower portion (y=0.78); first40 → reversed PDF, slightly expanded (y=0.65).
+  const tbY   = drnZoneLabel === 'first40' ? 0.65 : 0.78;
+  const tbBox = drnValue ? { x: 0.55, y: tbY, w: 0.42, h: 0.20 } : undefined;
+
+  console.log('[C12.1 APOGEE TITLE BLOCK]', {
+    drnZoneLabel,
+    drnLineIdx,
+    drnValue,
+    drnInContext,
+    pnClusterSrc,
+    rheem45Val,
+    pnConfidence: rheem45Val ? pnConfidence : null,
+    overlayBox: tbBox,
+  });
+
   return {
     titleBlockDetected:     Boolean(drnValue),
-    titleBlockBox:          drnValue ? { x: 0.55, y: 0.80, w: 0.40, h: 0.15 } : undefined,
+    titleBlockBox:          tbBox,
     revisionRegionDetected: revision.value !== null,
     revisionRegionBox:      revision.value !== null ? { x: 0.65, y: 0.00, w: 0.30, h: 0.18 } : undefined,
     partNumber,

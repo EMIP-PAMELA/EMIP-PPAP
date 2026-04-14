@@ -28,7 +28,7 @@ import { ingestDrawingPdf } from './drawingIngestionService';
 import { parseRheemDrawing, detectRheemDrawing, type RheemDrawingModel } from './rheemDrawingParser';
 import type { SignalSource } from '../utils/resolveDocumentSignals';
 import { analyzeDocumentStructure } from './documentStructureAnalyzer';
-import { extractTitleBlockAndRevisionRegions, type TitleBlockExtractionResult } from './titleBlockRegionExtractor';
+import { extractTitleBlockAndRevisionRegions, scanForApogeePN45, type TitleBlockExtractionResult } from './titleBlockRegionExtractor';
 import {
   runAIDrawingVisionParse,
   mergeVisionParsedData,
@@ -435,9 +435,6 @@ function buildUnresolvedQuestions(params: {
 // Public API
 // ---------------------------------------------------------------------------
 
-// C11.3: 45-pattern scan for internal drawings (cross-reference / customer PN cross-walk)
-const RHEEM_PN_IN_INTERNAL_RE = /\b(45-\d{5,6}-\d{2,4}[A-Z]?)\b/;
-
 function extractInternalDrawingSignals(text: string, fileName: string): DrawingExtractionResult {
   const candidates: DrawingSignalCandidate[] = [];
 
@@ -452,16 +449,30 @@ function extractInternalDrawingSignals(text: string, fileName: string): DrawingE
     candidates.push({ field: 'DRAWING_NUMBER', value: apogeeDRN, source: drnSource, confidence: drnConf, regionLabel: drnRegion });
   }
 
-  // Explicit 45-pattern search: Apogee drawings sometimes cross-reference the Rheem customer PN.
-  const rheem45Match = text.match(RHEEM_PN_IN_INTERNAL_RE);
-  const detected45PartNumber = rheem45Match?.[1] ?? null;
+  // C12.1: Zone-priority, proximity-anchored 45-PN cluster search.
+  // Splits text to lines, locates DRN index in allLines, then delegates to
+  // scanForApogeePN45 (same logic as titleBlockRegionExtractor) for consistency.
+  const allLinesInternal = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    .split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const drnLineIdxInternal = apogeeDRN
+    ? allLinesInternal.findIndex(l => /\b527-\d{4}-010\b/.test(l))
+    : -1;
+  const pnScan45           = scanForApogeePN45(allLinesInternal, drnLineIdxInternal);
+  const detected45PartNumber = pnScan45.value;
+  const pnSource45           = pnScan45.source;
+  const pnConf45 = pnSource45 === 'drn-proximity' ? 0.90
+                 : pnSource45 === 'last40-zone'   ? 0.85
+                 : pnSource45 === 'first40-zone'  ? 0.75
+                 :                                  0.65;
   if (detected45PartNumber) {
-    candidates.push({ field: 'PART_NUMBER', value: detected45PartNumber, source: 'TITLE_BLOCK_OCR', confidence: 0.88, regionLabel: 'TITLE_BLOCK' });
+    candidates.push({ field: 'PART_NUMBER', value: detected45PartNumber, source: 'TITLE_BLOCK_OCR', confidence: pnConf45, regionLabel: 'TITLE_BLOCK' });
   }
 
-  console.log('[APOGEE PN FIX]', {
+  console.log('[C12.1 APOGEE PN]', {
     detected527DrawingNumber: apogeeDRN,
+    drnLineIdxInternal,
     detected45PartNumber,
+    pnSource45,
     aliasResolvedPartNumber: null,
   });
 
@@ -908,10 +919,14 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   let visionParsedResult: VisionParsedDrawingResult | null = null;
   if (pipelineMode === 'DRAWING' && normalizedText) {
     try {
+      const titleBlockHint = drawingSubtype === 'INTERNAL_DRAWING'
+        ? 'Apogee internal drawing. The bottom-right title block contains: drawing number (pattern 527-XXXX-010) and customer part number (pattern 45-XXXXXX-XX). The upper-right contains the revision record box with DATE and REV entries.'
+        : null;
       visionParsedResult = await runAIDrawingVisionParse({
         fileName,
         documentType: drawingSubtype !== 'N/A' ? drawingSubtype : docType,
         extractedText: normalizedText,
+        titleBlockHint,
       });
 
       // Add AI_REGION candidates to signal pool for part number and revision.
