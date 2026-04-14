@@ -27,8 +27,10 @@ import TruthVerificationPanel from '@/src/features/sku/components/TruthVerificat
 import HarnessVisualizationPanel from '@/src/features/sku/components/HarnessVisualizationPanel';
 import BOMDrawer from '@/src/features/sku/components/BOMDrawer';
 import InterpretationDebugPanel from '@/src/features/sku/components/InterpretationDebugPanel';
+import AdaptivePipelineDebugPanel from '@/src/features/sku/components/AdaptivePipelineDebugPanel';
 import type { ExtractionCoverage } from '@/src/features/harness-work-instructions/services/extractionCoverageService';
 import type { DrawingInterpretationResult } from '@/src/features/harness-work-instructions/services/drawingInterpretationService';
+import type { AdaptiveDrawingAnalysis } from '@/src/features/harness-work-instructions/services/adaptiveDrawingPipelineService';
 import {
   applyWireOverrides,
   loadOverrides,
@@ -117,6 +119,8 @@ export default function SKUDashboardPage() {
   const [pipelineJob, setPipelineJob] = useState<HarnessInstructionJob | null>(null);
   const [pipelineCoverage, setPipelineCoverage]           = useState<ExtractionCoverage | undefined>(undefined);
   const [pipelineInterpretation, setPipelineInterpretation] = useState<DrawingInterpretationResult | undefined>(undefined);
+  const [pipelineAdaptiveAnalysis, setPipelineAdaptiveAnalysis] = useState<AdaptiveDrawingAnalysis | undefined>(undefined);
+  const [pipelineHasStructuredData, setPipelineHasStructuredData] = useState(false);
   const [wireOverrides, setWireOverrides] = useState<Record<string, WireOverride>>({});
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'READY' | 'PARTIAL'>('idle');
   const autoRunSignature = useRef<string | null>(null);
@@ -345,11 +349,15 @@ export default function SKUDashboardPage() {
         setPipelineJob(job);
         setPipelineCoverage((json.coverage as ExtractionCoverage | undefined) ?? undefined);
         setPipelineInterpretation((json.interpretation as DrawingInterpretationResult | undefined) ?? undefined);
+        setPipelineAdaptiveAnalysis((json.adaptive_analysis as AdaptiveDrawingAnalysis | undefined) ?? undefined);
+        setPipelineHasStructuredData(Boolean(json.adaptive_has_structured_data));
       } else {
         setSummary(null);
         setPipelineJob(null);
         setPipelineCoverage(undefined);
         setPipelineInterpretation(undefined);
+        setPipelineAdaptiveAnalysis(undefined);
+        setPipelineHasStructuredData(false);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -593,6 +601,15 @@ export default function SKUDashboardPage() {
           <HarnessVisualizationPanel
             wires={effectiveWires}
             pinMapCount={pinMapCount > 0 ? pinMapCount : undefined}
+          />
+        </div>
+
+        <div className="mt-2">
+          <AdaptivePipelineDebugPanel
+            analysis={pipelineAdaptiveAnalysis}
+            hasStructuredData={pipelineHasStructuredData}
+            hasInterpretation={Boolean(pipelineInterpretation)}
+            hasCoverage={Boolean(pipelineCoverage)}
           />
         </div>
 

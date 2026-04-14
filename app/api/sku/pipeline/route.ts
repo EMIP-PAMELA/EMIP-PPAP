@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
     process_bundle:   pipeline.processBundle,
     coverage:          pipeline.coverage          ?? null,
     interpretation:    pipeline.interpretation    ?? null,
-    adaptive_analysis: pipeline.adaptiveAnalysis  ?? null,
+    adaptive_analysis:          pipeline.adaptiveAnalysis  ?? null,
+    adaptive_has_structured_data: Boolean(pipeline.adaptiveStructuredData),
   });
 }
