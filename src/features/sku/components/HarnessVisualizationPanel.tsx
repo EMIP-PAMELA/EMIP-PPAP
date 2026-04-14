@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * HarnessVisualizationPanel — Phase 3H.46 C5 / C5.1
+ * HarnessVisualizationPanel — Phase 3H.46 C5 / C5.1 / C5.2 / C5.3
  *
  * Connector-grouped structural representation of harness wire connections.
  * Groups wires by end_a.connector_id; UNASSIGNED group rendered last.
@@ -32,6 +32,16 @@ export interface HarnessVisualizationPanelProps {
 
 function groupedFromLabel(wire: WireInstance): string {
   return wire.end_a?.cavity ?? '?';
+}
+
+function flowFromNode(wire: WireInstance): string {
+  if (wire.end_a?.connector_id) {
+    return `${wire.end_a.connector_id}-${wire.end_a.cavity ?? '?'}`;
+  }
+  if (wire.end_a?.cavity) {
+    return `Pin ${wire.end_a.cavity}`;
+  }
+  return 'Unknown';
 }
 
 function groupedToLabel(wire: WireInstance): string {
@@ -96,6 +106,10 @@ export default function HarnessVisualizationPanel({
     console.log('[WIRE ATTRIBUTES]', { wiresWithLength, wiresMissingLength });
   }, [wires.length]);
 
+  useEffect(() => {
+    console.log('[WIRE FLOW VIEW]', { wiresRendered: wires.length });
+  }, [wires.length]);
+
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
@@ -145,11 +159,9 @@ export default function HarnessVisualizationPanel({
                   </div>
 
                   {/* Column sub-header */}
-                  <div className="grid grid-cols-[4rem_1fr_auto_1fr_5rem_4rem_4rem] gap-x-3 px-6 py-1 bg-gray-50/60">
+                  <div className="grid grid-cols-[4rem_2fr_5rem_4rem_4rem] gap-x-3 pl-10 pr-6 py-1 bg-gray-50/60">
                     <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Wire</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Cavity / Pin</span>
-                    <span />
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Terminal</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Connection Flow</span>
                     <span title="Cut length used for processing" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Length</span>
                     <span title="Wire gauge (AWG)" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Gauge</span>
                     <span title="Wire insulation color" className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Color</span>
@@ -158,39 +170,40 @@ export default function HarnessVisualizationPanel({
                   {/* Wire rows */}
                   <div className="divide-y divide-gray-100">
                     {groupWireList.map(wire => {
-                      const from       = groupedFromLabel(wire);
-                      const to         = groupedToLabel(wire);
-                      const fromMissing = from === '?';
-                      const toMissing   = to   === 'Unknown';
-
+                      const fromNode    = flowFromNode(wire);
+                      const toNode      = groupedToLabel(wire);
+                      const fromMissing = fromNode === 'Unknown';
+                      const toMissing   = toNode   === 'Unknown';
                       const lengthMissing = wire.cut_length == null;
 
                       return (
                         <div
                           key={wire.wire_id}
-                          className="grid grid-cols-[4rem_1fr_auto_1fr_5rem_4rem_4rem] gap-x-3 items-center px-6 py-2 hover:bg-gray-50/80 transition"
+                          className="grid grid-cols-[4rem_2fr_5rem_4rem_4rem] gap-x-3 items-center pl-10 pr-6 py-2 hover:bg-gray-50/80 transition"
                         >
+                          {/* Wire ID */}
                           <span className="font-mono text-sm font-semibold text-gray-700">
                             {wire.wire_id}
                           </span>
 
-                          <span className={`font-mono text-sm rounded px-1.5 py-0.5 w-fit ${
-                            fromMissing
-                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                              : 'text-gray-700'
-                          }`}>
-                            {fromMissing ? 'No cavity' : from}
-                          </span>
-
-                          <span className="text-gray-300 font-semibold select-none text-sm">→</span>
-
-                          <span className={`font-mono text-sm rounded px-1.5 py-0.5 w-fit ${
-                            toMissing
-                              ? 'bg-red-50 text-red-700 border border-red-200'
-                              : 'text-gray-700'
-                          }`}>
-                            {to}
-                          </span>
+                          {/* Flow: FROM ────→ TO */}
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className={`font-mono text-sm rounded px-1.5 py-0.5 shrink-0 ${
+                              fromMissing
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : 'text-gray-700'
+                            }`}>
+                              {fromNode}
+                            </span>
+                            <span className="font-mono text-gray-300 text-sm select-none shrink-0">────→</span>
+                            <span className={`font-mono text-sm rounded px-1.5 py-0.5 min-w-0 truncate ${
+                              toMissing
+                                ? 'bg-red-50 text-red-700 border border-red-200'
+                                : 'text-gray-700'
+                            }`}>
+                              {toNode}
+                            </span>
+                          </div>
 
                           {/* Length */}
                           <span
@@ -203,18 +216,12 @@ export default function HarnessVisualizationPanel({
                           </span>
 
                           {/* Gauge */}
-                          <span
-                            title="Wire gauge (AWG)"
-                            className="font-mono text-sm text-gray-500"
-                          >
+                          <span title="Wire gauge (AWG)" className="font-mono text-sm text-gray-500">
                             {wire.gauge ?? '—'}
                           </span>
 
                           {/* Color */}
-                          <span
-                            title="Wire insulation color"
-                            className="font-mono text-sm text-gray-500 truncate"
-                          >
+                          <span title="Wire insulation color" className="font-mono text-sm text-gray-500 truncate">
                             {wire.color ?? '—'}
                           </span>
                         </div>
