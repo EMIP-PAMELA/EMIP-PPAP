@@ -377,6 +377,18 @@ export function parseWireTable(rows: string[]): RheemWireRow[] {
   // COLUMN threshold: same terminal value in >= 40% of parsed rows (min 3 occurrences).
   const columnThreshold = Math.max(3, Math.ceil(extracts.length * 0.4));
 
+  // Phase 3H.44 C5.1+: A drawing where every row shares the same single terminal value
+  // is a valid "uniform terminal" case (e.g. one terminal spec for all wires in the table).
+  // In this case the frequency threshold must NOT trigger COLUMN classification.
+  const uniqueTerminalCount = terminalFreq.size;
+  const isUniformTerminal   = uniqueTerminalCount === 1 && terminalFreq.size > 0;
+
+  console.log('[TERMINAL DISTRIBUTION]', {
+    uniqueTerminalCount,
+    totalRows:  extracts.length,
+    uniform:    isUniformTerminal,
+  });
+
   let rowAligned = 0;
   let columnAligned = 0;
   let unknownCount = 0;
@@ -387,7 +399,8 @@ export function parseWireTable(rows: string[]): RheemWireRow[] {
 
     if (ex.terminal) {
       const freq    = terminalFreq.get(ex.terminal) ?? 0;
-      const isCol   = freq >= columnThreshold;
+      // Phase 3H.44 C5.1+: Skip COLUMN classification for uniform-terminal drawings.
+      const isCol   = freq >= columnThreshold && !isUniformTerminal;
       const isRow   = !isCol && ex.hasId && ex.hasPin && ex.hasGauge;
 
       if (isCol) {

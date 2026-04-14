@@ -188,6 +188,11 @@ export function resolveWiresFromDrawing(structuredData: RheemDrawingModel): Reso
   let terminalAssigned = 0;
   let terminalMissing  = 0;
 
+  // Phase 3H.44 C5.1+: TO-side classification counters
+  let toTerminalRow  = 0;
+  let toDowngraded   = 0;
+  let toUnknownCount = 0;
+
   for (const row of structuredData.wires) {
     if (!row.id || row.id.trim().length === 0) continue;
 
@@ -228,12 +233,20 @@ export function resolveWiresFromDrawing(structuredData: RheemDrawingModel): Reso
       wire.from = { pin: row.pin };
     }
 
-    // Phase 3H.44 C5: TO-side endpoint resolution
-    if (terminal) {
+    // Phase 3H.44 C5 / C5.1+: TO-side endpoint resolution — gated on terminalSource
+    // Only ROW-classified terminals are trusted enough for type='TERMINAL' assignment.
+    // COLUMN/UNKNOWN terminals are present but structurally ambiguous — downgrade to UNKNOWN.
+    if (terminal && row.terminalSource === 'ROW') {
       wire.to = { type: 'TERMINAL', terminal };
-    } else {
+      toTerminalRow++;
+    } else if (terminal) {
+      // Terminal exists but from COLUMN/UNKNOWN source — do not assert endpoint type
       // Future: type = 'CONNECTOR' when connector table provides mapping (Phase 3H.44.2)
       wire.to = { type: 'UNKNOWN' };
+      toDowngraded++;
+    } else {
+      wire.to = { type: 'UNKNOWN' };
+      toUnknownCount++;
     }
 
     resolved.push(wire);
@@ -243,6 +256,12 @@ export function resolveWiresFromDrawing(structuredData: RheemDrawingModel): Reso
 
   const withTerminal = resolved.filter(w => w.to?.type === 'TERMINAL').length;
   const withUnknown  = resolved.filter(w => w.to?.type === 'UNKNOWN').length;
+
+  console.log('[TO CLASSIFICATION]', {
+    terminalRow: toTerminalRow,
+    downgraded:  toDowngraded,
+    unknown:     toUnknownCount,
+  });
 
   console.log('[DUAL END RESOLUTION]', {
     withTerminal,
