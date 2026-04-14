@@ -24,6 +24,7 @@ import { resolveDocumentFields, type FieldAuthoritySource } from '@/src/features
 import FieldEvidencePanel from './FieldEvidencePanel';
 import type { RegionOverlay } from '@/src/features/harness-work-instructions/types/documentRegionOverlay';
 import DocumentOverlayViewer from './DocumentOverlayViewer';
+import HarnessConnectivityPanel from './HarnessConnectivityPanel';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -1550,6 +1551,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
 
               {selectedItem.analysis?.structuredData ? (
                 <ParsedDrawingDataPanel data={selectedItem.analysis.structuredData} />
+              ) : null}
+
+              {selectedItem.analysis?.harnessConnectivity ? (
+                <HarnessConnectivityPanel harnessConnectivity={selectedItem.analysis.harnessConnectivity} />
               ) : null}
 
               {selectedItem.status === 'ready_to_commit' ? (
