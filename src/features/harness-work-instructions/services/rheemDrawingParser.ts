@@ -27,6 +27,8 @@ export interface RheemWireRow {
   pin: number | null;
   /** Phase 3H.44 C4.2: Terminal part number extracted from wire table (e.g. "929504-1"). */
   terminal: string | null;
+  /** Phase 3H.44 C4.3: Classification of how the terminal was sourced. ROW = safe (co-located with ID/pin/gauge). COLUMN = suspicious (same value repeated across rows). UNKNOWN = insufficient signal. */
+  terminalSource: 'ROW' | 'COLUMN' | 'UNKNOWN';
   rawText: string;
 }
 
@@ -295,28 +297,41 @@ export function detectTableRegions(textLines: string[]): RheemTableRegion[] {
 // ---------------------------------------------------------------------------
 
 export function parseWireTable(rows: string[]): RheemWireRow[] {
-  const wires: RheemWireRow[] = [];
+  // ── Pass 1: Extract all fields per row and collect terminal frequency counts ──
+
+  interface RawExtract {
+    raw:       string;
+    wireId:    string;
+    length:    number | null;
+    gauge:     string | null;
+    color:     string | null;
+    pin:       number | null;
+    terminal:  string | null;
+    hasId:     boolean;
+    hasPin:    boolean;
+    hasGauge:  boolean;
+  }
+
   let idCounter = 0;
+  const extracts: RawExtract[] = [];
+  const terminalFreq = new Map<string, number>();
 
   for (const raw of rows) {
-    // Skip very short or clearly non-data lines
     if (raw.length < 6) continue;
     if (/^[A-Z\s]{2,20}$/.test(raw) && !/\d/.test(raw)) continue;
 
     const lengthMatch = raw.match(LENGTH_RE);
-    const gaugeMatch = raw.match(GAUGE_RE) ?? raw.match(GAUGE_BARE_RE);
-    const colorMatch = raw.match(COLOR_RE);
-    const pinMatch = raw.match(PIN_RE);
+    const gaugeMatch  = raw.match(GAUGE_RE) ?? raw.match(GAUGE_BARE_RE);
+    const colorMatch  = raw.match(COLOR_RE);
+    const pinMatch    = raw.match(PIN_RE);
 
-    // Must have at least one numeric field to qualify
     const hasData = lengthMatch || gaugeMatch;
     if (!hasData) continue;
 
-    // Wire ID — leading alphanumeric token
     const idMatch = raw.match(/^([A-Z]?\d{1,4})\s/i);
-    const wireId = idMatch ? idMatch[1] : `W${++idCounter}`;
+    const wireId  = idMatch ? idMatch[1] : `W${++idCounter}`;
+    const hasId   = Boolean(idMatch);
 
-    // Pin extraction: explicit PIN marker or trailing bare number
     let pin: number | null = null;
     if (pinMatch) {
       pin = parseInt(pinMatch[1], 10);
@@ -327,8 +342,9 @@ export function parseWireTable(rows: string[]): RheemWireRow[] {
         if (candidate <= 50) pin = candidate;
       }
     }
+    const hasPin   = pin !== null;
+    const hasGauge = Boolean(gaugeMatch);
 
-    // Phase 3H.44 C4.2: Terminal — dash-separated part number not already captured as length/gauge/pin
     const knownNums = new Set<string>([
       lengthMatch?.[1],
       gaugeMatch?.[1],
@@ -344,18 +360,68 @@ export function parseWireTable(rows: string[]): RheemWireRow[] {
       }
     }
 
-    wires.push({
-      id: wireId,
+    if (terminal) {
+      terminalFreq.set(terminal, (terminalFreq.get(terminal) ?? 0) + 1);
+    }
+
+    extracts.push({
+      raw, wireId,
       length: lengthMatch ? parseFloat(lengthMatch[1]) : null,
-      gauge: gaugeMatch ? gaugeMatch[1] : null,
-      color: colorMatch ? colorMatch[1].toUpperCase() : null,
-      pin,
-      terminal,
-      rawText: raw,
+      gauge:  gaugeMatch  ? gaugeMatch[1]               : null,
+      color:  colorMatch  ? colorMatch[1].toUpperCase() : null,
+      pin, terminal, hasId, hasPin, hasGauge,
+    });
+  }
+
+  // ── Pass 2: Classify terminal source and build final wire rows ──
+  // COLUMN threshold: same terminal value in >= 40% of parsed rows (min 3 occurrences).
+  const columnThreshold = Math.max(3, Math.ceil(extracts.length * 0.4));
+
+  let rowAligned = 0;
+  let columnAligned = 0;
+  let unknownCount = 0;
+  const wires: RheemWireRow[] = [];
+
+  for (const ex of extracts) {
+    let terminalSource: 'ROW' | 'COLUMN' | 'UNKNOWN' = 'UNKNOWN';
+
+    if (ex.terminal) {
+      const freq    = terminalFreq.get(ex.terminal) ?? 0;
+      const isCol   = freq >= columnThreshold;
+      const isRow   = !isCol && ex.hasId && ex.hasPin && ex.hasGauge;
+
+      if (isCol) {
+        terminalSource = 'COLUMN';
+        columnAligned++;
+      } else if (isRow) {
+        terminalSource = 'ROW';
+        rowAligned++;
+      } else {
+        terminalSource = 'UNKNOWN';
+        unknownCount++;
+      }
+    } else {
+      unknownCount++;
+    }
+
+    wires.push({
+      id:             ex.wireId,
+      length:         ex.length,
+      gauge:          ex.gauge,
+      color:          ex.color,
+      pin:            ex.pin,
+      terminal:       ex.terminal,
+      terminalSource,
+      rawText:        ex.raw,
     });
   }
 
   console.log('[RHEEM WIRE TABLE]', { rowsInput: rows.length, wiresParsed: wires.length });
+  console.log('[TERMINAL CLASSIFICATION]', {
+    rowAligned,
+    columnAligned,
+    unknown: unknownCount,
+  });
   return wires;
 }
 

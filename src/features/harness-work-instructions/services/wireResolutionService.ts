@@ -109,13 +109,17 @@ function wireIdComparator(a: ResolvedWire, b: ResolvedWire): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Build a pin → terminal part number map from all wire rows that carry both fields.
- * Used by resolveWiresFromDrawing to assign terminal PNs by pin number.
+ * Build a pin → terminal part number map from wire rows classified as ROW-aligned.
+ *
+ * Phase 3H.44 C4.3: Only ROW-classified terminals are pin-mapped.
+ * COLUMN terminals (same value repeated across rows — likely OCR artifact) and UNKNOWN
+ * terminals are excluded from pin lookup to prevent cross-wire mis-assignment.
+ * Those terminals are still accessible via row.terminal for direct row assignment.
  */
 export function buildTerminalMap(model: RheemDrawingModel): Map<number, string> {
   const map = new Map<number, string>();
   for (const row of model.wires) {
-    if (row.pin !== null && row.terminal) {
+    if (row.pin !== null && row.terminal && row.terminalSource === 'ROW') {
       map.set(row.pin, row.terminal);
     }
   }
