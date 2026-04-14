@@ -435,19 +435,35 @@ function buildUnresolvedQuestions(params: {
 // Public API
 // ---------------------------------------------------------------------------
 
+// C11.3: 45-pattern scan for internal drawings (cross-reference / customer PN cross-walk)
+const RHEEM_PN_IN_INTERNAL_RE = /\b(45-\d{5,6}-\d{2,4}[A-Z]?)\b/;
+
 function extractInternalDrawingSignals(text: string, fileName: string): DrawingExtractionResult {
   const candidates: DrawingSignalCandidate[] = [];
 
+  // 527-xxxx-010 is the Apogee DRAWING NUMBER — emit ONLY as DRAWING_NUMBER, never PART_NUMBER.
   const textMatch = text.match(/\b(527-\d{4}-010)\b/);
   const fnMatch   = !textMatch ? fileName.match(/\b(527-\d{4}-010)\b/) : null;
-  const apogeePN  = (textMatch ?? fnMatch)?.[1] ?? null;
-  const pnSource: CandidateSignalSource = textMatch ? 'TITLE_BLOCK_OCR' : 'FILENAME';
-  const pnConf    = textMatch ? 0.97 : 0.9;
-  const pnRegion: FieldSignalCandidate['regionLabel'] = textMatch ? 'TITLE_BLOCK' : 'FILENAME';
-  if (apogeePN) {
-    candidates.push({ field: 'PART_NUMBER',    value: apogeePN, source: pnSource, confidence: pnConf, regionLabel: pnRegion });
-    candidates.push({ field: 'DRAWING_NUMBER', value: apogeePN, source: pnSource, confidence: pnConf, regionLabel: pnRegion });
+  const apogeeDRN = (textMatch ?? fnMatch)?.[1] ?? null;
+  const drnSource: CandidateSignalSource = textMatch ? 'TITLE_BLOCK_OCR' : 'FILENAME';
+  const drnConf   = textMatch ? 0.97 : 0.9;
+  const drnRegion: FieldSignalCandidate['regionLabel'] = textMatch ? 'TITLE_BLOCK' : 'FILENAME';
+  if (apogeeDRN) {
+    candidates.push({ field: 'DRAWING_NUMBER', value: apogeeDRN, source: drnSource, confidence: drnConf, regionLabel: drnRegion });
   }
+
+  // Explicit 45-pattern search: Apogee drawings sometimes cross-reference the Rheem customer PN.
+  const rheem45Match = text.match(RHEEM_PN_IN_INTERNAL_RE);
+  const detected45PartNumber = rheem45Match?.[1] ?? null;
+  if (detected45PartNumber) {
+    candidates.push({ field: 'PART_NUMBER', value: detected45PartNumber, source: 'TITLE_BLOCK_OCR', confidence: 0.88, regionLabel: 'TITLE_BLOCK' });
+  }
+
+  console.log('[APOGEE PN FIX]', {
+    detected527DrawingNumber: apogeeDRN,
+    detected45PartNumber,
+    aliasResolvedPartNumber: null,
+  });
 
   const apogeeRev = extractApogeeDrawingRevision(text);
   if (apogeeRev.revision && isStrictRevisionToken(apogeeRev.revision)) {
@@ -831,13 +847,13 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
           id: 'c12-title-block-region',
           label: 'TITLE_BLOCK_REGION',
           boundingBox: { x, y, width, height },
-          confidence: titleBlockRegionResult.partNumber.confidence,
-          extractedText: titleBlockRegionResult.partNumber.value
-            ? `PN: ${titleBlockRegionResult.partNumber.value}${titleBlockRegionResult.drawingNumber.value && titleBlockRegionResult.drawingNumber.value !== titleBlockRegionResult.partNumber.value ? ` DWG: ${titleBlockRegionResult.drawingNumber.value}` : ''}`
-            : 'Title block detected',
+          confidence: titleBlockRegionResult.drawingNumber.confidence || titleBlockRegionResult.partNumber.confidence,
+          extractedText: titleBlockRegionResult.drawingNumber.value
+            ? `DWG: ${titleBlockRegionResult.drawingNumber.value}${titleBlockRegionResult.partNumber.value ? ` PN: ${titleBlockRegionResult.partNumber.value}` : ''}`
+            : (titleBlockRegionResult.partNumber.value ? `PN: ${titleBlockRegionResult.partNumber.value}` : 'Title block detected'),
           source: 'HEURISTIC',
           orientation: drawingSubtype === 'CUSTOMER_DRAWING' ? 'VERTICAL' : 'HORIZONTAL',
-          authority: titleBlockRegionResult.partNumber.confidence,
+          authority: titleBlockRegionResult.drawingNumber.confidence || titleBlockRegionResult.partNumber.confidence,
         });
       }
 
@@ -1034,9 +1050,11 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   }
 
   // --- Alias / drawing lookup (read-only DB) ---
-  let partNumberIsProvisional = !partWinner || partWinner.source === 'TABLE_TEXT' || partWinner.source === 'HEURISTIC';
+  // C11.3: also run alias lookup when partNumber is itself a 527 drawing number
+  const partIsDrawingNumber = Boolean(partNumber && /^527-\d{4}-010$/i.test(partNumber.trim()));
+  let partNumberIsProvisional = !partWinner || partWinner.source === 'TABLE_TEXT' || partWinner.source === 'HEURISTIC' || partIsDrawingNumber;
   let resolvedViaAlias = false;
-  if (!partNumber && proposedDrawingNumber) {
+  if ((!partNumber || partIsDrawingNumber) && proposedDrawingNumber) {
     let resolvedPN: string | null = null;
     try {
       resolvedPN = await resolveAliasFromDB(proposedDrawingNumber);
@@ -1047,6 +1065,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       } catch { /* ignore */ }
     }
     if (resolvedPN) {
+      console.log('[APOGEE PN FIX]', { detected527DrawingNumber: proposedDrawingNumber, aliasResolvedPartNumber: resolvedPN, detected45PartNumber: null });
       partNumber = resolvedPN;
       resolvedViaAlias = true;
       partNumberIsProvisional = false;

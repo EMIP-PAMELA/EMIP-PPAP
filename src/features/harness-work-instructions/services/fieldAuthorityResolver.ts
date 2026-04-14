@@ -146,15 +146,34 @@ function readParsedDrawingRevision(data: unknown): string | null {
 // ---------------------------------------------------------------------------
 
 const RHEEM_PN_RE   = /\b(45-\d{5,6}-\d{2,4}[A-Z]?)\b/;
-const APOGEE_PN_RE  = /\b(527-\d{4}-010)\b/;
+const APOGEE_DRN_RE = /\b(527-\d{4}-010)\b/;  // Apogee DRAWING NUMBER — not a part number
 const NH_PN_RE      = /\b(NH\d{2}-\d{5,6}-\d{2,3})\b/i;
 const REV_IN_FN_RE  = /[-_\s](?:rev|r)[-_\s]?([A-Z0-9]{1,4})(?:[-_\s.]|$)/i;
 
+// ---------------------------------------------------------------------------
+// Identifier Role Classification (C11.3)
+// Narrow guard for known Apogee/Rheem identifier patterns only.
+// ---------------------------------------------------------------------------
+
+type IdentifierRole = 'PART_NUMBER' | 'DRAWING_NUMBER' | 'UNKNOWN';
+
+function classifyIdentifierRole(value: string): IdentifierRole {
+  if (!value) return 'UNKNOWN';
+  if (APOGEE_DRN_RE.test(value.trim())) return 'DRAWING_NUMBER';
+  if (RHEEM_PN_RE.test(value.trim()))   return 'PART_NUMBER';
+  return 'UNKNOWN';
+}
+
 function readFilenamePN(filename: string | null | undefined): string | null {
   if (!filename) return null;
-  const m = RHEEM_PN_RE.exec(filename)
-    ?? APOGEE_PN_RE.exec(filename)
-    ?? NH_PN_RE.exec(filename);
+  // APOGEE_DRN_RE intentionally excluded — 527-xxxx-010 is a drawing number, not a part number
+  const m = RHEEM_PN_RE.exec(filename) ?? NH_PN_RE.exec(filename);
+  return m ? m[1] : null;
+}
+
+function readFilenameDrawingNumber(filename: string | null | undefined): string | null {
+  if (!filename) return null;
+  const m = APOGEE_DRN_RE.exec(filename);
   return m ? m[1] : null;
 }
 
@@ -250,7 +269,8 @@ export function resolveDocumentFields(
     // ── TITLE_BLOCK_REGION / REVISION_REGION (C12 region-aware extractor) ────
     const tbr = args.titleBlockResult;
     if (tbr) {
-      if (tbr.partNumber.value) {
+      if (tbr.partNumber.value && classifyIdentifierRole(tbr.partNumber.value) !== 'DRAWING_NUMBER') {
+        console.log('[IDENTIFIER ROLE]', { value: tbr.partNumber.value, classifiedAs: classifyIdentifierRole(tbr.partNumber.value), context: 'TITLE_BLOCK_REGION partNumber' });
         allCandidates.push({
           field: 'partNumber',
           value: tbr.partNumber.value,
@@ -259,7 +279,8 @@ export function resolveDocumentFields(
           evidence: tbr.partNumber.evidence.length ? tbr.partNumber.evidence : ['region-aware title block extraction'],
         });
       }
-      if (tbr.drawingNumber.value && tbr.drawingNumber.value !== tbr.partNumber.value) {
+      if (tbr.drawingNumber.value && tbr.drawingNumber.value !== tbr.partNumber.value && classifyIdentifierRole(tbr.drawingNumber.value) !== 'DRAWING_NUMBER') {
+        console.log('[IDENTIFIER ROLE]', { value: tbr.drawingNumber.value, classifiedAs: classifyIdentifierRole(tbr.drawingNumber.value), context: 'TITLE_BLOCK_REGION drawingNumber→partNumber' });
         allCandidates.push({
           field: 'partNumber',
           value: tbr.drawingNumber.value,
@@ -283,7 +304,8 @@ export function resolveDocumentFields(
     const vis = args.visionResult;
     if (vis?.metadata) {
       const visConf = Math.min(vis.confidence ?? 0, 0.80);  // cap to stay below deterministic region
-      if (vis.metadata.partNumber) {
+      if (vis.metadata.partNumber && classifyIdentifierRole(vis.metadata.partNumber) !== 'DRAWING_NUMBER') {
+        console.log('[IDENTIFIER ROLE]', { value: vis.metadata.partNumber, classifiedAs: classifyIdentifierRole(vis.metadata.partNumber), context: 'AI_VISION partNumber' });
         allCandidates.push({
           field:      'partNumber',
           value:      vis.metadata.partNumber,
@@ -292,12 +314,13 @@ export function resolveDocumentFields(
           evidence:   ['AI vision parse — drawing metadata'],
         });
       }
-      if (vis.metadata.drawingNumber && vis.metadata.drawingNumber !== vis.metadata.partNumber) {
+      if (vis.metadata.drawingNumber && vis.metadata.drawingNumber !== vis.metadata.partNumber && classifyIdentifierRole(vis.metadata.drawingNumber) !== 'DRAWING_NUMBER') {
+        console.log('[IDENTIFIER ROLE]', { value: vis.metadata.drawingNumber, classifiedAs: classifyIdentifierRole(vis.metadata.drawingNumber), context: 'AI_VISION drawingNumber→partNumber' });
         allCandidates.push({
           field:      'partNumber',
           value:      vis.metadata.drawingNumber,
           source:     'AI_VISION',
-          confidence: visConf * 0.9,  // drawing number slightly less confident than PN
+          confidence: visConf * 0.9,
           evidence:   ['AI vision parse — drawing number'],
         });
       }

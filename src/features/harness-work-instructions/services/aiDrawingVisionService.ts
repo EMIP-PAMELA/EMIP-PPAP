@@ -292,10 +292,22 @@ export function sanitizeVisionResult(result: VisionParsedDrawingResult): VisionP
 
   const sanitizedNotes: string[] = (result.notes ?? []).filter(n => typeof n === 'string' && n.trim().length > 0);
 
+  // C11.3: Guard — if AI erroneously returns a 527 drawing number as partNumber, null it
+  // and rescue it as drawingNumber so the signal is preserved without poisoning the PN pool.
+  const APOGEE_DRN_PATTERN = /^527-\d{4}-010$/i;
+  const rawPN  = cleanString(meta.partNumber);
+  const rawDRN = cleanString(meta.drawingNumber);
+  const pnIsDrawingNumber = Boolean(rawPN && APOGEE_DRN_PATTERN.test(rawPN.trim()));
+  const sanitizedPN  = pnIsDrawingNumber ? null : rawPN;
+  const sanitizedDRN = rawDRN ?? (pnIsDrawingNumber ? rawPN : null);
+  if (pnIsDrawingNumber) {
+    console.log('[IDENTIFIER ROLE]', { value: rawPN, classifiedAs: 'DRAWING_NUMBER', context: 'AI_VISION sanitizeVisionResult — partNumber nulled, rescued as drawingNumber' });
+  }
+
   return {
     metadata: {
-      partNumber:    cleanString(meta.partNumber),
-      drawingNumber: cleanString(meta.drawingNumber),
+      partNumber:    sanitizedPN,
+      drawingNumber: sanitizedDRN,
       revision:      cleanString(meta.revision),
     },
     wires:      sanitizedWires,

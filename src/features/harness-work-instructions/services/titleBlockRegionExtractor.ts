@@ -56,7 +56,7 @@ export type TitleBlockExtractionResult = {
 // PN patterns
 // ---------------------------------------------------------------------------
 
-const APOGEE_PN_RE = /\b(527-\d{4}-010)\b/;
+const APOGEE_DRN_RE = /\b(527-\d{4}-010)\b/;  // Apogee DRAWING NUMBER pattern
 const RHEEM_PN_RE  = /\b(45-\d{5,6}-\d{2,4}[A-Z]?)\b/;
 
 const RHEEM_TITLE_ANCHOR_RE = /REV\s+PART\s+NO\.?/i;
@@ -122,10 +122,14 @@ type RegionExtracted = Pick<
   'partNumber' | 'drawingNumber' | 'revision'
 >;
 
+// C11.3: 45-pattern search used inside extractApogee for customer PN cross-references
+const RHEEM_PN_IN_APOGEE_RE = /\b(45-\d{5,6}-\d{2,4}[A-Z]?)\b/;
+
 function extractApogee(text: string, allLines: string[]): RegionExtracted {
-  // ── Part Number ─────────────────────────────────────────────────────────
-  let pnValue: string | null = null;
-  let pnInContext = false;
+  // ── Drawing Number (527-xxxx-010) ─────────────────────────────────────
+  // This is the Apogee DRAWING NUMBER, not the part number.
+  let drnValue: string | null = null;
+  let drnInContext = false;
 
   // Prefer last-40 first (Apogee title block is lower-right; OCR may emit it last)
   // then first-40, then full document as a fallback
@@ -137,36 +141,44 @@ function extractApogee(text: string, allLines: string[]): RegionExtracted {
 
   outer: for (const zone of scanZones) {
     for (let i = 0; i < zone.length; i++) {
-      const m = zone[i].match(APOGEE_PN_RE);
+      const m = zone[i].match(APOGEE_DRN_RE);
       if (!m) continue;
-      pnValue = m[1];
+      drnValue = m[1];
       const windowText = zone
         .slice(Math.max(0, i - 5), Math.min(zone.length, i + 7))
         .join('\n')
         .toUpperCase();
-      pnInContext = APOGEE_TB_CONTEXT_KW.some(kw => windowText.includes(kw));
+      drnInContext = APOGEE_TB_CONTEXT_KW.some(kw => windowText.includes(kw));
       break outer;
     }
   }
 
-  const partNumber: RegionDerivedField = pnValue
+  const drnConfidence = drnInContext ? 0.96 : 0.88;
+
+  // ── Part Number — search for 45-pattern Rheem PN in drawing text ─────
+  // Apogee drawings sometimes cross-reference the Rheem customer part number.
+  // If absent, leave partNumber null — alias lookup will resolve 527 DRN → 45 PN downstream.
+  const rheem45Match = text.match(RHEEM_PN_IN_APOGEE_RE);
+  const rheem45Val   = rheem45Match?.[1] ?? null;
+
+  const partNumber: RegionDerivedField = rheem45Val
     ? {
-        value: pnValue,
-        confidence: pnInContext ? 0.96 : 0.88,
-        source: 'TITLE_BLOCK_REGION',
-        evidence: [
-          'Apogee 527-XXXX-010 title block PN',
-          ...(pnInContext ? ['confirmed near DRAWN/DATE/SCALE context'] : []),
-        ],
+        value:      rheem45Val,
+        confidence: 0.82,
+        source:     'TITLE_BLOCK_REGION',
+        evidence:   ['Apogee drawing — 45-pattern Rheem part number cross-reference'],
       }
     : nullField();
 
-  const drawingNumber: RegionDerivedField = pnValue
+  const drawingNumber: RegionDerivedField = drnValue
     ? {
-        value: pnValue,
-        confidence: partNumber.confidence,
-        source: 'TITLE_BLOCK_REGION',
-        evidence: ['Apogee drawing number equals part number (527-XXXX-010)'],
+        value:      drnValue,
+        confidence: drnConfidence,
+        source:     'TITLE_BLOCK_REGION',
+        evidence:   [
+          'Apogee 527-XXXX-010 drawing number',
+          ...(drnInContext ? ['confirmed near DRAWN/DATE/SCALE context'] : []),
+        ],
       }
     : nullField();
 
@@ -176,18 +188,18 @@ function extractApogee(text: string, allLines: string[]): RegionExtracted {
   const revision: RegionDerivedField =
     apogeeRev.isApogeeDrawing && isValidRevision(apogeeRev.revision)
       ? {
-          value: apogeeRev.revision!,
+          value:      apogeeRev.revision!,
           confidence: 0.92,
-          source: 'REVISION_REGION',
-          evidence: ['Apogee revision record box (upper-right, date-anchored extraction)'],
+          source:     'REVISION_REGION',
+          evidence:   ['Apogee revision record box (upper-right, date-anchored extraction)'],
         }
       : nullField();
 
   return {
-    titleBlockDetected: Boolean(pnValue),
-    titleBlockBox:       pnValue ? { x: 0.55, y: 0.80, w: 0.40, h: 0.15 } : undefined,
+    titleBlockDetected:     Boolean(drnValue),
+    titleBlockBox:          drnValue ? { x: 0.55, y: 0.80, w: 0.40, h: 0.15 } : undefined,
     revisionRegionDetected: revision.value !== null,
-    revisionRegionBox:   revision.value !== null ? { x: 0.65, y: 0.00, w: 0.30, h: 0.18 } : undefined,
+    revisionRegionBox:      revision.value !== null ? { x: 0.65, y: 0.00, w: 0.30, h: 0.18 } : undefined,
     partNumber,
     drawingNumber,
     revision,
@@ -324,14 +336,14 @@ function extractRheem(
 
 function extractGeneric(allLines: string[]): RegionExtracted {
   for (const line of allLines) {
-    const a = line.match(APOGEE_PN_RE);
+    const a = line.match(APOGEE_DRN_RE);
     if (a) {
       return {
-        titleBlockDetected: true,
+        titleBlockDetected:     true,
         revisionRegionDetected: false,
-        partNumber:   { value: a[1], confidence: 0.75, source: 'TITLE_BLOCK_REGION', evidence: ['Apogee PN pattern in generic drawing'] },
-        drawingNumber:{ value: a[1], confidence: 0.75, source: 'TITLE_BLOCK_REGION', evidence: ['Apogee PN = DWG in generic drawing'] },
-        revision: nullField(),
+        partNumber:    nullField(),  // 527 is a drawing number — leave PN for alias resolution
+        drawingNumber: { value: a[1], confidence: 0.75, source: 'TITLE_BLOCK_REGION', evidence: ['Apogee 527-XXXX-010 drawing number in generic drawing'] },
+        revision:      nullField(),
       };
     }
   }
@@ -376,7 +388,7 @@ export function extractTitleBlockAndRevisionRegions(args: {
 
     let extracted: RegionExtracted;
 
-    if (docType === 'INTERNAL_DRAWING' || (!docType && APOGEE_PN_RE.test(text))) {
+    if (docType === 'INTERNAL_DRAWING' || (!docType && APOGEE_DRN_RE.test(text))) {
       extracted = extractApogee(text, allLines);
     } else if (docType === 'CUSTOMER_DRAWING' || (!docType && RHEEM_PN_RE.test(text))) {
       extracted = extractRheem(text, allLines, args.rheemModel);
