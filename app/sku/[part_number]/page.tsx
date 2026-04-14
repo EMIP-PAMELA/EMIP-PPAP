@@ -25,6 +25,11 @@ import SKUControlPanel from '@/src/features/sku/components/SKUControlPanel';
 import HarnessStructurePanel from '@/src/features/sku/components/HarnessStructurePanel';
 import TruthVerificationPanel from '@/src/features/sku/components/TruthVerificationPanel';
 import type { ExtractionCoverage } from '@/src/features/harness-work-instructions/services/extractionCoverageService';
+import {
+  applyWireOverrides,
+  loadOverrides,
+  type WireOverride,
+} from '@/src/features/sku/utils/wireOverrides';
 import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedFixActions';
 import CorrectiveContextBanner from '@/src/components/CorrectiveContextBanner';
 import { deriveIssueKind, parseActionIntentParam } from '@/src/features/revision/utils/correctiveIntent';
@@ -98,6 +103,7 @@ export default function SKUDashboardPage() {
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
   const [pipelineJob, setPipelineJob] = useState<HarnessInstructionJob | null>(null);
   const [pipelineCoverage, setPipelineCoverage] = useState<ExtractionCoverage | undefined>(undefined);
+  const [wireOverrides, setWireOverrides] = useState<Record<string, WireOverride>>({});
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'READY' | 'PARTIAL'>('idle');
   const autoRunSignature = useRef<string | null>(null);
   const revisionSectionRef = useRef<HTMLDivElement | null>(null);
@@ -191,6 +197,14 @@ export default function SKUDashboardPage() {
       revisionSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [tabParam, loading]);
+
+  useEffect(() => {
+    if (!partNumber) return;
+    const saved = loadOverrides(partNumber);
+    if (Object.keys(saved).length > 0) {
+      setWireOverrides(saved);
+    }
+  }, [partNumber]);
 
   const revisionIntentActive = Boolean(actionIntent && actionIntent !== 'REVIEW_READINESS');
   const readinessIntentActive = actionIntent === 'REVIEW_READINESS';
@@ -352,13 +366,18 @@ export default function SKUDashboardPage() {
     runPipeline('auto');
   }, [docByType, documentPresence.hasBOM, documentPresence.hasAnyDrawing, sku?.id, loading]);
 
-  const wireCount      = pipelineJob?.wire_instances?.length ?? 0;
-  const terminalCount  = pipelineJob?.wire_instances?.filter(
+  const effectiveWires = useMemo(
+    () => applyWireOverrides(pipelineJob?.wire_instances ?? [], wireOverrides),
+    [pipelineJob, wireOverrides],
+  );
+
+  const wireCount      = effectiveWires.length;
+  const terminalCount  = effectiveWires.filter(
     w => w.end_a.terminal_part_number || w.end_b.terminal_part_number,
-  ).length ?? 0;
-  const connectorCount = pipelineJob?.wire_instances?.filter(
+  ).length;
+  const connectorCount = effectiveWires.filter(
     w => w.end_a.connector_id || w.end_b.connector_id,
-  ).length ?? 0;
+  ).length;
   const pinMapCount    = pipelineJob?.pin_map_rows?.length ?? 0;
   const hasStructureData = wireCount > 0;
 
@@ -486,8 +505,10 @@ export default function SKUDashboardPage() {
         />
 
         <TruthVerificationPanel
+          partNumber={partNumber}
           coverage={pipelineCoverage}
-          wires={pipelineJob?.wire_instances ?? []}
+          wires={effectiveWires}
+          onOverridesUpdated={setWireOverrides}
         />
 
         <section className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5 space-y-4">

@@ -1,23 +1,28 @@
 'use client';
 
 /**
- * Truth Verification Panel — Phase 3H.44 C7.2
+ * Truth Verification Panel — Phase 3H.44 C7.2 / C7.3
  *
- * Surfaces extraction gaps and allows user correction of missing wire fields.
- * Local state only — no backend writes, no pipeline mutation.
+ * Surfaces extraction gaps, allows user correction of missing wire fields,
+ * and persists confirmed overrides to localStorage for pipeline injection.
  *
  * Governance:
  *   - UI ONLY. No modification of extraction, resolution, or pipeline logic.
- *   - Edits are held in component state; persistence deferred to a future phase.
- *   - Gracefully handles undefined coverage (panel still renders with wire data).
+ *   - Confirmed edits persist to localStorage; server persistence deferred.
+ *   - Gracefully handles undefined coverage.
  */
 
 import React, { useEffect, useState } from 'react';
 import type { WireInstance } from '@/src/features/harness-work-instructions/types/harnessInstruction.schema';
 import type { ExtractionCoverage } from '@/src/features/harness-work-instructions/services/extractionCoverageService';
+import {
+  type WireOverride,
+  loadOverrides,
+  saveOverrides,
+} from '@/src/features/sku/utils/wireOverrides';
 
 // ---------------------------------------------------------------------------
-// Local correction record — keyed by wire_id
+// Local edit record — keyed by wire_id (in-progress, not yet confirmed)
 // ---------------------------------------------------------------------------
 
 interface WireCorrection {
@@ -31,8 +36,10 @@ interface WireCorrection {
 // ---------------------------------------------------------------------------
 
 export interface TruthVerificationPanelProps {
+  partNumber: string;
   coverage: ExtractionCoverage | undefined;
   wires: WireInstance[];
+  onOverridesUpdated?: (overrides: Record<string, WireOverride>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,11 +74,27 @@ function fieldClass(missing: boolean): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function TruthVerificationPanel({ coverage, wires }: TruthVerificationPanelProps) {
-  const [editedWires, setEditedWires] = useState<Record<string, WireCorrection>>({});
+export default function TruthVerificationPanel({
+  partNumber,
+  coverage,
+  wires,
+  onOverridesUpdated,
+}: TruthVerificationPanelProps) {
+  const [editedWires, setEditedWires]       = useState<Record<string, WireCorrection>>({});
+  const [confirmedWires, setConfirmedWires] = useState<Record<string, WireOverride>>({});
 
+  // Load persisted overrides from localStorage after hydration
+  useEffect(() => {
+    if (!partNumber) return;
+    const saved = loadOverrides(partNumber);
+    if (Object.keys(saved).length > 0) {
+      setConfirmedWires(saved);
+    }
+  }, [partNumber]);
+
+  // Show wires that are missing data OR have been confirmed (always visible when locked)
   const wiresNeedingAttention = wires.filter(
-    w => isMissingLength(w) || isMissingTerminal(w) || isMissingPin(w),
+    w => isMissingLength(w) || isMissingTerminal(w) || isMissingPin(w) || Boolean(confirmedWires[w.wire_id]),
   );
 
   useEffect(() => {
@@ -88,11 +111,48 @@ export default function TruthVerificationPanel({ coverage, wires }: TruthVerific
   ) {
     setEditedWires(prev => ({
       ...prev,
-      [wireId]: {
-        ...prev[wireId],
-        [field]: value,
-      },
+      [wireId]: { ...prev[wireId], [field]: value },
     }));
+  }
+
+  function confirmWire(wireId: string) {
+    const wire       = wires.find(w => w.wire_id === wireId);
+    if (!wire) return;
+    const correction = editedWires[wireId] ?? {};
+
+    const override: WireOverride = {
+      wireId,
+      terminal:
+        correction.terminal !== undefined
+          ? correction.terminal
+          : (wire.end_a.terminal_part_number ?? undefined),
+      length:
+        correction.cut_length !== undefined && correction.cut_length !== ''
+          ? Number(correction.cut_length)
+          : (wire.cut_length ?? undefined),
+      pin:
+        correction.pin !== undefined
+          ? correction.pin
+          : (wire.end_a.connector_id ?? undefined),
+    };
+
+    const next = { ...confirmedWires, [wireId]: override };
+    setConfirmedWires(next);
+    saveOverrides(partNumber, next);
+    onOverridesUpdated?.(next);
+
+    console.log('[TRUTH LOCK APPLIED]', {
+      overrides:     next,
+      affectedWires: Object.keys(next),
+    });
+  }
+
+  function unlockWire(wireId: string) {
+    const next = { ...confirmedWires };
+    delete next[wireId];
+    setConfirmedWires(next);
+    saveOverrides(partNumber, next);
+    onOverridesUpdated?.(next);
   }
 
   const scoreInfo = coverage ? coverageLabel(coverage.coverageScore) : null;
@@ -138,14 +198,42 @@ export default function TruthVerificationPanel({ coverage, wires }: TruthVerific
         </div>
       )}
 
-      {/* ── Editable rows ───────────────────────────────────────────────────── */}
+      {/* ── Rows ────────────────────────────────────────────────────────────── */}
       {wiresNeedingAttention.length > 0 ? (
         <div className="divide-y divide-gray-100">
           {wiresNeedingAttention.map(wire => {
             const correction = editedWires[wire.wire_id] ?? {};
+            const locked     = Boolean(confirmedWires[wire.wire_id]);
+            const override   = confirmedWires[wire.wire_id];
             const missingLen  = isMissingLength(wire);
             const missingTerm = isMissingTerminal(wire);
             const missingPin  = isMissingPin(wire);
+
+            if (locked && override) {
+              return (
+                <div key={wire.wire_id} className="px-6 py-4 bg-emerald-50/60">
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <span className="font-mono text-sm font-semibold text-gray-800">{wire.wire_id}</span>
+                    <span className="text-xs text-gray-400">{wire.color ?? ''} {wire.gauge ?? ''}</span>
+                    <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-200 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                      🔒 Locked (User Confirmed)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => unlockWire(wire.wire_id)}
+                      className="text-xs text-gray-400 hover:text-gray-600 underline"
+                    >
+                      Edit Again
+                    </button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3 text-xs text-gray-600">
+                    <div><span className="font-semibold uppercase tracking-wide text-gray-400">Terminal</span><br />{override.terminal ?? '—'}</div>
+                    <div><span className="font-semibold uppercase tracking-wide text-gray-400">Length (mm)</span><br />{override.length ?? '—'}</div>
+                    <div><span className="font-semibold uppercase tracking-wide text-gray-400">Connector / Pin</span><br />{override.pin ?? '—'}</div>
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <div key={wire.wire_id} className="px-6 py-4">
@@ -160,7 +248,6 @@ export default function TruthVerificationPanel({ coverage, wires }: TruthVerific
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-3">
-                  {/* Terminal */}
                   <label className="space-y-1">
                     <span className={`text-xs font-semibold uppercase tracking-wide ${missingTerm && !correction.terminal ? 'text-red-600' : 'text-gray-500'}`}>
                       Terminal {missingTerm && !correction.terminal ? '⚠' : ''}
@@ -174,7 +261,6 @@ export default function TruthVerificationPanel({ coverage, wires }: TruthVerific
                     />
                   </label>
 
-                  {/* Length */}
                   <label className="space-y-1">
                     <span className={`text-xs font-semibold uppercase tracking-wide ${missingLen && correction.cut_length === undefined ? 'text-red-600' : 'text-gray-500'}`}>
                       Length (mm) {missingLen && correction.cut_length === undefined ? '⚠' : ''}
@@ -190,7 +276,6 @@ export default function TruthVerificationPanel({ coverage, wires }: TruthVerific
                     />
                   </label>
 
-                  {/* Pin / Connector */}
                   <label className="space-y-1">
                     <span className={`text-xs font-semibold uppercase tracking-wide ${missingPin && !correction.pin ? 'text-red-600' : 'text-gray-500'}`}>
                       Connector / Pin {missingPin && !correction.pin ? '⚠' : ''}
@@ -203,6 +288,16 @@ export default function TruthVerificationPanel({ coverage, wires }: TruthVerific
                       className={`w-full rounded-lg border px-3 py-1.5 text-sm outline-none ring-1 ring-transparent focus:ring-2 transition ${fieldClass(missingPin && !correction.pin)}`}
                     />
                   </label>
+                </div>
+
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => confirmWire(wire.wire_id)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition"
+                  >
+                    ✔ Confirm
+                  </button>
                 </div>
               </div>
             );
