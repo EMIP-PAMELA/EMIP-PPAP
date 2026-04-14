@@ -32,9 +32,11 @@ import { extractTitleBlockAndRevisionRegions, scanForApogeePN45, type TitleBlock
 import { detectWireTableRegion } from './wireTableRegionExtractor';
 import { parseWireTableRows } from './wireTableParser';
 import { buildHarnessConnectivity, type HarnessConnectivityResult } from './harnessConnectivityService';
+import { isolateDiagramLines, extractDiagramComponents, mergeWithVisionResult, type DiagramExtractionResult } from './diagramExtractor';
 import {
   runAIDrawingVisionParse,
   runTitleBlockCropVisionParse,
+  runDiagramComponentParse,
   mergeVisionParsedData,
   type VisionParsedDrawingResult,
   type TitleBlockCropVisionResult,
@@ -1004,13 +1006,19 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     });
   }
 
+  // Shared OCR lines for T1 + T4 (computed once, avoids duplicate split)
+  const ocrLines: string[] = (drawingSubtype === 'INTERNAL_DRAWING' && normalizedText)
+    ? normalizedText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0)
+    : [];
+
   // --- T1: Wire table region detection and structured row extraction ---
   let wireTableResult: IngestionAnalysisResult['wireTableResult'] = null;
+  let wireTableHeaderIdx: number | null = null; // captured for T4 diagram region isolation
   if (drawingSubtype === 'INTERNAL_DRAWING' && normalizedText) {
     try {
-      const ocrLines = normalizedText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
       const detected  = detectWireTableRegion(ocrLines);
       if (detected) {
+        wireTableHeaderIdx = detected.headerLineIdx;
         const parsed = parseWireTableRows(detected.bodyLines);
         wireTableResult = {
           region:       detected.region,
@@ -1030,6 +1038,40 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       }
     } catch (err) {
       console.warn('[T1 WIRE TABLE] Non-fatal — continuing without wire table result.', err);
+    }
+  }
+
+  // --- T4: Diagram component and callout extraction ---
+  let diagramExtraction: DiagramExtractionResult | null = null;
+  if (drawingSubtype === 'INTERNAL_DRAWING' && normalizedText) {
+    try {
+      const diagramLines = isolateDiagramLines(ocrLines, wireTableHeaderIdx);
+      if (diagramLines.length >= 3) {
+        const deterministic = extractDiagramComponents(diagramLines);
+
+        // AI augmentation — text-based, scoped to diagram region, non-fatal
+        let visionResult = null;
+        if (diagramLines.length >= 5) {
+          try {
+            visionResult = await runDiagramComponentParse({
+              diagramText: diagramLines.join('\n'),
+              fileName,
+            });
+          } catch {
+            console.warn('[T4 DIAGRAM] AI pass failed — using deterministic only');
+          }
+        }
+
+        diagramExtraction = mergeWithVisionResult(deterministic, visionResult);
+        console.log('[T4 DIAGRAM EXTRACTION]', {
+          diagramLines:      diagramLines.length,
+          components:        diagramExtraction.components.length,
+          callouts:          diagramExtraction.callouts.length,
+          unresolvedCallouts: diagramExtraction.unresolvedCallouts.length,
+        });
+      }
+    } catch (err) {
+      console.warn('[T4 DIAGRAM EXTRACTION] Non-fatal — continuing without diagram result.', err);
     }
   }
 
@@ -1378,6 +1420,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     titleBlockCropResult,
     wireTableResult,
     harnessConnectivity,
+    diagramExtraction,
     analyzedAt: new Date().toISOString(),
   };
 }

@@ -22,6 +22,8 @@
  *   - No DB writes. No side effects outside of enriching the pipeline result.
  */
 
+import type { DiagramVisionResult } from './diagramExtractor';
+
 // ---------------------------------------------------------------------------
 // Core Output Types (spec-mandated)
 // ---------------------------------------------------------------------------
@@ -586,4 +588,127 @@ export function mergeVisionParsedData(args: {
 
   // ── No deterministic data (or unrecognized shape) — use vision model directly ──
   return displayModel;
+}
+
+// ---------------------------------------------------------------------------
+// Step 7 — T4: Diagram Component Parse (text-based, scoped AI pass)
+// ---------------------------------------------------------------------------
+
+const DIAGRAM_COMPONENT_PROMPT_LIMIT = 4_000;
+
+function buildDiagramComponentPrompt(diagramText: string, fileName?: string | null): string {
+  const fileHint = fileName ? `File: ${fileName}.\n` : '';
+  const text = diagramText.slice(0, DIAGRAM_COMPONENT_PROMPT_LIMIT);
+  return `You are analyzing the DIAGRAM REGION of an electrical harness drawing (not the wire schedule table or title block).
+${fileHint}
+Identify ALL visible connectors, terminals, splice callouts, and label callouts in this diagram area.
+
+RULES:
+- Do NOT infer connections or topology between components.
+- Do NOT guess part numbers not visible in the text.
+- Do NOT fabricate labels not present in the text.
+- If a field cannot be determined, use null.
+- Return ONLY valid JSON — no markdown fences, no extra text.
+- Type must be one of: CONNECTOR, TERMINAL, SPLICE, UNKNOWN.
+- Position must be one of: LEFT, RIGHT, CENTER, or null.
+
+SCHEMA:
+{
+  "components": [
+    {
+      "label": "string",
+      "type": "CONNECTOR|TERMINAL|SPLICE|UNKNOWN",
+      "partNumber": "string|null",
+      "position": "LEFT|RIGHT|CENTER|null"
+    }
+  ],
+  "callouts": [
+    {
+      "text": "string",
+      "partNumber": "string|null",
+      "associatedComponent": "string|null"
+    }
+  ]
+}
+
+DIAGRAM TEXT:
+${text}`;
+}
+
+function safeParseDiagramVisionResponse(raw: string): DiagramVisionResult | null {
+  try {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const obj = parsed as Record<string, unknown>;
+    if (!Array.isArray(obj.components) || !Array.isArray(obj.callouts)) return null;
+
+    const VALID_TYPES = new Set(['CONNECTOR', 'TERMINAL', 'SPLICE', 'UNKNOWN']);
+    const VALID_POS   = new Set(['LEFT', 'RIGHT', 'CENTER', null]);
+
+    const components = (obj.components as unknown[]).flatMap(c => {
+      if (!c || typeof c !== 'object') return [];
+      const comp = c as Record<string, unknown>;
+      const label = cleanString(comp.label);
+      if (!label) return [];
+      const type = VALID_TYPES.has(String(comp.type)) ? (comp.type as DiagramVisionResult['components'][0]['type']) : 'UNKNOWN';
+      const pos   = VALID_POS.has(comp.position as string | null) ? (comp.position as DiagramVisionResult['components'][0]['position']) : null;
+      return [{ label, type, partNumber: cleanString(comp.partNumber), position: pos }];
+    });
+
+    const callouts = (obj.callouts as unknown[]).flatMap(c => {
+      if (!c || typeof c !== 'object') return [];
+      const co = c as Record<string, unknown>;
+      const text = cleanString(co.text);
+      if (!text) return [];
+      return [{
+        text,
+        partNumber:          cleanString(co.partNumber),
+        associatedComponent: cleanString(co.associatedComponent),
+      }];
+    });
+
+    return { components, callouts };
+  } catch (err) {
+    console.warn('[T4 DIAGRAM VISION] JSON parse failed', err);
+    return null;
+  }
+}
+
+/**
+ * Run a focused Claude text-analysis pass on diagram-region OCR lines.
+ * Returns null on any failure — the caller must treat this as optional enrichment.
+ * AI output is additive-only; deterministic results take precedence.
+ */
+export async function runDiagramComponentParse(args: {
+  diagramText: string;
+  fileName?: string | null;
+}): Promise<DiagramVisionResult | null> {
+  const { diagramText, fileName } = args;
+  if (!diagramText.trim()) return null;
+
+  console.log('[T4 DIAGRAM VISION] invoking Claude on diagram region text', {
+    diagramTextLength: diagramText.length,
+  });
+
+  try {
+    const prompt = buildDiagramComponentPrompt(diagramText, fileName);
+    const raw = await callVisionRoute(prompt);
+    if (!raw) {
+      console.warn('[T4 DIAGRAM VISION] Empty response');
+      return null;
+    }
+    const result = safeParseDiagramVisionResponse(raw);
+    if (result) {
+      console.log('[T4 DIAGRAM VISION RESULT]', {
+        components: result.components.length,
+        callouts:   result.callouts.length,
+      });
+    }
+    return result;
+  } catch (err) {
+    console.warn('[T4 DIAGRAM VISION] Failed — returning null', err);
+    return null;
+  }
 }

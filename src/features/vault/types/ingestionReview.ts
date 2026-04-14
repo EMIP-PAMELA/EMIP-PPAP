@@ -134,6 +134,13 @@ export interface IngestionAnalysisResult {
    */
   harnessConnectivity?: import('@/src/features/harness-work-instructions/services/harnessConnectivityService').HarnessConnectivityResult | null;
 
+  /**
+   * Phase T4: Connector and callout extraction from the diagram region.
+   * INTERMEDIATE DATA — not authoritative. Does not affect field resolution.
+   * Components and callouts are signals for future reconciliation with HC-BOM.
+   */
+  diagramExtraction?: import('@/src/features/harness-work-instructions/services/diagramExtractor').DiagramExtractionResult | null;
+
   analyzedAt: string;
 }
 
