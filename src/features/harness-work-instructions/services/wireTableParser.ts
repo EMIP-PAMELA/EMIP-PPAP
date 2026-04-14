@@ -53,7 +53,7 @@ export interface WireTableParseResult {
  * Matches: W1, W12, Y1, Y12, bare numerics 1–9999, COM, GND, SHLD, SHIELD, SHD.
  * Anchored to start of trimmed line with a word-boundary after.
  */
-const WIRE_ID_RE = /^([A-Z]?\d{1,4}|COM|GND|SHLD|SHIELD|SHD|Y\d{1,3}|N\.?C\.?)\b/i;
+const WIRE_ID_RE = /^(W\d{1,4}|\d{1,4}|COM|GND|SHLD|SHIELD|SHD|Y\d{1,3}|N\.?C\.?)\b/i;
 
 const LENGTH_RE      = /\b(\d{1,4}(?:\.\d{1,3})?)\s*(?:IN(?:CH(?:ES)?)?|"|(?=\s|$))/i;
 const GAUGE_RE       = /\b(\d{1,2})\s*(?:AWG|GA(?:UGE)?)\b/i;
@@ -71,7 +71,7 @@ const PIN_EXPLICIT_RE = /\bPIN\s*[-#]?\s*(\d{1,3})\b/i;
  * Terminal / strip part number — dash-separated numeric part numbers
  * (e.g. "929504-1", "1-1293578-4"). Reuses Rheem parser pattern.
  */
-const TERMINAL_RE = /\b(\d{1,4}-\d{4,9}(?:-\d{1,4})?)\b/g;
+const TERMINAL_RE = /\b(\d{1,4}-\d{4,9}(?:-\d{1,4})?|\d{4,9}-\d{1,4})\b/g;
 
 const TREATMENT_SPLICE_RE     = /\bSPLICE\b/i;
 const TREATMENT_HEATSHRINK_RE = /\bHEAT[\s-]?SHRINK\b/i;

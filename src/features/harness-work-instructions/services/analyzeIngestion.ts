@@ -31,6 +31,7 @@ import { analyzeDocumentStructure } from './documentStructureAnalyzer';
 import { extractTitleBlockAndRevisionRegions, scanForApogeePN45, type TitleBlockExtractionResult } from './titleBlockRegionExtractor';
 import { detectWireTableRegion } from './wireTableRegionExtractor';
 import { parseWireTableRows } from './wireTableParser';
+import { buildHarnessConnectivity, type HarnessConnectivityResult } from './harnessConnectivityService';
 import {
   runAIDrawingVisionParse,
   runTitleBlockCropVisionParse,
@@ -1032,6 +1033,16 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     }
   }
 
+  // --- T2: Harness Connectivity normalization (HC-BOM) ---
+  let harnessConnectivity: HarnessConnectivityResult | null = null;
+  if (wireTableResult && wireTableResult.rows.length > 0) {
+    try {
+      harnessConnectivity = buildHarnessConnectivity(wireTableResult.rows);
+    } catch (err) {
+      console.warn('[T2 CONNECTIVITY] Non-fatal — continuing without HC-BOM.', err);
+    }
+  }
+
   // --- C13: Universal AI vision parse ---
   let visionParsedResult: VisionParsedDrawingResult | null = null;
   if (pipelineMode === 'DRAWING' && normalizedText) {
@@ -1366,6 +1377,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     visionParsedResult,
     titleBlockCropResult,
     wireTableResult,
+    harnessConnectivity,
     analyzedAt: new Date().toISOString(),
   };
 }

@@ -190,11 +190,11 @@ test('T1 parser: parseQuality GOOD when majority of rows have gauge', () => {
 
 test('T1 parser: parseQuality POOR when no gauge fields present', () => {
   const body = lines(
-    'W1  J1  3',
-    'W2  J2  1',
+    'W1  J1',
+    'W2  J2',
   );
   const result = parseWireTableRows(body);
-  // These lines have no AWG so gauge is null → POOR
+  // These lines have no AWG token so gauge is null → POOR
   assert.equal(result.parseQuality, 'POOR');
 });
 

@@ -127,6 +127,13 @@ export interface IngestionAnalysisResult {
     headerText: string | null;
   } | null;
 
+  /**
+   * Phase T2: Harness Connectivity BOM — normalized from/to endpoint model.
+   * INTERMEDIATE DATA — not authoritative. Does not affect field resolution.
+   * Ambiguous wires are explicitly flagged; forced mappings are forbidden.
+   */
+  harnessConnectivity?: import('@/src/features/harness-work-instructions/services/harnessConnectivityService').HarnessConnectivityResult | null;
+
   analyzedAt: string;
 }
 
