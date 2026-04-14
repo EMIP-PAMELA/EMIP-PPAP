@@ -21,6 +21,7 @@ import {
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
 import type { FieldExtraction, FieldExtractionSource, EvidenceSignal } from '@/src/features/harness-work-instructions/types/extractionEvidence';
 import { resolveDocumentFields, type FieldAuthoritySource } from '@/src/features/harness-work-instructions/services/fieldAuthorityResolver';
+import FieldEvidencePanel from './FieldEvidencePanel';
 import type { RegionOverlay } from '@/src/features/harness-work-instructions/types/documentRegionOverlay';
 import DocumentOverlayViewer from './DocumentOverlayViewer';
 
@@ -1422,6 +1423,13 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                       {renderCandidateDropdown(section.candidates, candidateValue => {
                         setConfirmedField(selectedItem.id, section.key, candidateValue);
                       })}
+                      {/* C11.1: Field evidence transparency panel */}
+                      {(section.key === 'partNumber' || section.key === 'revision') && (
+                        <FieldEvidencePanel
+                          label={section.label}
+                          resolved={renderResolved[section.key]}
+                        />
+                      )}
                     </div>
                   );
                 };
@@ -1440,6 +1448,13 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                     <div className="border-t border-gray-200 pt-2 text-[10px] text-gray-400 space-y-1">
                       {analysis && (
                         <p>Extraction type suggestion: <span className="font-semibold text-gray-600">{DOC_TYPE_LABELS[analysis.proposedDocumentType]}</span> ({Math.round(analysis.docTypeConfidence * 100)}% confidence)</p>
+                      )}
+                      {/* C11.1: Document type authority evidence */}
+                      {renderResolved.documentType && (
+                        <FieldEvidencePanel
+                          label="Document Type"
+                          resolved={renderResolved.documentType}
+                        />
                       )}
                       {analysis?.extractionEvidence?.document_structure?.regions?.length ? (
                         <button
