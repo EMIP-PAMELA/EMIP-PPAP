@@ -24,6 +24,7 @@ import type { ReadinessStatus } from '@/src/utils/skuReadinessEvaluator';
 import SKUControlPanel from '@/src/features/sku/components/SKUControlPanel';
 import HarnessStructurePanel from '@/src/features/sku/components/HarnessStructurePanel';
 import TruthVerificationPanel from '@/src/features/sku/components/TruthVerificationPanel';
+import HarnessVisualizationPanel from '@/src/features/sku/components/HarnessVisualizationPanel';
 import type { ExtractionCoverage } from '@/src/features/harness-work-instructions/services/extractionCoverageService';
 import {
   applyWireOverrides,
@@ -541,6 +542,11 @@ export default function SKUDashboardPage() {
           connectorCount={connectorCount}
           pinMapCount={pinMapCount}
           hasData={hasStructureData}
+        />
+
+        <HarnessVisualizationPanel
+          wires={effectiveWires}
+          pinMapCount={pinMapCount > 0 ? pinMapCount : undefined}
         />
 
         <TruthVerificationPanel
