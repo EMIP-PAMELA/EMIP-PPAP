@@ -1030,6 +1030,8 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
 
     // PASS 1: coordinate-filtered region text
     let fallbackOcrPN: string | null = null;
+    let fallbackVisionPN: string | null = null;
+    let finalFallbackPn: string | null = null;
     let ocrHasValidPn = false;
     if (titleBlockFallbackLines?.length) {
       console.log('[C12.4 DEBUG] OCR Lines Passed to Scanner:', titleBlockFallbackLines);
@@ -1038,19 +1040,21 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       ocrHasValidPn = Boolean(pnValue && STRICT_PN_45_RE.test(pnValue));
       if (ocrHasValidPn) {
         fallbackOcrPN = pnValue!;
+        finalFallbackPn = fallbackOcrPN;
       }
       console.log('[C12.4 DEBUG] OCR PN Result:', pnScanResult);
       console.log('[C12.4 DEBUG] OCR Valid PN:', ocrHasValidPn);
     }
 
     // PASS 2: AI vision — runs when OCR did not produce a valid PN
-    let fallbackVisionPN: string | null = null;
     if (titleBlockFallbackCrop && !ocrHasValidPn) {
       console.log('[C12.4 DEBUG] OCR did not find valid PN — triggering Vision');
       try {
         const visionResult = await runFallbackTitleBlockVisionParse(titleBlockFallbackCrop);
+        console.log('[C12.4 DEBUG] Vision Result:', visionResult);
         if (visionResult?.partNumber && STRICT_PN_45_RE.test(visionResult.partNumber)) {
           fallbackVisionPN = visionResult.partNumber;
+          finalFallbackPn = fallbackVisionPN;
         }
       } catch (err) {
         console.warn('[C12.4 FALLBACK] Vision pass failed — non-fatal', err);
@@ -1079,6 +1083,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       cropProvided:  Boolean(titleBlockFallbackCrop),
       fallbackOcrPN,
       fallbackVisionPN,
+      finalFallbackPn,
     });
   }
 
