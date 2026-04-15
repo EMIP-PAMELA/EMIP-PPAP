@@ -591,6 +591,8 @@ export interface AnalyzeIngestionParams {
 }
 
 export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Promise<IngestionAnalysisResult> {
+  console.log('🔥🔥🔥 ENTERED analyzeFileIngestion 🔥🔥🔥');
+  console.log('❌ analyzeIngestion helper is NOT used — analyzeFileIngestion is the active ingestion implementation.');
   const {
     fileName, fileSize, normalizedText,
     partNumberHint, revisionHint, drawingNumberHint, forcedDocumentType,
