@@ -63,6 +63,10 @@ export async function POST(request: NextRequest) {
   console.log('[C12.4 DEBUG] Received fallback crop:', !!titleBlockFallbackCrop);
 
   try {
+    console.log('🔥🔥🔥 ROUTE: BEFORE INGESTION CALL 🔥🔥🔥');
+    console.log('🔥 INGESTION FUNCTION NAME:', analyzeFileIngestion?.name);
+    console.log('🔥 INGESTION FUNCTION SOURCE:', analyzeFileIngestion?.toString?.().slice(0, 200));
+
     const analysis = await analyzeFileIngestion({
       fileName: file.name,
       fileSize: file.size,
@@ -74,6 +78,8 @@ export async function POST(request: NextRequest) {
       titleBlockFallbackLines,
       titleBlockFallbackCrop,
     });
+
+    console.log('🔥🔥🔥 ROUTE: AFTER INGESTION CALL 🔥🔥🔥');
 
     return NextResponse.json({ ok: true, analysis });
   } catch (err) {
