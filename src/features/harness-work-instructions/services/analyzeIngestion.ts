@@ -47,6 +47,7 @@ import {
   type VisionParsedDrawingResult,
   type TitleBlockCropVisionResult,
 } from './aiDrawingVisionService';
+import { buildHarnessConnectivityFromVision } from './visionConnectivityBridge';
 import { extractRegionsWithAI } from './aiRegionExtractor';
 import { resolveAliasFromDB } from './aliasService';
 import { resolvePartNumberFromDrawing } from './drawingLookupService';
@@ -1283,6 +1284,76 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     } catch (err) {
       console.warn('[ANALYZE INGESTION] C13 vision parse failed, continuing without it.', err);
     }
+  }
+
+  // --- T10: Vision → Connectivity Bridge (fallback only) ---
+  // Runs when T1/T2 produced no harnessConnectivity but C13 vision found wires.
+  // Deterministic T2 output is NEVER overwritten when non-null.
+  if (!harnessConnectivity && visionParsedResult?.wires && visionParsedResult.wires.length > 0) {
+    console.log('[T10 BRIDGE] Vision wires:', visionParsedResult.wires.length);
+    try {
+      const bridgedConnectivity = buildHarnessConnectivityFromVision(visionParsedResult);
+      console.log('[T10 BRIDGE] Built harnessConnectivity from vision:', bridgedConnectivity?.confidenceSummary ?? null);
+      if (bridgedConnectivity) {
+        harnessConnectivity = bridgedConnectivity;
+
+        // T5: reconciliation on bridged connectivity
+        if (diagramExtraction) {
+          try {
+            harnessReconciliation = reconcileHarnessConnectivity({ harnessConnectivity, diagramExtraction });
+          } catch (err) {
+            console.warn('[T10→T5] Reconciliation failed — non-fatal', err);
+          }
+        }
+        // T6: endpoint classification on bridged connectivity
+        try {
+          endpointClassification = classifyHarnessEndpoints(harnessConnectivity);
+        } catch (err) {
+          console.warn('[T10→T6] Classification failed — non-fatal', err);
+        }
+        // T7: validation on bridged connectivity
+        try {
+          harnessValidation = validateHarness({
+            connectivity:           harnessConnectivity,
+            reconciliation:         harnessReconciliation,
+            endpointClassification,
+          });
+        } catch (err) {
+          console.warn('[T10→T7] Validation failed — non-fatal', err);
+        }
+        // T8: confidence on bridged connectivity
+        try {
+          harnessConfidence = adjustHarnessConfidence({
+            connectivity:           harnessConnectivity,
+            reconciliation:         harnessReconciliation,
+            endpointClassification,
+            validation:             harnessValidation,
+          });
+        } catch (err) {
+          console.warn('[T10→T8] Confidence failed — non-fatal', err);
+        }
+        // T9: decision on bridged connectivity
+        try {
+          harnessDecision = evaluateHarnessDecision({
+            connectivity:           harnessConnectivity,
+            reconciliation:         harnessReconciliation,
+            endpointClassification,
+            validation:             harnessValidation,
+            confidence:             harnessConfidence,
+          });
+        } catch (err) {
+          console.warn('[T10→T9] Decision failed — non-fatal', err);
+        }
+      }
+    } catch (err) {
+      console.warn('[T10 BRIDGE] Non-fatal — continuing without bridged connectivity.', err);
+    }
+    console.log('[T10 BRIDGE] Downstream enabled:', {
+      reconciliation: !!harnessReconciliation,
+      validation:     !!harnessValidation,
+      confidence:     !!harnessConfidence,
+      decision:       !!harnessDecision,
+    });
   }
 
   // --- Signal resolution ---
