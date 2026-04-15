@@ -17,7 +17,12 @@ import {
   type IngestionAnalysisResult,
   type UnresolvedQuestion,
   type FieldToResolve,
+  type WireOperatorOverride,
 } from '@/src/features/vault/types/ingestionReview';
+import {
+  revalidateWithOverrides,
+  type OperatorRevalidationResult,
+} from '@/src/features/harness-work-instructions/services/wireOperatorResolutionService';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
 import type { FieldExtraction, FieldExtractionSource, EvidenceSignal } from '@/src/features/harness-work-instructions/types/extractionEvidence';
 import { resolveDocumentFields, type FieldAuthoritySource } from '@/src/features/harness-work-instructions/services/fieldAuthorityResolver';
@@ -710,10 +715,32 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
   const [debugFallbackCrops, setDebugFallbackCrops] = useState<Record<string, string>>({});
+  const [wireOverrides,    setWireOverrides]    = useState<Record<string, WireOperatorOverride[]>>({});
+  const [resolvedOutputs,  setResolvedOutputs]  = useState<Record<string, OperatorRevalidationResult>>({});
 
   const updateItem = useCallback((id: string, patch: Partial<WorkbenchItem>) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
   }, []);
+
+  const handleOverrideSubmit = useCallback((itemId: string, override: WireOperatorOverride) => {
+    const currentOverrides = wireOverrides[itemId] ?? [];
+    const updatedOverrides = [
+      ...currentOverrides.filter(o => o.wireId !== override.wireId),
+      override,
+    ];
+    setWireOverrides(prev => ({ ...prev, [itemId]: updatedOverrides }));
+
+    const item = items.find(i => i.id === itemId);
+    const connectivity = item?.analysis?.harnessConnectivity;
+    if (!connectivity) return;
+
+    const result = revalidateWithOverrides({
+      connectivity,
+      overrides:      updatedOverrides,
+      reconciliation: item?.analysis?.harnessReconciliation ?? null,
+    });
+    setResolvedOutputs(prev => ({ ...prev, [itemId]: result }));
+  }, [items, wireOverrides]);
 
   const setConfirmedField = useCallback((
     itemId: string,
@@ -1629,6 +1656,9 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                 <HarnessConnectivityPanel
                   connectivity={selectedItem.analysis.harnessConnectivity}
                   reconciliation={selectedItem.analysis.harnessReconciliation}
+                  operatorOverrides={wireOverrides[selectedId ?? ''] ?? []}
+                  onOverrideSubmit={override => handleOverrideSubmit(selectedId ?? '', override)}
+                  resolvedDecision={resolvedOutputs[selectedId ?? '']?.resolvedDecision ?? null}
                 />
               ) : null}
 

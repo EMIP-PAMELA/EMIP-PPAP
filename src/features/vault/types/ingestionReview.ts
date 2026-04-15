@@ -64,6 +64,35 @@ export interface UnresolvedQuestion {
 }
 
 // ---------------------------------------------------------------------------
+// T11: Operator Wire Override Types
+// ---------------------------------------------------------------------------
+
+export type WireResolutionMode =
+  | 'DIRECT_OVERRIDE'
+  | 'BRANCH_DOUBLE_CRIMP'
+  | 'GROUND'
+  | 'SPLICE'
+  | 'FLOATING';
+
+export interface WireOperatorOverride {
+  wireId: string;
+  mode: WireResolutionMode;
+  from?: { component?: string | null; cavity?: string | null; treatment?: string | null };
+  to?: { component?: string | null; cavity?: string | null; treatment?: string | null };
+  branch?: {
+    sharedSourceComponent?: string | null;
+    sharedSourceCavity?: string | null;
+    secondaryCavity?: string | null;
+    ferrulePartNumber?: string | null;
+    terminalPartNumber?: string | null;
+    notes?: string | null;
+  };
+  reason: string;
+  operatorConfirmed: true;
+  appliedAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Analysis Result (server → client, serializable)
 // ---------------------------------------------------------------------------
 
@@ -169,6 +198,17 @@ export interface IngestionAnalysisResult {
    */
   harnessDecision?: import('@/src/features/harness-work-instructions/services/harnessDecisionService').HarnessDecisionResult | null;
 
+  /** T11: Operator wire overrides applied in this session (session-local, not persisted). */
+  wireOperatorOverrides?: WireOperatorOverride[];
+  /** T11: HC-BOM after operator overrides applied. */
+  resolvedHarnessConnectivity?: import('@/src/features/harness-work-instructions/services/harnessConnectivityService').HarnessConnectivityResult | null;
+  /** T11: Validation result after overrides. */
+  resolvedHarnessValidation?: import('@/src/features/harness-work-instructions/services/harnessValidationService').HarnessValidationResult | null;
+  /** T11: Confidence result after overrides. */
+  resolvedHarnessConfidence?: import('@/src/features/harness-work-instructions/services/harnessConfidenceService').HarnessConfidenceResult | null;
+  /** T11: Decision result after overrides. */
+  resolvedHarnessDecision?: import('@/src/features/harness-work-instructions/services/harnessDecisionService').HarnessDecisionResult | null;
+
   analyzedAt: string;
 
   /**
@@ -251,4 +291,6 @@ export interface WorkbenchItem {
     sku?: { id: string; part_number: string };
     message?: string;
   };
+  /** T11: Operator wire resolution overrides — session-local, not persisted. */
+  wireOperatorOverrides?: WireOperatorOverride[];
 }

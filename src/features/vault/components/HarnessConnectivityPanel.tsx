@@ -24,6 +24,8 @@ import type {
   HarnessReconciliationResult,
   ReconciledWire,
 } from '@/src/features/harness-work-instructions/services/harnessReconciliationService';
+import type { HarnessDecisionResult } from '@/src/features/harness-work-instructions/services/harnessDecisionService';
+import type { WireOperatorOverride, WireResolutionMode } from '@/src/features/vault/types/ingestionReview';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -104,6 +106,123 @@ function matchIndicator(
 }
 
 // ---------------------------------------------------------------------------
+// T11: Sub-component: wire resolve form
+// ---------------------------------------------------------------------------
+
+const RESOLVE_MODE_LABELS: Record<WireResolutionMode, string> = {
+  DIRECT_OVERRIDE:     'Direct Override',
+  BRANCH_DOUBLE_CRIMP: 'Branch / Double-Crimp',
+  GROUND:              'Ground',
+  SPLICE:              'Splice',
+  FLOATING:            'Floating',
+};
+
+function WireResolveForm({
+  wireId,
+  onSave,
+  onCancel,
+}: {
+  wireId: string;
+  onSave: (override: WireOperatorOverride) => void;
+  onCancel: () => void;
+}) {
+  const [mode, setMode]       = useState<WireResolutionMode>('DIRECT_OVERRIDE');
+  const [fromComp, setFromComp] = useState('');
+  const [fromCav,  setFromCav]  = useState('');
+  const [toComp,   setToComp]   = useState('');
+  const [toCav,    setToCav]    = useState('');
+  const [srcComp,  setSrcComp]  = useState('');
+  const [srcCav,   setSrcCav]   = useState('');
+  const [secCav,   setSecCav]   = useState('');
+  const [ferrPN,   setFerrPN]   = useState('');
+  const [termPN,   setTermPN]   = useState('');
+  const [notes,    setNotes]    = useState('');
+  const [reason,   setReason]   = useState('');
+  const [err,      setErr]      = useState<string | null>(null);
+
+  const handleSave = () => {
+    if (!reason.trim()) { setErr('Reason is required.'); return; }
+    if (mode === 'BRANCH_DOUBLE_CRIMP') {
+      if (!srcComp.trim() || !srcCav.trim()) { setErr('Shared source component and cavity are required.'); return; }
+      if (!termPN.trim() && !ferrPN.trim())  { setErr('Terminal PN or ferrule PN is required.'); return; }
+    }
+    setErr(null);
+    const override: WireOperatorOverride = {
+      wireId,
+      mode,
+      ...(mode === 'DIRECT_OVERRIDE' ? {
+        from: { component: fromComp.trim() || null, cavity: fromCav.trim() || null, treatment: null },
+        to:   { component: toComp.trim()   || null, cavity: toCav.trim()   || null, treatment: null },
+      } : {}),
+      ...(mode === 'BRANCH_DOUBLE_CRIMP' ? {
+        branch: {
+          sharedSourceComponent: srcComp.trim() || null,
+          sharedSourceCavity:    srcCav.trim()  || null,
+          secondaryCavity:       secCav.trim()  || null,
+          ferrulePartNumber:     ferrPN.trim()  || null,
+          terminalPartNumber:    termPN.trim()  || null,
+          notes:                 notes.trim()  || null,
+        },
+      } : {}),
+      reason:            reason.trim(),
+      operatorConfirmed: true,
+      appliedAt:         new Date().toISOString(),
+    };
+    onSave(override);
+  };
+
+  const inp = 'w-full rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-400';
+  const lab = 'text-[10px] font-semibold text-gray-500 mb-0.5 block';
+
+  return (
+    <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 p-2 space-y-2">
+      <div className="font-semibold text-blue-800 text-[10px]">⚙️ Operator Resolution — Wire {wireId}</div>
+
+      <div>
+        <label className={lab}>Resolution Mode</label>
+        <select value={mode} onChange={e => setMode(e.target.value as WireResolutionMode)} className={inp}>
+          {(Object.keys(RESOLVE_MODE_LABELS) as WireResolutionMode[]).map(m => (
+            <option key={m} value={m}>{RESOLVE_MODE_LABELS[m]}</option>
+          ))}
+        </select>
+      </div>
+
+      {mode === 'DIRECT_OVERRIDE' && (
+        <div className="grid grid-cols-2 gap-2">
+          <div><label className={lab}>From Component</label><input value={fromComp} onChange={e => setFromComp(e.target.value)} placeholder="e.g. CONN-1" className={inp} /></div>
+          <div><label className={lab}>From Cavity / Pin</label><input value={fromCav}  onChange={e => setFromCav(e.target.value)}  placeholder="e.g. 2"      className={inp} /></div>
+          <div><label className={lab}>To Component</label><input   value={toComp}   onChange={e => setToComp(e.target.value)}   placeholder="e.g. 61944-1" className={inp} /></div>
+          <div><label className={lab}>To Cavity / Pin</label><input   value={toCav}    onChange={e => setToCav(e.target.value)}    placeholder="e.g. 5"      className={inp} /></div>
+        </div>
+      )}
+
+      {mode === 'BRANCH_DOUBLE_CRIMP' && (
+        <div className="grid grid-cols-2 gap-2">
+          <div><label className={lab}>Shared Source Component <span className="text-red-500">*</span></label><input value={srcComp} onChange={e => setSrcComp(e.target.value)} placeholder="e.g. PHEONIX 1700443" className={inp} /></div>
+          <div><label className={lab}>Shared Source Cavity <span className="text-red-500">*</span></label><input   value={srcCav}  onChange={e => setSrcCav(e.target.value)}  placeholder="e.g. 2"               className={inp} /></div>
+          <div><label className={lab}>Secondary Cavity</label><input                                               value={secCav}  onChange={e => setSecCav(e.target.value)}  placeholder="e.g. 5"               className={inp} /></div>
+          <div><label className={lab}>Ferrule PN</label><input                                                     value={ferrPN}  onChange={e => setFerrPN(e.target.value)}  placeholder="e.g. 1381010"         className={inp} /></div>
+          <div><label className={lab}>Terminal PN <span className="text-red-500">*</span></label><input           value={termPN}  onChange={e => setTermPN(e.target.value)}  placeholder="e.g. 61944-1"         className={inp} /></div>
+          <div><label className={lab}>Notes</label><input                                                          value={notes}   onChange={e => setNotes(e.target.value)}   placeholder="Optional"             className={inp} /></div>
+        </div>
+      )}
+
+      <div>
+        <label className={lab}>Reason <span className="text-red-500">*</span></label>
+        <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Describe why this override is correct" className={inp} />
+      </div>
+
+      {err && <div className="text-red-600 text-[10px]">{err}</div>}
+
+      <div className="flex gap-2">
+        <button onClick={handleSave} className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-blue-700 transition">Save</button>
+        <button onClick={onCancel}   className="rounded bg-gray-200 px-2 py-0.5 text-[10px] text-gray-700 hover:bg-gray-300 transition">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sub-component: expandable wire row evidence
 // ---------------------------------------------------------------------------
 
@@ -111,18 +230,26 @@ function WireEvidenceRow({
   wire,
   reconciledWire,
   hasReconciliation,
+  operatorOverride,
+  onResolveSubmit,
 }: {
   wire: WireConnectivity;
   reconciledWire?: ReconciledWire;
   hasReconciliation: boolean;
+  operatorOverride?: WireOperatorOverride;
+  onResolveSubmit?: (override: WireOperatorOverride) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const status = classifyWire(wire);
-  const statusStyle = STATUS_STYLES[status];
+  const [showForm, setShowForm] = useState(false);
+  const isOperatorResolved = Boolean(operatorOverride);
+  const originalStatus = classifyWire(wire);
+  const statusStyle = isOperatorResolved
+    ? { label: 'Resolved by Operator', className: 'bg-blue-100 text-blue-800' }
+    : STATUS_STYLES[originalStatus];
   const confStyle = confidencePill(wire.confidence);
-  const rowBg = status === 'UNRESOLVED'
+  const rowBg = !isOperatorResolved && originalStatus === 'UNRESOLVED'
     ? 'bg-red-50/40'
-    : status === 'PARTIAL'
+    : !isOperatorResolved && originalStatus === 'PARTIAL'
       ? 'bg-amber-50/30'
       : '';
   const indicator = matchIndicator(reconciledWire);
@@ -153,6 +280,14 @@ function WireEvidenceRow({
           <span className={`inline-block rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${statusStyle.className}`}>
             {statusStyle.label}
           </span>
+          {!isOperatorResolved && originalStatus === 'UNRESOLVED' && onResolveSubmit && (
+            <button
+              onClick={e => { e.stopPropagation(); setExpanded(true); setShowForm(true); }}
+              className="ml-1 rounded px-1 py-0.5 text-[9px] bg-blue-100 text-blue-700 hover:bg-blue-200 transition font-semibold"
+            >
+              Resolve
+            </button>
+          )}
         </td>
         {hasReconciliation && (
           <td className="px-2 py-1 text-center">
@@ -187,6 +322,14 @@ function WireEvidenceRow({
                     <span className="text-red-700">{inferUnresolvedReason(wire)}</span>
                   </div>
                 )}
+              {isOperatorResolved && operatorOverride && (
+                <div className="col-span-2 rounded bg-blue-50 border border-blue-200 px-1.5 py-1 text-[10px] text-blue-800">
+                  <span className="font-semibold">Operator Override:</span>{' '}
+                  <span className="font-mono">{operatorOverride.mode}</span>{' — '}
+                  <span className="italic">{operatorOverride.reason}</span>
+                  <div className="mt-0.5 text-blue-600">Applied: {operatorOverride.appliedAt.slice(0, 19).replace('T', ' ')}</div>
+                </div>
+              )}
               </div>
               {reconciledWire && (
                 <div className="border-t border-gray-100 pt-1.5 grid grid-cols-2 gap-x-4 gap-y-1">
@@ -225,6 +368,14 @@ function WireEvidenceRow({
                   {wire.rawText}
                 </pre>
               </div>
+
+              {showForm && onResolveSubmit && (
+                <WireResolveForm
+                  wireId={wire.wireId}
+                  onSave={override => { setShowForm(false); onResolveSubmit(override); }}
+                  onCancel={() => setShowForm(false)}
+                />
+              )}
             </div>
           </td>
         </tr>
@@ -241,14 +392,24 @@ export interface HarnessConnectivityPanelProps {
   connectivity?: HarnessConnectivityResult | null | undefined;
   harnessConnectivity?: HarnessConnectivityResult | null | undefined;
   reconciliation?: HarnessReconciliationResult | null;
+  /** T11: Operator overrides applied so far. */
+  operatorOverrides?: WireOperatorOverride[];
+  /** T11: Called when the operator saves a new wire override. */
+  onOverrideSubmit?: (override: WireOperatorOverride) => void;
+  /** T11: Recomputed decision after overrides — for resolved banner. */
+  resolvedDecision?: HarnessDecisionResult | null;
 }
 
 export default function HarnessConnectivityPanel({
   connectivity,
   harnessConnectivity,
   reconciliation,
+  operatorOverrides,
+  onOverrideSubmit,
+  resolvedDecision,
 }: HarnessConnectivityPanelProps) {
   const model = connectivity ?? harnessConnectivity ?? null;
+  const overrideMap = new Map((operatorOverrides ?? []).map(o => [o.wireId, o]));
   const [open, setOpen] = useState(Boolean(model));
 
   // ── Null / empty state ──────────────────────────────────────────────
@@ -344,6 +505,22 @@ export default function HarnessConnectivityPanel({
             Intermediate connectivity model — click any wire row to see evidence. Unresolved rows require manual verification.
           </div>
 
+          {/* ── T11: Resolved decision banner ───────────────────────── */}
+          {resolvedDecision && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[10px] text-blue-800 flex flex-wrap gap-2 items-center">
+              <span className="font-semibold">Resolved State:</span>
+              <span className={`rounded-full px-2 py-0.5 font-semibold text-[10px] ${
+                resolvedDecision.overallDecision === 'SAFE' ? 'bg-emerald-100 text-emerald-800'
+                : resolvedDecision.overallDecision === 'REVIEW_REQUIRED' ? 'bg-amber-100 text-amber-800'
+                : 'bg-red-100 text-red-700'
+              }`}>{resolvedDecision.overallDecision}</span>
+              <span>Readiness: {resolvedDecision.readinessScore.toFixed(0)}%</span>
+              {resolvedDecision.blockedWires.length > 0 && (
+                <span className="text-red-600">Still blocked: {resolvedDecision.blockedWires.join(', ')}</span>
+              )}
+            </div>
+          )}
+
           {/* ── Primary wire table ──────────────────────────────────── */}
           <div className="overflow-x-auto rounded-lg border border-gray-200">
             <table className="w-full text-[11px]">
@@ -368,6 +545,8 @@ export default function HarnessConnectivityPanel({
                     wire={wire}
                     reconciledWire={reconciledByWireId.get(wire.wireId)}
                     hasReconciliation={hasReconciliation}
+                    operatorOverride={overrideMap.get(wire.wireId)}
+                    onResolveSubmit={onOverrideSubmit}
                   />
                 ))}
               </tbody>
