@@ -16,6 +16,7 @@
 import type { WireEndpoint, WireConnectivity, HarnessConnectivityResult } from './harnessConnectivityService';
 import type { VisionParsedDrawingResult } from './aiDrawingVisionService';
 import type { LengthUnit } from './unitInferenceService';
+import { resolveDrawingLengthUnit } from './unitInferenceService';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -128,7 +129,7 @@ export function buildHarnessConnectivityFromVision(
       wireId,
       vw.gauge     ? vw.gauge             : null,
       vw.color     ? vw.color             : null,
-      vw.length !== null && vw.length !== undefined ? `${vw.length}mm` : null,
+      vw.length !== null && vw.length !== undefined ? `${vw.length}in` : null,
       from.component ? `FROM:${from.component}` : null,
       cavity         ? `PIN:${cavity}`           : null,
       to.component   ? `TO:${to.component}`      : null,
@@ -136,12 +137,8 @@ export function buildHarnessConnectivityFromVision(
     ].filter(Boolean).join(' ');
 
     const rawLength = vw.length ?? null;
-    const inferredUnit: LengthUnit | null = rawLength !== null ? 'mm' : null;
-    const lengthInches = rawLength !== null
-      ? inferredUnit === 'mm'
-        ? rawLength / 25.4
-        : rawLength
-      : null;
+    const inferredUnit: LengthUnit | null = rawLength !== null ? resolveDrawingLengthUnit() : null;
+    const lengthInches: number | null = rawLength;
 
     const wire: WireConnectivity = {
       wireId,

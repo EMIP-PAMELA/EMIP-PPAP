@@ -236,21 +236,14 @@ export function parseWireTableRows(bodyLines: string[], options: ParseWireTableO
 
   flush();
 
-  const inferenceArgs = {
-    extractedText: options.extractedText,
-    isLikelyInternal: options.isLikelyInternal,
-    wireSamples: rows.map(r => ({ length: r.length, gauge: r.gauge })),
-  } satisfies import('./unitInferenceService').UnitInferenceArgs;
-  const { unit: inferredUnit, reason: unitReason } = inferLengthUnit(inferenceArgs);
+  const { unit: inferredUnit, reason: unitReason } = inferLengthUnit();
 
   for (const row of rows) {
     row.lengthUnit = row.length != null ? inferredUnit : null;
-    row.lengthInches = row.length != null
-      ? inferredUnit === 'in' ? row.length : row.length / 25.4
-      : null;
+    row.lengthInches = row.length != null ? row.length : null;
   }
 
-  console.log('[T1 UNIT-INFERENCE]', {
+  console.log('[T11.4 UNIT]', {
     rows: rows.length,
     inferredUnit,
     unitReason,

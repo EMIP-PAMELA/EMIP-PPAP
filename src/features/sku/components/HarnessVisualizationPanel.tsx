@@ -305,7 +305,7 @@ export default function HarnessVisualizationPanel({
                                   lengthMissing ? 'text-amber-600 font-semibold' : 'text-gray-700'
                                 }`}
                               >
-                                {wire.cut_length != null ? `${wire.cut_length} mm` : '—'}
+                                {wire.cut_length != null ? `${wire.cut_length} in` : '—'}
                               </span>
 
                               {/* Gauge */}

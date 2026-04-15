@@ -30,6 +30,10 @@ import FieldEvidencePanel from './FieldEvidencePanel';
 import type { RegionOverlay } from '@/src/features/harness-work-instructions/types/documentRegionOverlay';
 import DocumentOverlayViewer from './DocumentOverlayViewer';
 import HarnessConnectivityPanel from './HarnessConnectivityPanel';
+import SkuModelEditorPanel from './SkuModelEditorPanel';
+import type { OperatorWireModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
+import type { EffectiveSkuHarnessModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
+import { buildEffectiveSkuHarnessModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -723,6 +727,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const [debugFallbackCrops, setDebugFallbackCrops] = useState<Record<string, string>>({});
   const [wireOverrides,    setWireOverrides]    = useState<Record<string, WireOperatorOverride[]>>({});
   const [resolvedOutputs,  setResolvedOutputs]  = useState<Record<string, OperatorRevalidationResult>>({});
+  const [skuAddedWires,   setSkuAddedWires]   = useState<Record<string, OperatorWireModel[]>>({});
+  const [skuEditedWires,  setSkuEditedWires]  = useState<Record<string, OperatorWireModel[]>>({});
+  const [skuDeletedIds,   setSkuDeletedIds]   = useState<Record<string, string[]>>({});
+  const [skuEffective,    setSkuEffective]    = useState<Record<string, EffectiveSkuHarnessModel | null>>({});
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
   const isResizingPanelRef = useRef(false);
   const panelWidthRef = useRef(panelWidth);
@@ -804,6 +812,40 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     });
     setResolvedOutputs(prev => ({ ...prev, [itemId]: result }));
   }, [items, wireOverrides]);
+
+  const rebuildSkuModel = useCallback((itemId: string, added: OperatorWireModel[], edited: OperatorWireModel[], deleted: string[]) => {
+    const item = items.find(i => i.id === itemId);
+    const extracted = item?.analysis?.harnessConnectivity ?? null;
+    const effective = buildEffectiveSkuHarnessModel({ extractedConnectivity: extracted, operatorAddedWires: added, operatorEditedWires: edited, operatorDeletedWireIds: deleted });
+    setSkuEffective(prev => ({ ...prev, [itemId]: effective }));
+  }, [items]);
+
+  const handleSkuAddWire = useCallback((itemId: string, wire: OperatorWireModel) => {
+    setSkuAddedWires(prev => {
+      const next = [...(prev[itemId] ?? []).filter(w => w.wireId !== wire.wireId), wire];
+      rebuildSkuModel(itemId, next, skuEditedWires[itemId] ?? [], skuDeletedIds[itemId] ?? []);
+      return { ...prev, [itemId]: next };
+    });
+  }, [rebuildSkuModel, skuEditedWires, skuDeletedIds]);
+
+  const handleSkuEditWire = useCallback((itemId: string, wire: OperatorWireModel) => {
+    setSkuEditedWires(prev => {
+      const next = [...(prev[itemId] ?? []).filter(w => w.wireId !== wire.wireId), wire];
+      rebuildSkuModel(itemId, skuAddedWires[itemId] ?? [], next, skuDeletedIds[itemId] ?? []);
+      return { ...prev, [itemId]: next };
+    });
+  }, [rebuildSkuModel, skuAddedWires, skuDeletedIds]);
+
+  const handleSkuDeleteWire = useCallback((itemId: string, wireId: string) => {
+    const isUndo = wireId.startsWith('__undo__');
+    const realId = isUndo ? wireId.slice(8) : wireId;
+    setSkuDeletedIds(prev => {
+      const cur = prev[itemId] ?? [];
+      const next = isUndo ? cur.filter(id => id !== realId) : [...cur.filter(id => id !== realId), realId];
+      rebuildSkuModel(itemId, skuAddedWires[itemId] ?? [], skuEditedWires[itemId] ?? [], next);
+      return { ...prev, [itemId]: next };
+    });
+  }, [rebuildSkuModel, skuAddedWires, skuEditedWires]);
 
   const setConfirmedField = useCallback((
     itemId: string,
@@ -1733,6 +1775,19 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   operatorOverrides={wireOverrides[selectedId ?? ''] ?? []}
                   onOverrideSubmit={override => handleOverrideSubmit(selectedId ?? '', override)}
                   resolvedDecision={resolvedOutputs[selectedId ?? '']?.resolvedDecision ?? null}
+                />
+              ) : null}
+
+              {selectedItem.analysis?.harnessConnectivity ? (
+                <SkuModelEditorPanel
+                  extractedConnectivity={selectedItem.analysis.harnessConnectivity}
+                  effectiveModel={skuEffective[selectedId ?? ''] ?? null}
+                  operatorAddedWires={skuAddedWires[selectedId ?? ''] ?? []}
+                  operatorEditedWires={skuEditedWires[selectedId ?? ''] ?? []}
+                  operatorDeletedWireIds={skuDeletedIds[selectedId ?? ''] ?? []}
+                  onAddWire={wire => handleSkuAddWire(selectedId ?? '', wire)}
+                  onEditWire={wire => handleSkuEditWire(selectedId ?? '', wire)}
+                  onDeleteWire={wireId => handleSkuDeleteWire(selectedId ?? '', wireId)}
                 />
               ) : null}
 
