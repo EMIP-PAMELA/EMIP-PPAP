@@ -34,6 +34,10 @@ import SkuModelEditorPanel, { type SkuModelDeleteRequest } from './SkuModelEdito
 import type { OperatorWireModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 import type { EffectiveSkuHarnessModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 import { buildEffectiveSkuHarnessModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
+import {
+  buildEffectiveHarnessState,
+  type EffectiveHarnessState,
+} from '@/src/features/harness-work-instructions/services/effectiveHarnessModelService';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -1200,6 +1204,39 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   }, [items, filter]);
 
   const selectedItem = items.find(i => i.id === selectedId) ?? null;
+
+  // T12.4: single authoritative effective model for the selected item.
+  // All UI consumers (HC panel, question cards, commit button) read from this.
+  const effectiveState = useMemo<EffectiveHarnessState | null>(() => {
+    if (!selectedItem?.analysis) return null;
+    return buildEffectiveHarnessState({
+      analysis:              selectedItem.analysis,
+      operatorDocType:       selectedItem.confirmedDocumentType ?? null,
+      operatorConfirmed:     selectedItem.operatorConfirmed,
+      wireOperatorOverrides: wireOverrides[selectedId ?? ''] ?? [],
+      skuAddedWires:         skuAddedWires[selectedId ?? ''] ?? [],
+      skuEditedWires:        skuEditedWires[selectedId ?? ''] ?? [],
+      skuDeletedWireIds:     skuDeletedIds[selectedId ?? ''] ?? [],
+    });
+  }, [selectedItem, selectedId, wireOverrides, skuAddedWires, skuEditedWires, skuDeletedIds]);
+
+  // T12.4: when effective state clears all blocking questions and required
+  // document fields are present, promote the item status to ready_to_commit.
+  useEffect(() => {
+    if (!selectedId || !selectedItem?.analysis || !effectiveState) return;
+    const dt = selectedItem.confirmedDocumentType;
+    const pn = selectedItem.confirmedPartNumber?.trim();
+    if (!dt || !pn) return;
+    if (
+      effectiveState.readyToCommit &&
+      selectedItem.status !== 'ready_to_commit' &&
+      selectedItem.status !== 'committing' &&
+      selectedItem.status !== 'committed'
+    ) {
+      updateItem(selectedId, { status: 'ready_to_commit' });
+    }
+  }, [effectiveState, selectedId, selectedItem, updateItem]);
+
   const nonCommitted = items.filter(i => i.status !== 'committed' && i.status !== 'committing');
   const canCommitAll = counts.ready > 0 && nonCommitted.every(i => i.status === 'ready_to_commit');
   const blockedCount = nonCommitted.filter(i => i.status !== 'ready_to_commit').length;
@@ -1752,10 +1789,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                 );
               })()}
 
-              {selectedItem.analysis?.unresolvedQuestions.length ? (
+              {(effectiveState?.unresolvedQuestions ?? selectedItem.analysis?.unresolvedQuestions ?? []).length ? (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Resolution required</p>
-                  {selectedItem.analysis.unresolvedQuestions.map(q => (
+                  {(effectiveState?.unresolvedQuestions ?? selectedItem.analysis?.unresolvedQuestions ?? []).map(q => (
                     <QuestionCard
                       key={q.id}
                       question={q}
@@ -1794,11 +1831,11 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
 
               {selectedItem.analysis ? (
                 <HarnessConnectivityPanel
-                  connectivity={selectedItem.analysis.harnessConnectivity}
+                  connectivity={effectiveState?.effectiveConnectivity ?? selectedItem.analysis.harnessConnectivity}
                   reconciliation={selectedItem.analysis.harnessReconciliation}
                   operatorOverrides={wireOverrides[selectedId ?? ''] ?? []}
                   onOverrideSubmit={override => handleOverrideSubmit(selectedId ?? '', override)}
-                  resolvedDecision={resolvedOutputs[selectedId ?? '']?.resolvedDecision ?? null}
+                  resolvedDecision={effectiveState?.effectiveDecision ?? resolvedOutputs[selectedId ?? '']?.resolvedDecision ?? null}
                 />
               ) : null}
 
@@ -1825,13 +1862,35 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   </summary>
                   <div className="px-3 pb-3">
                     <pre style={{ maxHeight: 400, overflow: 'auto', fontSize: 11 }}>
-                      {JSON.stringify(selectedItem.analysis, null, 2)}
+                      {JSON.stringify({
+                        ...selectedItem.analysis,
+                        effectiveDebug: effectiveState ? {
+                          buildTag:                   'T12.4',
+                          usingEffectiveConnectivity: (
+                            (wireOverrides[selectedId ?? '']?.length ?? 0) +
+                            (skuAddedWires[selectedId ?? '']?.length ?? 0) +
+                            (skuEditedWires[selectedId ?? '']?.length ?? 0) +
+                            (skuDeletedIds[selectedId ?? '']?.length ?? 0)
+                          ) > 0,
+                          effectiveDocType:            effectiveState.effectiveDocumentType,
+                          effectiveDocTypeSource:      effectiveState.effectiveDocTypeSource,
+                          effectiveWireCount:          effectiveState.effectiveConnectivity?.wires.length ?? null,
+                          effectiveDecision:           effectiveState.effectiveDecision?.overallDecision ?? null,
+                          unresolvedQuestionCount:     effectiveState.unresolvedQuestions.length,
+                          blockingQuestionCount:       effectiveState.unresolvedQuestions.filter(q => q.blocksCommit).length,
+                          readyToCommit:               effectiveState.readyToCommit,
+                        } : null,
+                      }, null, 2)}
                     </pre>
                   </div>
                 </details>
               ) : null}
 
-              {selectedItem.status === 'ready_to_commit' ? (
+              {(selectedItem.status === 'ready_to_commit' || (
+                effectiveState?.readyToCommit === true &&
+                Boolean(selectedItem.confirmedDocumentType) &&
+                Boolean(selectedItem.confirmedPartNumber?.trim())
+              )) ? (
                 <button
                   type="button"
                   onClick={() => commitItem(selectedItem)}
