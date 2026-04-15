@@ -606,10 +606,11 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     clientTriggerDebug,
   } = params;
 
-  // --- C12.4-R13B: Runtime diagnostics (returned in payload for Vercel/local parity auditing) ---
-  const anthKey = process.env.ANTHROPIC_API_KEY ?? null;
+  // --- C12.4-R16: Runtime diagnostics (returned in payload for Vercel/local parity auditing) ---
+  const rawKey  = process.env.ANTHROPIC_API_KEY ?? null;
+  const anthKey = rawKey ? rawKey.trim() : null;
   const debugRuntime = {
-    buildTag:                'C12.4-R15',
+    buildTag:                'C12.4-R16',
     routeRuntime:            'nodejs',
     fallbackEligible:        false,
     fallbackLinesPresent:    (titleBlockFallbackLines?.length ?? 0) > 0,
@@ -629,7 +630,9 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     nodeEnv:                  process.env.NODE_ENV ?? null,
     vercelUrl:                process.env.VERCEL_URL ?? null,
     anthropicKeyPresent:      Boolean(anthKey),
-    anthropicKeyLength:       anthKey?.length ?? 0,
+    anthropicKeyLength:       rawKey?.length ?? 0,
+    anthropicKeyTrimmedLength: anthKey?.length ?? 0,
+    anthropicKeyHasWhitespaceDifference: (rawKey?.length ?? 0) !== (anthKey?.length ?? 0),
     anthropicKeyPrefix:       anthKey ? anthKey.slice(0, 7) : null,
   };
 

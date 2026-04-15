@@ -68,7 +68,14 @@ export async function callClaudeVisionDetailed(
   prompt: string,
   imageDataUrls?: string[],
 ): Promise<ClaudeVisionCallResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const rawKey  = process.env.ANTHROPIC_API_KEY ?? '';
+  const apiKey  = rawKey.trim();
+  const keyHadWhitespace = rawKey.length !== apiKey.length;
+
+  if (keyHadWhitespace) {
+    console.warn('[CLAUDE VISION CLIENT] ANTHROPIC_API_KEY had leading/trailing whitespace — trimmed before use');
+  }
+
   if (!apiKey) {
     console.error('[CLAUDE VISION CLIENT] Missing ANTHROPIC_API_KEY');
     return { ok: false, content: null, errorCode: 'NO_API_KEY', errorMessage: 'ANTHROPIC_API_KEY missing or unreadable', errorStatus: null, errorType: 'no_key' };
@@ -88,7 +95,7 @@ export async function callClaudeVisionDetailed(
       method:  'POST',
       headers: {
         'content-type':      'application/json',
-        'x-api-key':         apiKey,
+        'x-api-key':         apiKey,           // always trimmed
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({

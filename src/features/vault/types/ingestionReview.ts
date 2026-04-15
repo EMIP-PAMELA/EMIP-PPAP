@@ -201,6 +201,8 @@ export interface IngestionAnalysisResult {
     vercelUrl: string | null;
     anthropicKeyPresent: boolean;
     anthropicKeyLength: number;
+    anthropicKeyTrimmedLength: number;
+    anthropicKeyHasWhitespaceDifference: boolean;
     anthropicKeyPrefix: string | null;
     clientTriggerDebug: Record<string, unknown> | null;
   } | null;
