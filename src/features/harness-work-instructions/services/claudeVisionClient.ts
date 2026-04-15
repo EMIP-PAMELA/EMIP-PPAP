@@ -31,36 +31,51 @@ type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
 
-/**
- * Call Claude directly with a prompt and optional image data URLs.
- * Returns the raw text content of Claude's response, or null on any failure.
- */
-export async function callClaudeVision(
+/** Structured result from a Claude vision call — carries error metadata instead of swallowing failures. */
+export interface ClaudeVisionCallResult {
+  ok: boolean;
+  content: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  errorStatus: number | null;
+  errorType: 'no_key' | 'provider' | 'fetch' | null;
+}
+
+function buildUserContent(
   prompt: string,
-  imageDataUrls?: string[],
-): Promise<string | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    console.error('[CLAUDE VISION CLIENT] Missing ANTHROPIC_API_KEY — all vision calls will return null');
-    return null;
-  }
-
-  const userContent: ContentBlock[] = [];
-  const images = (imageDataUrls ?? []).slice(0, MAX_IMAGES);
-
-  for (const dataUrl of images) {
+  imageDataUrls: string[],
+  maxImages: number,
+): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  for (const dataUrl of imageDataUrls.slice(0, maxImages)) {
     const commaIdx = dataUrl.indexOf(',');
     if (commaIdx === -1) continue;
     const header    = dataUrl.slice(0, commaIdx);
     const data      = dataUrl.slice(commaIdx + 1);
     const mediaType = header.match(/data:([^;]+)/)?.[1] ?? 'image/png';
     if (!data) continue;
-    userContent.push({
-      type:   'image',
-      source: { type: 'base64', media_type: mediaType, data },
-    });
+    blocks.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data } });
   }
-  userContent.push({ type: 'text', text: prompt });
+  blocks.push({ type: 'text', text: prompt });
+  return blocks;
+}
+
+/**
+ * Call Claude directly, returning a structured result with explicit error metadata.
+ * Never throws. On failure, ok=false and errorCode/errorMessage/errorStatus describe the cause.
+ */
+export async function callClaudeVisionDetailed(
+  prompt: string,
+  imageDataUrls?: string[],
+): Promise<ClaudeVisionCallResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.error('[CLAUDE VISION CLIENT] Missing ANTHROPIC_API_KEY');
+    return { ok: false, content: null, errorCode: 'NO_API_KEY', errorMessage: 'ANTHROPIC_API_KEY missing or unreadable', errorStatus: null, errorType: 'no_key' };
+  }
+
+  const images   = (imageDataUrls ?? []).slice(0, MAX_IMAGES);
+  const userContent = buildUserContent(prompt, imageDataUrls ?? [], MAX_IMAGES);
 
   console.log('[CLAUDE VISION CLIENT] invoking Claude', {
     model:      CLAUDE_MODEL,
@@ -95,8 +110,8 @@ export async function callClaudeVision(
       const errData = await res.json().catch(() => ({}));
       const msg = (errData as { error?: { message?: string } })?.error?.message
         ?? `Claude returned ${res.status}`;
-      console.error('[CLAUDE VISION CLIENT] Claude error:', msg);
-      return null;
+      console.error('[CLAUDE VISION CLIENT] Provider error:', res.status, msg);
+      return { ok: false, content: null, errorCode: `ANTHROPIC_HTTP_${res.status}`, errorMessage: msg, errorStatus: res.status, errorType: 'provider' };
     }
 
     const responseData = await res.json() as { content?: Array<{ text?: string }> };
@@ -104,14 +119,24 @@ export async function callClaudeVision(
       ? responseData.content.map(item => item?.text ?? '').join('')
       : '';
 
-    console.log('[CLAUDE VISION CLIENT] responded', {
-      contentLen: content.length,
-      preview:    content.slice(0, 120),
-    });
-
-    return content || null;
+    console.log('[CLAUDE VISION CLIENT] responded', { contentLen: content.length, preview: content.slice(0, 120) });
+    return { ok: true, content: content || null, errorCode: null, errorMessage: null, errorStatus: null, errorType: null };
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error('[CLAUDE VISION CLIENT] fetch to Anthropic failed', err);
-    return null;
+    return { ok: false, content: null, errorCode: 'FETCH_FAILED', errorMessage: msg, errorStatus: null, errorType: 'fetch' };
   }
+}
+
+/**
+ * Call Claude directly with a prompt and optional image data URLs.
+ * Returns the raw text content of Claude's response, or null on any failure.
+ * (Thin wrapper over callClaudeVisionDetailed for callers that don't need error metadata.)
+ */
+export async function callClaudeVision(
+  prompt: string,
+  imageDataUrls?: string[],
+): Promise<string | null> {
+  const result = await callClaudeVisionDetailed(prompt, imageDataUrls);
+  return result.content;
 }

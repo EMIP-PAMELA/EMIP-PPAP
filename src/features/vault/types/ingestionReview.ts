@@ -186,7 +186,22 @@ export interface IngestionAnalysisResult {
     visionProviderConfigured: boolean;
     visionCallAttempted: boolean;
     visionCallSucceeded: boolean;
+    visionErrorCode: string | null;
     visionErrorMessage: string | null;
+    visionErrorStatus: number | null;
+    visionErrorType: string | null;
+    visionRequestSummary: {
+      model: string;
+      hasImage: boolean;
+      imageBytesApprox: number;
+      mimeType: string | null;
+    } | null;
+    vercelEnv: string | null;
+    nodeEnv: string | null;
+    vercelUrl: string | null;
+    anthropicKeyPresent: boolean;
+    anthropicKeyLength: number;
+    anthropicKeyPrefix: string | null;
   } | null;
 }
 

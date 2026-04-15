@@ -42,6 +42,7 @@ import {
   runAIDrawingVisionParse,
   runTitleBlockCropVisionParse,
   runFallbackTitleBlockVisionParse,
+  runFallbackTitleBlockVisionParseWithDiag,
   runDiagramComponentParse,
   mergeVisionParsedData,
   type VisionParsedDrawingResult,
@@ -605,7 +606,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   // --- C12.4-R13B: Runtime diagnostics (returned in payload for Vercel/local parity auditing) ---
   const anthKey = process.env.ANTHROPIC_API_KEY ?? null;
   const debugRuntime = {
-    buildTag:                'C12.4-R13B',
+    buildTag:                'C12.4-R14',
     routeRuntime:            'nodejs',
     fallbackEligible:        false,
     fallbackLinesPresent:    (titleBlockFallbackLines?.length ?? 0) > 0,
@@ -613,16 +614,19 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     enteredC124Fallback:     false,
     enteredVisionFallback:   false,
     visionProviderConfigured: Boolean(anthKey),
-    visionCallAttempted:     false,
-    visionCallSucceeded:     false,
-    visionErrorMessage:      anthKey ? null : 'ANTHROPIC_API_KEY missing or unreadable in current server runtime',
-    visionErrorCode:         anthKey ? null : 'VISION_PROVIDER_NOT_CONFIGURED',
-    vercelEnv:               process.env.VERCEL_ENV ?? null,
-    nodeEnv:                 process.env.NODE_ENV ?? null,
-    vercelUrl:               process.env.VERCEL_URL ?? null,
-    anthropicKeyPresent:     Boolean(anthKey),
-    anthropicKeyLength:      anthKey?.length ?? 0,
-    anthropicKeyPrefix:      anthKey ? anthKey.slice(0, 7) : null,
+    visionCallAttempted:      false,
+    visionCallSucceeded:      false,
+    visionErrorCode:          anthKey ? null : 'VISION_PROVIDER_NOT_CONFIGURED',
+    visionErrorMessage:       anthKey ? null : 'ANTHROPIC_API_KEY missing or unreadable in current server runtime',
+    visionErrorStatus:        null as number | null,
+    visionErrorType:          anthKey ? null : 'no_key',
+    visionRequestSummary:     null as { model: string; hasImage: boolean; imageBytesApprox: number; mimeType: string | null } | null,
+    vercelEnv:                process.env.VERCEL_ENV ?? null,
+    nodeEnv:                  process.env.NODE_ENV ?? null,
+    vercelUrl:                process.env.VERCEL_URL ?? null,
+    anthropicKeyPresent:      Boolean(anthKey),
+    anthropicKeyLength:       anthKey?.length ?? 0,
+    anthropicKeyPrefix:       anthKey ? anthKey.slice(0, 7) : null,
   };
 
   // --- Document type detection ---
@@ -1081,19 +1085,27 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     // PASS 2: AI vision — runs when OCR did not produce a valid PN
     if (titleBlockFallbackCrop && !ocrHasValidPn) {
       debugRuntime.enteredVisionFallback = true;
+      debugRuntime.visionCallAttempted   = true;
       console.log('[C12.4 DEBUG] OCR did not find valid PN — triggering Vision');
       console.log('🚨🚨🚨 VISION BRANCH REACHED 🚨🚨🚨');
       try {
-        debugRuntime.visionCallAttempted = true;
-        const visionResult = await runFallbackTitleBlockVisionParse(titleBlockFallbackCrop);
-        debugRuntime.visionCallSucceeded = visionResult !== null;
-        console.log('[C12.4 DEBUG] Vision Result:', visionResult);
+        const diagResult = await runFallbackTitleBlockVisionParseWithDiag(titleBlockFallbackCrop);
+        debugRuntime.visionCallSucceeded  = diagResult.result !== null;
+        debugRuntime.visionErrorCode      = diagResult.errorCode;
+        debugRuntime.visionErrorMessage   = diagResult.errorMessage;
+        debugRuntime.visionErrorStatus    = diagResult.errorStatus;
+        debugRuntime.visionErrorType      = diagResult.errorType;
+        debugRuntime.visionRequestSummary = diagResult.visionRequestSummary;
+        console.log('[C12.4 DEBUG] Vision DiagResult:', diagResult);
+        const visionResult = diagResult.result;
         if (visionResult?.partNumber && STRICT_PN_45_RE.test(visionResult.partNumber)) {
           fallbackVisionPN = visionResult.partNumber;
-          finalFallbackPn = fallbackVisionPN;
+          finalFallbackPn  = fallbackVisionPN;
         }
       } catch (err) {
+        debugRuntime.visionErrorCode    = 'UNEXPECTED_ERROR';
         debugRuntime.visionErrorMessage = err instanceof Error ? err.message : String(err);
+        debugRuntime.visionErrorType    = 'runtime';
         console.warn('[C12.4 FALLBACK] Vision pass failed — non-fatal', err);
       }
     }

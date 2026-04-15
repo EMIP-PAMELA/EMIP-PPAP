@@ -23,7 +23,7 @@
  */
 
 import type { DiagramVisionResult } from './diagramExtractor';
-import { callClaudeVision } from './claudeVisionClient';
+import { callClaudeVision, callClaudeVisionDetailed, type ClaudeVisionCallResult } from './claudeVisionClient';
 
 // ---------------------------------------------------------------------------
 // Core Output Types (spec-mandated)
@@ -460,6 +460,81 @@ const FALLBACK_CROP_VISION_PROMPT = [
 ].join('\n');
 
 const STRICT_PN_45_RE = /^45-\d{6}-\d{2}$/;
+
+/** C12.4-R14: Structured diagnostic result from the fallback vision parse path. */
+export interface FallbackVisionParseResult {
+  result: TitleBlockCropVisionResult | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  errorStatus: number | null;
+  errorType: string | null;
+  visionRequestSummary: {
+    model: string;
+    hasImage: boolean;
+    imageBytesApprox: number;
+    mimeType: string | null;
+  } | null;
+}
+
+/**
+ * C12.4-R14: Variant of runFallbackTitleBlockVisionParse that returns full
+ * diagnostic metadata instead of collapsing failures to null.
+ * Called by analyzeIngestion.ts to populate debugRuntime.
+ */
+export async function runFallbackTitleBlockVisionParseWithDiag(
+  cropDataUrl: string,
+): Promise<FallbackVisionParseResult> {
+  if (!cropDataUrl) {
+    return { result: null, errorCode: 'NO_CROP', errorMessage: 'No crop data URL provided', errorStatus: null, errorType: 'input', visionRequestSummary: null };
+  }
+
+  const commaIdx     = cropDataUrl.indexOf(',');
+  const header       = commaIdx !== -1 ? cropDataUrl.slice(0, commaIdx) : '';
+  const mimeType     = header.match(/data:([^;]+)/)?.[1] ?? null;
+  const base64Len    = commaIdx !== -1 ? cropDataUrl.length - commaIdx - 1 : 0;
+  const imageBytesApprox = Math.round(base64Len * 0.75);
+
+  const visionRequestSummary = {
+    model:             'claude-sonnet-4-20250514',
+    hasImage:          true,
+    imageBytesApprox,
+    mimeType,
+  };
+
+  console.log('[C12.4 FALLBACK VISION DIAG] invoking Claude', { dataUrlLength: cropDataUrl.length, imageBytesApprox, mimeType });
+
+  let callResult: ClaudeVisionCallResult;
+  try {
+    callResult = await callClaudeVisionDetailed(FALLBACK_CROP_VISION_PROMPT, [cropDataUrl]);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { result: null, errorCode: 'UNEXPECTED_ERROR', errorMessage: msg, errorStatus: null, errorType: 'runtime', visionRequestSummary };
+  }
+
+  if (!callResult.ok || !callResult.content) {
+    console.warn('[C12.4 FALLBACK VISION DIAG] Provider failure', callResult);
+    return { result: null, errorCode: callResult.errorCode, errorMessage: callResult.errorMessage, errorStatus: callResult.errorStatus, errorType: callResult.errorType, visionRequestSummary };
+  }
+
+  const raw = callResult.content;
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    console.warn('[C12.4 FALLBACK VISION DIAG] No JSON in response', raw.slice(0, 200));
+    return { result: null, errorCode: 'NO_JSON_IN_RESPONSE', errorMessage: `No JSON found in response: ${raw.slice(0, 100)}`, errorStatus: null, errorType: 'parse', visionRequestSummary };
+  }
+
+  try {
+    const parsed  = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+    const rawPN   = cleanString(parsed.partNumber);
+    const partNumber = rawPN && STRICT_PN_45_RE.test(rawPN.trim()) ? rawPN.trim() : null;
+    const result: TitleBlockCropVisionResult = { partNumber, drawingNumber: null, revision: null, confidence: clampConf(parsed.confidence ?? 0.70) };
+    console.log('[C12.4 FALLBACK VISION DIAG RESULT]', result);
+    return { result, errorCode: null, errorMessage: null, errorStatus: null, errorType: null, visionRequestSummary };
+  } catch (parseErr) {
+    const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+    return { result: null, errorCode: 'JSON_PARSE_ERROR', errorMessage: msg, errorStatus: null, errorType: 'parse', visionRequestSummary };
+  }
+}
 
 /**
  * C12.4: Run a targeted Claude vision call on a fallback title-block crop.
