@@ -602,19 +602,27 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     titleBlockFallbackLines, titleBlockFallbackCrop,
   } = params;
 
-  // --- C12.4-R10: Runtime diagnostics (returned in payload for Vercel/local parity auditing) ---
+  // --- C12.4-R13B: Runtime diagnostics (returned in payload for Vercel/local parity auditing) ---
+  const anthKey = process.env.ANTHROPIC_API_KEY ?? null;
   const debugRuntime = {
-    buildTag:                'C12.4-R10',
+    buildTag:                'C12.4-R13B',
     routeRuntime:            'nodejs',
     fallbackEligible:        false,
     fallbackLinesPresent:    (titleBlockFallbackLines?.length ?? 0) > 0,
     fallbackCropPresent:     Boolean(titleBlockFallbackCrop),
     enteredC124Fallback:     false,
     enteredVisionFallback:   false,
-    visionProviderConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
+    visionProviderConfigured: Boolean(anthKey),
     visionCallAttempted:     false,
     visionCallSucceeded:     false,
-    visionErrorMessage:      null as string | null,
+    visionErrorMessage:      anthKey ? null : 'ANTHROPIC_API_KEY missing or unreadable in current server runtime',
+    visionErrorCode:         anthKey ? null : 'VISION_PROVIDER_NOT_CONFIGURED',
+    vercelEnv:               process.env.VERCEL_ENV ?? null,
+    nodeEnv:                 process.env.NODE_ENV ?? null,
+    vercelUrl:               process.env.VERCEL_URL ?? null,
+    anthropicKeyPresent:     Boolean(anthKey),
+    anthropicKeyLength:      anthKey?.length ?? 0,
+    anthropicKeyPrefix:      anthKey ? anthKey.slice(0, 7) : null,
   };
 
   // --- Document type detection ---
