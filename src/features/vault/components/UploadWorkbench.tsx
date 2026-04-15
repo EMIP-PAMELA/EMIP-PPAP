@@ -836,7 +836,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     // isLikelyInternal=true (527 DRN present but PN absent) and isLikelyInternal=false
     // (title block not reached by primary OCR at all).
     // Region: bottom 25% / right 50% of page — the assumed Apogee title block position.
-    const TB_FALLBACK_REGION = { x: 0.50, y: 0.75, w: 0.50, h: 0.25 };
+    const TB_FALLBACK_REGION = { x: 0.40, y: 0.65, w: 0.60, h: 0.35 };
     let titleBlockFallbackText: string[] | null = null;
     let titleBlockFallbackCropUrl: string | null = null;
 
