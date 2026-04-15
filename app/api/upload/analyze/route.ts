@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
   const cropDataUrlField      = formData.get('title_block_crop');
   const fallbackRegionField   = formData.get('title_block_fallback_region_text');
   const fallbackCropField     = formData.get('title_block_fallback_crop');
+  const triggerDebugField     = formData.get('c124_trigger_debug');
 
   if (!(file instanceof File)) {
     return NextResponse.json({ ok: false, error: 'file is required' }, { status: 400 });
@@ -60,8 +61,19 @@ export async function POST(request: NextRequest) {
     ? fallbackCropField
     : null;
 
+  let clientTriggerDebug: Record<string, unknown> | null = null;
+  if (typeof triggerDebugField === 'string' && triggerDebugField.trim().length > 0) {
+    try {
+      const parsed: unknown = JSON.parse(triggerDebugField);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        clientTriggerDebug = parsed as Record<string, unknown>;
+      }
+    } catch { /* ignore malformed */ }
+  }
+
   console.log('[C12.4 DEBUG] Received fallback OCR lines:', titleBlockFallbackLines?.length);
   console.log('[C12.4 DEBUG] Received fallback crop:', !!titleBlockFallbackCrop);
+  console.log('[C12.4 TRIGGER DEBUG received]', clientTriggerDebug);
 
   try {
     console.log('🔥🔥🔥 ROUTE: BEFORE INGESTION CALL 🔥🔥🔥');
@@ -78,6 +90,7 @@ export async function POST(request: NextRequest) {
       titleBlockCropDataUrl,
       titleBlockFallbackLines,
       titleBlockFallbackCrop,
+      clientTriggerDebug,
     });
 
     console.log('🔥🔥🔥 ROUTE: AFTER INGESTION CALL 🔥🔥🔥');

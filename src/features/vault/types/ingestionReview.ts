@@ -202,6 +202,7 @@ export interface IngestionAnalysisResult {
     anthropicKeyPresent: boolean;
     anthropicKeyLength: number;
     anthropicKeyPrefix: string | null;
+    clientTriggerDebug: Record<string, unknown> | null;
   } | null;
 }
 

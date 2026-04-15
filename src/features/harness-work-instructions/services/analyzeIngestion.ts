@@ -590,6 +590,8 @@ export interface AnalyzeIngestionParams {
   titleBlockFallbackLines?: string[] | null;
   /** C12.4: base64 PNG data URL of the fallback region crop (browser-rendered). */
   titleBlockFallbackCrop?: string | null;
+  /** C12.4-R15: client-side trigger diagnostic object sent with each request. */
+  clientTriggerDebug?: Record<string, unknown> | null;
 }
 
 export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Promise<IngestionAnalysisResult> {
@@ -601,12 +603,13 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     partNumberHint, revisionHint, drawingNumberHint, forcedDocumentType,
     titleBlockRegionLines, titleBlockCropDataUrl,
     titleBlockFallbackLines, titleBlockFallbackCrop,
+    clientTriggerDebug,
   } = params;
 
   // --- C12.4-R13B: Runtime diagnostics (returned in payload for Vercel/local parity auditing) ---
   const anthKey = process.env.ANTHROPIC_API_KEY ?? null;
   const debugRuntime = {
-    buildTag:                'C12.4-R14',
+    buildTag:                'C12.4-R15',
     routeRuntime:            'nodejs',
     fallbackEligible:        false,
     fallbackLinesPresent:    (titleBlockFallbackLines?.length ?? 0) > 0,
@@ -621,6 +624,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     visionErrorStatus:        null as number | null,
     visionErrorType:          anthKey ? null : 'no_key',
     visionRequestSummary:     null as { model: string; hasImage: boolean; imageBytesApprox: number; mimeType: string | null } | null,
+    clientTriggerDebug:       clientTriggerDebug ?? null,
     vercelEnv:                process.env.VERCEL_ENV ?? null,
     nodeEnv:                  process.env.NODE_ENV ?? null,
     vercelUrl:                process.env.VERCEL_URL ?? null,

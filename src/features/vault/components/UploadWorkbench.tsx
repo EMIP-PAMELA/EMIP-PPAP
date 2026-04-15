@@ -840,8 +840,22 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     let titleBlockFallbackText: string[] | null = null;
     let titleBlockFallbackCropUrl: string | null = null;
 
-    const partNumberFound = extractedText != null && /\b45-\d{5,6}-\d{2,4}\b/.test(extractedText);
-    if (!partNumberFound && forcedType === 'INTERNAL_DRAWING') {
+    // C12.4-R15: strict 6-digit PN regex (matches server-side gate) and use isLikelyInternal
+    // so fallback fires for Mixed-mode uploads where 527 DRN was detected but forcedType is unset.
+    const STRICT_PN_45_RE_CLIENT = /\b45-\d{6}-\d{2}\b/;
+    const partNumberFoundStrict  = extractedText != null && STRICT_PN_45_RE_CLIENT.test(extractedText);
+    const shouldRunC124Fallback  = isLikelyInternal && !partNumberFoundStrict;
+
+    const c124TriggerDebug = {
+      buildTag:              'C12.4-R15',
+      forcedType:            forcedType ?? null,
+      isLikelyInternal,
+      partNumberFoundStrict,
+      shouldRunC124Fallback,
+    };
+    console.log('[C12.4 TRIGGER]', c124TriggerDebug);
+
+    if (shouldRunC124Fallback) {
       const blobUrl = URL.createObjectURL(file);
       try {
         const [{ extractPDFRegionText }, { renderPdfToImage }, { cropImageRegion }] = await Promise.all([
@@ -870,6 +884,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       } finally {
         URL.revokeObjectURL(blobUrl);
       }
+    } else {
+      console.log('[C12.4 TRIGGER] Fallback skipped', c124TriggerDebug);
     }
 
     try {
@@ -882,6 +898,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       if (titleBlockCropDataUrl)     fd.append('title_block_crop',                titleBlockCropDataUrl);
       if (titleBlockFallbackText)    fd.append('title_block_fallback_region_text', JSON.stringify(titleBlockFallbackText));
       if (titleBlockFallbackCropUrl) fd.append('title_block_fallback_crop',        titleBlockFallbackCropUrl);
+      fd.append('c124_trigger_debug', JSON.stringify(c124TriggerDebug));
 
       const res  = await fetch('/api/upload/analyze', { method: 'POST', body: fd });
       const json = await res.json();
