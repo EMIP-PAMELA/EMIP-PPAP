@@ -34,6 +34,8 @@ import { parseWireTableRows } from './wireTableParser';
 import { buildHarnessConnectivity, type HarnessConnectivityResult } from './harnessConnectivityService';
 import { isolateDiagramLines, extractDiagramComponents, mergeWithVisionResult, type DiagramExtractionResult } from './diagramExtractor';
 import { reconcileHarnessConnectivity, type HarnessReconciliationResult } from './harnessReconciliationService';
+import { classifyHarnessEndpoints } from './endpointClassifier';
+import { validateHarness, type HarnessValidationResult } from './harnessValidationService';
 import {
   runAIDrawingVisionParse,
   runTitleBlockCropVisionParse,
@@ -1099,6 +1101,21 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     }
   }
 
+  // --- T6 + T7: Endpoint classification + harness constraint validation ---
+  let harnessValidation: HarnessValidationResult | null = null;
+  if (harnessConnectivity) {
+    try {
+      const endpointClassification = classifyHarnessEndpoints(harnessConnectivity);
+      harnessValidation = validateHarness({
+        connectivity:           harnessConnectivity,
+        reconciliation:         harnessReconciliation,
+        endpointClassification,
+      });
+    } catch (err) {
+      console.warn('[T7 VALIDATION] Non-fatal — continuing without validation.', err);
+    }
+  }
+
   // --- C13: Universal AI vision parse ---
   let visionParsedResult: VisionParsedDrawingResult | null = null;
   if (pipelineMode === 'DRAWING' && normalizedText) {
@@ -1436,6 +1453,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     harnessConnectivity,
     diagramExtraction,
     harnessReconciliation,
+    harnessValidation,
     analyzedAt: new Date().toISOString(),
   };
 }

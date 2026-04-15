@@ -148,6 +148,13 @@ export interface IngestionAnalysisResult {
    */
   harnessReconciliation?: import('@/src/features/harness-work-instructions/services/harnessReconciliationService').HarnessReconciliationResult | null;
 
+  /**
+   * Phase T7: Harness physical plausibility validation.
+   * INTERMEDIATE DATA — not authoritative. Does not affect field resolution.
+   * Advisory WARNING/ERROR flags for invalid or suspicious wire configurations.
+   */
+  harnessValidation?: import('@/src/features/harness-work-instructions/services/harnessValidationService').HarnessValidationResult | null;
+
   analyzedAt: string;
 }
 
