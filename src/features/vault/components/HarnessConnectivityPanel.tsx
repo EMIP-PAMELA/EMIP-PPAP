@@ -15,7 +15,7 @@
  *   - Uses existing UI conventions from UploadWorkbench (details/summary, badges, pills).
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type {
   HarnessConnectivityResult,
   WireConnectivity,
@@ -232,15 +232,20 @@ function WireEvidenceRow({
   hasReconciliation,
   operatorOverride,
   onResolveSubmit,
+  activeResolveWireId,
+  onActivateResolve,
+  onResolveFormClose,
 }: {
   wire: WireConnectivity;
   reconciledWire?: ReconciledWire;
   hasReconciliation: boolean;
   operatorOverride?: WireOperatorOverride;
   onResolveSubmit?: (override: WireOperatorOverride) => void;
+  activeResolveWireId?: string | null;
+  onActivateResolve?: (wireId: string) => void;
+  onResolveFormClose?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [showForm, setShowForm] = useState(false);
   const isOperatorResolved = Boolean(operatorOverride);
   const originalStatus = classifyWire(wire);
   const statusStyle = isOperatorResolved
@@ -253,10 +258,32 @@ function WireEvidenceRow({
       ? 'bg-amber-50/30'
       : '';
   const indicator = matchIndicator(reconciledWire);
+  const debugMode = process.env.NODE_ENV !== 'production';
+  const isFormOpen = activeResolveWireId === wire.wireId;
+  const canResolve = !isOperatorResolved && wire.unresolved && Boolean(onResolveSubmit);
+
+  useEffect(() => {
+    if (isFormOpen) {
+      setExpanded(true);
+    }
+  }, [isFormOpen]);
+
+  useEffect(() => {
+    if (operatorOverride && isFormOpen) {
+      onResolveFormClose?.();
+    }
+  }, [operatorOverride, isFormOpen, onResolveFormClose]);
+
+  const handleResolveClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onActivateResolve?.(wire.wireId);
+    setExpanded(true);
+  };
 
   return (
     <>
       <tr
+        id={`wire-row-${wire.wireId}`}
         className={`border-t border-gray-100 cursor-pointer hover:bg-teal-50/40 ${rowBg}`}
         onClick={() => setExpanded(prev => !prev)}
         title="Click to expand evidence"
@@ -280,13 +307,10 @@ function WireEvidenceRow({
           <span className={`inline-block rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${statusStyle.className}`}>
             {statusStyle.label}
           </span>
-          {!isOperatorResolved && originalStatus === 'UNRESOLVED' && onResolveSubmit && (
-            <button
-              onClick={e => { e.stopPropagation(); setExpanded(true); setShowForm(true); }}
-              className="ml-1 rounded px-1 py-0.5 text-[9px] bg-blue-100 text-blue-700 hover:bg-blue-200 transition font-semibold"
-            >
-              Resolve
-            </button>
+          {debugMode && wire.unresolved && (
+            <div className="mt-0.5 text-[9px] text-gray-400 text-left">
+              overridePresent: {operatorOverride ? 'yes' : 'no'} · canResolve: {canResolve ? 'yes' : 'no'}
+            </div>
           )}
         </td>
         {hasReconciliation && (
@@ -301,9 +325,25 @@ function WireEvidenceRow({
             )}
           </td>
         )}
+        <td
+          className={`px-2 py-1 text-center text-[11px] font-semibold sticky right-0 border-l border-gray-200 shadow-[inset_1px_0_0_rgba(15,23,42,0.08)] ${
+            canResolve ? 'bg-white' : 'bg-gray-50'
+          }`}
+        >
+          {canResolve ? (
+            <button
+              onClick={handleResolveClick}
+              className="rounded-md bg-blue-600 px-2 py-1 text-[10px] text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+            >
+              Resolve
+            </button>
+          ) : (
+            <span className="text-gray-400">{isOperatorResolved ? 'Resolved' : '—'}</span>
+          )}
+        </td>
       </tr>
       {expanded && (
-        <tr className={rowBg}>
+        <tr className="bg-white">
           <td colSpan={hasReconciliation ? 10 : 9} className="px-3 py-2">
             <div className="rounded-lg border border-gray-200 bg-white/80 p-2 space-y-1.5 text-[10px] text-gray-700">
               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
@@ -369,11 +409,14 @@ function WireEvidenceRow({
                 </pre>
               </div>
 
-              {showForm && onResolveSubmit && (
+              {isFormOpen && onResolveSubmit && (
                 <WireResolveForm
                   wireId={wire.wireId}
-                  onSave={override => { setShowForm(false); onResolveSubmit(override); }}
-                  onCancel={() => setShowForm(false)}
+                  onSave={override => {
+                    onResolveSubmit(override);
+                    onResolveFormClose?.();
+                  }}
+                  onCancel={() => onResolveFormClose?.()}
                 />
               )}
             </div>
@@ -410,7 +453,16 @@ export default function HarnessConnectivityPanel({
 }: HarnessConnectivityPanelProps) {
   const model = connectivity ?? harnessConnectivity ?? null;
   const overrideMap = new Map((operatorOverrides ?? []).map(o => [o.wireId, o]));
-  const [open, setOpen] = useState(Boolean(model));
+  const [activeResolveWireId, setActiveResolveWireId] = useState<string | null>(null);
+  const openResolve = (wireId: string) => {
+    setActiveResolveWireId(wireId);
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        document.getElementById(`wire-row-${wireId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+  };
+  const closeResolve = () => setActiveResolveWireId(null);
 
   // ── Null / empty state ──────────────────────────────────────────────
   if (!model) {
@@ -432,6 +484,7 @@ export default function HarnessConnectivityPanel({
     const order: Record<WireStatus, number> = { RESOLVED: 0, PARTIAL: 1, UNRESOLVED: 2 };
     return order[classifyWire(a)] - order[classifyWire(b)];
   });
+  const unresolvedActionCandidates = sortedWires.filter(w => w.unresolved && !overrideMap.has(w.wireId));
 
   const { total, resolved, partial, unresolved } = confidenceSummary;
 
@@ -444,8 +497,7 @@ export default function HarnessConnectivityPanel({
 
   return (
     <details
-      open={open}
-      onToggle={e => setOpen((e.target as HTMLDetailsElement).open)}
+      open
       className="rounded-xl border border-teal-200 bg-teal-50/50 text-xs"
     >
       <summary className="cursor-pointer px-3 py-2 font-semibold text-teal-700 select-none flex items-center gap-2">
@@ -458,115 +510,135 @@ export default function HarnessConnectivityPanel({
             {unresolved} unresolved
           </span>
         )}
-        <span className="ml-auto text-[10px] text-teal-400">{open ? '▲' : '▼'}</span>
+        <span className="ml-auto text-[10px] text-teal-400">▼</span>
       </summary>
 
-      {open && (
-        <div className="px-3 pb-3 space-y-3 text-gray-700">
+      <div className="px-3 pb-3 space-y-3 text-gray-700">
 
-          {/* ── Summary stats ───────────────────────────────────────── */}
-          <div className="flex flex-wrap gap-2 text-[10px]">
-            <span className="rounded-full bg-teal-100 px-2 py-0.5 font-semibold text-teal-800">
-              {total} total
+        {/* ── Info banner ─────────────────────────────────────────── */}
+        <div className="rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-[10px] text-teal-800">
+          Intermediate connectivity model — click any wire row to see evidence. Unresolved rows require manual verification.
+        </div>
+
+        {/* ── T11: Resolved decision banner ───────────────────────── */}
+        {resolvedDecision && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[10px] text-blue-800 flex flex-wrap gap-2 items-center">
+            <span className="font-semibold">Resolved State:</span>
+            <span className={`rounded-full px-2 py-0.5 font-semibold text-[10px] ${
+              resolvedDecision.overallDecision === 'SAFE' ? 'bg-emerald-100 text-emerald-800'
+              : resolvedDecision.overallDecision === 'REVIEW_REQUIRED' ? 'bg-amber-100 text-amber-800'
+              : 'bg-red-100 text-red-700'
+            }`}>{resolvedDecision.overallDecision}</span>
+            <span>Readiness: {resolvedDecision.readinessScore.toFixed(0)}%</span>
+            {resolvedDecision.blockedWires.length > 0 && (
+              <span className="text-red-600">Still blocked: {resolvedDecision.blockedWires.join(', ')}</span>
+            )}
+          </div>
+        )}
+
+        {/* ── Unresolved summary CTA ──────────────────────────────── */}
+        {unresolvedActionCandidates.length > 0 && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10px] text-red-800 flex flex-wrap gap-2 items-center">
+            <span>
+              {unresolvedActionCandidates.length} unresolved wire{unresolvedActionCandidates.length === 1 ? '' : 's'}:
+              {' '}
+              {unresolvedActionCandidates.slice(0, 3).map(w => w.wireId).join(', ')}
             </span>
-            {reconciliation && (
-              <>
-                <span className={`rounded-full px-2 py-0.5 font-semibold ${
-                  reconciliation.summary.fullyMatched > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'
-                }`}>
-                  {reconciliation.summary.fullyMatched} matched
+            <button
+              type="button"
+              onClick={() => openResolve(unresolvedActionCandidates[0].wireId)}
+              className="rounded-full bg-red-600 px-3 py-1 text-[10px] font-semibold text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              Resolve now
+            </button>
+          </div>
+        )}
+
+        {/* ── Summary stats ───────────────────────────────────────── */}
+        <div className="flex flex-wrap gap-2 text-[10px]">
+          <span className="rounded-full bg-teal-100 px-2 py-0.5 font-semibold text-teal-800">
+            {total} total
+          </span>
+          {reconciliation && (
+            <>
+              <span className={`rounded-full px-2 py-0.5 font-semibold ${
+                reconciliation.summary.fullyMatched > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'
+              }`}>
+                {reconciliation.summary.fullyMatched} matched
+              </span>
+              {reconciliation.summary.ambiguous > 0 && (
+                <span className="rounded-full px-2 py-0.5 font-semibold bg-purple-100 text-purple-700">
+                  {reconciliation.summary.ambiguous} ambiguous
                 </span>
-                {reconciliation.summary.ambiguous > 0 && (
-                  <span className="rounded-full px-2 py-0.5 font-semibold bg-purple-100 text-purple-700">
-                    {reconciliation.summary.ambiguous} ambiguous
-                  </span>
-                )}
-              </>
-            )}
-            <span className={`rounded-full px-2 py-0.5 font-semibold ${
-              resolved > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'
-            }`}>
-              {resolved} resolved
-            </span>
-            <span className={`rounded-full px-2 py-0.5 font-semibold ${
-              partial > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'
-            }`}>
-              {partial} partial
-            </span>
-            <span className={`rounded-full px-2 py-0.5 font-semibold ${
-              unresolved > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
-            }`}>
-              {unresolved} unresolved
-            </span>
-          </div>
-
-          {/* ── Info banner ─────────────────────────────────────────── */}
-          <div className="rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-[10px] text-teal-800">
-            Intermediate connectivity model — click any wire row to see evidence. Unresolved rows require manual verification.
-          </div>
-
-          {/* ── T11: Resolved decision banner ───────────────────────── */}
-          {resolvedDecision && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[10px] text-blue-800 flex flex-wrap gap-2 items-center">
-              <span className="font-semibold">Resolved State:</span>
-              <span className={`rounded-full px-2 py-0.5 font-semibold text-[10px] ${
-                resolvedDecision.overallDecision === 'SAFE' ? 'bg-emerald-100 text-emerald-800'
-                : resolvedDecision.overallDecision === 'REVIEW_REQUIRED' ? 'bg-amber-100 text-amber-800'
-                : 'bg-red-100 text-red-700'
-              }`}>{resolvedDecision.overallDecision}</span>
-              <span>Readiness: {resolvedDecision.readinessScore.toFixed(0)}%</span>
-              {resolvedDecision.blockedWires.length > 0 && (
-                <span className="text-red-600">Still blocked: {resolvedDecision.blockedWires.join(', ')}</span>
               )}
-            </div>
+            </>
           )}
+          <span className={`rounded-full px-2 py-0.5 font-semibold ${
+            resolved > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'
+          }`}>
+            {resolved} resolved
+          </span>
+          <span className={`rounded-full px-2 py-0.5 font-semibold ${
+            partial > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'
+          }`}>
+            {partial} partial
+          </span>
+          <span className={`rounded-full px-2 py-0.5 font-semibold ${
+            unresolved > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
+          }`}>
+            {unresolved} unresolved
+          </span>
+        </div>
 
-          {/* ── Primary wire table ──────────────────────────────────── */}
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="w-full text-[11px]">
-              <thead className="bg-gray-100 text-gray-500 uppercase text-[10px]">
-                <tr>
-                  <th className="px-2 py-1 text-left">Wire</th>
-                  <th className="px-2 py-1 text-right">Length</th>
-                  <th className="px-2 py-1 text-left">Gauge</th>
-                  <th className="px-2 py-1 text-left">Color</th>
-                  <th className="px-2 py-1 text-left">From</th>
-                  <th className="px-2 py-1 text-right">Pin</th>
-                  <th className="px-2 py-1 text-left">To</th>
-                  <th className="px-2 py-1 text-center">Conf</th>
-                  <th className="px-2 py-1 text-center">Status</th>
-                  {hasReconciliation && <th className="px-2 py-1 text-center">Match</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedWires.slice(0, 100).map(wire => (
-                  <WireEvidenceRow
-                    key={`${wire.wireId}-${wire.sourceRowIndex}`}
-                    wire={wire}
-                    reconciledWire={reconciledByWireId.get(wire.wireId)}
-                    hasReconciliation={hasReconciliation}
-                    operatorOverride={overrideMap.get(wire.wireId)}
-                    onResolveSubmit={onOverrideSubmit}
-                  />
-                ))}
-              </tbody>
-            </table>
-            {wires.length > 100 && (
-              <div className="px-2 py-1 text-[10px] text-gray-400">
-                Showing first 100 of {wires.length} wires
-              </div>
-            )}
+        {/* ── Unresolved wire IDs callout ─────────────────────────── */}
+        {unresolvedWires.length > 0 && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10px] text-red-800">
+            <span className="font-semibold">Unresolved wire IDs:</span>{' '}
+            {unresolvedWires.join(', ')}
           </div>
+        )}
 
-          {/* ── Unresolved wire IDs callout ─────────────────────────── */}
-          {unresolvedWires.length > 0 && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10px] text-red-800">
-              <span className="font-semibold">Unresolved wire IDs:</span>{' '}
-              {unresolvedWires.join(', ')}
+        {/* ── Primary wire table ──────────────────────────────────── */}
+        <div className="overflow-x-auto rounded-lg border border-gray-200 relative">
+          <table className="w-full text-[11px]">
+            <thead className="bg-gray-100 text-gray-500 uppercase text-[10px]">
+              <tr>
+                <th className="px-2 py-1 text-left">Wire</th>
+                <th className="px-2 py-1 text-right">Length</th>
+                <th className="px-2 py-1 text-left">Gauge</th>
+                <th className="px-2 py-1 text-left">Color</th>
+                <th className="px-2 py-1 text-left">From</th>
+                <th className="px-2 py-1 text-right">Pin</th>
+                <th className="px-2 py-1 text-left">To</th>
+                <th className="px-2 py-1 text-center">Confidence</th>
+                <th className="px-2 py-1 text-center">Status</th>
+                {hasReconciliation && <th className="px-2 py-1 text-center">Match</th>}
+                <th className="px-2 py-1 text-center sticky right-0 bg-gray-100">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedWires.slice(0, 100).map(wire => (
+                <WireEvidenceRow
+                  key={`${wire.wireId}-${wire.sourceRowIndex}`}
+                  wire={wire}
+                  reconciledWire={reconciledByWireId.get(wire.wireId)}
+                  hasReconciliation={hasReconciliation}
+                  operatorOverride={overrideMap.get(wire.wireId)}
+                  onResolveSubmit={onOverrideSubmit}
+                  activeResolveWireId={activeResolveWireId}
+                  onActivateResolve={openResolve}
+                  onResolveFormClose={closeResolve}
+                />
+              ))}
+            </tbody>
+          </table>
+          {wires.length > 100 && (
+            <div className="px-2 py-1 text-[10px] text-gray-400">
+              Showing first 100 of {wires.length} wires
             </div>
           )}
         </div>
-      )}
+      </div>
     </details>
   );
 }
