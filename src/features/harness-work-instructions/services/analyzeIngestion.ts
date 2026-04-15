@@ -1027,6 +1027,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   // Accepts ONLY /^45-\d{6}-\d{2}$/ — rejects 527-pattern, 5-digit middle, etc.
   if (!fieldLocks.PART_NUMBER && (titleBlockFallbackLines?.length || titleBlockFallbackCrop)) {
     const STRICT_PN_45_RE = /^45-\d{6}-\d{2}$/;
+    console.log('🚨🚨🚨 C12.4-R4 EXECUTING — ANALYZE INGESTION PATH 🚨🚨🚨');
 
     // PASS 1: coordinate-filtered region text
     let fallbackOcrPN: string | null = null;
@@ -1049,6 +1050,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     // PASS 2: AI vision — runs when OCR did not produce a valid PN
     if (titleBlockFallbackCrop && !ocrHasValidPn) {
       console.log('[C12.4 DEBUG] OCR did not find valid PN — triggering Vision');
+      console.log('🚨🚨🚨 VISION BRANCH REACHED 🚨🚨🚨');
       try {
         const visionResult = await runFallbackTitleBlockVisionParse(titleBlockFallbackCrop);
         console.log('[C12.4 DEBUG] Vision Result:', visionResult);
@@ -1085,6 +1087,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       fallbackVisionPN,
       finalFallbackPn,
     });
+    console.log('🚨🚨🚨 C12.4 FALLBACK COMPLETED 🚨🚨🚨');
   }
 
   // Shared OCR lines for T1 + T4 (computed once, avoids duplicate split)
