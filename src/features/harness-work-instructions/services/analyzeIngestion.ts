@@ -602,6 +602,21 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     titleBlockFallbackLines, titleBlockFallbackCrop,
   } = params;
 
+  // --- C12.4-R10: Runtime diagnostics (returned in payload for Vercel/local parity auditing) ---
+  const debugRuntime = {
+    buildTag:                'C12.4-R10',
+    routeRuntime:            'nodejs',
+    fallbackEligible:        false,
+    fallbackLinesPresent:    (titleBlockFallbackLines?.length ?? 0) > 0,
+    fallbackCropPresent:     Boolean(titleBlockFallbackCrop),
+    enteredC124Fallback:     false,
+    enteredVisionFallback:   false,
+    visionProviderConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
+    visionCallAttempted:     false,
+    visionCallSucceeded:     false,
+    visionErrorMessage:      null as string | null,
+  };
+
   // --- Document type detection ---
   const classification = normalizedText
     ? detectDocumentType(normalizedText, fileName)
@@ -1029,7 +1044,11 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   // PASS 1: scanForApogeePN45 on fallback lines + strict /^45-\d{6}-\d{2}$/ gate.
   // PASS 2: Claude vision with strict PN-only prompt + same strict gate.
   // Accepts ONLY /^45-\d{6}-\d{2}$/ — rejects 527-pattern, 5-digit middle, etc.
+  debugRuntime.fallbackEligible = !fieldLocks.PART_NUMBER &&
+    Boolean(titleBlockFallbackLines?.length || titleBlockFallbackCrop);
+
   if (!fieldLocks.PART_NUMBER && (titleBlockFallbackLines?.length || titleBlockFallbackCrop)) {
+    debugRuntime.enteredC124Fallback = true;
     const STRICT_PN_45_RE = /^45-\d{6}-\d{2}$/;
     console.log('🚨🚨🚨 C12.4-R4 EXECUTING — ANALYZE INGESTION PATH 🚨🚨🚨');
 
@@ -1053,16 +1072,20 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
 
     // PASS 2: AI vision — runs when OCR did not produce a valid PN
     if (titleBlockFallbackCrop && !ocrHasValidPn) {
+      debugRuntime.enteredVisionFallback = true;
       console.log('[C12.4 DEBUG] OCR did not find valid PN — triggering Vision');
       console.log('🚨🚨🚨 VISION BRANCH REACHED 🚨🚨🚨');
       try {
+        debugRuntime.visionCallAttempted = true;
         const visionResult = await runFallbackTitleBlockVisionParse(titleBlockFallbackCrop);
+        debugRuntime.visionCallSucceeded = visionResult !== null;
         console.log('[C12.4 DEBUG] Vision Result:', visionResult);
         if (visionResult?.partNumber && STRICT_PN_45_RE.test(visionResult.partNumber)) {
           fallbackVisionPN = visionResult.partNumber;
           finalFallbackPn = fallbackVisionPN;
         }
       } catch (err) {
+        debugRuntime.visionErrorMessage = err instanceof Error ? err.message : String(err);
         console.warn('[C12.4 FALLBACK] Vision pass failed — non-fatal', err);
       }
     }
@@ -1651,6 +1674,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     harnessValidation,
     harnessConfidence,
     harnessDecision,
+    debugRuntime,
     analyzedAt: new Date().toISOString(),
   };
 }

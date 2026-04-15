@@ -23,6 +23,7 @@
  */
 
 import type { DiagramVisionResult } from './diagramExtractor';
+import { callClaudeVision } from './claudeVisionClient';
 
 // ---------------------------------------------------------------------------
 // Core Output Types (spec-mandated)
@@ -110,11 +111,6 @@ export type VisionDisplayModel = {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-const AI_ROUTE_BASE =
-  process.env.NEXT_PUBLIC_APP_URL ??
-  process.env.NEXTAUTH_URL ??
-  'http://localhost:3000';
 
 const PLACEHOLDER_STRINGS = new Set([
   'string', 'null', 'number', 'example', 'unknown', 'tbd', 'n/a', 'xxx',
@@ -204,20 +200,12 @@ ${text}`;
 // Step 2 — HTTP Call
 // ---------------------------------------------------------------------------
 
+// C12.4-R10: previously fetched /api/ai/drawing-vision-parse via HTTP self-call
+// (using AI_ROUTE_BASE). That broke on Vercel when NEXT_PUBLIC_APP_URL /
+// NEXTAUTH_URL were not set — fetch silently failed with localhost:3000.
+// Now calls Claude directly via claudeVisionClient, no round-trip needed.
 async function callVisionRoute(prompt: string, imageDataUrls?: string[]): Promise<string | null> {
-  try {
-    const res = await fetch(`${AI_ROUTE_BASE}/api/ai/drawing-vision-parse`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ prompt, imageDataUrls }),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json?.content ?? null;
-  } catch (err) {
-    console.error('[AI VISION PARSE CALL ERROR]', err);
-    return null;
-  }
+  return callClaudeVision(prompt, imageDataUrls);
 }
 
 // ---------------------------------------------------------------------------

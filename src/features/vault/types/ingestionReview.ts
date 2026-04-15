@@ -170,6 +170,24 @@ export interface IngestionAnalysisResult {
   harnessDecision?: import('@/src/features/harness-work-instructions/services/harnessDecisionService').HarnessDecisionResult | null;
 
   analyzedAt: string;
+
+  /**
+   * C12.4-R10: Runtime diagnostics for Vercel/local parity auditing.
+   * Visible in Raw Extraction Debug panel. Temporary — remove after parity confirmed.
+   */
+  debugRuntime?: {
+    buildTag: string;
+    routeRuntime: string;
+    fallbackEligible: boolean;
+    fallbackLinesPresent: boolean;
+    fallbackCropPresent: boolean;
+    enteredC124Fallback: boolean;
+    enteredVisionFallback: boolean;
+    visionProviderConfigured: boolean;
+    visionCallAttempted: boolean;
+    visionCallSucceeded: boolean;
+    visionErrorMessage: string | null;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
