@@ -37,6 +37,7 @@ import { reconcileHarnessConnectivity, type HarnessReconciliationResult } from '
 import { classifyHarnessEndpoints, type HarnessEndpointClassificationResult } from './endpointClassifier';
 import { validateHarness, type HarnessValidationResult } from './harnessValidationService';
 import { adjustHarnessConfidence, type HarnessConfidenceResult } from './harnessConfidenceService';
+import { evaluateHarnessDecision, type HarnessDecisionResult } from './harnessDecisionService';
 import {
   runAIDrawingVisionParse,
   runTitleBlockCropVisionParse,
@@ -1141,6 +1142,22 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     }
   }
 
+  // --- T9: Operator decision layer + PPAP readiness ---
+  let harnessDecision: HarnessDecisionResult | null = null;
+  if (harnessConnectivity) {
+    try {
+      harnessDecision = evaluateHarnessDecision({
+        connectivity:           harnessConnectivity,
+        reconciliation:         harnessReconciliation,
+        endpointClassification,
+        validation:             harnessValidation,
+        confidence:             harnessConfidence,
+      });
+    } catch (err) {
+      console.warn('[T9 DECISION] Non-fatal — continuing without decision layer.', err);
+    }
+  }
+
   // --- C13: Universal AI vision parse ---
   let visionParsedResult: VisionParsedDrawingResult | null = null;
   if (pipelineMode === 'DRAWING' && normalizedText) {
@@ -1480,6 +1497,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     harnessReconciliation,
     harnessValidation,
     harnessConfidence,
+    harnessDecision,
     analyzedAt: new Date().toISOString(),
   };
 }

@@ -162,6 +162,13 @@ export interface IngestionAnalysisResult {
    */
   harnessConfidence?: import('@/src/features/harness-work-instructions/services/harnessConfidenceService').HarnessConfidenceResult | null;
 
+  /**
+   * Phase T9: Operator decision layer + PPAP readiness engine.
+   * INTERMEDIATE DATA — not authoritative. Does not affect field resolution.
+   * Wire-level SAFE/REVIEW/BLOCKED decisions with full audit trail and readiness score.
+   */
+  harnessDecision?: import('@/src/features/harness-work-instructions/services/harnessDecisionService').HarnessDecisionResult | null;
+
   analyzedAt: string;
 }
 
