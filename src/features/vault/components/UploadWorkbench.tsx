@@ -133,6 +133,12 @@ const DOC_TYPE_OPTIONS: { label: string; value: StrictDocumentType }[] = [
   { label: 'Internal Drawing', value: 'INTERNAL_DRAWING' },
 ];
 
+const DEFAULT_PANEL_WIDTH = 420;
+const PANEL_MIN_WIDTH = 320;
+const PANEL_MAX_WIDTH = 900;
+
+const clampPanelWidth = (value: number) => Math.min(Math.max(value, PANEL_MIN_WIDTH), PANEL_MAX_WIDTH);
+
 const STATUS_BADGE: Record<WorkbenchItemStatus, string> = {
   queued:          'bg-gray-100 text-gray-600',
   extracting:      'bg-amber-100 text-amber-800',
@@ -717,6 +723,63 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const [debugFallbackCrops, setDebugFallbackCrops] = useState<Record<string, string>>({});
   const [wireOverrides,    setWireOverrides]    = useState<Record<string, WireOperatorOverride[]>>({});
   const [resolvedOutputs,  setResolvedOutputs]  = useState<Record<string, OperatorRevalidationResult>>({});
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+  const isResizingPanelRef = useRef(false);
+  const panelWidthRef = useRef(panelWidth);
+
+  useEffect(() => {
+    panelWidthRef.current = panelWidth;
+  }, [panelWidth]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem('workbench.panelWidth');
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (Number.isFinite(parsed)) {
+        setPanelWidth(clampPanelWidth(parsed));
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!isResizingPanelRef.current) return;
+      const newWidth = clampPanelWidth(window.innerWidth - event.clientX);
+      panelWidthRef.current = newWidth;
+      setPanelWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (!isResizingPanelRef.current) return;
+      isResizingPanelRef.current = false;
+      document.body.classList.remove('select-none', 'cursor-col-resize');
+      window.localStorage.setItem('workbench.panelWidth', String(panelWidthRef.current));
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  const startPanelResize = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    isResizingPanelRef.current = true;
+    document.body.classList.add('select-none', 'cursor-col-resize');
+  }, []);
+
+  const resetPanelWidth = useCallback(() => {
+    panelWidthRef.current = DEFAULT_PANEL_WIDTH;
+    setPanelWidth(DEFAULT_PANEL_WIDTH);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('workbench.panelWidth', String(DEFAULT_PANEL_WIDTH));
+    }
+  }, []);
 
   const updateItem = useCallback((id: string, patch: Partial<WorkbenchItem>) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
@@ -1159,7 +1222,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       {/* Body */}
       <div className="flex flex-1 min-h-0 gap-0 overflow-hidden">
         {/* Left: queue list */}
-        <div className="flex w-2/3 min-w-0 flex-col border-r">
+        <div className="flex flex-1 min-w-0 flex-col border-r">
           {selectedItem && items.some(i => i.status === 'needs_review') && (
             <div className="flex flex-wrap gap-2 border-b px-4 py-2 shrink-0 bg-amber-50 text-xs items-center">
               <span className="font-semibold text-amber-800 shrink-0">Apply to all needs-review:</span>
@@ -1322,7 +1385,18 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
         </div>
 
         {/* Right: detail panel */}
-        <div className="flex w-[420px] min-w-[420px] flex-col overflow-y-auto">
+        <div
+          className="relative flex flex-col bg-white"
+          style={{ width: panelWidth, minWidth: PANEL_MIN_WIDTH }}
+        >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            onMouseDown={startPanelResize}
+            onDoubleClick={resetPanelWidth}
+            className="absolute left-0 top-0 bottom-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent transition hover:bg-blue-200/60"
+          />
+          <div className="flex flex-col overflow-y-auto border-l border-gray-200">
           {!selectedItem ? (
             <div className="flex flex-1 items-center justify-center text-gray-400 text-sm p-8">Select a file to review</div>
           ) : (
@@ -1716,6 +1790,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               ) : null}
             </div>
           )}
+          </div>
         </div>
       </div>
 
