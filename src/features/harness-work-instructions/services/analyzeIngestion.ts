@@ -1031,15 +1031,18 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     // PASS 1: coordinate-filtered region text
     let fallbackOcrPN: string | null = null;
     if (titleBlockFallbackLines?.length) {
+      console.log('[C12.4 DEBUG] OCR Lines Passed to Scanner:', titleBlockFallbackLines);
       const { value } = scanForApogeePN45(titleBlockFallbackLines, -1);
       if (value && STRICT_PN_45_RE.test(value)) {
         fallbackOcrPN = value;
       }
+      console.log('[C12.4 DEBUG] OCR PN Result:', fallbackOcrPN);
     }
 
     // PASS 2: AI vision — only if OCR pass didn't yield a result
     let fallbackVisionPN: string | null = null;
     if (titleBlockFallbackCrop && !fallbackOcrPN) {
+      console.log('[C12.4 DEBUG] Running Vision Pass on Fallback Crop');
       try {
         const visionResult = await runFallbackTitleBlockVisionParse(titleBlockFallbackCrop);
         if (visionResult?.partNumber && STRICT_PN_45_RE.test(visionResult.partNumber)) {

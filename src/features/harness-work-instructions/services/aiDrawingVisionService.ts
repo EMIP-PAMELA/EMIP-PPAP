@@ -491,11 +491,14 @@ export async function runFallbackTitleBlockVisionParse(
   });
 
   try {
+    console.log('[C12.4 DEBUG] Vision Input Received');
     const raw = await callVisionRoute(FALLBACK_CROP_VISION_PROMPT, [cropDataUrl]);
     if (!raw) {
       console.warn('[C12.4 FALLBACK VISION] Empty response');
       return null;
     }
+
+    console.log('[C12.4 DEBUG] Vision Raw Output:', raw);
 
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
@@ -509,6 +512,7 @@ export async function runFallbackTitleBlockVisionParse(
     // Strict enforcement: accept ONLY /^45-\d{6}-\d{2}$/
     // Rejects 527-pattern, 5-digit middle, 4-digit suffix, suffixed-alpha variants.
     const partNumber = rawPN && STRICT_PN_45_RE.test(rawPN.trim()) ? rawPN.trim() : null;
+    console.log('[C12.4 DEBUG] Vision Parsed PN:', partNumber);
 
     const result: TitleBlockCropVisionResult = {
       partNumber,

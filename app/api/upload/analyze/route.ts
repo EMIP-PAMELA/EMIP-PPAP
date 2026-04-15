@@ -59,6 +59,9 @@ export async function POST(request: NextRequest) {
     ? fallbackCropField
     : null;
 
+  console.log('[C12.4 DEBUG] Received fallback OCR lines:', titleBlockFallbackLines?.length);
+  console.log('[C12.4 DEBUG] Received fallback crop:', !!titleBlockFallbackCrop);
+
   try {
     const analysis = await analyzeFileIngestion({
       fileName: file.name,

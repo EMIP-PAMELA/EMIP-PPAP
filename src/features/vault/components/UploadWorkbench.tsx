@@ -709,6 +709,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const [uploadMode, setUploadMode] = useState<UploadMode>('MIXED');
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
+  const [debugFallbackCrops, setDebugFallbackCrops] = useState<Record<string, string>>({});
 
   const updateItem = useCallback((id: string, patch: Partial<WorkbenchItem>) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
@@ -851,11 +852,16 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
         ]);
         if (fallbackLines?.length) titleBlockFallbackText   = fallbackLines;
         if (fullImage)             titleBlockFallbackCropUrl = await cropImageRegion(fullImage, TB_FALLBACK_REGION).catch(() => null);
+        console.log('[C12.4 DEBUG] Fallback OCR Lines:', titleBlockFallbackText);
+        console.log('[C12.4 DEBUG] Fallback Crop Generated:', !!titleBlockFallbackCropUrl);
         console.log('[C12.4 FALLBACK DISPATCH]', {
           file: file.name,
           fallbackLines: fallbackLines?.length ?? 0,
           fallbackCropLength: titleBlockFallbackCropUrl?.length ?? 0,
         });
+        if (titleBlockFallbackCropUrl) {
+          setDebugFallbackCrops(prev => ({ ...prev, [id]: titleBlockFallbackCropUrl! }));
+        }
       } catch (err) {
         console.warn('[C12.4 FALLBACK DISPATCH] Non-fatal fallback crop step failed', err);
       } finally {
@@ -1583,6 +1589,17 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   activeRegionId={activeRegionId}
                 />
               ) : null}
+
+              {debugFallbackCrops[selectedItem.id] && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontWeight: 600 }}>C12.4 Debug — Fallback Crop</div>
+                  <img
+                    src={debugFallbackCrops[selectedItem.id]}
+                    alt="Fallback Crop"
+                    style={{ width: '100%', border: '1px solid #ccc' }}
+                  />
+                </div>
+              )}
 
               {selectedItem.analysis?.structuredData ? (
                 <ParsedDrawingDataPanel data={selectedItem.analysis.structuredData} />
