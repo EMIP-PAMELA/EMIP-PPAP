@@ -155,6 +155,13 @@ export interface IngestionAnalysisResult {
    */
   harnessValidation?: import('@/src/features/harness-work-instructions/services/harnessValidationService').HarnessValidationResult | null;
 
+  /**
+   * Phase T8: Constraint-aware confidence adjustment.
+   * INTERMEDIATE DATA — not authoritative. Does not affect field resolution.
+   * Adjusted endpoint confidence scores with explainable penalty reasoning.
+   */
+  harnessConfidence?: import('@/src/features/harness-work-instructions/services/harnessConfidenceService').HarnessConfidenceResult | null;
+
   analyzedAt: string;
 }
 

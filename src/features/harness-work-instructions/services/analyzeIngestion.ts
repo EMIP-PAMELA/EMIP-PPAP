@@ -34,8 +34,9 @@ import { parseWireTableRows } from './wireTableParser';
 import { buildHarnessConnectivity, type HarnessConnectivityResult } from './harnessConnectivityService';
 import { isolateDiagramLines, extractDiagramComponents, mergeWithVisionResult, type DiagramExtractionResult } from './diagramExtractor';
 import { reconcileHarnessConnectivity, type HarnessReconciliationResult } from './harnessReconciliationService';
-import { classifyHarnessEndpoints } from './endpointClassifier';
+import { classifyHarnessEndpoints, type HarnessEndpointClassificationResult } from './endpointClassifier';
 import { validateHarness, type HarnessValidationResult } from './harnessValidationService';
+import { adjustHarnessConfidence, type HarnessConfidenceResult } from './harnessConfidenceService';
 import {
   runAIDrawingVisionParse,
   runTitleBlockCropVisionParse,
@@ -1101,11 +1102,20 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     }
   }
 
-  // --- T6 + T7: Endpoint classification + harness constraint validation ---
+  // --- T6: Endpoint classification ---
+  let endpointClassification: HarnessEndpointClassificationResult | null = null;
+  if (harnessConnectivity) {
+    try {
+      endpointClassification = classifyHarnessEndpoints(harnessConnectivity);
+    } catch (err) {
+      console.warn('[T6 CLASSIFICATION] Non-fatal — continuing without endpoint classification.', err);
+    }
+  }
+
+  // --- T7: Harness constraint validation ---
   let harnessValidation: HarnessValidationResult | null = null;
   if (harnessConnectivity) {
     try {
-      const endpointClassification = classifyHarnessEndpoints(harnessConnectivity);
       harnessValidation = validateHarness({
         connectivity:           harnessConnectivity,
         reconciliation:         harnessReconciliation,
@@ -1113,6 +1123,21 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       });
     } catch (err) {
       console.warn('[T7 VALIDATION] Non-fatal — continuing without validation.', err);
+    }
+  }
+
+  // --- T8: Constraint-aware confidence adjustment ---
+  let harnessConfidence: HarnessConfidenceResult | null = null;
+  if (harnessConnectivity) {
+    try {
+      harnessConfidence = adjustHarnessConfidence({
+        connectivity:           harnessConnectivity,
+        reconciliation:         harnessReconciliation,
+        endpointClassification,
+        validation:             harnessValidation,
+      });
+    } catch (err) {
+      console.warn('[T8 CONFIDENCE] Non-fatal — continuing without confidence adjustment.', err);
     }
   }
 
@@ -1454,6 +1479,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     diagramExtraction,
     harnessReconciliation,
     harnessValidation,
+    harnessConfidence,
     analyzedAt: new Date().toISOString(),
   };
 }
