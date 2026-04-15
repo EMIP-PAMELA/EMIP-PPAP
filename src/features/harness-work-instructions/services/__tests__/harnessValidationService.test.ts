@@ -49,6 +49,8 @@ function makeWire(
   return {
     wireId,
     length:         null,
+    lengthUnit:     null,
+    lengthInches:   null,
     gauge:          null,
     color:          null,
     from: {

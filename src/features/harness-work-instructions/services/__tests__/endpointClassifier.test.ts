@@ -55,6 +55,8 @@ function makeHcResult(
     wires: wires.map((w, i) => ({
       wireId:         w.wireId,
       length:         null,
+      lengthUnit:     null,
+      lengthInches:   null,
       gauge:          null,
       color:          null,
       from: { component: w.fromComp, cavity: w.fromCavity, treatment: null },

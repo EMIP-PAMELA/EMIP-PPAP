@@ -632,8 +632,12 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     anthropicKeyPresent:      Boolean(anthKey),
     anthropicKeyLength:       rawKey?.length ?? 0,
     anthropicKeyTrimmedLength: anthKey?.length ?? 0,
-    anthropicKeyHasWhitespaceDifference: (rawKey?.length ?? 0) !== (anthKey?.length ?? 0),
-    anthropicKeyPrefix:       anthKey ? anthKey.slice(0, 7) : null,
+    anthropicKeyHasWhitespaceDifference: Boolean(
+      anthKey && rawKey && rawKey.trim() !== rawKey,
+    ),
+    anthropicKeyPrefix:      anthKey ? anthKey.slice(0, 4) : null,
+    inferredLengthUnit:      null as import('./unitInferenceService').LengthUnit | null,
+    unitInferenceReason:     null as import('./unitInferenceService').UnitInferenceReason | null,
   };
 
   // --- Document type detection ---
@@ -657,6 +661,12 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     if (/\b45-\d{5,6}-\d{2,4}\b/.test(normalizedText)) return 'CUSTOMER_DRAWING';
     return 'DRAWING_UNKNOWN';
   })();
+
+  const forcedDocIsInternal = forcedDocumentType === 'INTERNAL_DRAWING';
+  const isLikelyInternalDrawing =
+    drawingSubtype === 'INTERNAL_DRAWING' ||
+    docType === 'INTERNAL_DRAWING' ||
+    forcedDocIsInternal;
   console.log('[DRAWING SUBTYPE]', { file: fileName, drawingSubtype });
 
   // --- Extraction state ---
@@ -1157,7 +1167,10 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       const detected  = detectWireTableRegion(ocrLines);
       if (detected) {
         wireTableHeaderIdx = detected.headerLineIdx;
-        const parsed = parseWireTableRows(detected.bodyLines);
+        const parsed = parseWireTableRows(detected.bodyLines, {
+          extractedText: normalizedText,
+          isLikelyInternal: isLikelyInternalDrawing,
+        });
         wireTableResult = {
           region:       detected.region,
           confidence:   detected.confidence,
@@ -1165,7 +1178,11 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
           rowCount:     parsed.rowCount,
           parseQuality: parsed.parseQuality,
           headerText:   detected.headerText,
+          inferredLengthUnit: parsed.inferredLengthUnit,
+          unitInferenceReason: parsed.unitInferenceReason,
         };
+        debugRuntime.inferredLengthUnit = parsed.inferredLengthUnit;
+        debugRuntime.unitInferenceReason = parsed.unitInferenceReason;
         console.log('[T1 WIRE TABLE]', {
           drawingSubtype,
           headerText:   detected.headerText.slice(0, 80),

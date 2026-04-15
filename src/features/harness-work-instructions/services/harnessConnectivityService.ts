@@ -15,6 +15,7 @@
  */
 
 import type { WireRow } from './wireTableParser';
+import type { LengthUnit } from './unitInferenceService';
 
 // ---------------------------------------------------------------------------
 // HC-BOM Data Model
@@ -32,6 +33,8 @@ export interface WireEndpoint {
 export interface WireConnectivity {
   wireId: string;
   length: number | null;
+  lengthUnit: LengthUnit | null;
+  lengthInches: number | null;
   gauge: string | null;
   color: string | null;
 
@@ -216,6 +219,8 @@ export function buildHarnessConnectivity(wireRows: WireRow[]): HarnessConnectivi
     const wire: WireConnectivity = {
       wireId,
       length: row.length,
+      lengthUnit: row.lengthUnit ?? null,
+      lengthInches: row.lengthInches ?? (row.length ?? null),
       gauge:  row.gauge,
       color:  row.color,
       from,

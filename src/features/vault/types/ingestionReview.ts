@@ -154,6 +154,8 @@ export interface IngestionAnalysisResult {
     rowCount: number;
     parseQuality: 'GOOD' | 'PARTIAL' | 'POOR';
     headerText: string | null;
+    inferredLengthUnit: import('@/src/features/harness-work-instructions/services/unitInferenceService').LengthUnit;
+    unitInferenceReason: import('@/src/features/harness-work-instructions/services/unitInferenceService').UnitInferenceReason;
   } | null;
 
   /**
@@ -245,6 +247,8 @@ export interface IngestionAnalysisResult {
     anthropicKeyHasWhitespaceDifference: boolean;
     anthropicKeyPrefix: string | null;
     clientTriggerDebug: Record<string, unknown> | null;
+    inferredLengthUnit?: import('@/src/features/harness-work-instructions/services/unitInferenceService').LengthUnit | null;
+    unitInferenceReason?: import('@/src/features/harness-work-instructions/services/unitInferenceService').UnitInferenceReason | null;
   } | null;
 }
 

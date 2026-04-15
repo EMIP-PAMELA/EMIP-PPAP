@@ -18,11 +18,15 @@
 // Output types
 // ---------------------------------------------------------------------------
 
+import { inferLengthUnit } from './unitInferenceService';
+
 /** Structured representation of a single wire/connectivity table row. */
 export interface WireRow {
   /** Wire identifier (W1, Y1, COM, GND, SHLD, bare numeric, etc.) */
   wireId:       string | null;
   length:       number | null;
+  lengthUnit?:  import('./unitInferenceService').LengthUnit | null;
+  lengthInches?: number | null;
   gauge:        string | null;
   color:        string | null;
   /** Connector reference — J1, P2, X3, etc. */
@@ -42,6 +46,8 @@ export interface WireTableParseResult {
   parseQuality:  'GOOD' | 'PARTIAL' | 'POOR';
   linesConsumed: number;
   noiseLines:    number;
+  inferredLengthUnit: import('./unitInferenceService').LengthUnit;
+  unitInferenceReason: import('./unitInferenceService').UnitInferenceReason;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +184,12 @@ function extractLineFields(line: string): LineFields {
  *   If a line does NOT start with a wire ID it is merged into the previous row,
  *   filling any null fields found there. Accumulated rawText uses '\n' separator.
  */
-export function parseWireTableRows(bodyLines: string[]): WireTableParseResult {
+export interface ParseWireTableOptions {
+  extractedText?: string | null;
+  isLikelyInternal?: boolean;
+}
+
+export function parseWireTableRows(bodyLines: string[], options: ParseWireTableOptions = {}): WireTableParseResult {
   const rows:     WireRow[] = [];
   let noiseLines  = 0;
   let currentRow: WireRow | null = null;
@@ -225,6 +236,26 @@ export function parseWireTableRows(bodyLines: string[]): WireTableParseResult {
 
   flush();
 
+  const inferenceArgs = {
+    extractedText: options.extractedText,
+    isLikelyInternal: options.isLikelyInternal,
+    wireSamples: rows.map(r => ({ length: r.length, gauge: r.gauge })),
+  } satisfies import('./unitInferenceService').UnitInferenceArgs;
+  const { unit: inferredUnit, reason: unitReason } = inferLengthUnit(inferenceArgs);
+
+  for (const row of rows) {
+    row.lengthUnit = row.length != null ? inferredUnit : null;
+    row.lengthInches = row.length != null
+      ? inferredUnit === 'in' ? row.length : row.length / 25.4
+      : null;
+  }
+
+  console.log('[T1 UNIT-INFERENCE]', {
+    rows: rows.length,
+    inferredUnit,
+    unitReason,
+  });
+
   const rowCount  = rows.length;
   const withGauge = rows.filter(r => r.gauge !== null).length;
   const gaugeRatio = rowCount > 0 ? withGauge / rowCount : 0;
@@ -248,5 +279,7 @@ export function parseWireTableRows(bodyLines: string[]): WireTableParseResult {
     parseQuality,
     linesConsumed: bodyLines.length,
     noiseLines,
+    inferredLengthUnit: inferredUnit,
+    unitInferenceReason: unitReason,
   };
 }

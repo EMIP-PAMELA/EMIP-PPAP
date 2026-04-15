@@ -54,7 +54,12 @@ import type {
 
 function makeWire(wireId: string, fromComp: string | null = 'J1', toComp: string | null = 'T1'): WireConnectivity {
   return {
-    wireId, length: null, gauge: null, color: null,
+    wireId,
+    length: null,
+    lengthUnit: null,
+    lengthInches: null,
+    gauge: null,
+    color: null,
     from: { component: fromComp, cavity: null, treatment: null },
     to:   { component: toComp,   cavity: null, treatment: null },
     sourceRowIndex: 0, rawText: wireId, confidence: 0.9, unresolved: false,

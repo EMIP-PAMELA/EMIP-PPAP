@@ -29,6 +29,8 @@ function makeWire(partial: Partial<WireConnectivity> & { wireId: string }): Wire
   return {
     wireId:         partial.wireId,
     length:         partial.length         ?? 10,
+    lengthUnit:     partial.lengthUnit     ?? 'in',
+    lengthInches:   partial.lengthInches   ?? (partial.length ?? 10),
     gauge:          partial.gauge          ?? '18',
     color:          partial.color          ?? 'BRN',
     from:           partial.from           ?? { component: null, cavity: null, treatment: null },

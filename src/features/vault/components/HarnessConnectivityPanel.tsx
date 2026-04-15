@@ -85,6 +85,41 @@ function inferUnresolvedReason(w: WireConnectivity): string | null {
 
 const dash = '—';
 
+function formatInchesValue(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(1);
+}
+
+function formatLengthSummary(wire: WireConnectivity): string {
+  if (wire.lengthInches != null) {
+    return `${formatInchesValue(wire.lengthInches)} in`;
+  }
+  if (wire.length != null && wire.lengthUnit) {
+    return `${wire.length} ${wire.lengthUnit}`;
+  }
+  if (wire.length != null) {
+    return `${wire.length}`;
+  }
+  return dash;
+}
+
+function formatLengthDetail(wire: WireConnectivity): string {
+  if (wire.lengthInches != null) {
+    const base = `${formatInchesValue(wire.lengthInches)} in`;
+    if (wire.lengthUnit && wire.lengthUnit !== 'in' && wire.length != null) {
+      return `${base} (raw ${wire.length} ${wire.lengthUnit})`;
+    }
+    return base;
+  }
+  if (wire.length != null && wire.lengthUnit) {
+    return `${wire.length} ${wire.lengthUnit}`;
+  }
+  if (wire.length != null) {
+    return `${wire.length}`;
+  }
+  return dash;
+}
+
 // ---------------------------------------------------------------------------
 // Reconciliation match indicator
 // ---------------------------------------------------------------------------
@@ -292,7 +327,7 @@ function WireEvidenceRow({
           {wire.wireId}
           <span className="ml-1 text-[9px] text-gray-400">{expanded ? '▲' : '▾'}</span>
         </td>
-        <td className="px-2 py-1 text-right font-mono">{wire.length !== null ? wire.length.toFixed(1) : dash}</td>
+        <td className="px-2 py-1 text-right font-mono">{formatLengthSummary(wire)}</td>
         <td className="px-2 py-1">{wire.gauge ?? dash}</td>
         <td className="px-2 py-1">{wire.color ?? dash}</td>
         <td className="px-2 py-1 font-mono">{wire.from.component ?? dash}</td>
@@ -349,6 +384,7 @@ function WireEvidenceRow({
               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                 <div><span className="font-semibold text-gray-500">Source row:</span> #{wire.sourceRowIndex}</div>
                 <div><span className="font-semibold text-gray-500">Confidence:</span> {(wire.confidence * 100).toFixed(0)}%</div>
+                <div><span className="font-semibold text-gray-500">Length:</span> {formatLengthDetail(wire)}</div>
                 <div><span className="font-semibold text-gray-500">From component:</span> {wire.from.component ?? dash}</div>
                 <div><span className="font-semibold text-gray-500">From cavity:</span> {wire.from.cavity ?? dash}</div>
                 <div><span className="font-semibold text-gray-500">From treatment:</span> {wire.from.treatment ?? dash}</div>
