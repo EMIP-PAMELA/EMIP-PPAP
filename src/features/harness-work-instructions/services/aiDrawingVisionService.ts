@@ -453,6 +453,79 @@ export async function runTitleBlockCropVisionParse(
 }
 
 // ---------------------------------------------------------------------------
+// Step 5c — C12.4: Fallback title block recovery (strict PN-only pass)
+// ---------------------------------------------------------------------------
+
+const FALLBACK_CROP_VISION_PROMPT = [
+  'You are analysing a CROPPED image of the bottom-right corner of an Apogee internal harness drawing.',
+  'Extract ONLY the PART NUMBER that matches EXACTLY the format 45-xxxxxx-xx:',
+  '  - EXACTLY 6 digits after the first dash (e.g. 45-110858-10)',
+  '  - EXACTLY 2 digits after the second dash',
+  'IGNORE and DO NOT return:',
+  '  - Drawing numbers in format 527-xxxx-010',
+  '  - Wire gauges (20AWG, 18AWG, etc.)',
+  '  - Part numbers with fewer or more than 6 middle digits',
+  '  - Any number that does not match exactly 45-XXXXXX-XX',
+  'If no part number matching EXACTLY 45-XXXXXX-XX is visible, return null for partNumber.',
+  'Return ONLY valid JSON — no markdown fences, no extra text:',
+  '{"partNumber": string|null, "confidence": number}',
+].join('\n');
+
+const STRICT_PN_45_RE = /^45-\d{6}-\d{2}$/;
+
+/**
+ * C12.4: Run a targeted Claude vision call on a fallback title-block crop.
+ *
+ * Uses a strict prompt that rejects DRNs (527-*) and non-standard PN formats.
+ * Only returns a partNumber if it passes /^45-\d{6}-\d{2}$/ — all other
+ * candidates are discarded at parse time.
+ *
+ * Returns null on any failure — caller must treat as optional enrichment.
+ */
+export async function runFallbackTitleBlockVisionParse(
+  cropDataUrl: string,
+): Promise<TitleBlockCropVisionResult | null> {
+  if (!cropDataUrl) return null;
+  console.log('[C12.4 FALLBACK VISION] invoking Claude on fallback crop', {
+    dataUrlLength: cropDataUrl.length,
+  });
+
+  try {
+    const raw = await callVisionRoute(FALLBACK_CROP_VISION_PROMPT, [cropDataUrl]);
+    if (!raw) {
+      console.warn('[C12.4 FALLBACK VISION] Empty response');
+      return null;
+    }
+
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn('[C12.4 FALLBACK VISION] No JSON in response', raw.slice(0, 200));
+      return null;
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+    const rawPN = cleanString(parsed.partNumber);
+
+    // Strict enforcement: accept ONLY /^45-\d{6}-\d{2}$/
+    // Rejects 527-pattern, 5-digit middle, 4-digit suffix, suffixed-alpha variants.
+    const partNumber = rawPN && STRICT_PN_45_RE.test(rawPN.trim()) ? rawPN.trim() : null;
+
+    const result: TitleBlockCropVisionResult = {
+      partNumber,
+      drawingNumber: null,
+      revision:      null,
+      confidence:    clampConf(parsed.confidence ?? 0.70),
+    };
+
+    console.log('[C12.4 FALLBACK VISION RESULT]', result);
+    return result;
+  } catch (err) {
+    console.warn('[C12.4 FALLBACK VISION] Failed — returning null', err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Step 6 — Normalize to ParsedDrawingDataPanel Display Model
 // ---------------------------------------------------------------------------
 

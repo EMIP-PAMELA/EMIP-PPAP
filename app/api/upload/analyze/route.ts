@@ -20,6 +20,8 @@ export async function POST(request: NextRequest) {
   const revisionHint          = formData.get('revision_hint');
   const regionTextField       = formData.get('title_block_region_text');
   const cropDataUrlField      = formData.get('title_block_crop');
+  const fallbackRegionField   = formData.get('title_block_fallback_region_text');
+  const fallbackCropField     = formData.get('title_block_fallback_crop');
 
   if (!(file instanceof File)) {
     return NextResponse.json({ ok: false, error: 'file is required' }, { status: 400 });
@@ -43,6 +45,20 @@ export async function POST(request: NextRequest) {
     ? cropDataUrlField
     : null;
 
+  // C12.4: fallback region lines (bottom 25%, right 50%) — sent when primary OCR missed the DRN
+  let titleBlockFallbackLines: string[] | null = null;
+  if (typeof fallbackRegionField === 'string' && fallbackRegionField.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(fallbackRegionField);
+      if (Array.isArray(parsed)) titleBlockFallbackLines = parsed as string[];
+    } catch { /* ignore malformed */ }
+  }
+
+  // C12.4: base64 PNG data URL of fallback region crop (browser-rendered)
+  const titleBlockFallbackCrop = typeof fallbackCropField === 'string' && fallbackCropField.startsWith('data:')
+    ? fallbackCropField
+    : null;
+
   try {
     const analysis = await analyzeFileIngestion({
       fileName: file.name,
@@ -52,6 +68,8 @@ export async function POST(request: NextRequest) {
       revisionHint:           typeof revisionHint   === 'string' ? revisionHint   : null,
       titleBlockRegionLines,
       titleBlockCropDataUrl,
+      titleBlockFallbackLines,
+      titleBlockFallbackCrop,
     });
 
     return NextResponse.json({ ok: true, analysis });

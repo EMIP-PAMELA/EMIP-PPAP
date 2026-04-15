@@ -830,14 +830,49 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       }
     }
 
+    // C12.4: Fallback region extraction — runs when primary OCR did not detect a 527 DRN
+    // (isLikelyInternal=false) and the file is not a BOM. Extracts from the assumed
+    // Apogee title block position (bottom 25%, right 50%) for server-side multi-pass recovery.
+    const TB_FALLBACK_REGION = { x: 0.50, y: 0.75, w: 0.50, h: 0.25 };
+    let titleBlockFallbackText: string[] | null = null;
+    let titleBlockFallbackCropUrl: string | null = null;
+
+    if (!isLikelyInternal && forcedType !== 'BOM') {
+      const blobUrl = URL.createObjectURL(file);
+      try {
+        const [{ extractPDFRegionText }, { renderPdfToImage }, { cropImageRegion }] = await Promise.all([
+          import('@/src/utils/extractPDFRegionText'),
+          import('@/src/utils/renderPdfToImage'),
+          import('@/src/utils/cropImageRegion'),
+        ]);
+        const [fallbackLines, fullImage] = await Promise.all([
+          extractPDFRegionText(file, TB_FALLBACK_REGION).catch(() => null),
+          renderPdfToImage(blobUrl).catch(() => null),
+        ]);
+        if (fallbackLines?.length) titleBlockFallbackText   = fallbackLines;
+        if (fullImage)             titleBlockFallbackCropUrl = await cropImageRegion(fullImage, TB_FALLBACK_REGION).catch(() => null);
+        console.log('[C12.4 FALLBACK DISPATCH]', {
+          file: file.name,
+          fallbackLines: fallbackLines?.length ?? 0,
+          fallbackCropLength: titleBlockFallbackCropUrl?.length ?? 0,
+        });
+      } catch (err) {
+        console.warn('[C12.4 FALLBACK DISPATCH] Non-fatal fallback crop step failed', err);
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+    }
+
     try {
       const fd = new FormData();
       fd.append('file', file);
       if (extractedText)             fd.append('extracted_text',          extractedText);
       if (preselectedSku)            fd.append('part_number_hint',         preselectedSku);
       if (forcedType)                fd.append('forced_document_type',     forcedType);
-      if (titleBlockRegionText)      fd.append('title_block_region_text',  JSON.stringify(titleBlockRegionText));
-      if (titleBlockCropDataUrl)     fd.append('title_block_crop',         titleBlockCropDataUrl);
+      if (titleBlockRegionText)      fd.append('title_block_region_text',         JSON.stringify(titleBlockRegionText));
+      if (titleBlockCropDataUrl)     fd.append('title_block_crop',                titleBlockCropDataUrl);
+      if (titleBlockFallbackText)    fd.append('title_block_fallback_region_text', JSON.stringify(titleBlockFallbackText));
+      if (titleBlockFallbackCropUrl) fd.append('title_block_fallback_crop',        titleBlockFallbackCropUrl);
 
       const res  = await fetch('/api/upload/analyze', { method: 'POST', body: fd });
       const json = await res.json();

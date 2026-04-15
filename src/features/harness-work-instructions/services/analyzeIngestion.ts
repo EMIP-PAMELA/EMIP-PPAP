@@ -41,6 +41,7 @@ import { evaluateHarnessDecision, type HarnessDecisionResult } from './harnessDe
 import {
   runAIDrawingVisionParse,
   runTitleBlockCropVisionParse,
+  runFallbackTitleBlockVisionParse,
   runDiagramComponentParse,
   mergeVisionParsedData,
   type VisionParsedDrawingResult,
@@ -582,6 +583,11 @@ export interface AnalyzeIngestionParams {
   titleBlockRegionLines?: string[] | null;
   /** C12.2: base64 PNG data URL of the cropped title block image (browser-rendered). */
   titleBlockCropDataUrl?: string | null;
+  /** C12.4: coordinate-filtered region lines from the fallback region (bottom 25%, right 50%).
+   *  Sent when primary OCR did not detect a 527 DRN — browser tries the wider fallback crop. */
+  titleBlockFallbackLines?: string[] | null;
+  /** C12.4: base64 PNG data URL of the fallback region crop (browser-rendered). */
+  titleBlockFallbackCrop?: string | null;
 }
 
 export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Promise<IngestionAnalysisResult> {
@@ -589,6 +595,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     fileName, fileSize, normalizedText,
     partNumberHint, revisionHint, drawingNumberHint, forcedDocumentType,
     titleBlockRegionLines, titleBlockCropDataUrl,
+    titleBlockFallbackLines, titleBlockFallbackCrop,
   } = params;
 
   // --- Document type detection ---
@@ -1008,6 +1015,63 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       visionCropDRN: visionCropRaw?.drawingNumber ?? null,
       visionCropRev: visionCropRaw?.revision ?? null,
       hasCropResult,
+    });
+  }
+
+  // --- C12.4: Title block fallback recovery (multi-pass, strict pattern) ---
+  // Runs when the browser could not determine isLikelyInternal (no 527 DRN in
+  // primary OCR text) and sent fallback region data from the bottom-25%/right-50%
+  // title block area.
+  // PASS 1: scanForApogeePN45 on fallback lines + strict /^45-\d{6}-\d{2}$/ gate.
+  // PASS 2: Claude vision with strict PN-only prompt + same strict gate.
+  // Accepts ONLY /^45-\d{6}-\d{2}$/ — rejects 527-pattern, 5-digit middle, etc.
+  if (!fieldLocks.PART_NUMBER && (titleBlockFallbackLines?.length || titleBlockFallbackCrop)) {
+    const STRICT_PN_45_RE = /^45-\d{6}-\d{2}$/;
+
+    // PASS 1: coordinate-filtered region text
+    let fallbackOcrPN: string | null = null;
+    if (titleBlockFallbackLines?.length) {
+      const { value } = scanForApogeePN45(titleBlockFallbackLines, -1);
+      if (value && STRICT_PN_45_RE.test(value)) {
+        fallbackOcrPN = value;
+      }
+    }
+
+    // PASS 2: AI vision — only if OCR pass didn't yield a result
+    let fallbackVisionPN: string | null = null;
+    if (titleBlockFallbackCrop && !fallbackOcrPN) {
+      try {
+        const visionResult = await runFallbackTitleBlockVisionParse(titleBlockFallbackCrop);
+        if (visionResult?.partNumber && STRICT_PN_45_RE.test(visionResult.partNumber)) {
+          fallbackVisionPN = visionResult.partNumber;
+        }
+      } catch (err) {
+        console.warn('[C12.4 FALLBACK] Vision pass failed — non-fatal', err);
+      }
+    }
+
+    if (fallbackOcrPN) {
+      addCandidate('PART_NUMBER', {
+        value:       fallbackOcrPN,
+        source:      'TITLE_BLOCK_OCR_CROP',
+        confidence:  0.82,
+        regionLabel: 'TITLE_BLOCK_REGION',
+      });
+    }
+    if (fallbackVisionPN) {
+      addCandidate('PART_NUMBER', {
+        value:       fallbackVisionPN,
+        source:      'TITLE_BLOCK_VISION_CROP',
+        confidence:  0.75,
+        regionLabel: 'TITLE_BLOCK_REGION',
+      });
+    }
+
+    console.log('[C12.4 FALLBACK]', {
+      linesProvided: titleBlockFallbackLines?.length ?? 0,
+      cropProvided:  Boolean(titleBlockFallbackCrop),
+      fallbackOcrPN,
+      fallbackVisionPN,
     });
   }
 
