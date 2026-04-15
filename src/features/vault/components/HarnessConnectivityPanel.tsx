@@ -238,22 +238,25 @@ function WireEvidenceRow({
 // ---------------------------------------------------------------------------
 
 export interface HarnessConnectivityPanelProps {
-  harnessConnectivity: HarnessConnectivityResult | null | undefined;
+  connectivity?: HarnessConnectivityResult | null | undefined;
+  harnessConnectivity?: HarnessConnectivityResult | null | undefined;
   reconciliation?: HarnessReconciliationResult | null;
 }
 
 export default function HarnessConnectivityPanel({
+  connectivity,
   harnessConnectivity,
   reconciliation,
 }: HarnessConnectivityPanelProps) {
-  const [open, setOpen] = useState(false);
+  const model = connectivity ?? harnessConnectivity ?? null;
+  const [open, setOpen] = useState(Boolean(model));
 
   // ── Null / empty state ──────────────────────────────────────────────
-  if (!harnessConnectivity) {
+  if (!model) {
     return null;
   }
 
-  const { wires, unresolvedWires, confidenceSummary } = harnessConnectivity;
+  const { wires, unresolvedWires, confidenceSummary } = model;
 
   if (wires.length === 0) {
     return (

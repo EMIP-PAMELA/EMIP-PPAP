@@ -1608,11 +1608,27 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                 <ParsedDrawingDataPanel data={selectedItem.analysis.structuredData} />
               ) : null}
 
-              {selectedItem.analysis?.harnessConnectivity ? (
+              {selectedItem.analysis ? (
                 <HarnessConnectivityPanel
-                  harnessConnectivity={selectedItem.analysis.harnessConnectivity}
+                  connectivity={selectedItem.analysis.harnessConnectivity}
                   reconciliation={selectedItem.analysis.harnessReconciliation}
                 />
+              ) : null}
+
+              {selectedItem.analysis ? (
+                <details
+                  open
+                  className="mt-4 rounded-xl border border-gray-200 bg-gray-50 text-xs shadow-sm"
+                >
+                  <summary className="cursor-pointer px-3 py-2 font-semibold text-gray-700 select-none">
+                    Raw Extraction Debug
+                  </summary>
+                  <div className="px-3 pb-3">
+                    <pre style={{ maxHeight: 400, overflow: 'auto', fontSize: 11 }}>
+                      {JSON.stringify(selectedItem.analysis, null, 2)}
+                    </pre>
+                  </div>
+                </details>
               ) : null}
 
               {selectedItem.status === 'ready_to_commit' ? (
