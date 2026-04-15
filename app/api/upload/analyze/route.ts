@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { analyzeFileIngestion } from '@/src/features/harness-work-instructions/services/analyzeIngestion';
 
 export async function POST(request: NextRequest) {
+  console.log('🧪🧪🧪 BUILD ID: R8-TEST-A 🧪🧪🧪');
   const formData = await request.formData();
   const file = formData.get('file');
   const extractedTextField    = formData.get('extracted_text');
