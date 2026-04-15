@@ -1030,19 +1030,23 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
 
     // PASS 1: coordinate-filtered region text
     let fallbackOcrPN: string | null = null;
+    let ocrHasValidPn = false;
     if (titleBlockFallbackLines?.length) {
       console.log('[C12.4 DEBUG] OCR Lines Passed to Scanner:', titleBlockFallbackLines);
-      const { value } = scanForApogeePN45(titleBlockFallbackLines, -1);
-      if (value && STRICT_PN_45_RE.test(value)) {
-        fallbackOcrPN = value;
+      const pnScanResult = scanForApogeePN45(titleBlockFallbackLines, -1);
+      const pnValue = pnScanResult.value;
+      ocrHasValidPn = Boolean(pnValue && STRICT_PN_45_RE.test(pnValue));
+      if (ocrHasValidPn) {
+        fallbackOcrPN = pnValue!;
       }
-      console.log('[C12.4 DEBUG] OCR PN Result:', fallbackOcrPN);
+      console.log('[C12.4 DEBUG] OCR PN Result:', pnScanResult);
+      console.log('[C12.4 DEBUG] OCR Valid PN:', ocrHasValidPn);
     }
 
-    // PASS 2: AI vision — only if OCR pass didn't yield a result
+    // PASS 2: AI vision — runs when OCR did not produce a valid PN
     let fallbackVisionPN: string | null = null;
-    if (titleBlockFallbackCrop && !fallbackOcrPN) {
-      console.log('[C12.4 DEBUG] Running Vision Pass on Fallback Crop');
+    if (titleBlockFallbackCrop && !ocrHasValidPn) {
+      console.log('[C12.4 DEBUG] OCR did not find valid PN — triggering Vision');
       try {
         const visionResult = await runFallbackTitleBlockVisionParse(titleBlockFallbackCrop);
         if (visionResult?.partNumber && STRICT_PN_45_RE.test(visionResult.partNumber)) {
