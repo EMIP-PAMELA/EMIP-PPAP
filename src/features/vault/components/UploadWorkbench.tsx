@@ -831,14 +831,17 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       }
     }
 
-    // C12.4: Fallback region extraction — runs when primary OCR did not detect a 527 DRN
-    // (isLikelyInternal=false) and the file is not a BOM. Extracts from the assumed
-    // Apogee title block position (bottom 25%, right 50%) for server-side multi-pass recovery.
+    // C12.4: Fallback region extraction — runs when the 45-PN was NOT found in the primary
+    // OCR text AND the document type is INTERNAL_DRAWING. This covers both cases where
+    // isLikelyInternal=true (527 DRN present but PN absent) and isLikelyInternal=false
+    // (title block not reached by primary OCR at all).
+    // Region: bottom 25% / right 50% of page — the assumed Apogee title block position.
     const TB_FALLBACK_REGION = { x: 0.50, y: 0.75, w: 0.50, h: 0.25 };
     let titleBlockFallbackText: string[] | null = null;
     let titleBlockFallbackCropUrl: string | null = null;
 
-    if (!isLikelyInternal && forcedType !== 'BOM') {
+    const partNumberFound = extractedText != null && /\b45-\d{5,6}-\d{2,4}\b/.test(extractedText);
+    if (!partNumberFound && forcedType === 'INTERNAL_DRAWING') {
       const blobUrl = URL.createObjectURL(file);
       try {
         const [{ extractPDFRegionText }, { renderPdfToImage }, { cropImageRegion }] = await Promise.all([
