@@ -14,6 +14,7 @@
  */
 
 import type { WireEndpoint, WireConnectivity, HarnessConnectivityResult } from './harnessConnectivityService';
+import { endpointHasAuthoritativeTermination, inferTerminationType } from './harnessConnectivityService';
 import type { VisionParsedDrawingResult } from './aiDrawingVisionService';
 import type { LengthUnit } from './unitInferenceService';
 import { resolveDrawingLengthUnit } from './unitInferenceService';
@@ -103,17 +104,20 @@ export function buildHarnessConnectivityFromVision(
       component: fromComponent,
       cavity,
       treatment: null,
+      terminationType: inferTerminationType({ component: fromComponent, cavity, treatment: null, rawText: vw.evidence?.join(' ') ?? '' }),
     };
 
     // ── TO endpoint ──────────────────────────────────────────────────────
+    const toComponent = vw.to?.terminalPartNumber ?? null;
     const to: WireEndpoint = {
-      component: vw.to?.terminalPartNumber ?? null,
+      component: toComponent,
       cavity:    null,
       treatment: null,
+      terminationType: inferTerminationType({ component: toComponent, cavity: null, treatment: null, rawText: vw.evidence?.join(' ') ?? '' }),
     };
 
     // ── Unresolved ───────────────────────────────────────────────────────
-    const unresolved = from.component === null || to.component === null;
+    const unresolved = !endpointHasAuthoritativeTermination(from) || !endpointHasAuthoritativeTermination(to);
 
     // ── Confidence (conservative) ────────────────────────────────────────
     const confidence = computeBridgedConfidence(
@@ -168,7 +172,7 @@ export function buildHarnessConnectivityFromVision(
   for (const w of wires) {
     if (w.unresolved) {
       unresolvedCount++;
-    } else if (w.from.component !== null && w.to.component !== null) {
+    } else if (endpointHasAuthoritativeTermination(w.from) && endpointHasAuthoritativeTermination(w.to)) {
       resolved++;
     } else {
       partial++;

@@ -21,6 +21,7 @@ import React, { useState, useCallback } from 'react';
 import type {
   HarnessConnectivityResult,
   WireConnectivity,
+  EndpointTerminationType,
 } from '@/src/features/harness-work-instructions/services/harnessConnectivityService';
 import type {
   OperatorWireModel,
@@ -37,6 +38,10 @@ import type { EffectiveSkuHarnessModel } from '@/src/features/harness-work-instr
 // Props
 // ---------------------------------------------------------------------------
 
+export type SkuModelDeleteRequest =
+  | { scope: 'operator'; operatorId: string }
+  | { scope: 'extracted'; wireId: string; undo?: boolean };
+
 export interface SkuModelEditorPanelProps {
   extractedConnectivity: HarnessConnectivityResult | null;
   effectiveModel: EffectiveSkuHarnessModel | null;
@@ -45,7 +50,7 @@ export interface SkuModelEditorPanelProps {
   operatorDeletedWireIds: string[];
   onAddWire: (wire: OperatorWireModel) => void;
   onEditWire: (wire: OperatorWireModel) => void;
-  onDeleteWire: (wireId: string) => void;
+  onDeleteWire: (request: SkuModelDeleteRequest) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +67,61 @@ const TOPOLOGY_OPTIONS: { value: WireTopology; label: string }[] = [
 
 const dash = '—';
 
+const TERMINATION_LABELS: Record<EndpointTerminationType, string> = {
+  UNKNOWN:          'Unknown / Not specified',
+  CONNECTOR_PIN:    'Connector pin',
+  TERMINAL:         'Terminal / component',
+  FERRULE:          'Ferrule',
+  STRIP_ONLY:       'Strip-only',
+  SPLICE:           'Splice',
+  GROUND:           'Ground',
+  RING:             'Ring terminal',
+  SPADE:            'Spade terminal',
+  RECEPTACLE:       'Receptacle',
+  OTHER_TREATMENT:  'Other treatment',
+};
+
+const TERMINATION_OPTIONS: { value: EndpointTerminationType | ''; label: string }[] = [
+  { value: '', label: '— Select termination —' },
+  ...Object.entries(TERMINATION_LABELS).map(([value, label]) => ({ value: value as EndpointTerminationType, label })),
+];
+
+type AnyEndpoint = {
+  component: string | null;
+  cavity: string | null;
+  treatment: string | null;
+  terminationType?: EndpointTerminationType | null;
+};
+
+function humanizeTermination(type?: EndpointTerminationType | null): string | null {
+  if (!type || type === 'UNKNOWN') return null;
+  return TERMINATION_LABELS[type] ?? type.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+function describeTermination(endpoint: AnyEndpoint): string | null {
+  const label = humanizeTermination(endpoint.terminationType ?? null);
+  if (!label) return endpoint.treatment?.trim() || null;
+  const treatment = endpoint.treatment?.trim();
+  return treatment ? `${label} (${treatment})` : label;
+}
+
+function endpointDisplay(endpoint: AnyEndpoint): string {
+  if (endpoint.component && endpoint.component.trim()) return endpoint.component.trim();
+  return describeTermination(endpoint) ?? dash;
+}
+
+function defaultTerminationValue(endpoint?: AnyEndpoint | null): EndpointTerminationType | '' {
+  if (!endpoint) return '';
+  if (endpoint.terminationType && endpoint.terminationType !== 'UNKNOWN') return endpoint.terminationType;
+  if (endpoint.component && endpoint.cavity) return 'CONNECTOR_PIN';
+  return '';
+}
+
+function formatWireLabel(label?: string | null): string {
+  if (!label || !label.trim()) return 'Wire (no ID)';
+  return label.trim();
+}
+
 // ---------------------------------------------------------------------------
 // Wire editor form
 // ---------------------------------------------------------------------------
@@ -74,9 +134,11 @@ interface WireFormState {
   fromComponent: string;
   fromCavity: string;
   fromTreatment: string;
+  fromTermination: EndpointTerminationType | '';
   toComponent: string;
   toCavity: string;
   toTreatment: string;
+  toTermination: EndpointTerminationType | '';
   topology: WireTopology | '';
   branchSrcComp: string;
   branchSrcCav: string;
@@ -89,8 +151,8 @@ interface WireFormState {
 function emptyForm(): WireFormState {
   return {
     wireId: '', length: '', gauge: '', color: '',
-    fromComponent: '', fromCavity: '', fromTreatment: '',
-    toComponent: '', toCavity: '', toTreatment: '',
+    fromComponent: '', fromCavity: '', fromTreatment: '', fromTermination: '',
+    toComponent: '', toCavity: '', toTreatment: '', toTermination: '',
     topology: '', branchSrcComp: '', branchSrcCav: '', branchSecCav: '',
     branchFerrulePN: '', branchTerminalPN: '', reason: '',
   };
@@ -105,16 +167,18 @@ function wireToForm(wire: WireConnectivity | OperatorWireModel): WireFormState {
   const branch: OperatorWireBranch | null = opWire?.branch ?? null;
 
   return {
-    wireId:         wire.wireId,
+    wireId:         wire.wireId ?? '',
     length:         wire.length != null ? String(wire.length) : '',
     gauge:          wire.gauge ?? '',
     color:          wire.color ?? '',
     fromComponent:  from.component ?? '',
     fromCavity:     from.cavity    ?? '',
     fromTreatment:  from.treatment ?? '',
+    fromTermination: defaultTerminationValue(from),
     toComponent:    to.component   ?? '',
     toCavity:       to.cavity      ?? '',
     toTreatment:    to.treatment   ?? '',
+    toTermination:  defaultTerminationValue(to),
     topology:       opWire?.topology ?? '',
     branchSrcComp:  branch?.sharedSourceComponent  ?? '',
     branchSrcCav:   branch?.sharedSourceCavity     ?? '',
@@ -129,6 +193,7 @@ function formToOperatorWire(
   form: WireFormState,
   existingId?: string,
   existingCreatedAt?: string,
+  targetWireId?: string | null,
 ): OperatorWireModel {
   const now = new Date().toISOString();
   const topology = (form.topology || null) as WireTopology | null;
@@ -142,10 +207,15 @@ function formToOperatorWire(
           terminalPartNumber:     form.branchTerminalPN || null,
         }
       : null;
+  const trimmedWireId = form.wireId.trim();
+  const sanitizedWireId = trimmedWireId.length > 0 ? trimmedWireId : null;
+  const fromTermination = (form.fromTermination || null) as EndpointTerminationType | null;
+  const toTermination = (form.toTermination || null) as EndpointTerminationType | null;
 
   return {
     id:          existingId ?? `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    wireId:      form.wireId.trim(),
+    wireId:      sanitizedWireId,
+    targetWireId: targetWireId ?? sanitizedWireId,
     length:      form.length !== '' ? parseFloat(form.length) : null,
     lengthUnit:  'in',
     gauge:       form.gauge.trim() || null,
@@ -154,11 +224,13 @@ function formToOperatorWire(
       component: form.fromComponent.trim() || null,
       cavity:    form.fromCavity.trim()    || null,
       treatment: form.fromTreatment.trim() || null,
+      terminationType: fromTermination,
     },
     to: {
       component: form.toComponent.trim() || null,
       cavity:    form.toCavity.trim()    || null,
       treatment: form.toTreatment.trim() || null,
+      terminationType: toTermination,
     },
     topology,
     branch,
@@ -178,14 +250,15 @@ interface WireEditorProps {
   initialForm: WireFormState;
   existingId?: string;
   existingCreatedAt?: string;
+  targetWireId?: string | null;
   mode: 'add' | 'edit';
   onSave: (wire: OperatorWireModel) => void;
   onCancel: () => void;
 }
 
-function WireEditorForm({ initialForm, existingId, existingCreatedAt, mode, onSave, onCancel }: WireEditorProps) {
+function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWireId, mode, onSave, onCancel }: WireEditorProps) {
   const [form, setForm] = useState<WireFormState>(initialForm);
-  const [errors, setErrors] = useState<Partial<Record<keyof WireFormState, string>>>({});
+  const [errors, setErrors] = useState<Partial<Record<keyof WireFormState | 'fromTermination' | 'toTermination', string>>>({});
 
   const set = (key: keyof WireFormState) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -193,8 +266,28 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, mode, onSa
 
   const validate = (): boolean => {
     const errs: typeof errors = {};
-    if (!form.wireId.trim()) errs.wireId = 'Wire ID is required';
     if (!form.reason.trim()) errs.reason = 'Reason is required';
+    const fromHasComponent = Boolean(form.fromComponent.trim()) && Boolean(form.fromCavity.trim());
+    const fromTerminationSelected = form.fromTermination && form.fromTermination !== 'UNKNOWN';
+    if (!fromHasComponent && !fromTerminationSelected) {
+      errs.fromComponent = 'Provide connector/pin or termination type';
+      errs.fromTermination = 'Select a termination type if no connector';
+    }
+    if (form.fromTermination === 'CONNECTOR_PIN') {
+      if (!form.fromComponent.trim()) errs.fromComponent = 'Component is required for connector pin';
+      if (!form.fromCavity.trim()) errs.fromCavity = 'Cavity is required for connector pin';
+    }
+    const hasToComponent = Boolean(form.toComponent.trim());
+    const hasTerminal = Boolean(form.branchTerminalPN.trim());
+    const toTerminationSelected = form.toTermination && form.toTermination !== 'UNKNOWN';
+    if (!hasToComponent && !hasTerminal && !toTerminationSelected) {
+      errs.toComponent = 'Provide component, terminal PN, or termination type';
+      errs.toTermination = 'Select termination if no component/terminal PN';
+    }
+    if (form.toTermination === 'CONNECTOR_PIN') {
+      if (!form.toComponent.trim()) errs.toComponent = 'Component is required for connector pin';
+      if (!form.toCavity.trim()) errs.toCavity = 'Cavity is required for connector pin';
+    }
     if (form.length !== '' && isNaN(parseFloat(form.length))) errs.length = 'Must be a number';
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -202,7 +295,7 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, mode, onSa
 
   const handleSave = () => {
     if (!validate()) return;
-    onSave(formToOperatorWire(form, existingId, existingCreatedAt));
+    onSave(formToOperatorWire(form, existingId, existingCreatedAt, targetWireId ?? null));
   };
 
   const labelCls = 'text-[11px] font-semibold text-gray-500 uppercase tracking-wide';
@@ -213,7 +306,7 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, mode, onSa
     <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3 space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-[12px] font-bold text-blue-700">
-          {mode === 'add' ? '+ Add Wire' : `Edit Wire: ${initialForm.wireId || '…'}`}
+          {mode === 'add' ? '+ Add Wire' : `Edit Wire: ${formatWireLabel(initialForm.wireId)}`}
         </p>
         <button type="button" onClick={onCancel} className="text-gray-400 hover:text-gray-600 text-[11px]">
           Cancel
@@ -223,9 +316,8 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, mode, onSa
       {/* Identity */}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className={labelCls}>Wire ID *</label>
-          <input value={form.wireId} onChange={set('wireId')} className={inputCls(errors.wireId)} placeholder="W1, COM, GND…" readOnly={mode === 'edit'} />
-          {errors.wireId && <p className="text-[10px] text-red-600 mt-0.5">{errors.wireId}</p>}
+          <label className={labelCls}>Wire ID (optional)</label>
+          <input value={form.wireId} onChange={set('wireId')} className={inputCls()} placeholder="Optional (e.g. COM, W1, etc.)" />
         </div>
         <div>
           <label className={labelCls}>Length (in)</label>
@@ -247,16 +339,27 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, mode, onSa
         <p className={`${labelCls} text-teal-700 mb-1`}>FROM endpoint</p>
         <div className="grid grid-cols-3 gap-1.5">
           <div>
-            <label className={labelCls}>Component</label>
-            <input value={form.fromComponent} onChange={set('fromComponent')} className={inputCls()} placeholder="J1" />
+            <label className={labelCls}>Component *</label>
+            <input value={form.fromComponent} onChange={set('fromComponent')} className={inputCls(errors.fromComponent)} placeholder="J1" />
+            {errors.fromComponent && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromComponent}</p>}
           </div>
           <div>
-            <label className={labelCls}>Cavity / Pin</label>
-            <input value={form.fromCavity} onChange={set('fromCavity')} className={inputCls()} placeholder="1" />
+            <label className={labelCls}>Cavity / Pin *</label>
+            <input value={form.fromCavity} onChange={set('fromCavity')} className={inputCls(errors.fromCavity)} placeholder="1" />
+            {errors.fromCavity && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromCavity}</p>}
           </div>
           <div>
             <label className={labelCls}>Treatment</label>
             <input value={form.fromTreatment} onChange={set('fromTreatment')} className={inputCls()} placeholder="SPLICE…" />
+          </div>
+          <div className="col-span-3">
+            <label className={labelCls}>Termination Type</label>
+            <select value={form.fromTermination} onChange={set('fromTermination')} className={inputCls(errors.fromTermination)}>
+              {TERMINATION_OPTIONS.map(opt => (
+                <option key={opt.value ?? 'blank'} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            {errors.fromTermination && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromTermination}</p>}
           </div>
         </div>
       </div>
@@ -267,7 +370,8 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, mode, onSa
         <div className="grid grid-cols-3 gap-1.5">
           <div>
             <label className={labelCls}>Component / Terminal PN</label>
-            <input value={form.toComponent} onChange={set('toComponent')} className={inputCls()} placeholder="929504-1" />
+            <input value={form.toComponent} onChange={set('toComponent')} className={inputCls(errors.toComponent)} placeholder="929504-1" />
+            {errors.toComponent && <p className="text-[10px] text-red-600 mt-0.5">{errors.toComponent}</p>}
           </div>
           <div>
             <label className={labelCls}>Cavity</label>
@@ -276,6 +380,15 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, mode, onSa
           <div>
             <label className={labelCls}>Treatment</label>
             <input value={form.toTreatment} onChange={set('toTreatment')} className={inputCls()} placeholder="" />
+          </div>
+          <div className="col-span-3">
+            <label className={labelCls}>Termination Type</label>
+            <select value={form.toTermination} onChange={set('toTermination')} className={inputCls(errors.toTermination)}>
+              {TERMINATION_OPTIONS.map(opt => (
+                <option key={opt.value ?? 'blank'} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            {errors.toTermination && <p className="text-[10px] text-red-600 mt-0.5">{errors.toTermination}</p>}
           </div>
         </div>
       </div>
@@ -363,13 +476,19 @@ export default function SkuModelEditorPanel({
 }: SkuModelEditorPanelProps) {
   const [editorState, setEditorState] = useState<
     | { mode: 'add'; form: WireFormState }
-    | { mode: 'edit'; form: WireFormState; id: string; createdAt: string; wireId: string }
+    | { mode: 'edit'; form: WireFormState; id: string; createdAt: string; targetWireId: string | null }
     | null
   >(null);
 
   const deletedSet  = new Set(operatorDeletedWireIds);
-  const editedMap   = new Map(operatorEditedWires.map(w => [w.wireId, w]));
-  const addedMap    = new Map(operatorAddedWires.map(w => [w.wireId, w]));
+  const editedMap   = new Map<string, OperatorWireModel>();
+  for (const edit of operatorEditedWires) {
+    const key = edit.targetWireId ?? edit.wireId ?? null;
+    if (!key) continue;
+    editedMap.set(key, edit);
+  }
+  const addedIdentity = (wire: OperatorWireModel) => wire.targetWireId ?? wire.wireId ?? wire.id;
+  const addedMap    = new Map(operatorAddedWires.map(w => [addedIdentity(w), w]));
 
   const effectiveWires = effectiveModel?.connectivity.wires ?? extractedConnectivity?.wires ?? [];
   const overallDecision = effectiveModel?.decision.overallDecision ?? null;
@@ -388,7 +507,7 @@ export default function SkuModelEditorPanel({
       form: base,
       id: opVersion?.id ?? `op-${wire.wireId}-${Date.now()}`,
       createdAt: opVersion?.createdAt ?? new Date().toISOString(),
-      wireId: wire.wireId,
+      targetWireId: opVersion?.targetWireId ?? wire.wireId ?? null,
     });
   }, [editedMap]);
 
@@ -401,9 +520,9 @@ export default function SkuModelEditorPanel({
     setEditorState(null);
   }, [editorState, onAddWire, onEditWire]);
 
-  const handleDelete = useCallback((wireId: string) => {
-    if (confirm(`Delete wire "${wireId}" from effective model?`)) {
-      onDeleteWire(wireId);
+  const handleDelete = useCallback((request: SkuModelDeleteRequest, label: string) => {
+    if (confirm(`Delete ${label} from effective model?`)) {
+      onDeleteWire(request);
     }
   }, [onDeleteWire]);
 
@@ -459,6 +578,7 @@ export default function SkuModelEditorPanel({
             initialForm={editorState.form}
             existingId={editorState.mode === 'edit' ? editorState.id : undefined}
             existingCreatedAt={editorState.mode === 'edit' ? editorState.createdAt : undefined}
+            targetWireId={editorState.mode === 'edit' ? editorState.targetWireId : undefined}
             mode={editorState.mode}
             onSave={handleSave}
             onCancel={() => setEditorState(null)}
@@ -482,10 +602,10 @@ export default function SkuModelEditorPanel({
                   form: wireToForm(wire),
                   id: wire.id,
                   createdAt: wire.createdAt,
-                  wireId: wire.wireId,
+                  targetWireId: wire.targetWireId ?? null,
                 });
               }}
-              onDelete={() => handleDelete(wire.wireId)}
+              onDelete={() => handleDelete({ scope: 'operator', operatorId: wire.id }, formatWireLabel(wire.wireId))}
             />
           ))}
         </div>
@@ -526,12 +646,12 @@ export default function SkuModelEditorPanel({
                   isEdited={isEdited}
                   isCurrentlyEditing={
                     editorState?.mode === 'edit' &&
-                    (editorState as { wireId: string }).wireId === wire.wireId
+                    editorState.targetWireId === wire.wireId
                   }
                   extractedFrom={extractedConnectivity?.wires.find(w => w.wireId === wire.wireId) ?? null}
                   onEdit={() => openEditForm(wire)}
-                  onDelete={() => handleDelete(wire.wireId)}
-                  onUndoDelete={() => onDeleteWire(`__undo__${wire.wireId}`)}
+                  onDelete={() => handleDelete({ scope: 'extracted', wireId: wire.wireId }, formatWireLabel(wire.wireId))}
+                  onUndoDelete={() => onDeleteWire({ scope: 'extracted', wireId: wire.wireId, undo: true })}
                 />
               );
             })}
@@ -568,15 +688,16 @@ function AddedWireRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const displayId = formatWireLabel(wire.wireId);
   return (
     <div className="grid grid-cols-[3rem_5rem_3rem_3rem_6rem_1rem_6rem_5rem_auto] gap-x-2 items-center px-4 py-1.5 border-b border-blue-100 bg-blue-50/20 hover:bg-blue-50/40">
-      <span className="font-mono font-bold text-blue-700 text-[11px]">{wire.wireId}</span>
+      <span className="font-mono font-bold text-blue-700 text-[11px]">{displayId}</span>
       <span className="font-mono text-[11px] text-blue-600">{wire.length != null ? `${wire.length} in` : dash}</span>
       <span className="font-mono text-[11px] text-gray-500">{wire.gauge ?? dash}</span>
       <span className="font-mono text-[11px] text-gray-500">{wire.color ?? dash}</span>
-      <span className="font-mono text-[11px] text-gray-600 truncate" title={wire.from.component ?? ''}>{wire.from.component ?? dash}</span>
+      <span className="font-mono text-[11px] text-gray-600 truncate" title={describeTermination(wire.from as AnyEndpoint) ?? wire.from.component ?? ''}>{endpointDisplay(wire.from)}</span>
       <span className="text-gray-300 text-[11px]">→</span>
-      <span className="font-mono text-[11px] text-gray-600 truncate" title={wire.to.component ?? ''}>{wire.to.component ?? dash}</span>
+      <span className="font-mono text-[11px] text-gray-600 truncate" title={describeTermination(wire.to as AnyEndpoint) ?? wire.to.component ?? ''}>{endpointDisplay(wire.to)}</span>
       <span className="inline-flex items-center gap-0.5">
         <span className="rounded-full bg-blue-100 text-blue-700 px-1.5 py-0.5 text-[9px] font-semibold">Added by Operator</span>
       </span>
@@ -612,6 +733,7 @@ function ExtractedWireRow({
   const lengthDisplay = wire.lengthInches != null
     ? `${wire.lengthInches} in`
     : wire.length != null ? `${wire.length}` : dash;
+  const displayId = formatWireLabel(wire.wireId);
 
   const rowCls = isDeleted
     ? 'opacity-40 line-through bg-red-50/40'
@@ -630,13 +752,13 @@ function ExtractedWireRow({
 
   return (
     <div className={`grid grid-cols-[3rem_5rem_3rem_3rem_6rem_1rem_6rem_5rem_auto] gap-x-2 items-start px-4 py-1.5 border-b border-gray-100 hover:bg-gray-50/70 transition ${rowCls}`}>
-      <span className="font-mono font-semibold text-gray-800 text-[11px] pt-0.5">{wire.wireId}</span>
+      <span className="font-mono font-semibold text-gray-800 text-[11px] pt-0.5">{displayId}</span>
       <span className="font-mono text-[11px] text-gray-600 pt-0.5">{lengthDisplay}</span>
       <span className="font-mono text-[11px] text-gray-500 pt-0.5">{wire.gauge ?? dash}</span>
       <span className="font-mono text-[11px] text-gray-500 pt-0.5">{wire.color ?? dash}</span>
-      <span className="font-mono text-[11px] text-gray-600 truncate pt-0.5" title={wire.from.component ?? ''}>{wire.from.component ?? dash}</span>
+      <span className="font-mono text-[11px] text-gray-600 truncate pt-0.5" title={describeTermination(wire.from) ?? wire.from.component ?? ''}>{endpointDisplay(wire.from)}</span>
       <span className="text-gray-300 text-[11px] pt-0.5">→</span>
-      <span className="font-mono text-[11px] text-gray-600 truncate pt-0.5" title={wire.to.component ?? ''}>{wire.to.component ?? dash}</span>
+      <span className="font-mono text-[11px] text-gray-600 truncate pt-0.5" title={describeTermination(wire.to) ?? wire.to.component ?? ''}>{endpointDisplay(wire.to)}</span>
       <span className="flex flex-wrap gap-0.5 items-start pt-0.5">
         {isDeleted && (
           <span className="rounded-full bg-red-100 text-red-700 px-1.5 py-0.5 text-[9px] font-semibold">Deleted</span>

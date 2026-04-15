@@ -18,6 +18,7 @@ import type {
   WireConnectivity,
   WireEndpoint,
 } from './harnessConnectivityService';
+import { endpointHasAuthoritativeTermination } from './harnessConnectivityService';
 import { validateHarness } from './harnessValidationService';
 import { adjustHarnessConfidence } from './harnessConfidenceService';
 import { evaluateHarnessDecision } from './harnessDecisionService';
@@ -48,7 +49,10 @@ export interface OperatorWireBranch {
 export interface OperatorWireModel {
   /** Stable client-side record id (uuid). */
   id: string;
-  wireId: string;
+  /** Display label; optional for unlabeled additions. */
+  wireId?: string | null;
+  /** When editing extracted wires, preserves original target wireId. */
+  targetWireId?: string | null;
   length: number | null;
   /** Always 'in' — T11.4 global drawing rule. */
   lengthUnit: 'in';
@@ -85,8 +89,13 @@ function operatorWireToConnectivity(
   op: OperatorWireModel,
   sourceRowIndex: number,
 ): WireConnectivity {
+  const trimmedWireId = op.wireId?.trim();
+  const effectiveWireId = trimmedWireId && trimmedWireId.length > 0 ? trimmedWireId : op.id;
+  const fromComplete = endpointHasAuthoritativeTermination(op.from);
+  const toComplete   = endpointHasAuthoritativeTermination(op.to);
+
   return {
-    wireId:       op.wireId,
+    wireId:       effectiveWireId,
     length:       op.length,
     lengthUnit:   'in',
     lengthInches: op.length,
@@ -96,8 +105,8 @@ function operatorWireToConnectivity(
     to:           { ...op.to },
     sourceRowIndex,
     rawText:      `[OPERATOR_MODEL:${op.topology ?? 'LINEAR'}] reason="${op.reason}" id=${op.id}`,
-    confidence:   op.from.component !== null && op.to.component !== null ? 0.95 : 0.60,
-    unresolved:   op.from.component === null || op.to.component === null,
+    confidence:   fromComplete && toComplete ? 0.95 : 0.60,
+    unresolved:   !fromComplete || !toComplete,
   };
 }
 
@@ -105,7 +114,7 @@ function recomputeSummary(wires: WireConnectivity[]): HarnessConnectivityResult[
   let resolved = 0, partial = 0, unresolved = 0;
   for (const w of wires) {
     if (w.unresolved) unresolved++;
-    else if (w.from.component !== null && w.to.component !== null) resolved++;
+    else if (endpointHasAuthoritativeTermination(w.from) && endpointHasAuthoritativeTermination(w.to)) resolved++;
     else partial++;
   }
   return { total: wires.length, resolved, partial, unresolved };
@@ -143,8 +152,12 @@ export function buildEffectiveSkuHarnessModel(args: {
   } = args;
 
   const deletedSet  = new Set(operatorDeletedWireIds);
-  const editedMap   = new Map(operatorEditedWires.map(w => [w.wireId, w]));
-  const addedIds    = new Set(operatorAddedWires.map(w => w.wireId));
+  const editedMap   = new Map<string, OperatorWireModel>();
+  for (const edit of operatorEditedWires) {
+    const key = edit.targetWireId ?? edit.wireId ?? null;
+    if (!key) continue;
+    editedMap.set(key, edit);
+  }
 
   const base = extractedConnectivity?.wires ?? [];
   let nextIdx = base.length;
@@ -162,7 +175,8 @@ export function buildEffectiveSkuHarnessModel(args: {
   }
 
   for (const added of operatorAddedWires) {
-    if (!addedIds.has(added.wireId) || editedMap.has(added.wireId)) continue;
+    const hasTargetEdit = added.targetWireId ? editedMap.has(added.targetWireId) : false;
+    if (hasTargetEdit) continue;
     merged.push(operatorWireToConnectivity(added, nextIdx++));
   }
 
@@ -198,13 +212,14 @@ export function makeEmptyOperatorWire(overrides?: Partial<Omit<OperatorWireModel
   const now = new Date().toISOString();
   return {
     id:          overrides?.id ?? `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    wireId:      overrides?.wireId ?? '',
+    wireId:      overrides?.wireId ?? null,
+    targetWireId: overrides?.targetWireId ?? null,
     length:      overrides?.length ?? null,
     lengthUnit:  'in',
     gauge:       overrides?.gauge ?? null,
     color:       overrides?.color ?? null,
-    from:        overrides?.from ?? { component: null, cavity: null, treatment: null },
-    to:          overrides?.to   ?? { component: null, cavity: null, treatment: null },
+    from:        overrides?.from ?? { component: null, cavity: null, treatment: null, terminationType: null },
+    to:          overrides?.to   ?? { component: null, cavity: null, treatment: null, terminationType: null },
     topology:    overrides?.topology ?? null,
     branch:      overrides?.branch  ?? null,
     reason:      overrides?.reason  ?? '',
@@ -227,6 +242,7 @@ export function wireConnectivityToOperatorModel(
   return {
     id:          `op-${wire.wireId}-${Date.now()}`,
     wireId:      wire.wireId,
+    targetWireId: wire.wireId,
     length:      wire.length,
     lengthUnit:  'in',
     gauge:       wire.gauge,

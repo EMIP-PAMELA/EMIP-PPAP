@@ -111,6 +111,19 @@ function makeClassification(
       from: makeClassEndpoint(e.fromType, e.fromConf),
       to:   makeClassEndpoint(e.toType,   e.toConf),
     });
+
+describe('Strip-only endpoints retain confidence with no penalties', () => {
+  it('does not add penalties when FROM termination is STRIP_ONLY without component', () => {
+    const wire = makeWireConnectivity('W_STRIP', null, 'T1');
+    wire.from = { component: null, cavity: null, treatment: null, terminationType: 'STRIP_ONLY' };
+    wire.to = { component: 'T1', cavity: null, treatment: null, terminationType: 'TERMINAL' };
+    const connectivity = makeHc([wire]);
+    const validation = makeValidation([makeWireValidation('W_STRIP', [])]);
+    const result = adjustHarnessConfidence({ connectivity, validation });
+    const wc = result.wires[0];
+    assert.equal(wc.from.penalties.length, 0);
+  });
+});
     byType[e.fromType]++;
     byType[e.toType]++;
   }

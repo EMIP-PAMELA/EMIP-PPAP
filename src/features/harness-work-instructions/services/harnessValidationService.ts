@@ -37,7 +37,8 @@
  *   H4  ALL_OPEN                   – entire harness is bare wire
  */
 
-import type { HarnessConnectivityResult, WireConnectivity } from './harnessConnectivityService';
+import type { HarnessConnectivityResult, WireConnectivity, WireEndpoint } from './harnessConnectivityService';
+import { endpointHasAuthoritativeTermination, inferTerminationType } from './harnessConnectivityService';
 import type { HarnessReconciliationResult, ReconciledWire } from './harnessReconciliationService';
 import type {
   HarnessEndpointClassificationResult,
@@ -138,23 +139,17 @@ function wireMaxSeverity(issues: ValidationIssue[]): ValidationSeverity {
 }
 
 /**
- * Strip length callout pattern: fractional inch (1/4, 3/8…) or explicit mm.
- * Intentionally narrow to avoid false matches on terminal PNs.
+ * Rule 8: endpoint is a dangling bare wire end with no identifiable termination.
  */
-const STRIP_LENGTH_RE =
-  /\b(?:[1-9]\d{0,1}\/\d{1,2}|(?:6|8|10|12|15|20|25)\s*mm)\b/i;
-
-/**
- * Rule 8: endpoint is a dangling bare wire end with no signals at all.
- * Requires component === null, treatment === null, AND no strip callout
- * in the wire's rawText.
- */
-function isMissingTermination(
-  component: string | null,
-  treatment: string | null,
-  rawText: string,
-): boolean {
-  return !component && !treatment && !STRIP_LENGTH_RE.test(rawText);
+function isMissingTermination(endpoint: WireEndpoint, rawText: string): boolean {
+  if (endpointHasAuthoritativeTermination(endpoint)) return false;
+  const inferred = inferTerminationType({
+    component: endpoint.component,
+    cavity:    endpoint.cavity,
+    treatment: endpoint.treatment ?? null,
+    rawText,
+  });
+  return inferred === 'UNKNOWN';
 }
 
 // ---------------------------------------------------------------------------
@@ -292,14 +287,26 @@ function applyWireRules(ctx: WireRuleContext): ValidationIssue[] {
   }
 
   // R8 — MISSING TERMINATION (ERROR — checked from T2 data directly)
-  if (isMissingTermination(wire.from.component, wire.from.treatment, wire.rawText)) {
+  if (isMissingTermination(wire.from, wire.rawText)) {
+    console.log('[T12.3 TERMINATION]', {
+      wireId: wire.wireId,
+      endpoint: 'FROM',
+      terminationType: wire.from.terminationType ?? 'UNKNOWN',
+      treatment: wire.from.treatment ?? null,
+    });
     issues.push({
       code:    'R8_MISSING_TERMINATION',
       message: 'FROM endpoint has no component, treatment, or strip callout — bare dangling end',
       details: `wire: ${wire.wireId}`,
     });
   }
-  if (isMissingTermination(wire.to.component, wire.to.treatment, wire.rawText)) {
+  if (isMissingTermination(wire.to, wire.rawText)) {
+    console.log('[T12.3 TERMINATION]', {
+      wireId: wire.wireId,
+      endpoint: 'TO',
+      terminationType: wire.to.terminationType ?? 'UNKNOWN',
+      treatment: wire.to.treatment ?? null,
+    });
     issues.push({
       code:    'R8_MISSING_TERMINATION',
       message: 'TO endpoint has no component, treatment, or strip callout — bare dangling end',

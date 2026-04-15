@@ -21,6 +21,19 @@ import type { LengthUnit } from './unitInferenceService';
 // HC-BOM Data Model
 // ---------------------------------------------------------------------------
 
+export type EndpointTerminationType =
+  | 'UNKNOWN'
+  | 'CONNECTOR_PIN'
+  | 'TERMINAL'
+  | 'FERRULE'
+  | 'STRIP_ONLY'
+  | 'SPLICE'
+  | 'GROUND'
+  | 'RING'
+  | 'SPADE'
+  | 'RECEPTACLE'
+  | 'OTHER_TREATMENT';
+
 export interface WireEndpoint {
   /** Component identifier (connector ref, Phoenix PN, terminal PN, etc.) */
   component: string | null;
@@ -28,6 +41,8 @@ export interface WireEndpoint {
   cavity: string | null;
   /** Treatment applied at this endpoint (SPLICE, HEAT_SHRINK, etc.) */
   treatment: string | null;
+  /** Explicit termination classification derived from T2 or operator edits. */
+  terminationType?: EndpointTerminationType | null;
 }
 
 export interface WireConnectivity {
@@ -89,6 +104,15 @@ const PHOENIX_KEYWORD_RE = /\bPHOENIX\b/i;
 /** Phoenix connector PN pattern (17xxxxx series). */
 const PHOENIX_PN_RE = /\b(17\d{5})\b/;
 
+const STRIP_KEYWORD_RE = /\bSTRIP(?:PED)?\b/i;
+const STRIP_LENGTH_RE = /\b(?:[1-9]\d{0,1}\/\d{1,2}|(?:6|8|10|12|15|20|25)\s*mm)\b/i;
+const FERRULE_KEYWORD_RE = /\bFERRULE\b/i;
+const SPLICE_KEYWORD_RE = /\bSPLICE\b/i;
+const RING_KEYWORD_RE = /\bRING\b/i;
+const SPADE_KEYWORD_RE = /\bSPADE\b/i;
+const RECEPTACLE_KEYWORD_RE = /\bRECEPTACLE\b/i;
+const GROUND_KEYWORD_RE = /\bGND\b|\bGROUND\b/i;
+
 /**
  * Terminal part number — dash-separated numeric.
  * Used here to detect MULTIPLE terminals in a single raw line (→ ambiguous).
@@ -122,6 +146,55 @@ function detectPhoenixComponent(rawText: string): string | null {
   if (pnMatch) return `PHOENIX_${pnMatch[1]}`;
   if (PHOENIX_KEYWORD_RE.test(rawText)) return 'PHOENIX';
   return null;
+}
+
+function hasStripIndication(treatment: string | null, rawText: string): boolean {
+  return STRIP_KEYWORD_RE.test(treatment ?? '') || STRIP_LENGTH_RE.test(rawText);
+}
+
+export function inferTerminationType(args: {
+  component: string | null;
+  cavity: string | null;
+  treatment: string | null;
+  rawText: string;
+}): EndpointTerminationType {
+  const { component, cavity, treatment, rawText } = args;
+  const comp = component?.trim() ?? '';
+  const treat = treatment?.trim() ?? '';
+  if (comp && cavity) return 'CONNECTOR_PIN';
+  if (comp) {
+    const upperComp = comp.toUpperCase();
+    if (GROUND_KEYWORD_RE.test(upperComp)) return 'GROUND';
+    if (SPLICE_KEYWORD_RE.test(upperComp)) return 'SPLICE';
+    if (FERRULE_KEYWORD_RE.test(upperComp)) return 'FERRULE';
+    if (RING_KEYWORD_RE.test(upperComp)) return 'RING';
+    if (SPADE_KEYWORD_RE.test(upperComp)) return 'SPADE';
+    if (RECEPTACLE_KEYWORD_RE.test(upperComp)) return 'RECEPTACLE';
+    if (upperComp.includes('TERMINAL')) return 'TERMINAL';
+    return 'TERMINAL';
+  }
+
+  if (treat) {
+    const upperTreat = treat.toUpperCase();
+    if (SPLICE_KEYWORD_RE.test(upperTreat)) return 'SPLICE';
+    if (FERRULE_KEYWORD_RE.test(upperTreat)) return 'FERRULE';
+    if (RING_KEYWORD_RE.test(upperTreat)) return 'RING';
+    if (SPADE_KEYWORD_RE.test(upperTreat)) return 'SPADE';
+    if (RECEPTACLE_KEYWORD_RE.test(upperTreat)) return 'RECEPTACLE';
+    if (hasStripIndication(treat, rawText)) return 'STRIP_ONLY';
+    return 'OTHER_TREATMENT';
+  }
+
+  if (hasStripIndication(null, rawText)) return 'STRIP_ONLY';
+
+  return 'UNKNOWN';
+}
+
+export function endpointHasAuthoritativeTermination(endpoint: WireEndpoint | undefined | null): boolean {
+  if (!endpoint) return false;
+  if (endpoint.component && endpoint.component.trim()) return true;
+  const term = endpoint.terminationType ?? 'UNKNOWN';
+  return term !== 'UNKNOWN';
 }
 
 /**
@@ -181,17 +254,31 @@ export function buildHarnessConnectivity(wireRows: WireRow[]): HarnessConnectivi
       fromComponent = detectPhoenixComponent(row.rawText);
     }
 
+    const fromTermination = inferTerminationType({
+      component: fromComponent,
+      cavity:    row.pin ?? null,
+      treatment: row.treatment ?? null,
+      rawText:   row.rawText,
+    });
     const from: WireEndpoint = {
       component: fromComponent,
       cavity:    row.pin ?? null,
       treatment: row.treatment ?? null,
+      terminationType: fromTermination,
     };
 
     // ── TO endpoint (right side / terminal side) ────────────────────────
+    const toTermination = inferTerminationType({
+      component: row.terminal ?? null,
+      cavity:    null,
+      treatment: null,
+      rawText:   row.rawText,
+    });
     const to: WireEndpoint = {
       component: row.terminal ?? null,
       cavity:    null,
       treatment: null,
+      terminationType: toTermination,
     };
 
     // ── Ambiguity detection ─────────────────────────────────────────────
@@ -214,7 +301,17 @@ export function buildHarnessConnectivity(wireRows: WireRow[]): HarnessConnectivi
     }
 
     // ── Confidence ──────────────────────────────────────────────────────
-    const confidence = computeConfidence(row.gauge, row.pin, row.terminal, unresolved);
+    const pinSignal =
+      from.cavity
+        ?? (endpointHasAuthoritativeTermination(from) && from.terminationType && from.terminationType !== 'CONNECTOR_PIN'
+          ? from.terminationType
+          : null);
+
+    const terminalSignal = endpointHasAuthoritativeTermination(to)
+      ? (to.component ?? to.terminationType ?? 'TERMINATED')
+      : row.terminal ?? null;
+
+    const confidence = computeConfidence(row.gauge, pinSignal, terminalSignal, unresolved);
 
     const wire: WireConnectivity = {
       wireId,
@@ -244,7 +341,7 @@ export function buildHarnessConnectivity(wireRows: WireRow[]): HarnessConnectivi
   for (const w of wires) {
     if (w.unresolved) {
       unresolvedCount++;
-    } else if (w.from.component !== null && w.to.component !== null) {
+    } else if (endpointHasAuthoritativeTermination(w.from) && endpointHasAuthoritativeTermination(w.to)) {
       resolved++;
     } else {
       partial++;

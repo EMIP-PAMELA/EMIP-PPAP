@@ -7,6 +7,7 @@
 
 import type { DocumentExtractionEvidence } from '@/src/features/harness-work-instructions/types/extractionEvidence';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
+import type { EndpointTerminationType } from '@/src/features/harness-work-instructions/services/harnessConnectivityService';
 
 // ---------------------------------------------------------------------------
 // Mode
@@ -77,8 +78,8 @@ export type WireResolutionMode =
 export interface WireOperatorOverride {
   wireId: string;
   mode: WireResolutionMode;
-  from?: { component?: string | null; cavity?: string | null; treatment?: string | null };
-  to?: { component?: string | null; cavity?: string | null; treatment?: string | null };
+  from?: { component?: string | null; cavity?: string | null; treatment?: string | null; terminationType?: EndpointTerminationType | null };
+  to?: { component?: string | null; cavity?: string | null; treatment?: string | null; terminationType?: EndpointTerminationType | null };
   branch?: {
     sharedSourceComponent?: string | null;
     sharedSourceCavity?: string | null;

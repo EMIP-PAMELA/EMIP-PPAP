@@ -13,7 +13,8 @@
  *   - All inputs are read-only; all outputs are new objects.
  */
 
-import type { HarnessConnectivityResult, WireConnectivity } from './harnessConnectivityService';
+import type { HarnessConnectivityResult, WireConnectivity, WireEndpoint } from './harnessConnectivityService';
+import { endpointHasAuthoritativeTermination, inferTerminationType } from './harnessConnectivityService';
 import type { HarnessReconciliationResult } from './harnessReconciliationService';
 import type { HarnessEndpointClassificationResult } from './endpointClassifier';
 import type { HarnessValidationResult, ValidationIssue } from './harnessValidationService';
@@ -61,6 +62,19 @@ export function isValidBranchOverride(override: WireOperatorOverride): boolean {
   );
 }
 
+function overrideEndpoint(
+  base: WireEndpoint,
+  override: WireOperatorOverride['from'],
+  rawText: string,
+): WireEndpoint {
+  const component = override?.component ?? base.component;
+  const cavity    = override?.cavity    ?? base.cavity;
+  const treatment = override?.treatment ?? base.treatment;
+  const explicitTermination = override?.terminationType ?? base.terminationType ?? null;
+  const terminationType = explicitTermination ?? inferTerminationType({ component, cavity, treatment, rawText });
+  return { component, cavity, treatment, terminationType };
+}
+
 function applyOverrideToWire(
   wire: WireConnectivity,
   override: WireOperatorOverride,
@@ -70,17 +84,23 @@ function applyOverrideToWire(
   switch (override.mode) {
     case 'BRANCH_DOUBLE_CRIMP': {
       const b = override.branch ?? {};
+      const fromComponent = b.sharedSourceComponent ?? wire.from.component;
+      const fromCavity    = b.sharedSourceCavity    ?? wire.from.cavity;
+      const toComponent   = b.terminalPartNumber ?? b.ferrulePartNumber ?? wire.to.component;
+      const toCavity      = b.secondaryCavity ?? wire.to.cavity;
       return {
         ...wire,
         from: {
-          component: b.sharedSourceComponent ?? wire.from.component,
-          cavity:    b.sharedSourceCavity    ?? wire.from.cavity,
+          component: fromComponent,
+          cavity:    fromCavity,
           treatment: wire.from.treatment,
+          terminationType: inferTerminationType({ component: fromComponent, cavity: fromCavity, treatment: wire.from.treatment, rawText: wire.rawText }),
         },
         to: {
-          component: b.terminalPartNumber ?? b.ferrulePartNumber ?? wire.to.component,
-          cavity:    b.secondaryCavity    ?? wire.to.cavity,
+          component: toComponent,
+          cavity:    toCavity,
           treatment: wire.to.treatment,
+          terminationType: inferTerminationType({ component: toComponent, cavity: toCavity, treatment: wire.to.treatment, rawText: wire.rawText }),
         },
         unresolved: false,
         rawText:    `${prefix} ${wire.rawText}`,
@@ -91,16 +111,8 @@ function applyOverrideToWire(
     case 'DIRECT_OVERRIDE':
       return {
         ...wire,
-        from: {
-          component: override.from?.component ?? wire.from.component,
-          cavity:    override.from?.cavity    ?? wire.from.cavity,
-          treatment: override.from?.treatment ?? wire.from.treatment,
-        },
-        to: {
-          component: override.to?.component ?? wire.to.component,
-          cavity:    override.to?.cavity    ?? wire.to.cavity,
-          treatment: override.to?.treatment ?? wire.to.treatment,
-        },
+        from: overrideEndpoint(wire.from, override.from, wire.rawText),
+        to:   overrideEndpoint(wire.to,   override.to,   wire.rawText),
         unresolved: false,
         rawText:    `${prefix} ${wire.rawText}`,
         confidence: 0.90,
@@ -109,7 +121,7 @@ function applyOverrideToWire(
     case 'GROUND':
       return {
         ...wire,
-        to:         { component: 'GROUND', cavity: null, treatment: null },
+        to:         { component: 'GROUND', cavity: null, treatment: null, terminationType: 'GROUND' },
         unresolved: false,
         rawText:    `${prefix} ${wire.rawText}`,
         confidence: 0.85,
@@ -118,7 +130,7 @@ function applyOverrideToWire(
     case 'SPLICE':
       return {
         ...wire,
-        to:         { component: 'SPLICE', cavity: null, treatment: 'SPLICE' },
+        to:         { component: 'SPLICE', cavity: null, treatment: 'SPLICE', terminationType: 'SPLICE' },
         unresolved: false,
         rawText:    `${prefix} ${wire.rawText}`,
         confidence: 0.80,
@@ -201,8 +213,8 @@ export function applyWireOperatorOverrides(args: {
   });
 
   const unresolvedWires = updatedWires.filter(w => w.unresolved).map(w => w.wireId);
-  const resolved   = updatedWires.filter(w => !w.unresolved && w.from.component !== null && w.to.component !== null).length;
-  const partial    = updatedWires.filter(w => !w.unresolved && (w.from.component === null || w.to.component === null)).length;
+  const resolved   = updatedWires.filter(w => !w.unresolved && endpointHasAuthoritativeTermination(w.from) && endpointHasAuthoritativeTermination(w.to)).length;
+  const partial    = updatedWires.filter(w => !w.unresolved && (!endpointHasAuthoritativeTermination(w.from) || !endpointHasAuthoritativeTermination(w.to))).length;
   const unresolved = unresolvedWires.length;
 
   return {

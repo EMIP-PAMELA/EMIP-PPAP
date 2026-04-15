@@ -67,11 +67,12 @@ function makeExtracted(wires: WireConnectivity[]): HarnessConnectivityResult {
   };
 }
 
-function makeOperatorWire(wireId: string, overrides?: Partial<OperatorWireModel>): OperatorWireModel {
+function makeOperatorWire(wireId: string | null, overrides?: Partial<OperatorWireModel>): OperatorWireModel {
   const now = new Date().toISOString();
   return {
-    id:          `op-${wireId}`,
+    id:          overrides?.id ?? `op-${wireId ?? 'noid'}`,
     wireId,
+    targetWireId: overrides?.targetWireId ?? wireId,
     length:      12,
     lengthUnit:  'in',
     gauge:       '18',
@@ -190,6 +191,19 @@ describe('buildEffectiveSkuHarnessModel', () => {
     assert.equal(result.connectivity.wires.length, 2, 'should have 2 operator-added wires');
   });
 
+  it('optional wireId: added wire without wireId falls back to operator id in connectivity', () => {
+    const extracted = makeExtracted([]);
+    const result = buildEffectiveSkuHarnessModel({
+      extractedConnectivity: extracted,
+      operatorAddedWires: [makeOperatorWire(null)],
+      operatorEditedWires: [],
+      operatorDeletedWireIds: [],
+    });
+    assert.equal(result.connectivity.wires.length, 1);
+    const lone = result.connectivity.wires[0];
+    assert.ok(lone.wireId.startsWith('op-'), 'wireId should fall back to operator id');
+  });
+
   it('downstream services run: result includes validation, confidence, decision', () => {
     const extracted = makeExtracted([makeWire('W1')]);
     const result = buildEffectiveSkuHarnessModel({
@@ -235,7 +249,7 @@ describe('makeEmptyOperatorWire', () => {
     assert.equal(wire.source, 'OPERATOR_MODEL');
     assert.equal(wire.authoritative, true);
     assert.equal(wire.lengthUnit, 'in');
-    assert.equal(wire.wireId, '');
+    assert.equal(wire.wireId, null);
     assert.ok(wire.id.startsWith('op-'), 'id should have op- prefix');
     assert.ok(wire.createdAt, 'createdAt should be set');
   });
@@ -254,6 +268,7 @@ describe('wireConnectivityToOperatorModel', () => {
     extracted.length = 11;
     const op = wireConnectivityToOperatorModel(extracted, 'Review confirmed');
     assert.equal(op.wireId, 'W7');
+    assert.equal(op.targetWireId, 'W7');
     assert.equal(op.length, 11);
     assert.equal(op.lengthUnit, 'in');
     assert.equal(op.gauge, '18');

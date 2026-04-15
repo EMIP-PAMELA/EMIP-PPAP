@@ -20,6 +20,7 @@ import {
 } from '../wireOperatorResolutionService';
 import type { WireOperatorOverride } from '@/src/features/vault/types/ingestionReview';
 import type { HarnessConnectivityResult, WireConnectivity } from '../harnessConnectivityService';
+import { endpointHasAuthoritativeTermination } from '../harnessConnectivityService';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -44,13 +45,15 @@ function makeWire(partial: Partial<WireConnectivity> & { wireId: string }): Wire
 
 function makeConnectivity(wires: WireConnectivity[]): HarnessConnectivityResult {
   const unresolvedWires = wires.filter(w => w.unresolved).map(w => w.wireId);
+  const resolved = wires.filter(w => !w.unresolved && endpointHasAuthoritativeTermination(w.from) && endpointHasAuthoritativeTermination(w.to)).length;
+  const partial = wires.filter(w => !w.unresolved && (!endpointHasAuthoritativeTermination(w.from) || !endpointHasAuthoritativeTermination(w.to))).length;
   return {
     wires,
     unresolvedWires,
     confidenceSummary: {
       total:      wires.length,
-      resolved:   wires.filter(w => !w.unresolved && w.from.component !== null && w.to.component !== null).length,
-      partial:    wires.filter(w => !w.unresolved && (w.from.component === null || w.to.component === null)).length,
+      resolved,
+      partial,
       unresolved: unresolvedWires.length,
     },
   };

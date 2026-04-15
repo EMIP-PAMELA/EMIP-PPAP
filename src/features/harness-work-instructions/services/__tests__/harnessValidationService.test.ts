@@ -22,6 +22,7 @@ import {
   type WireValidation,
 } from '../harnessValidationService';
 import type { HarnessConnectivityResult, WireConnectivity } from '../harnessConnectivityService';
+import type { EndpointTerminationType } from '../harnessConnectivityService';
 import type { HarnessReconciliationResult, ReconciledWire } from '../harnessReconciliationService';
 import type {
   HarnessEndpointClassificationResult,
@@ -44,6 +45,8 @@ function makeWire(
     rawText?:       string;
     fromTreatment?: string | null;
     toTreatment?:   string | null;
+    fromTermination?: EndpointTerminationType | null;
+    toTermination?: EndpointTerminationType | null;
   } = {},
 ): WireConnectivity {
   return {
@@ -57,11 +60,13 @@ function makeWire(
       component: fromComp,
       cavity:    fromCavity,
       treatment: opts.fromTreatment ?? null,
+      terminationType: opts.fromTermination ?? null,
     },
     to: {
       component: toComp,
       cavity:    toCavity,
       treatment: opts.toTreatment ?? null,
+      terminationType: opts.toTermination ?? null,
     },
     sourceRowIndex: 0,
     rawText:        opts.rawText ?? `${wireId} ${fromComp ?? ''} ${toComp ?? ''}`,

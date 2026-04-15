@@ -19,7 +19,9 @@ import React, { useEffect, useState } from 'react';
 import type {
   HarnessConnectivityResult,
   WireConnectivity,
+  WireEndpoint,
 } from '@/src/features/harness-work-instructions/services/harnessConnectivityService';
+import { endpointHasAuthoritativeTermination } from '@/src/features/harness-work-instructions/services/harnessConnectivityService';
 import type {
   HarnessReconciliationResult,
   ReconciledWire,
@@ -43,7 +45,7 @@ type WireStatus = 'RESOLVED' | 'PARTIAL' | 'UNRESOLVED';
 
 function classifyWire(w: WireConnectivity): WireStatus {
   if (w.unresolved) return 'UNRESOLVED';
-  if (w.from.component !== null && w.to.component !== null) return 'RESOLVED';
+  if (endpointHasAuthoritativeTermination(w.from) && endpointHasAuthoritativeTermination(w.to)) return 'RESOLVED';
   return 'PARTIAL';
 }
 
@@ -84,6 +86,21 @@ function inferUnresolvedReason(w: WireConnectivity): string | null {
 }
 
 const dash = '—';
+
+function describeTermination(endpoint: WireEndpoint): string | null {
+  const type = endpoint.terminationType;
+  if (type && type !== 'UNKNOWN') {
+    const label = type.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+    return endpoint.treatment ? `${label} (${endpoint.treatment})` : label;
+  }
+  if (endpoint.treatment && endpoint.treatment.trim()) return endpoint.treatment.trim();
+  return null;
+}
+
+function endpointLabel(endpoint: WireEndpoint): string {
+  if (endpoint.component && endpoint.component.trim()) return endpoint.component.trim();
+  return describeTermination(endpoint) ?? dash;
+}
 
 function formatInchesValue(value: number): string {
   const rounded = Math.round(value * 10) / 10;
