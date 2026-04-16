@@ -313,7 +313,7 @@ export default function CopperPage() {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="text-4xl mb-4">⚠️</div>
-            <p className="text-lg text-gray-900 mb-2">Error Loading Copper Data</p>
+            <p className="text-lg text-[color:var(--text-primary)] mb-2">Error Loading Copper Data</p>
             <p className="text-sm text-gray-600">{error}</p>
             <button
               onClick={() => loadCopperData()}
@@ -333,7 +333,7 @@ export default function CopperPage() {
         {/* Page Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Copper Index</h1>
+            <h1 className="text-3xl font-bold text-[color:var(--text-primary)]">Copper Index</h1>
             <p className="text-gray-600 mt-1">Wire Weight Intelligence & Analytics</p>
           </div>
           <div className="bg-orange-50 rounded-lg p-4">
@@ -365,7 +365,7 @@ export default function CopperPage() {
             <div className="ml-auto flex items-center gap-2">
               <span className="text-sm text-gray-600">Calibration:</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
-                calibrationActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                calibrationActive ? 'bg-green-100 text-green-700' : 'bg-[color:var(--panel-bg)] text-[color:var(--text-secondary)]'
               }`}>
                 {calibrationActive ? 'Active' : 'Inactive'}
               </span>
@@ -376,34 +376,34 @@ export default function CopperPage() {
         {/* V6.4.1: Enhanced Summary Cards */}
         {Object.keys(familyIndex).length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow p-6 border border-[color:var(--panel-border)]">
               <div className="text-sm text-gray-600">Total Families</div>
-              <div className="text-2xl font-bold text-gray-900">{Object.keys(familyIndex).length}</div>
+              <div className="text-2xl font-bold text-[color:var(--text-primary)]">{Object.keys(familyIndex).length}</div>
             </div>
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow p-6 border border-[color:var(--panel-border)]">
               <div className="text-sm text-gray-600">Total SKUs</div>
-              <div className="text-2xl font-bold text-gray-900">{totalSKUs}</div>
+              <div className="text-2xl font-bold text-[color:var(--text-primary)]">{totalSKUs}</div>
             </div>
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow p-6 border border-[color:var(--panel-border)]">
               <div className="text-sm text-gray-600">Total Gross Weight</div>
-              <div className="text-2xl font-bold text-gray-900">{formatWeight(totalGross)}</div>
+              <div className="text-2xl font-bold text-[color:var(--text-primary)]">{formatWeight(totalGross)}</div>
             </div>
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow p-6 border border-[color:var(--panel-border)]">
               <div className="text-sm text-gray-600">Total Insulation</div>
-              <div className="text-2xl font-bold text-gray-900">{formatWeight(totalInsulation)}</div>
+              <div className="text-2xl font-bold text-[color:var(--text-primary)]">{formatWeight(totalInsulation)}</div>
             </div>
           </div>
         )}
 
         {/* V6.4.1: Family Index Table */}
         {Object.keys(familyIndex).length > 0 ? (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Family Copper Index</h2>
+          <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow overflow-hidden border border-[color:var(--panel-border)]">
+            <div className="px-6 py-4 bg-[color:var(--panel-bg)] border-b border-[color:var(--panel-border)]">
+              <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">Family Copper Index</h2>
               <p className="text-sm text-gray-600 mt-1">Aggregated wire weight metrics by family</p>
             </div>
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-[color:var(--panel-border)]">
+              <thead className="bg-[color:var(--panel-bg)]">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Family
@@ -425,13 +425,13 @@ export default function CopperPage() {
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-[color:var(--surface-elevated)] divide-y divide-[color:var(--panel-border)]">
                 {Object.values(familyIndex)
                   .sort((a, b) => a.family.localeCompare(b.family))
                   .map((family) => (
                     <React.Fragment key={family.family}>
                       <tr 
-                        className="hover:bg-gray-50 cursor-pointer"
+                        className="hover:bg-[color:var(--table-row-hover)] cursor-pointer"
                         onClick={() => toggleFamily(family.family)}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -445,7 +445,7 @@ export default function CopperPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="px-2 py-1 bg-gray-100 rounded text-sm font-medium">
+                          <span className="px-2 py-1 bg-[color:var(--panel-bg)] rounded text-sm font-medium">
                             {family.skuCount}
                           </span>
                         </td>
@@ -474,7 +474,7 @@ export default function CopperPage() {
                       {/* V6.4.2: Expanded SKU View */}
                       {expandedFamily === family.family && familySKUs[family.family] && (
                         <tr>
-                          <td colSpan={6} className="px-6 py-4 bg-gray-50">
+                          <td colSpan={6} className="px-6 py-4 bg-[color:var(--surface-elevated)]">
                             <div className="space-y-2">
                               <div className="text-sm font-semibold text-gray-700 mb-3">
                                 SKUs in Family {family.family}
@@ -486,7 +486,7 @@ export default function CopperPage() {
                                 return (
                                   <div
                                     key={sku.partNumber}
-                                    className="flex items-center gap-4 p-3 bg-white rounded border border-gray-200 hover:border-blue-300"
+                                    className="flex items-center gap-4 p-3 bg-[color:var(--surface-elevated)] rounded border border-[color:var(--panel-border)] hover:border-blue-300"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       toggleSKU(sku.partNumber);
@@ -535,17 +535,17 @@ export default function CopperPage() {
             </table>
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow p-12 text-center">
+          <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow p-12 text-center border border-[color:var(--panel-border)]">
             <div className="text-4xl mb-4">🔧</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No BOM Data Available</h3>
+            <h3 className="text-lg font-medium text-[color:var(--text-primary)] mb-2">No BOM Data Available</h3>
             <p className="text-gray-500">Upload BOMs to see family copper index</p>
           </div>
         )}
 
         {/* V6.4.2: Calibration Input Panel */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="border-b border-gray-200 pb-4 mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Wire Calibration (10 ft Sample Method)</h2>
+        <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow p-6 border border-[color:var(--panel-border)]">
+          <div className="border-b border-[color:var(--panel-border)] pb-4 mb-4">
+            <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">Wire Calibration (10 ft Sample Method)</h2>
             <p className="text-sm text-gray-600 mt-1">
               Enter measured weights from a 10-foot wire sample to override AWG defaults
             </p>
@@ -576,7 +576,7 @@ export default function CopperPage() {
                 placeholder="e.g., 18"
                 value={calGauge}
                 onChange={(e) => setCalGauge(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
@@ -587,7 +587,7 @@ export default function CopperPage() {
                 placeholder="0.0160"
                 value={calCopper}
                 onChange={(e) => setCalCopper(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
@@ -598,7 +598,7 @@ export default function CopperPage() {
                 placeholder="0.0185"
                 value={calGross}
                 onChange={(e) => setCalGross(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
@@ -627,13 +627,13 @@ export default function CopperPage() {
             </span>
           </div>
 
-          <div className="mt-6 p-4 bg-gray-50 rounded">
+          <div className="mt-6 p-4 bg-[color:var(--surface-elevated)] rounded border border-[color:var(--panel-border)]">
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Current Calibrations</h3>
             {activeCalibrations.length > 0 ? (
               <div className="space-y-2">
                 {activeCalibrations.map((cal) => (
-                  <div key={cal.gauge} className="flex items-center justify-between p-2 bg-white rounded border border-gray-200">
-                    <span className="font-medium text-gray-900">AWG {cal.gauge}</span>
+                  <div key={cal.gauge} className="flex items-center justify-between p-2 bg-[color:var(--surface-elevated)] rounded border border-[color:var(--panel-border)]">
+                    <span className="font-medium text-[color:var(--text-primary)]">AWG {cal.gauge}</span>
                     <div className="flex gap-6 text-sm text-gray-600">
                       <span>Copper: <span className="font-medium text-orange-600">{cal.copperLbsPerFt.toFixed(4)}</span> lbs/ft</span>
                       <span>Insulation: <span className="font-medium text-green-600">{cal.insulationLbsPerFt.toFixed(4)}</span> lbs/ft</span>

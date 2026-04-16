@@ -132,11 +132,11 @@ function DiffPreview({ before, after }: { before: Record<string, unknown> | null
 function EventRow({ event }: { event: SkuAuditEvent }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="flex gap-2 py-1.5 border-b border-gray-100 last:border-0">
+    <div className="flex gap-2 py-1.5 border-b border-[color:var(--panel-border)] last:border-0">
       {/* Timeline dot */}
       <div className="flex flex-col items-center pt-0.5">
         <div className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
-        <div className="w-px flex-1 bg-gray-100 mt-0.5" />
+        <div className="w-px flex-1 bg-[color:var(--panel-border)] mt-0.5" />
       </div>
 
       <div className="flex-1 min-w-0">
@@ -167,7 +167,7 @@ function EventRow({ event }: { event: SkuAuditEvent }) {
         )}
 
         {expanded && (
-          <div className="mt-1 rounded border border-gray-200 bg-gray-50 px-2 py-1.5 space-y-1">
+          <div className="mt-1 rounded border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] px-2 py-1.5 space-y-1">
             {event.sourceArtifactIds?.length ? (
               <div className="text-[10px] text-gray-500">
                 Source: {event.sourceArtifactIds.join(', ')}
@@ -193,7 +193,7 @@ function EventRow({ event }: { event: SkuAuditEvent }) {
 function SnapshotCard({ snap }: { snap: SkuAuditSnapshot }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-lg border border-gray-200 px-3 py-2 bg-gray-50 space-y-1">
+    <div className="rounded-lg border border-[color:var(--panel-border)] px-3 py-2 bg-[color:var(--surface-elevated)] space-y-1">
       <div className="flex items-center gap-2">
         <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wide">
           {SNAPSHOT_LABELS[snap.snapshotType] ?? snap.snapshotType}
@@ -209,7 +209,7 @@ function SnapshotCard({ snap }: { snap: SkuAuditSnapshot }) {
         {open ? 'hide state' : 'view state'}
       </button>
       {open && (
-        <pre className="text-[9px] text-gray-600 overflow-auto max-h-40 mt-1 rounded border border-gray-200 bg-white px-2 py-1">
+        <pre className="text-[9px] text-gray-600 overflow-auto max-h-40 mt-1 rounded border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] px-2 py-1">
           {JSON.stringify(snap.effectiveState, null, 2)}
         </pre>
       )}
@@ -263,7 +263,7 @@ export default function SkuLifecycleHistoryPanel({ skuKey }: SkuLifecycleHistory
   const firstEvent  = events[0];
 
   return (
-    <details className="mt-4 rounded-xl border border-slate-200 bg-white text-xs shadow-sm">
+    <details className="mt-4 rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] text-xs shadow-sm">
       <summary className="cursor-pointer select-none px-4 py-2.5 font-semibold text-gray-700 flex items-center gap-2">
         <span className="text-slate-600 text-[11px] font-bold uppercase tracking-wide">
           T17.5 · SKU Lifecycle History
@@ -287,7 +287,7 @@ export default function SkuLifecycleHistoryPanel({ skuKey }: SkuLifecycleHistory
 
         {/* ── Header summary */}
         {skuKey && (
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-b border-gray-100 pb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-b border-[color:var(--panel-border)] pb-2">
             <div className="space-y-0.5">
               <p className="text-[11px] font-semibold text-gray-700">
                 SKU: <span className="font-mono">{skuKey}</span>
@@ -306,7 +306,7 @@ export default function SkuLifecycleHistoryPanel({ skuKey }: SkuLifecycleHistory
                 type="button"
                 onClick={refresh}
                 disabled={loading}
-                className="flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-[10px] text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                className="flex items-center gap-1 rounded border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] px-2 py-1 text-[10px] text-[color:var(--text-secondary)] hover:bg-[color:var(--table-row-hover)] disabled:opacity-50"
               >
                 ↺ Refresh
               </button>

@@ -115,7 +115,7 @@ export default function PPAPActivityFeed({ ppapId }: PPAPActivityFeedProps) {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg p-6 border border-gray-200">
+      <div className="bg-[color:var(--surface-elevated)] rounded-lg p-6 border border-[color:var(--panel-border)]">
         <div className="flex items-center justify-center py-8">
           <svg className="animate-spin h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -128,11 +128,11 @@ export default function PPAPActivityFeed({ ppapId }: PPAPActivityFeedProps) {
   }
 
   return (
-    <div className="bg-white rounded-lg p-6 border border-gray-200">
+    <div className="bg-[color:var(--surface-elevated)] rounded-lg p-6 border border-[color:var(--panel-border)]">
       {/* Header with issue count */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-xl font-bold text-gray-900">Activity Feed</h2>
+          <h2 className="text-xl font-bold text-[color:var(--text-primary)]">Activity Feed</h2>
           {issueCount > 0 && (
             <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full">
               ⚠️ {issueCount} Open Issue{issueCount > 1 ? 's' : ''}
@@ -149,7 +149,7 @@ export default function PPAPActivityFeed({ ppapId }: PPAPActivityFeedProps) {
 
       {/* Post form */}
       {showPostForm && (
-        <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className="mb-6 p-4 bg-[color:var(--surface-elevated)] border border-[color:var(--panel-border)] rounded-lg">
           <div className="space-y-3">
             {/* Type selection */}
             <div className="flex gap-2">
@@ -158,7 +158,7 @@ export default function PPAPActivityFeed({ ppapId }: PPAPActivityFeedProps) {
                 className={`px-3 py-1 text-sm font-medium rounded ${
                   postType === 'note'
                     ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    : 'bg-[color:var(--surface-elevated)] text-[color:var(--text-secondary)] border border-[color:var(--panel-border)] hover:bg-[color:var(--table-row-hover)]'
                 }`}
               >
                 💬 Note
@@ -168,7 +168,7 @@ export default function PPAPActivityFeed({ ppapId }: PPAPActivityFeedProps) {
                 className={`px-3 py-1 text-sm font-medium rounded ${
                   postType === 'update'
                     ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    : 'bg-[color:var(--surface-elevated)] text-[color:var(--text-secondary)] border border-[color:var(--panel-border)] hover:bg-[color:var(--table-row-hover)]'
                 }`}
               >
                 📢 Update
@@ -178,7 +178,7 @@ export default function PPAPActivityFeed({ ppapId }: PPAPActivityFeedProps) {
                 className={`px-3 py-1 text-sm font-medium rounded ${
                   postType === 'issue'
                     ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    : 'bg-[color:var(--surface-elevated)] text-[color:var(--text-secondary)] border border-[color:var(--panel-border)] hover:bg-[color:var(--table-row-hover)]'
                 }`}
               >
                 ⚠️ Issue
@@ -194,7 +194,7 @@ export default function PPAPActivityFeed({ ppapId }: PPAPActivityFeedProps) {
                   className={`px-2 py-1 text-xs font-medium rounded ${
                     postPriority === 'issue'
                       ? 'bg-yellow-600 text-white'
-                      : 'bg-white text-gray-700 border border-gray-300'
+                      : 'bg-[color:var(--surface-elevated)] text-[color:var(--text-secondary)] border border-[color:var(--panel-border)]'
                   }`}
                 >
                   ⚠️ Issue
@@ -204,7 +204,7 @@ export default function PPAPActivityFeed({ ppapId }: PPAPActivityFeedProps) {
                   className={`px-2 py-1 text-xs font-medium rounded ${
                     postPriority === 'risk'
                       ? 'bg-red-600 text-white'
-                      : 'bg-white text-gray-700 border border-gray-300'
+                      : 'bg-[color:var(--surface-elevated)] text-[color:var(--text-secondary)] border border-[color:var(--panel-border)]'
                   }`}
                 >
                   🚨 Risk
@@ -218,7 +218,7 @@ export default function PPAPActivityFeed({ ppapId }: PPAPActivityFeedProps) {
               onChange={(e) => setPostMessage(e.target.value)}
               placeholder={`Write your ${postType}...`}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
 
             {/* Submit button */}
@@ -257,7 +257,7 @@ export default function PPAPActivityFeed({ ppapId }: PPAPActivityFeedProps) {
                     {activity.userName && (
                       <>
                         <span className="text-xs text-gray-400">—</span>
-                        <span className="text-xs font-medium text-gray-900">
+                        <span className="text-xs font-medium text-[color:var(--text-primary)]">
                           {activity.userName}
                         </span>
                       </>
@@ -272,7 +272,7 @@ export default function PPAPActivityFeed({ ppapId }: PPAPActivityFeedProps) {
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-gray-900">{activity.message}</p>
+                  <p className="text-sm text-[color:var(--text-primary)]">{activity.message}</p>
                 </div>
               </div>
             </div>

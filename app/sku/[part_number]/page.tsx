@@ -508,7 +508,7 @@ export default function SKUDashboardPage() {
       <div className="space-y-10">
         <header className="space-y-2">
           <p className="text-sm uppercase tracking-[0.4em] text-blue-500">SKU MODEL</p>
-          <h1 className="text-3xl font-bold text-gray-900">{partNumber || 'SKU Not Found'}</h1>
+          <h1 className="text-3xl font-bold text-[color:var(--text-primary)]">{partNumber || 'SKU Not Found'}</h1>
           <p className="text-gray-600 max-w-3xl">
             Persist BOMs and drawings for this SKU, track revisions, and execute the Harness Work Instruction pipeline
             directly from the vault.
@@ -634,17 +634,17 @@ export default function SKUDashboardPage() {
           />
         </div>
 
-        <section className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5 space-y-4">
+        <section className="rounded-2xl border border-dashed border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-5 space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">Pipeline</h2>
+                <h2 className="text-xl font-semibold text-[color:var(--text-primary)]">Pipeline</h2>
                 <div className="mt-2 inline-flex items-center gap-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Status</span>
                   <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${
                     pipelineStatus === 'READY'
                       ? 'bg-emerald-100 text-emerald-700'
                       : pipelineStatus === 'idle'
-                        ? 'bg-gray-100 text-gray-500'
+                        ? 'bg-[color:var(--panel-bg)] text-[color:var(--text-secondary)]'
                         : 'bg-yellow-100 text-yellow-800'
                   }`}>
                     {pipelineStatus === 'READY' ? 'READY' : pipelineStatus === 'idle' ? 'IDLE' : 'WAITING FOR DOCUMENTS'}
@@ -682,7 +682,7 @@ export default function SKUDashboardPage() {
                   <button
                     type="button"
                     disabled
-                    className="rounded-xl border border-dashed border-gray-200 py-2.5 text-center text-sm font-semibold text-gray-400 cursor-not-allowed"
+                    className="rounded-xl border border-dashed border-[color:var(--panel-border)] py-2.5 text-center text-sm font-semibold text-gray-400 cursor-not-allowed"
                   >
                     🧾 View Work Instructions
                   </button>
@@ -700,7 +700,7 @@ export default function SKUDashboardPage() {
                 <p className="text-xs text-emerald-700">Generated at {new Date(summary.generatedAt).toLocaleString()}</p>
               </div>
             ) : (
-              <div className="rounded-xl border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-500">
+              <div className="rounded-xl border border-dashed border-[color:var(--panel-border)] px-4 py-3 text-sm text-gray-500">
                 {pipelineStatus === 'READY'
                   ? 'Pipeline ready — run to refresh the latest instructions.'
                   : 'Pipeline results will appear here once both BOM and drawing are stored.'}
@@ -714,16 +714,16 @@ export default function SKUDashboardPage() {
           </div>
         )}
 
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <section className="rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">Document Revisions</h2>
+              <h2 className="text-xl font-semibold text-[color:var(--text-primary)]">Document Revisions</h2>
               <p className="text-sm text-gray-500">Full revision log per document type.</p>
             </div>
           </div>
 
           <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-[color:var(--panel-border)]">
               <thead>
                 <tr className="text-left text-sm text-gray-500">
                   <th className="px-4 py-2">Type</th>
@@ -734,13 +734,13 @@ export default function SKUDashboardPage() {
                   <th className="px-4 py-2">Uploaded</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 text-sm">
+              <tbody className="divide-y divide-[color:var(--panel-border)] text-sm">
                 {sortedDocuments.map(doc => {
                   const resolution = resolveCanonicalDocument(doc, canonicalContext);
                   const authBadge = CANONICAL_BADGE[resolution.status];
                   return (
                   <tr key={doc.id}>
-                    <td className="px-4 py-2 font-medium text-gray-900">{sectionDescription(doc.document_type)}</td>
+                    <td className="px-4 py-2 font-medium text-[color:var(--text-primary)]">{sectionDescription(doc.document_type)}</td>
                     <td className="px-4 py-2">{doc.canonical_revision ?? doc.normalized_revision ?? '—'}</td>
                     <td className="px-4 py-2">
                       <div className="flex flex-col gap-0.5">

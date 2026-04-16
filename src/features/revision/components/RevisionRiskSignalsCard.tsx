@@ -60,7 +60,7 @@ function formatSignal(signal: RevisionRiskSignal): React.ReactNode {
   return (
     <li
       key={signal.signal_type}
-      className="rounded-xl border border-gray-200 bg-white/70 px-4 py-3 shadow-sm"
+      className="rounded-xl border border-[color:var(--panel-border)] bg-white/70 dark:bg-slate-700/60 px-4 py-3 shadow-sm"
     >
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-semibold text-gray-900">
@@ -87,7 +87,7 @@ function formatSignal(signal: RevisionRiskSignal): React.ReactNode {
 export default function RevisionRiskSignalsCard({ risk, className = '' }: RevisionRiskSignalsCardProps) {
   if (!risk) {
     return (
-      <section className={`rounded-2xl border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-500 ${className}`}>
+      <section className={`rounded-2xl border border-dashed border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-4 text-sm text-gray-500 ${className}`}>
         Historical revision risk not yet available. Upload history will populate this view.
       </section>
     );
@@ -100,7 +100,7 @@ export default function RevisionRiskSignalsCard({ risk, className = '' }: Revisi
   const cutoffLabel = new Date(risk.lookback.cutoff).toLocaleDateString();
 
   return (
-    <section className={`rounded-2xl border bg-white p-5 shadow-sm space-y-4 ${className}`}>
+    <section className={`rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-5 shadow-sm space-y-4 ${className}`}>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[200px]">
           <p className="text-xs uppercase tracking-[0.35em] text-gray-500">Historical Revision Risk</p>
@@ -138,9 +138,9 @@ export default function RevisionRiskSignalsCard({ risk, className = '' }: Revisi
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {STAT_LABELS.map(({ key, label }) => (
-          <div key={key} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+          <div key={key} className="rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] px-3 py-2">
             <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
-            <p className="text-xl font-semibold text-gray-900">{risk.stats[key]}</p>
+            <p className="text-xl font-semibold text-[color:var(--text-primary)]">{risk.stats[key]}</p>
           </div>
         ))}
       </div>

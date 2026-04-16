@@ -166,7 +166,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
 
   if (ppaps.length === 0) {
     return (
-      <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-12 text-center">
+      <div className="bg-[color:var(--surface-elevated)] border border-[color:var(--panel-border)] rounded-xl shadow-sm p-12 text-center">
         <p className="text-gray-600 text-lg">No PPAPs found</p>
       </div>
     );
@@ -174,17 +174,17 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-4">
+      <div className="bg-[color:var(--surface-elevated)] border border-[color:var(--panel-border)] rounded-xl shadow-sm p-4">
         <input
           type="text"
           placeholder="Search Part Number or PPAP ID..."
           value={searchQuery}
           onChange={(e) => handleSearchChange(e.target.value)}
-          className="w-full border border-gray-300 rounded px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
-      <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-4">
+      <div className="bg-[color:var(--surface-elevated)] border border-[color:var(--panel-border)] rounded-xl shadow-sm p-4">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-semibold text-gray-700 mb-1">Customer</label>
@@ -195,7 +195,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                 const value = e.target.value;
                 handleFilterChange('customers', value);
               }}
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              className="w-full border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded px-2 py-1 text-sm"
               size={3}
             >
               {filterOptions.customers.map(customer => (
@@ -215,7 +215,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                 const value = e.target.value;
                 handleFilterChange('states', value);
               }}
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              className="w-full border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded px-2 py-1 text-sm"
               size={3}
             >
               {filterOptions.states.map(state => (
@@ -235,7 +235,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                 const value = e.target.value;
                 handleFilterChange('engineers', value);
               }}
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              className="w-full border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded px-2 py-1 text-sm"
               size={3}
             >
               {filterOptions.engineers.map(engineer => (
@@ -255,7 +255,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                 const value = e.target.value;
                 handleFilterChange('plants', value);
               }}
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              className="w-full border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded px-2 py-1 text-sm"
               size={3}
             >
               {filterOptions.plants.map(plant => (
@@ -271,7 +271,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
             <select
               value={filters.phase}
               onChange={(e) => setFilters(current => ({ ...current, phase: e.target.value as PhaseFilter }))}
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              className="w-full border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded px-2 py-1 text-sm"
             >
               <option value="All">All</option>
               <option value="Pre-Ack">Pre-Ack</option>
@@ -303,92 +303,92 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
         </div>
       </div>
 
-      <div className="bg-white border border-gray-300 rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-[color:var(--surface-elevated)] border border-[color:var(--panel-border)] rounded-xl shadow-sm overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-gray-100 border-b border-gray-300">
+          <thead className="bg-[color:var(--panel-bg)] border-b border-[color:var(--panel-border)]">
             <tr>
               <th 
                 onClick={() => handleSort('ppap_number')}
-                className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
+                className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider cursor-pointer hover:bg-[color:var(--table-row-hover)] transition-colors"
               >
                 PPAP ID{getSortIndicator('ppap_number')}
               </th>
               <th 
                 onClick={() => handleSort('part_number')}
-                className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
+                className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider cursor-pointer hover:bg-[color:var(--table-row-hover)] transition-colors"
               >
                 Part Number{getSortIndicator('part_number')}
               </th>
               <th 
                 onClick={() => handleSort('customer_name')}
-                className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
+                className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider cursor-pointer hover:bg-[color:var(--table-row-hover)] transition-colors"
               >
                 Customer{getSortIndicator('customer_name')}
               </th>
               <th 
                 onClick={() => handleSort('state')}
-                className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
+                className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider cursor-pointer hover:bg-[color:var(--table-row-hover)] transition-colors"
               >
                 Current State{getSortIndicator('state')}
               </th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider">
                 Document Progress
               </th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider">
                 Health
               </th>
               <th 
                 onClick={() => handleSort('phase')}
-                className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
+                className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider cursor-pointer hover:bg-[color:var(--table-row-hover)] transition-colors"
               >
                 Phase{getSortIndicator('phase')}
               </th>
               <th 
                 onClick={() => handleSort('assigned_to')}
-                className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
+                className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider cursor-pointer hover:bg-[color:var(--table-row-hover)] transition-colors"
               >
                 Assigned Engineer{getSortIndicator('assigned_to')}
               </th>
               <th 
                 onClick={() => handleSort('plant')}
-                className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
+                className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider cursor-pointer hover:bg-[color:var(--table-row-hover)] transition-colors"
               >
                 Production Plant{getSortIndicator('plant')}
               </th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider">
                 Template
               </th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider">
                 Coordinator
               </th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider">
                 Validation
               </th>
               <th 
                 onClick={() => handleSort('acknowledgement')}
-                className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
+                className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider cursor-pointer hover:bg-[color:var(--table-row-hover)] transition-colors"
               >
                 Acknowledgement{getSortIndicator('acknowledgement')}
               </th>
               <th 
                 onClick={() => handleSort('submission')}
-                className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
+                className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider cursor-pointer hover:bg-[color:var(--table-row-hover)] transition-colors"
               >
                 Submission{getSortIndicator('submission')}
               </th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider">
                 Attention
               </th>
               <th 
                 onClick={() => handleSort('updated_at')}
-                className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
+                className="px-4 py-3 text-left text-xs font-bold text-[color:var(--text-secondary)] uppercase tracking-wider cursor-pointer hover:bg-[color:var(--table-row-hover)] transition-colors"
               >
                 Last Updated{getSortIndicator('updated_at')}
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-[color:var(--panel-border)]">
             {paginatedPPAPs.map((ppap) => {
               const statusIndicator = getStatusIndicator(ppap.derivedState);
               const rowBgClass = getRowBackgroundStyle(ppap.derivedPhase, ppap.derivedState);
@@ -414,15 +414,15 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
               <tr
                 key={ppap.id}
                 onClick={() => handleRowClick(ppap.id)}
-                className={`${isClickable ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-not-allowed opacity-75'} transition-colors ${rowBgClass}`}
+                className={`${isClickable ? 'hover:bg-[color:var(--table-row-hover)] cursor-pointer' : 'cursor-not-allowed opacity-75'} transition-colors ${rowBgClass}`}
               >
                 <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-blue-700">
                   {ppap.ppap_number}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">
+                <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-[color:var(--text-primary)]">
                   {ppap.part_number}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-[color:var(--text-primary)]">
                   {ppap.customer_name}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
@@ -466,7 +466,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                   {phaseLabel}
                 </td>
                 {/* Phase 3H.8: Assigned Engineer Column - Formatted user name */}
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-[color:var(--text-primary)]">
                   {formattedEngineer === 'Unassigned' ? (
                     <span className="text-gray-400">{formattedEngineer}</span>
                   ) : (
@@ -474,7 +474,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                   )}
                 </td>
                 {/* Phase 3H.8: Production Plant Column - Validated plant value */}
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-[color:var(--text-primary)]">
                   {validatedPlant === '—' ? (
                     <span className="text-gray-400">{validatedPlant}</span>
                   ) : (
@@ -494,10 +494,10 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-400">
                   {ppap.validationSummary}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-[color:var(--text-primary)]">
                   {ppap.acknowledgementStatus}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-[color:var(--text-primary)]">
                   {ppap.submissionStatus}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
@@ -517,7 +517,7 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
       </div>
 
       {searchedPPAPs.length === 0 && (searchQuery || hasActiveFilters) && (
-        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-12 text-center">
+        <div className="bg-[color:var(--surface-elevated)] border border-[color:var(--panel-border)] rounded-xl shadow-sm p-12 text-center">
           <p className="text-gray-600 text-lg">
             {searchQuery ? 'No PPAPs match your search' : 'No PPAPs match current filters'}
           </p>
@@ -543,14 +543,14 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
       )}
 
       {totalItems > 0 && (
-        <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-4">
+        <div className="bg-[color:var(--surface-elevated)] border border-[color:var(--panel-border)] rounded-xl shadow-sm p-4">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-700">Rows per page:</span>
               <select
                 value={pageSize}
                 onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-                className="border border-gray-300 rounded px-2 py-1 text-sm"
+                className="border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded px-2 py-1 text-sm"
               >
                 <option value={25}>25</option>
                 <option value={50}>50</option>
@@ -566,14 +566,14 @@ export function PPAPDashboardTable({ ppaps }: PPAPDashboardTableProps) {
                 <button
                   onClick={() => handlePageChange(currentPage - 1)}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 border border-gray-300 rounded text-sm font-semibold hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-3 py-1 border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] text-[color:var(--text-primary)] rounded text-sm font-semibold hover:bg-[color:var(--table-row-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Previous
                 </button>
                 <button
                   onClick={() => handlePageChange(currentPage + 1)}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 border border-gray-300 rounded text-sm font-semibold hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-3 py-1 border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] text-[color:var(--text-primary)] rounded text-sm font-semibold hover:bg-[color:var(--table-row-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Next
                 </button>

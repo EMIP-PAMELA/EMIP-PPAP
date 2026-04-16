@@ -226,7 +226,7 @@ function WireResolveForm({
     onSave(override);
   };
 
-  const inp = 'w-full rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-400';
+  const inp = 'w-full rounded border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] px-1.5 py-0.5 text-[11px] text-[color:var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-blue-400';
   const lab = 'text-[10px] font-semibold text-gray-500 mb-0.5 block';
 
   return (
@@ -341,7 +341,7 @@ function WireEvidenceRow({
     <>
       <tr
         id={`wire-row-${wire.wireId}`}
-        className={`border-t border-gray-100 cursor-pointer hover:bg-teal-50/40 ${rowBg}`}
+        className={`border-t border-[color:var(--panel-border)] cursor-pointer hover:bg-teal-50/40 ${rowBg}`}
         onClick={() => setExpanded(prev => !prev)}
         title="Click to expand evidence"
       >
@@ -386,8 +386,8 @@ function WireEvidenceRow({
           </td>
         )}
         <td
-          className={`px-2 py-1 text-center text-[11px] font-semibold sticky right-0 border-l border-gray-200 shadow-[inset_1px_0_0_rgba(15,23,42,0.08)] ${
-            canResolve ? 'bg-white' : 'bg-gray-50'
+          className={`px-2 py-1 text-center text-[11px] font-semibold sticky right-0 border-l border-[color:var(--panel-border)] shadow-[inset_1px_0_0_rgba(15,23,42,0.08)] ${
+            canResolve ? 'bg-[color:var(--surface-elevated)]' : 'bg-[color:var(--panel-bg)]'
           }`}
         >
           {canResolve ? (
@@ -403,9 +403,9 @@ function WireEvidenceRow({
         </td>
       </tr>
       {expanded && (
-        <tr className="bg-white">
+        <tr className="bg-[color:var(--surface-elevated)]">
           <td colSpan={hasReconciliation ? 10 : 9} className="px-3 py-2">
-            <div className="rounded-lg border border-gray-200 bg-white/80 p-2 space-y-1.5 text-[10px] text-gray-700">
+            <div className="rounded-lg border border-[color:var(--panel-border)] bg-white/80 dark:bg-slate-800/80 p-2 space-y-1.5 text-[10px] text-gray-700">
               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                 <div><span className="font-semibold text-gray-500">Source row:</span> #{wire.sourceRowIndex}</div>
                 <div><span className="font-semibold text-gray-500">Confidence:</span> {(wire.confidence * 100).toFixed(0)}%</div>
@@ -433,7 +433,7 @@ function WireEvidenceRow({
               )}
               </div>
               {reconciledWire && (
-                <div className="border-t border-gray-100 pt-1.5 grid grid-cols-2 gap-x-4 gap-y-1">
+                <div className="border-t border-[color:var(--panel-border)] pt-1.5 grid grid-cols-2 gap-x-4 gap-y-1">
                   <div className="col-span-2 font-semibold text-gray-500">Diagram Match (T5)</div>
                   <div><span className="font-semibold text-gray-500">From match:</span>{' '}
                     <span className="font-mono">{reconciledWire.from.matchType}</span>
@@ -463,9 +463,9 @@ function WireEvidenceRow({
                   )}
                 </div>
               )}
-              <div className="border-t border-gray-100 pt-1.5">
+              <div className="border-t border-[color:var(--panel-border)] pt-1.5">
                 <span className="font-semibold text-gray-500">Raw OCR text:</span>
-                <pre className="mt-0.5 whitespace-pre-wrap break-all font-mono text-[10px] text-gray-600 bg-gray-50 rounded px-1.5 py-1 border border-gray-100">
+                <pre className="mt-0.5 whitespace-pre-wrap break-all font-mono text-[10px] text-gray-600 bg-[color:var(--surface-elevated)] rounded px-1.5 py-1 border border-[color:var(--panel-border)]">
                   {wire.rawText}
                 </pre>
               </div>
@@ -531,7 +531,7 @@ function TopologyIssuesSection({ topology }: { topology: HarnessTopologyResult }
         <div className="space-y-1">
           {topology.missingWireCandidates.map((c, i) => (
             <div key={i}
-              className="flex items-start gap-1.5 rounded bg-white border border-rose-200 px-2 py-1 text-[10px]">
+              className="flex items-start gap-1.5 rounded bg-[color:var(--surface-elevated)] border border-rose-200 px-2 py-1 text-[10px]">
               <span className="rounded-full bg-rose-100 text-rose-700 px-1.5 py-0.5 font-semibold shrink-0">
                 MISSING PIN
               </span>
@@ -556,7 +556,7 @@ function TopologyIssuesSection({ topology }: { topology: HarnessTopologyResult }
           const style = WARNING_CODE_LABELS[w.code] ?? { label: w.code, bg: 'bg-gray-100', text: 'text-gray-700' };
           return (
             <div key={i}
-              className="flex items-start gap-1.5 rounded bg-white border border-gray-200 px-2 py-1 text-[10px]">
+              className="flex items-start gap-1.5 rounded bg-[color:var(--surface-elevated)] border border-[color:var(--panel-border)] px-2 py-1 text-[10px]">
               <span className={`rounded-full px-1.5 py-0.5 font-semibold shrink-0 ${style.bg} ${style.text}`}>
                 {style.label}
               </span>
@@ -636,7 +636,7 @@ export default function HarnessConnectivityPanel({
 
   if (wires.length === 0) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+      <div className="rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] px-3 py-2 text-xs text-gray-500">
         Connectivity rows were not confidently extracted.
       </div>
     );
@@ -779,9 +779,9 @@ export default function HarnessConnectivityPanel({
         )}
 
         {/* ── Primary wire table ──────────────────────────────────── */}
-        <div className="overflow-x-auto rounded-lg border border-gray-200 relative">
+        <div className="overflow-x-auto rounded-lg border border-[color:var(--panel-border)] relative">
           <table className="w-full text-[11px]">
-            <thead className="bg-gray-100 text-gray-500 uppercase text-[10px]">
+            <thead className="bg-[color:var(--panel-bg)] text-[color:var(--text-secondary)] uppercase text-[10px]">
               <tr>
                 <th className="px-2 py-1 text-left">Wire</th>
                 <th className="px-2 py-1 text-right">Length</th>
@@ -793,7 +793,7 @@ export default function HarnessConnectivityPanel({
                 <th className="px-2 py-1 text-center">Confidence</th>
                 <th className="px-2 py-1 text-center">Status</th>
                 {hasReconciliation && <th className="px-2 py-1 text-center">Match</th>}
-                <th className="px-2 py-1 text-center sticky right-0 bg-gray-100">Action</th>
+                <th className="px-2 py-1 text-center sticky right-0 bg-[color:var(--panel-bg)]">Action</th>
               </tr>
             </thead>
             <tbody>

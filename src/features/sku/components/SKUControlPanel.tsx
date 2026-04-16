@@ -169,12 +169,12 @@ export default function SKUControlPanel({
     <div
       ref={sectionRef}
       id="revision-summary"
-      className={`rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden${
+      className={`rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] shadow-sm overflow-hidden${
         highlightActive ? ' ring-2 ring-blue-100 shadow-lg shadow-blue-50' : ''
       }`}
     >
       {/* ── ROW 1: Status / Action strip ───────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 bg-gray-50 border-b border-gray-200">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 bg-[color:var(--panel-bg)] border-b border-[color:var(--panel-border)]">
         {/* Left: badges */}
         <div className="flex flex-wrap items-center gap-3">
           <span className={`text-sm font-semibold ${documentConfidence.tone}`}>
@@ -220,7 +220,7 @@ export default function SKUControlPanel({
             <button
               type="button"
               onClick={onViewBOM}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+              className="rounded-lg border border-[color:var(--panel-border)] px-3 py-2 text-sm font-semibold text-gray-700 dark:text-slate-300 hover:bg-[color:var(--surface-elevated)] transition"
             >
               📋 View BOM
             </button>
@@ -243,7 +243,7 @@ export default function SKUControlPanel({
             <button
               type="button"
               disabled
-              className="rounded-lg border border-dashed border-gray-200 px-4 py-2 text-sm font-semibold text-gray-400 cursor-not-allowed"
+              className="rounded-lg border border-dashed border-[color:var(--panel-border)] px-4 py-2 text-sm font-semibold text-gray-400 cursor-not-allowed"
             >
               🧾 View Work Instructions
             </button>
@@ -252,7 +252,7 @@ export default function SKUControlPanel({
       </div>
 
       {/* ── ROW 2: Document cards (3-column) ───────────────────────────────── */}
-      <div className="grid lg:grid-cols-3 divide-x divide-gray-100">
+      <div className="grid lg:grid-cols-3 divide-x divide-[color:var(--panel-border)]">
         {DOCUMENT_DEFS.map(def => {
           const doc        = docByType[def.type];
           const present    = documentPresence[def.presenceKey];
@@ -317,7 +317,7 @@ export default function SKUControlPanel({
       </div>
 
       {/* ── FOOTER: Revision status · Signals · Readiness ──────────────────── */}
-      <div className="border-t border-gray-100 px-6 py-4 bg-gray-50/60 space-y-3">
+      <div className="border-t border-[color:var(--panel-border)] px-6 py-4 bg-gray-50/60 dark:bg-slate-800/40 space-y-3">
         {/* Inline revision status */}
         {revMeta && (
           <p className={`text-sm font-semibold ${revMeta.tone}`}>
@@ -361,7 +361,7 @@ export default function SKUControlPanel({
 
         {/* System Assessment — Phase 3H.46 C4 */}
         {alignedReadiness && alignedMessage && (
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 space-y-1.5">
+          <div className="rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] px-4 py-3 space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">System Assessment</span>
               <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${readinessTone[alignedReadiness].badge}`}>

@@ -72,7 +72,7 @@ export default function AdminUsersPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[color:var(--bg-secondary)] flex items-center justify-center">
         <div className="text-center">
           <div className="text-4xl mb-4">⏳</div>
           <p className="text-lg text-gray-600">Loading...</p>
@@ -83,11 +83,11 @@ export default function AdminUsersPage() {
 
   if (!currentUser || !isAdmin(currentUser.role)) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow-md p-8 max-w-md">
+      <div className="min-h-screen bg-[color:var(--bg-primary)] flex items-center justify-center">
+        <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow-md p-8 max-w-md">
           <div className="text-center">
             <div className="text-6xl mb-4">🚫</div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h1>
+            <h1 className="text-2xl font-bold text-[color:var(--text-primary)] mb-2">Access Denied</h1>
             <p className="text-gray-600 mb-6">
               {errorMessage || 'You do not have permission to access this page.'}
             </p>
@@ -104,18 +104,18 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-[color:var(--bg-secondary)] py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
+              <h1 className="text-3xl font-bold text-[color:var(--text-primary)]">User Management</h1>
               <p className="text-gray-600 mt-2">Manage user roles and permissions</p>
             </div>
             <button
               onClick={() => router.push('/')}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+              className="px-4 py-2 bg-[color:var(--surface-elevated)] text-[color:var(--text-secondary)] rounded-md border border-[color:var(--panel-border)] hover:bg-[color:var(--table-row-hover)] transition-colors"
             >
               ← Back to App
             </button>
@@ -153,10 +153,10 @@ export default function AdminUsersPage() {
         </div>
 
         {/* Users Table */}
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow-md overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-[color:var(--panel-bg)] border-b border-[color:var(--panel-border)]">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Name
@@ -189,10 +189,10 @@ export default function AdminUsersPage() {
                     const isUpdating = updatingUserId === user.id;
                     
                     return (
-                      <tr key={user.id} className={isCurrentUser ? 'bg-blue-50' : 'hover:bg-gray-50'}>
+                      <tr key={user.id} className={isCurrentUser ? 'bg-blue-50' : 'hover:bg-[color:var(--table-row-hover)]'}>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-900">{user.name}</span>
+                            <span className="text-sm font-medium text-[color:var(--text-primary)]">{user.name}</span>
                             {isCurrentUser && (
                               <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs font-medium rounded">
                                 You
@@ -218,8 +218,8 @@ export default function AdminUsersPage() {
                             value={user.role}
                             onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
                             disabled={isUpdating || isCurrentUser}
-                            className={`px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                              isUpdating ? 'opacity-50 cursor-wait' : isCurrentUser ? 'opacity-50 cursor-not-allowed bg-gray-100' : ''
+                            className={`px-3 py-1 border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] text-[color:var(--text-primary)] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                              isUpdating ? 'opacity-50 cursor-wait' : isCurrentUser ? 'opacity-50 cursor-not-allowed bg-[color:var(--panel-bg)]' : ''
                             }`}
                             title={isCurrentUser ? 'You cannot change your own role' : 'Change user role'}
                           >
@@ -240,23 +240,23 @@ export default function AdminUsersPage() {
 
         {/* Stats */}
         <div className="mt-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow p-4 border border-[color:var(--panel-border)]">
             <div className="text-sm text-gray-600">Total Users</div>
-            <div className="text-2xl font-bold text-gray-900">{users.length}</div>
+            <div className="text-2xl font-bold text-[color:var(--text-primary)]">{users.length}</div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow p-4 border border-[color:var(--panel-border)]">
             <div className="text-sm text-gray-600">Engineers</div>
             <div className="text-2xl font-bold text-blue-600">
               {users.filter(u => u.role === 'engineer').length}
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow p-4 border border-[color:var(--panel-border)]">
             <div className="text-sm text-gray-600">QA / Managers</div>
             <div className="text-2xl font-bold text-green-600">
               {users.filter(u => u.role === 'qa' || u.role === 'manager').length}
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="bg-[color:var(--surface-elevated)] rounded-lg shadow p-4 border border-[color:var(--panel-border)]">
             <div className="text-sm text-gray-600">Admins</div>
             <div className="text-2xl font-bold text-red-600">
               {users.filter(u => u.role === 'admin').length}

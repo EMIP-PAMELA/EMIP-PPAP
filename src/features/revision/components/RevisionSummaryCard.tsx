@@ -121,7 +121,7 @@ export default function RevisionSummaryCard({
 
   if (!validation) {
     return (
-      <section className={`rounded-2xl border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-500 ${className}`}>
+      <section className={`rounded-2xl border border-dashed border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-4 text-sm text-gray-500 ${className}`}>
         Revision status unavailable. Upload documents to begin validation.
       </section>
     );
@@ -148,7 +148,7 @@ export default function RevisionSummaryCard({
   const hasConfidence = typeof confidenceScore === 'number';
 
   return (
-    <section className={`rounded-2xl border bg-white p-5 shadow-sm space-y-4 ${highlightClasses} ${className}`}>
+    <section className={`rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-5 shadow-sm space-y-4 ${highlightClasses} ${className}`}>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[200px]">
           <p className="text-xs uppercase tracking-[0.4em] text-gray-500">Revision Validation</p>
@@ -212,7 +212,7 @@ export default function RevisionSummaryCard({
       <p className="text-sm text-gray-700">{recommended_action}</p>
 
       {hasConfidence && confidenceFactors && confidenceFactors.length > 0 && (
-        <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs">
+        <div className="rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] px-3 py-2 text-xs">
           <button
             type="button"
             onClick={() => setShowFactors(v => !v)}
@@ -241,7 +241,7 @@ export default function RevisionSummaryCard({
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800">
+      <div className="rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] px-3 py-2 text-xs text-gray-800">
         <p className="font-semibold">Expected Apogee Drawing</p>
         <p className="mt-0.5 text-sm text-gray-900">{expectedApogeeDrawing ?? 'Not available'}</p>
         {expectedDrawingSource && (
@@ -293,7 +293,7 @@ export default function RevisionSummaryCard({
           return (
             <div
               key={key}
-              className={`rounded-xl border bg-gray-50/70 p-3 ${emphasize ? 'border-blue-300 ring-1 ring-blue-200 shadow-sm' : 'border-gray-200'}`}
+              className={`rounded-xl border bg-[color:var(--surface-elevated)] p-3 ${emphasize ? 'border-blue-300 ring-1 ring-blue-200 shadow-sm' : 'border-[color:var(--panel-border)]'}`}
             >
               <p className="text-xs uppercase tracking-widest text-gray-500">{title}</p>
               <div className="flex items-baseline gap-2">
@@ -337,7 +337,7 @@ export default function RevisionSummaryCard({
             {signals_used?.length ? (
               <div className="flex flex-wrap gap-2">
                 {signals_used.map(signal => (
-                  <span key={signal} className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                  <span key={signal} className="rounded-full bg-[color:var(--panel-bg)] px-3 py-1 text-xs font-semibold text-[color:var(--text-secondary)]">
                     {signal}
                   </span>
                 ))}

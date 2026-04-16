@@ -335,7 +335,7 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
 
   const labelCls = 'text-[11px] font-semibold text-gray-500 uppercase tracking-wide';
   const inputCls = (err?: string) =>
-    `w-full rounded border ${err ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-white'} px-2 py-1 text-[12px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400`;
+    `w-full rounded border ${err ? 'border-red-400 bg-red-50' : 'border-[color:var(--panel-border)] bg-[color:var(--input-bg)]'} px-2 py-1 text-[12px] text-[color:var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-blue-400`;
 
   return (
     <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3 space-y-3">
@@ -491,7 +491,7 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
           value={form.reason}
           onChange={set('reason')}
           rows={2}
-          className={`w-full rounded border ${errors.reason ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-white'} px-2 py-1 text-[12px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none`}
+          className={`w-full rounded border ${errors.reason ? 'border-red-400 bg-red-50' : 'border-[color:var(--panel-border)] bg-[color:var(--input-bg)]'} px-2 py-1 text-[12px] text-[color:var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none`}
           placeholder="Explain why this wire is being added / changed…"
         />
         {errors.reason && <p className="text-[10px] text-red-600 mt-0.5">{errors.reason}</p>}
@@ -499,7 +499,7 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
 
       <div className="flex justify-end gap-2 pt-1">
         <button type="button" onClick={onCancel}
-          className="px-3 py-1 text-[12px] rounded border border-gray-200 text-gray-600 hover:bg-gray-100">
+          className="px-3 py-1 text-[12px] rounded border border-[color:var(--panel-border)] text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-elevated)]">
           Cancel
         </button>
         <button type="button" onClick={handleSave}
@@ -653,15 +653,15 @@ export default function SkuModelEditorPanel({
     overallDecision === 'SAFE' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
     overallDecision === 'BLOCKED' ? 'text-red-700 bg-red-50 border-red-200' :
     overallDecision === 'REVIEW_REQUIRED' ? 'text-amber-700 bg-amber-50 border-amber-200' :
-    'text-gray-500 bg-gray-50 border-gray-200';
+    'text-[color:var(--text-secondary)] bg-[color:var(--panel-bg)] border-[color:var(--panel-border)]';
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden text-[12px]">
+    <div className="rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] shadow-sm overflow-hidden text-[12px]">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-[color:var(--panel-border)] flex items-center justify-between">
         <div>
           <p className="text-[10px] uppercase tracking-[0.4em] text-gray-400">T12 SKU Model</p>
-          <h2 className="text-sm font-bold text-gray-900">Authoritative Wire Editor</h2>
+          <h2 className="text-sm font-bold text-[color:var(--text-primary)]">Authoritative Wire Editor</h2>
         </div>
         <div className="flex items-center gap-2">
           {overallDecision && (
@@ -680,7 +680,7 @@ export default function SkuModelEditorPanel({
       </div>
 
       {/* Summary strip */}
-      <div className="flex gap-4 px-4 py-2 border-b border-gray-100 bg-gray-50 text-[11px] text-gray-500">
+      <div className="flex gap-4 px-4 py-2 border-b border-[color:var(--panel-border)] bg-[color:var(--panel-bg)] text-[11px] text-[color:var(--text-secondary)]">
         <span>Extracted: <strong className="text-gray-800">{extractedConnectivity?.wires.length ?? 0}</strong></span>
         <span>Effective: <strong className="text-gray-800">{effectiveWires.length}</strong></span>
         {operatorAddedWires.length > 0 && (
@@ -744,7 +744,7 @@ export default function SkuModelEditorPanel({
         ) : (
           <>
             {/* Column headers */}
-            <div className="sticky top-0 z-10 grid grid-cols-[3rem_5rem_3rem_3rem_6rem_1rem_6rem_5rem_auto] gap-x-2 px-4 py-1 bg-gray-50 border-b border-gray-100 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            <div className="sticky top-0 z-10 grid grid-cols-[3rem_5rem_3rem_3rem_6rem_1rem_6rem_5rem_auto] gap-x-2 px-4 py-1 bg-[color:var(--panel-bg)] border-b border-[color:var(--panel-border)] text-[10px] font-semibold uppercase tracking-wide text-[color:var(--text-secondary)]">
               <span>Wire</span>
               <span>Length</span>
               <span>Gauge</span>
@@ -786,7 +786,7 @@ export default function SkuModelEditorPanel({
 
       {/* Footer: decision detail */}
       {(effectiveConnectivity || effectiveDecision) && (
-        <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-[10px] text-gray-500 flex flex-wrap gap-3">
+        <div className="px-4 py-2 border-t border-[color:var(--panel-border)] bg-[color:var(--panel-bg)] text-[10px] text-[color:var(--text-secondary)] flex flex-wrap gap-3">
           {effectiveDecision && (
             <span>Readiness: <strong className="text-gray-700">{effectiveDecision.readinessScore}%</strong></span>
           )}
@@ -832,7 +832,7 @@ function AddedWireRow({
       </span>
       <span className="flex gap-1 justify-end">
         <button type="button" onClick={onEdit}
-          className="px-2 py-0.5 text-[10px] rounded border border-gray-200 text-gray-600 hover:bg-gray-100">Edit</button>
+          className="px-2 py-0.5 text-[10px] rounded border border-[color:var(--panel-border)] text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-elevated)]">Edit</button>
         <button type="button" onClick={onDelete}
           className="px-2 py-0.5 text-[10px] rounded border border-red-200 text-red-600 hover:bg-red-50">Delete</button>
       </span>
@@ -882,7 +882,7 @@ function ExtractedWireRow({
   );
 
   return (
-    <div className={`grid grid-cols-[3rem_5rem_3rem_3rem_6rem_1rem_6rem_5rem_auto] gap-x-2 items-start px-4 py-1.5 border-b border-gray-100 hover:bg-gray-50/70 transition ${rowCls}`}>
+    <div className={`grid grid-cols-[3rem_5rem_3rem_3rem_6rem_1rem_6rem_5rem_auto] gap-x-2 items-start px-4 py-1.5 border-b border-[color:var(--panel-border)] hover:bg-[color:var(--table-row-hover)] transition ${rowCls}`}>
       <span className="font-mono font-semibold text-gray-800 text-[11px] pt-0.5">
         {internalWireId ? (
           <>
@@ -922,7 +922,7 @@ function ExtractedWireRow({
         ) : (
           <>
             <button type="button" onClick={onEdit}
-              className="px-2 py-0.5 text-[10px] rounded border border-gray-200 text-gray-600 hover:bg-gray-100">Edit</button>
+              className="px-2 py-0.5 text-[10px] rounded border border-[color:var(--panel-border)] text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-elevated)]">Edit</button>
             <button type="button" onClick={onDelete}
               className="px-2 py-0.5 text-[10px] rounded border border-red-200 text-red-600 hover:bg-red-50">Delete</button>
           </>
