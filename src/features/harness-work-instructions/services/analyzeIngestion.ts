@@ -585,8 +585,9 @@ export interface AnalyzeIngestionParams {
   titleBlockRegionLines?: string[] | null;
   /** C12.2: base64 PNG data URL of the cropped title block image (browser-rendered). */
   titleBlockCropDataUrl?: string | null;
-  /** C12.4: coordinate-filtered region lines from the fallback region (bottom 25%, right 50%).
-   *  Sent when primary OCR did not detect a 527 DRN — browser tries the wider fallback crop. */
+  /** T23.3.1: Full-page coordinate-sorted pdfjs text lines (expanded from former title-block
+   *  region). Used for (a) part-number recovery via scanForApogeePN45, and (b) wire table
+   *  fallback recovery when primary OCR misses unlabeled or short wire rows. */
   titleBlockFallbackLines?: string[] | null;
   /** C12.4: base64 PNG data URL of the fallback region crop (browser-rendered). */
   titleBlockFallbackCrop?: string | null;
@@ -1067,9 +1068,9 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   }
 
   // --- C12.4: Title block fallback recovery (multi-pass, strict pattern) ---
-  // Runs when the browser could not determine isLikelyInternal (no 527 DRN in
-  // primary OCR text) and sent fallback region data from the bottom-25%/right-50%
-  // title block area.
+  // Runs when the browser sent fallback data (primary OCR weak or internal drawing detected).
+  // T23.3.1: titleBlockFallbackLines is now full-page pdfjs text; PN scan still works since
+  // the 45-xxxxxx-xx pattern is unique enough to survive full-page context.
   // PASS 1: scanForApogeePN45 on fallback lines + strict /^45-\d{6}-\d{2}$/ gate.
   // PASS 2: Claude vision with strict PN-only prompt + same strict gate.
   // Accepts ONLY /^45-\d{6}-\d{2}$/ — rejects 527-pattern, 5-digit middle, etc.
@@ -1193,6 +1194,54 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       }
     } catch (err) {
       console.warn('[T1 WIRE TABLE] Non-fatal — continuing without wire table result.', err);
+    }
+  }
+
+  // --- T23.3.1: Wire recovery fallback (full-page pdfjs re-extraction) ---
+  // When the browser sent full-page fallback text and the primary extraction found fewer
+  // wires than the fallback, use the fallback result. The coordinate-sorted pdfjs output
+  // captures rows that primary PDF text extraction misses (e.g. unlabeled branch wires,
+  // short jumper rows appearing out of stream order in the raw PDF).
+  // Uses the SAME detectWireTableRegion + parseWireTableRows pipeline — no rule changes.
+  if (drawingSubtype === 'INTERNAL_DRAWING' && titleBlockFallbackLines?.length) {
+    try {
+      const fallbackDetected = detectWireTableRegion(titleBlockFallbackLines);
+      const primaryRowCount  = wireTableResult?.rowCount ?? 0;
+      if (fallbackDetected) {
+        const fallbackParsed = parseWireTableRows(fallbackDetected.bodyLines, {
+          extractedText:    titleBlockFallbackLines.join('\n'),
+          isLikelyInternal: true,
+        });
+        console.log('[T23.3.1 WIRE RECOVERY]', {
+          primaryRowCount,
+          fallbackRowCount: fallbackParsed.rowCount,
+          willOverride:     fallbackParsed.rowCount > primaryRowCount,
+          fallbackHeader:   fallbackDetected.headerText.slice(0, 60),
+        });
+        if (fallbackParsed.rowCount > primaryRowCount) {
+          wireTableResult = {
+            region:              fallbackDetected.region,
+            confidence:          fallbackDetected.confidence,
+            rows:                fallbackParsed.rows,
+            rowCount:            fallbackParsed.rowCount,
+            parseQuality:        fallbackParsed.parseQuality,
+            headerText:          fallbackDetected.headerText,
+            inferredLengthUnit:  fallbackParsed.inferredLengthUnit,
+            unitInferenceReason: fallbackParsed.unitInferenceReason,
+          };
+          debugRuntime.inferredLengthUnit  = fallbackParsed.inferredLengthUnit;
+          debugRuntime.unitInferenceReason = fallbackParsed.unitInferenceReason;
+        }
+      } else {
+        console.log('[T23.3.1 WIRE RECOVERY]', {
+          primaryRowCount,
+          fallbackRowCount: 0,
+          willOverride: false,
+          reason: 'wire table region not detected in fallback text',
+        });
+      }
+    } catch (err) {
+      console.warn('[T23.3.1 WIRE RECOVERY] Non-fatal — continuing without wire recovery.', err);
     }
   }
 

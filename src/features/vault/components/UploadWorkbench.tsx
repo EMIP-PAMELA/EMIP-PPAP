@@ -1049,8 +1049,13 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     // C12.4: Fallback region extraction — runs when primary OCR is weak or the PN was not found.
     // Covers: (a) isLikelyInternal — 527 DRN detected or forcedType set; (b) isWeakExtraction —
     // sparse OCR (< MIN_EXTRACTION_LINES) or no strict 45-PN found in extracted text.
-    // Region: bottom 35% / right 60% of page — the assumed Apogee title block position.
-    const TB_FALLBACK_REGION = { x: 0.40, y: 0.65, w: 0.60, h: 0.35 };
+    //
+    // T23.3.1: Text extraction uses full-page coverage so pdfjs coordinate-sorted output
+    // captures all wire rows (including unlabeled/branch rows that primary OCR misses).
+    // Image crop remains focused on the title block for vision-based PN detection (a small
+    // crop is more reliable for Claude than a full-page image when searching for 45-xxxxxx-xx).
+    const FULL_PAGE_REGION   = { x: 0, y: 0, w: 1, h: 1 };          // full-page text for wire recovery
+    const TB_FALLBACK_REGION = { x: 0.40, y: 0.65, w: 0.60, h: 0.35 }; // title-block crop for vision PN
     let titleBlockFallbackText: string[] | null = null;
     let titleBlockFallbackCropUrl: string | null = null;
 
@@ -1097,17 +1102,41 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
           import('@/src/utils/renderPdfToImage'),
           import('@/src/utils/cropImageRegion'),
         ]);
+
+        // T23.3.1: Log the exact regions being used before extraction.
+        console.log('[C12.4 OCR REGION]', {
+          textRegion:    FULL_PAGE_REGION,
+          cropRegion:    TB_FALLBACK_REGION,
+          cropMode:      'FULL_PAGE_TEXT',
+          textAreaRatio: FULL_PAGE_REGION.w * FULL_PAGE_REGION.h,  // 1.0 = full page
+          cropAreaRatio: Number((TB_FALLBACK_REGION.w * TB_FALLBACK_REGION.h).toFixed(3)),
+        });
+
         const [fallbackLines, fullImage] = await Promise.all([
-          extractPDFRegionText(file, TB_FALLBACK_REGION).catch(() => null),
+          extractPDFRegionText(file, FULL_PAGE_REGION).catch(() => null),  // T23.3.1: full page
           renderPdfToImage(blobUrl).catch(() => null),
         ]);
         if (fallbackLines?.length) titleBlockFallbackText   = fallbackLines;
         if (fullImage)             titleBlockFallbackCropUrl = await cropImageRegion(fullImage, TB_FALLBACK_REGION).catch(() => null);
+
+        // T23.3.1: Post-extraction sanity check.
+        const c124LineCount = fallbackLines?.length ?? 0;
+        const c124CharCount = fallbackLines?.join('\n').length ?? 0;
+        console.log('[C12.4 OCR RESULT]', {
+          lineCount:  c124LineCount,
+          charCount:  c124CharCount,
+          firstLines: fallbackLines?.slice(0, 10) ?? [],
+          cropMode:   'FULL_PAGE',
+        });
+        if (c124LineCount < 5) {
+          console.warn('[C12.4 OCR WARNING] Fallback OCR returned suspiciously low line count', { lineCount: c124LineCount });
+        }
+
         console.log('[C12.4 DEBUG] Fallback OCR Lines:', titleBlockFallbackText);
         console.log('[C12.4 DEBUG] Fallback Crop Generated:', !!titleBlockFallbackCropUrl);
         console.log('[C12.4 FALLBACK DISPATCH]', {
-          file: file.name,
-          fallbackLines: fallbackLines?.length ?? 0,
+          file:               file.name,
+          fallbackLines:      c124LineCount,
           fallbackCropLength: titleBlockFallbackCropUrl?.length ?? 0,
         });
         if (titleBlockFallbackCropUrl) {
