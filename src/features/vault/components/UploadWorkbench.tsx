@@ -1046,29 +1046,48 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       }
     }
 
-    // C12.4: Fallback region extraction — runs when the 45-PN was NOT found in the primary
-    // OCR text AND the document type is INTERNAL_DRAWING. This covers both cases where
-    // isLikelyInternal=true (527 DRN present but PN absent) and isLikelyInternal=false
-    // (title block not reached by primary OCR at all).
-    // Region: bottom 25% / right 50% of page — the assumed Apogee title block position.
+    // C12.4: Fallback region extraction — runs when primary OCR is weak or the PN was not found.
+    // Covers: (a) isLikelyInternal — 527 DRN detected or forcedType set; (b) isWeakExtraction —
+    // sparse OCR (< MIN_EXTRACTION_LINES) or no strict 45-PN found in extracted text.
+    // Region: bottom 35% / right 60% of page — the assumed Apogee title block position.
     const TB_FALLBACK_REGION = { x: 0.40, y: 0.65, w: 0.60, h: 0.35 };
     let titleBlockFallbackText: string[] | null = null;
     let titleBlockFallbackCropUrl: string | null = null;
 
-    // C12.4-R15: strict 6-digit PN regex (matches server-side gate) and use isLikelyInternal
-    // so fallback fires for Mixed-mode uploads where 527 DRN was detected but forcedType is unset.
+    // C12.4-R16: Weakness-aware fallback gate.
+    // Fallback runs when:
+    //   (a) primary OCR looks like an internal drawing (527 DRN present or forcedType set), OR
+    //   (b) extraction is weak: fewer than MIN_EXTRACTION_LINES non-empty lines extracted, OR
+    //       the strict 45-xxxxxx-xx part number was not found in primary OCR.
+    // Only skips when OCR is strong (≥ threshold lines) AND the PN was already found AND
+    // the document is not flagged as internal — meaning structured extraction is complete.
+    // The server-side strict regex gate (/^45-\d{6}-\d{2}$/) still rejects false positives.
     const STRICT_PN_45_RE_CLIENT = /\b45-\d{6}-\d{2}\b/;
     const partNumberFoundStrict  = extractedText != null && STRICT_PN_45_RE_CLIENT.test(extractedText);
-    const shouldRunC124Fallback  = isLikelyInternal && !partNumberFoundStrict;
+    const extractedLineCount     = extractedText
+      ? extractedText.split(/\r?\n/).filter(l => l.trim().length > 0).length
+      : 0;
+    const MIN_EXTRACTION_LINES   = 20;
+    const isWeakExtraction       =
+      extractedLineCount < MIN_EXTRACTION_LINES ||
+      !partNumberFoundStrict;
+    const shouldRunC124Fallback  = isLikelyInternal || isWeakExtraction;
 
     const c124TriggerDebug = {
-      buildTag:              'C12.4-R15',
+      buildTag:              'C12.4-R16',
       forcedType:            forcedType ?? null,
       isLikelyInternal,
+      extractedLineCount,
       partNumberFoundStrict,
+      isWeakExtraction,
       shouldRunC124Fallback,
     };
     console.log('[C12.4 TRIGGER]', c124TriggerDebug);
+    console.log('[C12.4] fallbackDecision', {
+      extractedLines:     extractedLineCount,
+      partNumberDetected: partNumberFoundStrict,
+      decision:           shouldRunC124Fallback ? 'FORCED' : 'SKIPPED',
+    });
 
     if (shouldRunC124Fallback) {
       const blobUrl = URL.createObjectURL(file);
@@ -1100,7 +1119,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
         URL.revokeObjectURL(blobUrl);
       }
     } else {
-      console.log('[C12.4 TRIGGER] Fallback skipped', c124TriggerDebug);
+      console.log('[C12.4 TRIGGER] Fallback skipped — strong extraction, PN found, not internal', c124TriggerDebug);
     }
 
     try {
