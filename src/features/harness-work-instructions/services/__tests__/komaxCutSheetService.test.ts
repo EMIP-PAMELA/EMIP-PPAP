@@ -73,6 +73,7 @@ function makeIdentities(entries: WireIdentityEntry[]): WireIdentityResult {
   return {
     wires: entries,
     byOriginalId: new Map(entries.map(e => [e.mapKey, e])),
+    bySourceRowIndex: new Map(), // T23.3: not exercised in these tests
   };
 }
 

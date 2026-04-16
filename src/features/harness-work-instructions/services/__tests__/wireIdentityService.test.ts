@@ -215,4 +215,67 @@ describe('wireIdentityService', () => {
     // Internal IDs must differ
     assert.notEqual(entry1234!.internalWireId, entryEmpty!.internalWireId);
   });
+
+  // -------------------------------------------------------------------------
+  // F. T23.3: Duplicate customer labels — each physical wire gets its own entry
+  // -------------------------------------------------------------------------
+
+  it('F: two physical wires with the same customer label each get a distinct internalWireId', () => {
+    const wire1: WireConnectivity = {
+      ...makeWire('W1', 'J1', '1', 'J2', '1'),
+      sourceRowIndex: 0,
+    };
+    const wire2: WireConnectivity = {
+      ...makeWire('W1', 'J1', '1', 'J3', '1'),
+      sourceRowIndex: 1,
+    };
+    const result = assignWireIdentities(makeConnectivity([wire1, wire2]), makeTopology());
+
+    assert.equal(result.wires.length, 2, 'both physical wires must produce identity entries');
+    const [id0, id1] = result.wires.map(e => e.internalWireId);
+    assert.ok(id0.startsWith('W'), 'first wire should have Wn id');
+    assert.ok(id1.startsWith('W'), 'second wire should have Wn id');
+    assert.notEqual(id0, id1, 'duplicate-label wires must NOT receive the same internalWireId');
+
+    // bySourceRowIndex must resolve both wires independently
+    assert.ok(result.bySourceRowIndex.get(0), 'bySourceRowIndex must have entry for row 0');
+    assert.ok(result.bySourceRowIndex.get(1), 'bySourceRowIndex must have entry for row 1');
+    assert.notEqual(
+      result.bySourceRowIndex.get(0)!.internalWireId,
+      result.bySourceRowIndex.get(1)!.internalWireId,
+      'bySourceRowIndex entries for different rows must have different internalWireId',
+    );
+
+    // customerWireId is preserved on both entries
+    assert.equal(result.bySourceRowIndex.get(0)!.customerWireId, 'W1');
+    assert.equal(result.bySourceRowIndex.get(1)!.customerWireId, 'W1');
+  });
+
+  // -------------------------------------------------------------------------
+  // G. T23.3: UNK_ auto-generated IDs must NOT appear as customerWireId
+  // -------------------------------------------------------------------------
+
+  it('G: wires with UNK_ auto-generated wireId do not expose customerWireId', () => {
+    const unkWire: WireConnectivity = {
+      ...makeWire('UNK_3', 'J1', '5', 'J2', '5'),
+      sourceRowIndex: 2,
+    };
+    const labeledWire: WireConnectivity = {
+      ...makeWire('W4', 'J1', '6', 'J2', '6'),
+      sourceRowIndex: 3,
+    };
+    const result = assignWireIdentities(
+      makeConnectivity([unkWire, labeledWire]),
+      makeTopology(),
+    );
+
+    const unkEntry = result.bySourceRowIndex.get(2);
+    assert.ok(unkEntry, 'UNK wire must still get an identity entry');
+    assert.ok(unkEntry!.internalWireId.startsWith('W'), 'UNK wire must have an internalWireId');
+    assert.equal(unkEntry!.customerWireId, undefined, 'UNK_ wireId must NOT become customerWireId');
+
+    const labeledEntry = result.bySourceRowIndex.get(3);
+    assert.ok(labeledEntry, 'labeled wire must have an identity entry');
+    assert.equal(labeledEntry!.customerWireId, 'W4', 'labeled wire must preserve customerWireId');
+  });
 });

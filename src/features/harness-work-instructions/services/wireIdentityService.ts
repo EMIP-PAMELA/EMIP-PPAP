@@ -49,8 +49,15 @@ export interface WireIdentityEntry {
 export interface WireIdentityResult {
   /** Entries in assignment order (mirrors sort order). */
   wires: WireIdentityEntry[];
-  /** O(1) lookup by original wireId string. */
+  /** O(1) lookup by original wireId string (mapKey). For wires with duplicate customer labels,
+   *  maps to the first occurrence. Use bySourceRowIndex for accurate per-physical-wire lookup. */
   byOriginalId: Map<string, WireIdentityEntry>;
+  /**
+   * T23.3: O(1) lookup by WireConnectivity.sourceRowIndex — always accurate even when multiple
+   * physical wires share the same customer label. Prefer this over byOriginalId in any context
+   * where the WireConnectivity object is available.
+   */
+  bySourceRowIndex: Map<number, WireIdentityEntry>;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +90,10 @@ export function assignWireIdentities(
   topology: HarnessTopologyResult,
 ): WireIdentityResult {
   const wires = connectivity.wires;
+
+  // T23.3: Auto-generated internal IDs (harnessConnectivityService fallback for rows whose
+  // source drawing had no wire label) must NOT be treated as customer-visible wire labels.
+  const AUTO_ID_RE = /^UNK_\d+$/;
 
   // ── 1. Build branch groups from topology multiWireEndpoints ─────────────
   // A "multi-wire endpoint" is a physical node (connector cavity) that
@@ -132,7 +143,8 @@ export function assignWireIdentities(
 
   // ── 4. Assign IDs in sorted order ───────────────────────────────────────
   const entries: WireIdentityEntry[] = [];
-  const byOriginalId = new Map<string, WireIdentityEntry>();
+  const byOriginalId    = new Map<string, WireIdentityEntry>();
+  const bySourceRowIndex = new Map<number, WireIdentityEntry>(); // T23.3
   const assigned = new Set<string>();
   let seq = 1;
 
@@ -143,7 +155,10 @@ export function assignWireIdentities(
       ? w.wireId
       : `_anon_${w.sourceRowIndex ?? i}`;
 
-    if (assigned.has(mapKey)) continue;
+    // T23.3: Skip only branch-group members already processed during group expansion.
+    // Duplicate-label non-branch wires are NOT skipped here — they are disambiguated
+    // in the else block below so each physical wire gets its own identity entry.
+    if (assigned.has(mapKey) && wireGroupKey.has(w.wireId)) continue;
 
     const groupKey = wireGroupKey.get(w.wireId);
 
@@ -159,25 +174,38 @@ export function assignWireIdentities(
       orderedGroup.forEach((wid, branchIdx) => {
         // Find the source wire to compute a stable key for this group member.
         const memberWire = indexed.find(({ w: mw }) => mw.wireId === wid);
+        const memberRowIdx = memberWire?.w.sourceRowIndex ?? branchIdx;
         const memberKey = wid && wid.trim()
           ? wid
-          : `_anon_${memberWire?.w.sourceRowIndex ?? branchIdx}`;
+          : `_anon_${memberRowIdx}`;
         if (assigned.has(memberKey)) return;
         const internalWireId = `${base}${String.fromCharCode(65 + branchIdx)}`; // A, B, C…
-        const customerWireId = wid.trim() || undefined;
+        // T23.3: Don't expose auto-generated UNK_ fallback IDs as customer-visible labels.
+        const customerWireId = (wid.trim() && !AUTO_ID_RE.test(wid.trim())) ? wid.trim() : undefined;
         const entry: WireIdentityEntry = { originalWireId: wid, internalWireId, customerWireId, mapKey: memberKey };
         entries.push(entry);
         byOriginalId.set(memberKey, entry);
+        if (memberWire) bySourceRowIndex.set(memberRowIdx, entry); // T23.3
         assigned.add(memberKey);
       });
     } else {
-      // Non-branch wire
+      // Non-branch wire.
+      // T23.3: Two physical wires may legitimately share a customer label (e.g. a branch pair
+      // where the drawing only labels one end). Rather than collapsing them, assign a compound
+      // mapKey using sourceRowIndex as a disambiguator so each instance gets its own entry.
+      let finalMapKey = mapKey;
+      if (assigned.has(finalMapKey)) {
+        finalMapKey = `${finalMapKey}_row${w.sourceRowIndex ?? i}`;
+        if (assigned.has(finalMapKey)) continue; // truly identical physical row — skip
+      }
       const internalWireId = `W${seq++}`;
-      const customerWireId = w.wireId.trim() || undefined;
-      const entry: WireIdentityEntry = { originalWireId: w.wireId, internalWireId, customerWireId, mapKey };
+      // T23.3: Don't expose auto-generated UNK_ fallback IDs as customer-visible labels.
+      const customerWireId = (w.wireId.trim() && !AUTO_ID_RE.test(w.wireId.trim())) ? w.wireId.trim() : undefined;
+      const entry: WireIdentityEntry = { originalWireId: w.wireId, internalWireId, customerWireId, mapKey: finalMapKey };
       entries.push(entry);
-      byOriginalId.set(mapKey, entry);
-      assigned.add(mapKey);
+      byOriginalId.set(finalMapKey, entry);
+      bySourceRowIndex.set(w.sourceRowIndex ?? i, entry); // T23.3
+      assigned.add(finalMapKey);
     }
   }
 
@@ -185,7 +213,8 @@ export function assignWireIdentities(
     total:            entries.length,
     branchGroups:     groups.size,
     withCustomerId:   entries.filter(e => e.customerWireId).length,
+    unlabeled:        entries.filter(e => !e.customerWireId).length,
   });
 
-  return { wires: entries, byOriginalId };
+  return { wires: entries, byOriginalId, bySourceRowIndex };
 }

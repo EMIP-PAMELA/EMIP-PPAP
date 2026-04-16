@@ -808,7 +808,7 @@ export default function HarnessConnectivityPanel({
                   activeResolveWireId={activeResolveWireId}
                   onActivateResolve={openResolve}
                   onResolveFormClose={closeResolve}
-                  wireIdentity={wireIdentities?.byOriginalId.get(wire.wireId)}
+                  wireIdentity={wireIdentities?.bySourceRowIndex.get(wire.sourceRowIndex) ?? wireIdentities?.byOriginalId.get(wire.wireId)}
                 />
               ))}
             </tbody>
