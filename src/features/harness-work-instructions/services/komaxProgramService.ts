@@ -43,11 +43,11 @@
  *   PARTIAL when not BLOCKED but missingFields or warnings are present.
  *   READY   when not BLOCKED and missingFields is empty and warnings is empty.
  *
- * Known limitations documented in missingFields:
- *   - Strip lengths: not present in WireEndpoint model — always operator-required.
- *   - Terminal/applicator part numbers: not present in model — operator-required
- *     for CRIMP, CRIMP_FOR_INSERTION, FERRULE_CRIMP endpoints.
- *   - Applicator/tooling assignments: out of scope for T18.
+ * T18.5 update:
+ *   - Strip lengths: resolved from ACI table when partNumber is present; otherwise operator-required.
+ *   - Terminal/applicator part numbers: operator-set or ACI-resolved; BLOCKED when missing for crimp ends.
+ *   - Process source (ACI_TABLE / OPERATOR / null) is surfaced per endpoint for UI display.
+ *   - Applicator/tooling assignments: out of scope for this phase.
  */
 
 import type { EffectiveHarnessState } from './effectiveHarnessModelService';
@@ -136,30 +136,42 @@ export function deriveProgramReadiness(args: {
 
 /**
  * Enumerates machine-critical fields that are absent for a cut-sheet row.
- * Used to populate KomaxWireProgram.missingFields.
- * Strip lengths and terminal part numbers are never present in the current
- * model — these are explicitly flagged as operator-required.
+ * Only flags fields that are ACTUALLY missing — already-resolved values
+ * (via ACI lookup or operator input) are NOT reported as missing.
+ *
+ * T18.5: now accepts the actual resolved values so that ACI-filled
+ * strip lengths and operator-set part numbers do not appear as missing.
  */
-export function summarizeMissingProgramFields(
-  leftProcessType:  string | null,
-  rightProcessType: string | null,
-): string[] {
+export function summarizeMissingProgramFields(args: {
+  leftProcessType:   string | null;
+  rightProcessType:  string | null;
+  leftPartNumber:    string | null | undefined;
+  rightPartNumber:   string | null | undefined;
+  stripLengthLeft:   string | null | undefined;
+  stripLengthRight:  string | null | undefined;
+}): string[] {
+  const {
+    leftProcessType, rightProcessType,
+    leftPartNumber,  rightPartNumber,
+    stripLengthLeft, stripLengthRight,
+  } = args;
+
   const missing: string[] = [];
 
   if (leftProcessType !== null) {
-    if (STRIP_REQUIRED_PROCESS_TYPES.has(leftProcessType)) {
+    if (STRIP_REQUIRED_PROCESS_TYPES.has(leftProcessType) && !stripLengthLeft) {
       missing.push('stripLengthLeft (operator-required)');
     }
-    if (CRIMP_PROCESS_TYPES.has(leftProcessType)) {
+    if (CRIMP_PROCESS_TYPES.has(leftProcessType) && !leftPartNumber) {
       missing.push('leftPartNumber (operator-required)');
     }
   }
 
   if (rightProcessType !== null) {
-    if (STRIP_REQUIRED_PROCESS_TYPES.has(rightProcessType)) {
+    if (STRIP_REQUIRED_PROCESS_TYPES.has(rightProcessType) && !stripLengthRight) {
       missing.push('stripLengthRight (operator-required)');
     }
-    if (CRIMP_PROCESS_TYPES.has(rightProcessType)) {
+    if (CRIMP_PROCESS_TYPES.has(rightProcessType) && !rightPartNumber) {
       missing.push('rightPartNumber (operator-required)');
     }
   }
@@ -188,11 +200,26 @@ export function buildWireProgram(
   const leftProcessType  = deriveEndpointProcessType(row.fromTerminationType ?? null);
   const rightProcessType = deriveEndpointProcessType(row.toTerminationType   ?? null);
 
+  // T18.5: use actual resolved values from enriched cut-sheet row
+  const leftPartNumber   = row.fromPartNumber   ?? null;
+  const rightPartNumber  = row.toPartNumber     ?? null;
+  const stripLengthLeft  = row.fromStripLength  ?? null;
+  const stripLengthRight = row.toStripLength    ?? null;
+  const leftProcessSource  = row.fromProcessSource ?? null;
+  const rightProcessSource = row.toProcessSource   ?? null;
+
   const printRequired = Boolean(row.customerWireId && row.customerWireId.trim() !== '');
   const printText     = printRequired ? (row.customerWireId ?? null) : null;
 
-  // ── missingFields (when process types are resolvable) ──────────────────
-  const missingFields: string[] = summarizeMissingProgramFields(leftProcessType, rightProcessType);
+  // ── missingFields ───────────────────────────────────────────────────────────
+  const missingFields: string[] = summarizeMissingProgramFields({
+    leftProcessType,
+    rightProcessType,
+    leftPartNumber,
+    rightPartNumber,
+    stripLengthLeft,
+    stripLengthRight,
+  });
 
   // Unresolvable endpoints — note explicitly
   if (leftProcessType === null) {
@@ -210,7 +237,7 @@ export function buildWireProgram(
     );
   }
 
-  // ── warnings ────────────────────────────────────────────────────────────
+  // ── warnings ───────────────────────────────────────────────────────────
   const warnings: string[] = [];
 
   if (row.topology === 'BRANCH_DOUBLE_CRIMP') {
@@ -229,8 +256,8 @@ export function buildWireProgram(
     wireGauge:        row.wireGauge,
     leftProcessType,
     rightProcessType,
-    leftPartNumber:   null, // not in current model
-    rightPartNumber:  null, // not in current model
+    leftPartNumber,
+    rightPartNumber,
     missingFields,
     warnings,
   });
@@ -247,10 +274,12 @@ export function buildWireProgram(
     rightProcessType,
     leftTerminationType:  row.fromTerminationType ?? null,
     rightTerminationType: row.toTerminationType   ?? null,
-    leftPartNumber:       null,
-    rightPartNumber:      null,
-    stripLengthLeft:      null,
-    stripLengthRight:     null,
+    leftPartNumber,
+    rightPartNumber,
+    stripLengthLeft,
+    stripLengthRight,
+    leftProcessSource,
+    rightProcessSource,
     printRequired,
     printText,
     topology:            row.topology,

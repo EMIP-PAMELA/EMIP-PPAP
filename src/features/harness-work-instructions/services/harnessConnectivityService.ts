@@ -21,6 +21,15 @@ import type { LengthUnit } from './unitInferenceService';
 // HC-BOM Data Model
 // ---------------------------------------------------------------------------
 
+/**
+ * Tracks which authority layer provided the machine process data
+ * (partNumber + stripLength) for this endpoint.
+ *   EXTRACTED — parsed directly from the source document.
+ *   ACI_TABLE  — auto-resolved via the ACI lookup table (T18.5).
+ *   OPERATOR   — set explicitly by the operator in the editor.
+ */
+export type EndpointProcessSource = 'EXTRACTED' | 'ACI_TABLE' | 'OPERATOR';
+
 export type EndpointTerminationType =
   | 'UNKNOWN'
   | 'CONNECTOR_PIN'
@@ -43,6 +52,14 @@ export interface WireEndpoint {
   treatment: string | null;
   /** Explicit termination classification derived from T2 or operator edits. */
   terminationType?: EndpointTerminationType | null;
+
+  // T18.5: Machine process enrichment fields
+  /** Terminal or ferrule part number for this endpoint. Operator-set or ACI-resolved. */
+  partNumber?: string | null;
+  /** Required strip length for machine setup (e.g. "8.5 mm"). Operator-set or ACI-resolved. */
+  stripLength?: string | null;
+  /** Tracks which authority layer provided partNumber / stripLength. */
+  processSource?: EndpointProcessSource | null;
 }
 
 export interface WireConnectivity {

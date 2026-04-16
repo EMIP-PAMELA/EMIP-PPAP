@@ -1,0 +1,31 @@
+{
+  "_schema": "T18.5 ACI Strip Length Table v1",
+  "_comment": "Maps ACI identifiers to required wire strip lengths in millimetres. Derive values from Komax applicator setup sheets or terminal manufacturer specifications. Partial population is safe — unmatched ACIs remain operator-required. All stripLengthMm values are numeric (float). An optional strippingNote provides human context.",
+  "entries": [
+    {
+      "aci": "ACI-TERM-TE-14-16",
+      "stripLengthMm": 8.5,
+      "strippingNote": "TE 14-16 AWG crimp — standard insulation strip"
+    },
+    {
+      "aci": "ACI-TERM-TE-16-18",
+      "stripLengthMm": 7.0,
+      "strippingNote": "TE 16-18 AWG crimp"
+    },
+    {
+      "aci": "ACI-TERM-TE-18-20",
+      "stripLengthMm": 6.0,
+      "strippingNote": "TE 18-20 AWG crimp"
+    },
+    {
+      "aci": "ACI-FERRULE-WAGO-16",
+      "stripLengthMm": 9.0,
+      "strippingNote": "WAGO 216 ferrule — full insertion depth"
+    },
+    {
+      "aci": "ACI-FERRULE-TE-18",
+      "stripLengthMm": 8.0,
+      "strippingNote": "TE 18 AWG ferrule"
+    }
+  ]
+}

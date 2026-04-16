@@ -154,10 +154,14 @@ interface WireFormState {
   fromCavity: string;
   fromTreatment: string;
   fromTermination: EndpointTerminationType | '';
+  fromPartNumber: string;
+  fromStripLength: string;
   toComponent: string;
   toCavity: string;
   toTreatment: string;
   toTermination: EndpointTerminationType | '';
+  toPartNumber: string;
+  toStripLength: string;
   topology: WireTopology | '';
   branchSrcComp: string;
   branchSrcCav: string;
@@ -171,7 +175,9 @@ function emptyForm(): WireFormState {
   return {
     wireId: '', length: '', gauge: '', color: '',
     fromComponent: '', fromCavity: '', fromTreatment: '', fromTermination: '',
+    fromPartNumber: '', fromStripLength: '',
     toComponent: '', toCavity: '', toTreatment: '', toTermination: '',
+    toPartNumber: '', toStripLength: '',
     topology: '', branchSrcComp: '', branchSrcCav: '', branchSecCav: '',
     branchFerrulePN: '', branchTerminalPN: '', reason: '',
   };
@@ -194,10 +200,14 @@ function wireToForm(wire: WireConnectivity | OperatorWireModel): WireFormState {
     fromCavity:     from.cavity    ?? '',
     fromTreatment:  from.treatment ?? '',
     fromTermination: defaultTerminationValue(from),
+    fromPartNumber:  from.partNumber  ?? '',
+    fromStripLength: from.stripLength ?? '',
     toComponent:    to.component   ?? '',
     toCavity:       to.cavity      ?? '',
     toTreatment:    to.treatment   ?? '',
     toTermination:  defaultTerminationValue(to),
+    toPartNumber:   to.partNumber  ?? '',
+    toStripLength:  to.stripLength ?? '',
     topology:       opWire?.topology ?? '',
     branchSrcComp:  branch?.sharedSourceComponent  ?? '',
     branchSrcCav:   branch?.sharedSourceCavity     ?? '',
@@ -240,16 +250,22 @@ function formToOperatorWire(
     gauge:       form.gauge.trim() || null,
     color:       form.color.trim() || null,
     from: {
-      component: form.fromComponent.trim() || null,
-      cavity:    form.fromCavity.trim()    || null,
-      treatment: form.fromTreatment.trim() || null,
+      component:       form.fromComponent.trim()  || null,
+      cavity:          form.fromCavity.trim()     || null,
+      treatment:       form.fromTreatment.trim()  || null,
       terminationType: fromTermination,
+      partNumber:      form.fromPartNumber.trim()  || null,
+      stripLength:     form.fromStripLength.trim() || null,
+      processSource:   (form.fromPartNumber.trim() || form.fromStripLength.trim()) ? 'OPERATOR' : undefined,
     },
     to: {
-      component: form.toComponent.trim() || null,
-      cavity:    form.toCavity.trim()    || null,
-      treatment: form.toTreatment.trim() || null,
+      component:       form.toComponent.trim()    || null,
+      cavity:          form.toCavity.trim()       || null,
+      treatment:       form.toTreatment.trim()    || null,
       terminationType: toTermination,
+      partNumber:      form.toPartNumber.trim()    || null,
+      stripLength:     form.toStripLength.trim()   || null,
+      processSource:   (form.toPartNumber.trim() || form.toStripLength.trim()) ? 'OPERATOR' : undefined,
     },
     topology,
     branch,
@@ -380,6 +396,14 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
             </select>
             {errors.fromTermination && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromTermination}</p>}
           </div>
+          <div>
+            <label className={labelCls}>Part Number <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
+            <input value={form.fromPartNumber} onChange={set('fromPartNumber')} className={inputCls()} placeholder="e.g. 929504-1" />
+          </div>
+          <div>
+            <label className={labelCls}>Strip Length <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
+            <input value={form.fromStripLength} onChange={set('fromStripLength')} className={inputCls()} placeholder="e.g. 8.5 mm" />
+          </div>
         </div>
       </div>
 
@@ -408,6 +432,14 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
               ))}
             </select>
             {errors.toTermination && <p className="text-[10px] text-red-600 mt-0.5">{errors.toTermination}</p>}
+          </div>
+          <div>
+            <label className={labelCls}>Part Number <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
+            <input value={form.toPartNumber} onChange={set('toPartNumber')} className={inputCls()} placeholder="e.g. 929504-1" />
+          </div>
+          <div>
+            <label className={labelCls}>Strip Length <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
+            <input value={form.toStripLength} onChange={set('toStripLength')} className={inputCls()} placeholder="e.g. 8.5 mm" />
           </div>
         </div>
       </div>

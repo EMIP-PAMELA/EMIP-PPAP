@@ -1,0 +1,41 @@
+{
+  "_schema": "T18.5 ACI Part Lookup v1",
+  "_comment": "Maps terminal/ferrule/connector terminal part numbers to ACI (Applicator Component Identifier). Populate from manufacturer applicator data sheets. Partial population is safe — unmatched part numbers remain operator-required. Keys are normalised (trimmed, uppercased). Aliases allow alternate PN formats for the same physical part.",
+  "entries": [
+    {
+      "partNumber": "1-963232-1",
+      "partNumberAliases": ["196323-21", "963232-1"],
+      "aci": "ACI-TERM-TE-14-16",
+      "description": "TE Connectivity 14-16 AWG female terminal",
+      "terminationType": "TERMINAL"
+    },
+    {
+      "partNumber": "3-520170-2",
+      "partNumberAliases": ["352017-02"],
+      "aci": "ACI-FERRULE-WAGO-16",
+      "description": "WAGO 216 Series 16 AWG ferrule",
+      "terminationType": "FERRULE"
+    },
+    {
+      "partNumber": "929504-1",
+      "partNumberAliases": [],
+      "aci": "ACI-TERM-TE-18-20",
+      "description": "TE Connectivity 18-20 AWG female terminal",
+      "terminationType": "TERMINAL"
+    },
+    {
+      "partNumber": "61729-1",
+      "partNumberAliases": ["0617291"],
+      "aci": "ACI-TERM-TE-16-18",
+      "description": "TE Connectivity 16-18 AWG female terminal",
+      "terminationType": "TERMINAL"
+    },
+    {
+      "partNumber": "3-1418448-2",
+      "partNumberAliases": ["1418448-2"],
+      "aci": "ACI-FERRULE-TE-18",
+      "description": "TE Connectivity 18 AWG ferrule",
+      "terminationType": "FERRULE"
+    }
+  ]
+}

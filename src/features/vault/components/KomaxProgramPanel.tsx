@@ -77,6 +77,18 @@ function ReadinessBadge({ r }: { r: KomaxProgramReadiness }) {
 }
 
 // ---------------------------------------------------------------------------
+// Process source badge (T18.5)
+// ---------------------------------------------------------------------------
+
+function ProcessSourceBadge({ source }: { source?: string | null }) {
+  if (!source) return <span className="text-gray-300 text-[9px]">(Missing)</span>;
+  if (source === 'ACI_TABLE') return <span className="rounded bg-teal-100 text-teal-700 px-1 py-0.5 text-[9px] font-semibold">(ACI)</span>;
+  if (source === 'OPERATOR')  return <span className="rounded bg-green-100 text-green-700 px-1 py-0.5 text-[9px] font-semibold">(Op)</span>;
+  if (source === 'EXTRACTED') return <span className="rounded bg-blue-100 text-blue-700 px-1 py-0.5 text-[9px] font-semibold">(Ext)</span>;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Wire program row
 // ---------------------------------------------------------------------------
 
@@ -117,7 +129,24 @@ function WireRow({ wp }: { wp: KomaxWireProgram }) {
       </tr>
       {expanded && (
         <tr className="bg-amber-50">
-          <td colSpan={11} className="px-3 py-1.5 text-[10px]">
+          <td colSpan={11} className="px-3 py-1.5 text-[10px] space-y-1">
+            {/* T18.5: Part numbers + strip lengths with source badges */}
+            <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-gray-600">
+              {(wp.leftPartNumber || wp.stripLengthLeft || wp.leftProcessSource) && (
+                <span className="inline-flex items-center gap-1">
+                  L-PN: <strong>{wp.leftPartNumber ?? '—'}</strong>
+                  <ProcessSourceBadge source={wp.leftProcessSource} />
+                  {wp.stripLengthLeft && <span className="ml-1 text-teal-700">strip: {wp.stripLengthLeft}</span>}
+                </span>
+              )}
+              {(wp.rightPartNumber || wp.stripLengthRight || wp.rightProcessSource) && (
+                <span className="inline-flex items-center gap-1">
+                  R-PN: <strong>{wp.rightPartNumber ?? '—'}</strong>
+                  <ProcessSourceBadge source={wp.rightProcessSource} />
+                  {wp.stripLengthRight && <span className="ml-1 text-teal-700">strip: {wp.stripLengthRight}</span>}
+                </span>
+              )}
+            </div>
             {wp.missingFields.length > 0 && (
               <div className="mb-1">
                 <span className="font-semibold text-amber-700">Missing: </span>
@@ -232,6 +261,28 @@ export default function KomaxProgramPanel({ effectiveState }: KomaxProgramPanelP
         },
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result.wirePrograms.length, skuKey]);
+
+  // T18.5: Fire ENDPOINT_PROCESS_ENRICHED when ACI lookup has filled any endpoint.
+  const enrichmentAuditFiredRef = useRef(false);
+  useEffect(() => {
+    if (enrichmentAuditFiredRef.current || !skuKey) return;
+    const aciFilledWires = result.wirePrograms.filter(
+      w => w.leftProcessSource === 'ACI_TABLE' || w.rightProcessSource === 'ACI_TABLE',
+    );
+    if (aciFilledWires.length === 0) return;
+    enrichmentAuditFiredRef.current = true;
+    void recordSkuAuditEvent({
+      skuKey,
+      eventType: 'ENDPOINT_PROCESS_ENRICHED',
+      actorType: 'SYSTEM',
+      summary:   `ACI lookup resolved strip lengths for ${aciFilledWires.length} endpoint(s)`,
+      payload:   {
+        machine:           MACHINE_KOMAX,
+        aciEnrichedWires:  aciFilledWires.map(w => w.internalWireId),
+      },
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result.wirePrograms.length, skuKey]);
 

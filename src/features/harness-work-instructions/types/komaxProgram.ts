@@ -84,10 +84,19 @@ export interface KomaxWireProgram {
 
   /**
    * Strip length at the left end (machine setting).
-   * Not yet present in the data model — operator-required.
+   * Null = not in model or not resolved from ACI — operator-required.
    */
   stripLengthLeft?: string | null;
   stripLengthRight?: string | null;
+
+  /**
+   * T18.5: Authority source for left/right endpoint process data.
+   * 'ACI_TABLE' = auto-resolved from ACI lookup.
+   * 'OPERATOR'  = explicitly set by operator.
+   * null        = not available / not enriched.
+   */
+  leftProcessSource?:  string | null;
+  rightProcessSource?: string | null;
 
   /** True when a machine-printed wire label is required for this wire. */
   printRequired: boolean;

@@ -223,8 +223,10 @@ describe('komaxProgramService', () => {
   // -------------------------------------------------------------------------
 
   describe('C: summarizeMissingProgramFields', () => {
+    const base = { leftPartNumber: null, rightPartNumber: null, stripLengthLeft: null, stripLengthRight: null };
+
     it('CUT_STRIP + CUT_STRIP → strip lengths only (no part numbers)', () => {
-      const m = summarizeMissingProgramFields('CUT_STRIP', 'CUT_STRIP');
+      const m = summarizeMissingProgramFields({ ...base, leftProcessType: 'CUT_STRIP', rightProcessType: 'CUT_STRIP' });
       assert.ok(m.some(f => f.includes('stripLengthLeft')));
       assert.ok(m.some(f => f.includes('stripLengthRight')));
       assert.ok(!m.some(f => f.includes('leftPartNumber')));
@@ -232,24 +234,34 @@ describe('komaxProgramService', () => {
     });
 
     it('CRIMP left → strip + part number for left end', () => {
-      const m = summarizeMissingProgramFields('CRIMP', null);
+      const m = summarizeMissingProgramFields({ ...base, leftProcessType: 'CRIMP', rightProcessType: null });
       assert.ok(m.some(f => f.includes('stripLengthLeft')));
       assert.ok(m.some(f => f.includes('leftPartNumber')));
     });
 
     it('FERRULE_CRIMP right → strip + part number for right end', () => {
-      const m = summarizeMissingProgramFields(null, 'FERRULE_CRIMP');
+      const m = summarizeMissingProgramFields({ ...base, leftProcessType: null, rightProcessType: 'FERRULE_CRIMP' });
       assert.ok(m.some(f => f.includes('stripLengthRight')));
       assert.ok(m.some(f => f.includes('rightPartNumber')));
     });
 
     it('SPLICE → no missing fields (no strip length or part number needed)', () => {
-      const m = summarizeMissingProgramFields('SPLICE', 'SPLICE');
+      const m = summarizeMissingProgramFields({ ...base, leftProcessType: 'SPLICE', rightProcessType: 'SPLICE' });
       assert.equal(m.length, 0);
     });
 
     it('both null → no missing fields (unresolvable reported elsewhere)', () => {
-      const m = summarizeMissingProgramFields(null, null);
+      const m = summarizeMissingProgramFields({ ...base, leftProcessType: null, rightProcessType: null });
+      assert.equal(m.length, 0);
+    });
+
+    it('strip length present → not reported as missing', () => {
+      const m = summarizeMissingProgramFields({ ...base, leftProcessType: 'CUT_STRIP', rightProcessType: 'CUT_STRIP', stripLengthLeft: '8.5 mm', stripLengthRight: '8.5 mm' });
+      assert.equal(m.length, 0);
+    });
+
+    it('partNumber present for CRIMP → not reported as missing', () => {
+      const m = summarizeMissingProgramFields({ ...base, leftProcessType: 'CRIMP', rightProcessType: 'CRIMP', leftPartNumber: '929504-1', rightPartNumber: '929504-1', stripLengthLeft: '6.0 mm', stripLengthRight: '6.0 mm' });
       assert.equal(m.length, 0);
     });
   });

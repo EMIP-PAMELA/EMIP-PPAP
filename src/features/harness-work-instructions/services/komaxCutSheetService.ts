@@ -18,7 +18,7 @@
  */
 
 import type { EffectiveHarnessState } from './effectiveHarnessModelService';
-import type { WireConnectivity } from './harnessConnectivityService';
+import type { WireConnectivity, EndpointProcessSource } from './harnessConnectivityService';
 import { MACHINE_KOMAX } from '../../../constants/manufacturing';
 
 // ---------------------------------------------------------------------------
@@ -41,10 +41,22 @@ export interface KomaxCutSheetRow {
    * STRIP_ONLY is mapped to 'STRIP' for operator readability.
    */
   fromTerminationType?: string;
+  /** T18.5: Terminal/ferrule part number at the FROM end. Null = not available. */
+  fromPartNumber?:     string | null;
+  /** T18.5: Required strip length at the FROM end (e.g. "8.5 mm"). Null = not available. */
+  fromStripLength?:    string | null;
+  /** T18.5: Authority that provided fromPartNumber / fromStripLength. */
+  fromProcessSource?:  EndpointProcessSource | null;
 
   toComponent?:        string;
   toCavity?:           string;
   toTerminationType?:  string;
+  /** T18.5: Terminal/ferrule part number at the TO end. Null = not available. */
+  toPartNumber?:       string | null;
+  /** T18.5: Required strip length at the TO end. Null = not available. */
+  toStripLength?:      string | null;
+  /** T18.5: Authority that provided toPartNumber / toStripLength. */
+  toProcessSource?:    EndpointProcessSource | null;
 
   /** Wire-level topology classification. */
   topology:            'NORMAL' | 'BRANCH_DOUBLE_CRIMP' | 'SPLICE';
@@ -226,9 +238,15 @@ export function buildKomaxCutSheet(
       fromComponent:       wire.from.component    ?? undefined,
       fromCavity:          wire.from.cavity       ?? undefined,
       fromTerminationType: mapTermType(wire.from.terminationType),
+      fromPartNumber:      wire.from.partNumber   ?? null,
+      fromStripLength:     wire.from.stripLength  ?? null,
+      fromProcessSource:   wire.from.processSource ?? null,
       toComponent:         wire.to.component      ?? undefined,
       toCavity:            wire.to.cavity         ?? undefined,
       toTerminationType:   mapTermType(wire.to.terminationType),
+      toPartNumber:        wire.to.partNumber     ?? null,
+      toStripLength:       wire.to.stripLength    ?? null,
+      toProcessSource:     wire.to.processSource  ?? null,
       topology,
       notes,
     });

@@ -57,6 +57,7 @@ const EVENT_CONFIG: Record<SkuAuditEventType, { label: string; color: string }> 
   KOMAX_BATCHES_GENERATED:     { label: 'Komax Batches',            color: 'bg-violet-100 text-violet-800' },
   KOMAX_PROGRAM_GENERATED:     { label: 'Program Built',            color: 'bg-violet-200 text-violet-900' },
   KOMAX_PROGRAM_EXPORTED:      { label: 'Program Exported',         color: 'bg-violet-200 text-violet-900' },
+  ENDPOINT_PROCESS_ENRICHED:   { label: 'ACI Enriched',             color: 'bg-teal-100 text-teal-800' },
   SKU_READY_TO_COMMIT:         { label: 'Ready to Commit',          color: 'bg-emerald-200 text-emerald-900' },
   SKU_COMMITTED:               { label: 'Committed',                color: 'bg-emerald-600 text-white' },
 };

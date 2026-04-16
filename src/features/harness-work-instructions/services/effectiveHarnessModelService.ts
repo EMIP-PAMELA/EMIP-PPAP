@@ -31,6 +31,7 @@ import { revalidateWithOverrides } from './wireOperatorResolutionService';
 import { buildEffectiveSkuHarnessModel } from './skuModelEditService';
 import { analyzeHarnessTopology, type HarnessTopologyResult } from './harnessTopologyService';
 import { assignWireIdentities, type WireIdentityResult } from './wireIdentityService';
+import { enrichConnectivity } from './endpointEnrichmentService';
 
 // ---------------------------------------------------------------------------
 // Exports
@@ -175,6 +176,18 @@ export function buildEffectiveHarnessState(args: {
     effectiveValidation   = t12.validation;
     effectiveConfidence   = t12.confidence;
     effectiveDecision     = t12.decision;
+  }
+
+  // ── T18.5. Endpoint enrichment: ACI-derived partNumber / stripLength ──────
+  if (effectiveConnectivity) {
+    const { enriched, summary: enrichSummary } = enrichConnectivity(effectiveConnectivity);
+    effectiveConnectivity = enriched;
+    if (enrichSummary.aciStripLengthFilled > 0) {
+      console.log('[T18.5 ENDPOINT ENRICHMENT]', {
+        aciStripLengthFilled:  enrichSummary.aciStripLengthFilled,
+        unresolvedPartNumbers: enrichSummary.unresolvedPartNumbers,
+      });
+    }
   }
 
   // ── T13. Topology: graph analysis on effective connectivity ────────────
