@@ -1813,6 +1813,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   operatorOverrides={wireOverrides[selectedId ?? ''] ?? []}
                   onOverrideSubmit={override => handleOverrideSubmit(selectedId ?? '', override)}
                   resolvedDecision={effectiveState?.effectiveDecision ?? resolvedOutputs[selectedId ?? '']?.resolvedDecision ?? null}
+                  topology={effectiveState?.effectiveTopology ?? null}
                 />
               ) : null}
 

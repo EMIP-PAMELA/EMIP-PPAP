@@ -29,6 +29,7 @@ import type { HarnessDecisionResult } from './harnessDecisionService';
 import type { OperatorWireModel } from './skuModelEditService';
 import { revalidateWithOverrides } from './wireOperatorResolutionService';
 import { buildEffectiveSkuHarnessModel } from './skuModelEditService';
+import { analyzeHarnessTopology, type HarnessTopologyResult } from './harnessTopologyService';
 
 // ---------------------------------------------------------------------------
 // Exports
@@ -56,7 +57,13 @@ export interface EffectiveHarnessState {
    */
   unresolvedQuestions: UnresolvedQuestion[];
   /**
-   * True when no blocking unresolved questions remain.
+   * T13: Graph-based topology analysis of effective connectivity.
+   * Null when no connectivity data is available.
+   */
+  effectiveTopology: HarnessTopologyResult | null;
+  /**
+   * True when no blocking unresolved questions remain AND no HIGH-confidence
+   * blocking topology warnings exist.
    * Does NOT check required document fields — callers must combine with
    * presence of confirmedDocumentType, confirmedPartNumber, etc.
    */
@@ -163,8 +170,16 @@ export function buildEffectiveHarnessState(args: {
     effectiveDecision     = t12.decision;
   }
 
-  // ── C. Readiness: no blocking unresolved questions remain ────────────────
-  const readyToCommit = unresolvedQuestions.every(q => !q.blocksCommit);
+  // ── T13. Topology: graph analysis on effective connectivity ────────────
+  const effectiveTopology: HarnessTopologyResult | null = effectiveConnectivity
+    ? analyzeHarnessTopology({ connectivity: effectiveConnectivity })
+    : null;
+
+  // ── C. Readiness: no blocking questions AND no HIGH-confidence blocking topology warnings ──
+  const hasBlockingTopology =
+    effectiveTopology?.warnings.some(w => w.blocksCommit && w.confidence === 'HIGH') ?? false;
+  const readyToCommit =
+    unresolvedQuestions.every(q => !q.blocksCommit) && !hasBlockingTopology;
 
   console.log('[T12.4 EFFECTIVE MODEL]', {
     usingEffectiveConnectivity: hasT11 || hasT12,
@@ -177,6 +192,8 @@ export function buildEffectiveHarnessState(args: {
     t12DeleteCount:             skuDeletedWireIds.length,
     unresolvedQuestionCount:    unresolvedQuestions.length,
     blockingCount:              unresolvedQuestions.filter(q => q.blocksCommit).length,
+    topologyWarningCount:       effectiveTopology?.warnings.length ?? 0,
+    topologyBlockingCount:      effectiveTopology?.warnings.filter(w => w.blocksCommit).length ?? 0,
     readyToCommit,
   });
 
@@ -185,6 +202,7 @@ export function buildEffectiveHarnessState(args: {
     effectiveValidation,
     effectiveConfidence,
     effectiveDecision,
+    effectiveTopology,
     effectiveDocumentType,
     effectiveDocTypeSource,
     effectivePartNumber:    analysis.proposedPartNumber    ?? null,

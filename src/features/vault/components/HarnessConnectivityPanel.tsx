@@ -28,6 +28,7 @@ import type {
 } from '@/src/features/harness-work-instructions/services/harnessReconciliationService';
 import type { HarnessDecisionResult } from '@/src/features/harness-work-instructions/services/harnessDecisionService';
 import type { WireOperatorOverride, WireResolutionMode } from '@/src/features/vault/types/ingestionReview';
+import type { HarnessTopologyResult, TopologyWarning } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -481,6 +482,95 @@ function WireEvidenceRow({
 }
 
 // ---------------------------------------------------------------------------
+// T13: Topology issues sub-component
+// ---------------------------------------------------------------------------
+
+const WARNING_CODE_LABELS: Record<string, { label: string; bg: string; text: string }> = {
+  MISSING_WIRE:      { label: 'Missing Wire',       bg: 'bg-rose-100',   text: 'text-rose-800' },
+  DANGLING_ENDPOINT: { label: 'Dangling Endpoint',  bg: 'bg-orange-100', text: 'text-orange-800' },
+  UNDECLARED_BRANCH: { label: 'Undeclared Branch',  bg: 'bg-amber-100',  text: 'text-amber-800' },
+  ISOLATED_SUBGRAPH: { label: 'Isolated Subgraph',  bg: 'bg-purple-100', text: 'text-purple-800' },
+};
+
+function TopologyIssuesSection({ topology }: { topology: HarnessTopologyResult }) {
+  const blocking = topology.warnings.filter(w => w.blocksCommit && w.confidence === 'HIGH');
+  const advisory = topology.warnings.filter(w => !w.blocksCommit || w.confidence !== 'HIGH');
+  const missingCount  = topology.missingWireCandidates.length;
+  const danglingCount = topology.danglingEndpoints.length;
+
+  return (
+    <div className="rounded-lg border border-rose-200 bg-rose-50/60 px-2.5 py-2 space-y-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] font-semibold text-rose-800">Topology Issues</span>
+        {blocking.length > 0 && (
+          <span className="rounded-full bg-rose-600 text-white px-2 py-0.5 text-[10px] font-semibold">
+            {blocking.length} blocking
+          </span>
+        )}
+        {missingCount > 0 && (
+          <span className="rounded-full bg-rose-100 text-rose-700 px-2 py-0.5 text-[10px] font-semibold">
+            {missingCount} missing wire{missingCount > 1 ? 's' : ''}
+          </span>
+        )}
+        {danglingCount > 0 && (
+          <span className="rounded-full bg-orange-100 text-orange-700 px-2 py-0.5 text-[10px] font-semibold">
+            {danglingCount} dangling
+          </span>
+        )}
+      </div>
+
+      {/* Missing wire candidates */}
+      {topology.missingWireCandidates.length > 0 && (
+        <div className="space-y-1">
+          {topology.missingWireCandidates.map((c, i) => (
+            <div key={i}
+              className="flex items-start gap-1.5 rounded bg-white border border-rose-200 px-2 py-1 text-[10px]">
+              <span className="rounded-full bg-rose-100 text-rose-700 px-1.5 py-0.5 font-semibold shrink-0">
+                MISSING PIN
+              </span>
+              <span className="text-gray-700 leading-snug">
+                <strong>{c.component}</strong> pin <strong>{c.missingCavity}</strong>
+                {' '}<span className="text-gray-400">— known: {c.knownCavities.join(', ')}</span>
+              </span>
+              <span className={`ml-auto shrink-0 rounded-full px-1.5 py-0.5 font-semibold ${
+                c.confidence === 'HIGH' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
+              }`}>
+                {c.confidence}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* All other warnings */}
+      {topology.warnings
+        .filter(w => w.code !== 'MISSING_WIRE')
+        .map((w, i) => {
+          const style = WARNING_CODE_LABELS[w.code] ?? { label: w.code, bg: 'bg-gray-100', text: 'text-gray-700' };
+          return (
+            <div key={i}
+              className="flex items-start gap-1.5 rounded bg-white border border-gray-200 px-2 py-1 text-[10px]">
+              <span className={`rounded-full px-1.5 py-0.5 font-semibold shrink-0 ${style.bg} ${style.text}`}>
+                {style.label}
+              </span>
+              <span className="text-gray-700 leading-snug flex-1">{w.message}</span>
+              {w.blocksCommit && w.confidence === 'HIGH' && (
+                <span className="ml-auto shrink-0 rounded-full bg-rose-100 text-rose-700 px-1.5 py-0.5 font-semibold">
+                  BLOCKS
+                </span>
+              )}
+            </div>
+          );
+        })}
+
+      {advisory.length === 0 && blocking.length === 0 && (
+        <p className="text-[10px] text-rose-700 italic">No topology details available.</p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -494,6 +584,8 @@ export interface HarnessConnectivityPanelProps {
   onOverrideSubmit?: (override: WireOperatorOverride) => void;
   /** T11: Recomputed decision after overrides — for resolved banner. */
   resolvedDecision?: HarnessDecisionResult | null;
+  /** T13: Topology analysis result — missing wires, branches, isolated groups. */
+  topology?: HarnessTopologyResult | null;
 }
 
 export default function HarnessConnectivityPanel({
@@ -503,6 +595,7 @@ export default function HarnessConnectivityPanel({
   operatorOverrides,
   onOverrideSubmit,
   resolvedDecision,
+  topology,
 }: HarnessConnectivityPanelProps) {
   const model = connectivity ?? harnessConnectivity ?? null;
   const overrideMap = new Map((operatorOverrides ?? []).map(o => [o.wireId, o]));
@@ -642,6 +735,11 @@ export default function HarnessConnectivityPanel({
             {unresolved} unresolved
           </span>
         </div>
+
+        {/* ── T13: Topology Issues ─────────────────────────────────── */}
+        {topology && topology.warnings.length > 0 && (
+          <TopologyIssuesSection topology={topology} />
+        )}
 
         {/* ── Unresolved wire IDs callout ─────────────────────────── */}
         {unresolvedWires.length > 0 && (

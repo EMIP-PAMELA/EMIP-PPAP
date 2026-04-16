@@ -1,0 +1,454 @@
+/**
+ * Harness Topology Service — Phase T13
+ *
+ * Graph-based, deterministic topology analysis of harness connectivity.
+ *
+ * Detections:
+ *   A. Missing wire candidates  — gap in connector pin numeric sequence
+ *   B. Undeclared branch        — same CONNECTOR_PIN node on >1 wire without declared topology
+ *   C. Isolated subgraphs       — disconnected groups of wires (union-find)
+ *   D. Dangling endpoints       — wire with one connected end and one bare/unidentified end
+ *
+ * Governance:
+ *   - Pure function. No I/O, no DB, no side effects. Never throws.
+ *   - Does NOT modify original connectivity data.
+ *   - Does NOT use AI or probabilistic inference.
+ *   - STRIP_ONLY, FERRULE, RING, SPADE, RECEPTACLE, TERMINAL, GROUND are valid open ends.
+ *   - Only HIGH confidence issues may block commit.
+ *   - ISOLATED_SUBGRAPH is always WARNING only (may be intentional split harness).
+ */
+
+import type {
+  HarnessConnectivityResult,
+  WireConnectivity,
+  WireEndpoint,
+  EndpointTerminationType,
+} from './harnessConnectivityService';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type TopologyConfidence = 'HIGH' | 'MEDIUM' | 'LOW';
+
+export type TopologyWarningCode =
+  | 'MISSING_WIRE'
+  | 'DANGLING_ENDPOINT'
+  | 'UNDECLARED_BRANCH'
+  | 'ISOLATED_SUBGRAPH';
+
+export interface TopologyNode {
+  /** Stable node identity: "component:cavity" or "component" (normalized lowercase). */
+  id: string;
+  component: string;
+  cavity: string | null;
+  terminationType: EndpointTerminationType | null;
+  /** IDs of all wires whose FROM or TO endpoint maps to this node. */
+  wireIds: string[];
+}
+
+export interface TopologyEdge {
+  wireId: string;
+  fromNodeId: string | null;
+  toNodeId: string | null;
+  /** True when the wire carries a declared BRANCH_DOUBLE_CRIMP or SPLICE topology. */
+  isDeclaredBranch: boolean;
+}
+
+export interface TopologySubgraph {
+  id: number;
+  nodeIds: string[];
+  wireIds: string[];
+  /** True when this subgraph is disconnected from the rest of the harness. */
+  isIsolated: boolean;
+}
+
+export interface MissingWireCandidate {
+  component: string;
+  missingCavity: string;
+  /** Numeric cavities observed on the same connector. */
+  knownCavities: string[];
+  confidence: TopologyConfidence;
+  reason: string;
+}
+
+export interface TopologyWarning {
+  code: TopologyWarningCode;
+  confidence: TopologyConfidence;
+  /**
+   * When true and confidence is HIGH, this warning contributes to blocking commit.
+   * ISOLATED_SUBGRAPH is never blocking.
+   */
+  blocksCommit: boolean;
+  affectedNodeIds: string[];
+  affectedWireIds: string[];
+  message: string;
+  reason: string;
+}
+
+export interface HarnessTopologyResult {
+  nodes: TopologyNode[];
+  edges: TopologyEdge[];
+  danglingEndpoints: TopologyNode[];
+  multiWireEndpoints: TopologyNode[];
+  isolatedSubgraphs: TopologySubgraph[];
+  missingWireCandidates: MissingWireCandidate[];
+  warnings: TopologyWarning[];
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * terminationType values that represent intentional open ends.
+ * These are never flagged as dangling endpoints.
+ */
+const VALID_OPEN_END_TYPES = new Set<EndpointTerminationType>([
+  'STRIP_ONLY',
+  'FERRULE',
+  'RING',
+  'SPADE',
+  'RECEPTACLE',
+  'TERMINAL',
+  'GROUND',
+  'OTHER_TREATMENT',
+]);
+
+/**
+ * Pattern in rawText that indicates declared branch/splice topology
+ * from skuModelEditService (OperatorWireModel.topology field).
+ */
+const DECLARED_BRANCH_RE = /\[OPERATOR_MODEL:(BRANCH_DOUBLE_CRIMP|SPLICE)\]/;
+
+/** Pattern in rawText for explicitly declared floating wire. */
+const DECLARED_FLOATING_RE = /\[OPERATOR_MODEL:FLOATING\]/;
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a stable node ID for an endpoint.
+ * Returns null when the endpoint has no trackable component (bare wire, no PN).
+ */
+function makeNodeId(endpoint: WireEndpoint): string | null {
+  const comp = endpoint.component?.trim();
+  if (!comp) return null;
+  const cav = endpoint.cavity?.trim();
+  if (cav) return `${comp.toLowerCase()}:${cav.toLowerCase()}`;
+  return comp.toLowerCase();
+}
+
+/**
+ * Resolve effective terminationType for an endpoint.
+ * Infers CONNECTOR_PIN when component + cavity are both present but type is unset.
+ */
+function resolveTerminationType(endpoint: WireEndpoint): EndpointTerminationType | null {
+  const t = endpoint.terminationType;
+  if (t && t !== 'UNKNOWN') return t;
+  if (endpoint.component?.trim() && endpoint.cavity?.trim()) return 'CONNECTOR_PIN';
+  return t ?? null;
+}
+
+/** True when this endpoint type is a known valid termination (not a dangling bare wire). */
+function isValidOpenEnd(endpoint: WireEndpoint): boolean {
+  const t = resolveTerminationType(endpoint);
+  if (!t || t === 'UNKNOWN') return false;
+  return VALID_OPEN_END_TYPES.has(t);
+}
+
+/** True when the wire declares branch or splice topology. */
+function isDeclaredBranch(wire: WireConnectivity): boolean {
+  if (DECLARED_BRANCH_RE.test(wire.rawText)) return true;
+  if (wire.from.treatment?.toUpperCase() === 'SPLICE') return true;
+  if (wire.to.treatment?.toUpperCase()   === 'SPLICE') return true;
+  return false;
+}
+
+/** True when the wire is declared FLOATING (intentional open-ended wire). */
+function isDeclaredFloating(wire: WireConnectivity): boolean {
+  return DECLARED_FLOATING_RE.test(wire.rawText);
+}
+
+// ---------------------------------------------------------------------------
+// Union-Find (path-compressed) for connected component detection
+// ---------------------------------------------------------------------------
+
+class UnionFind {
+  private readonly parent = new Map<string, string>();
+
+  find(x: string): string {
+    if (!this.parent.has(x)) this.parent.set(x, x);
+    const p = this.parent.get(x)!;
+    if (p !== x) {
+      const root = this.find(p);
+      this.parent.set(x, root);
+      return root;
+    }
+    return x;
+  }
+
+  union(a: string, b: string): void {
+    const ra = this.find(a);
+    const rb = this.find(b);
+    if (ra !== rb) this.parent.set(ra, rb);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Detection A: missing wire candidates
+// ---------------------------------------------------------------------------
+
+/**
+ * Detect gaps in connector pin numeric sequences.
+ *
+ * Groups CONNECTOR_PIN nodes by component, scans for integer gaps in
+ * the [min..max] cavity range.
+ *
+ * Only runs when:
+ *   - ≥ 2 distinct numeric cavities exist on the same connector
+ *   - The span does not exceed 20 (excludes very sparse connectors)
+ *
+ * Confidence:
+ *   HIGH   when ≤ 2 total gaps exist in the sequence
+ *   MEDIUM when > 2 gaps (unusual but still reported)
+ */
+function detectMissingWires(
+  nodesByComponent: Map<string, TopologyNode[]>,
+): MissingWireCandidate[] {
+  const candidates: MissingWireCandidate[] = [];
+
+  for (const [component, nodes] of nodesByComponent) {
+    const pinNodes = nodes.filter(
+      n => n.cavity !== null &&
+           (n.terminationType === 'CONNECTOR_PIN' || n.terminationType === null),
+    );
+
+    const numeric = pinNodes
+      .map(n => ({ num: parseInt(n.cavity!, 10) }))
+      .filter(x => !isNaN(x.num));
+
+    if (numeric.length < 2) continue;
+
+    const sorted  = numeric.sort((a, b) => a.num - b.num);
+    const min     = sorted[0].num;
+    const max     = sorted[sorted.length - 1].num;
+
+    if (max - min > 20) continue;
+
+    const present       = new Set(sorted.map(x => x.num));
+    const knownCavities = sorted.map(x => String(x.num));
+    const gapCount      = max - min + 1 - present.size;
+
+    for (let pin = min; pin <= max; pin++) {
+      if (!present.has(pin)) {
+        candidates.push({
+          component,
+          missingCavity: String(pin),
+          knownCavities,
+          confidence: gapCount <= 2 ? 'HIGH' : 'MEDIUM',
+          reason: `Connector ${component} has wires on pins ${knownCavities.join(', ')} but pin ${pin} is not connected`,
+        });
+      }
+    }
+  }
+
+  return candidates;
+}
+
+// ---------------------------------------------------------------------------
+// Primary export: analyzeHarnessTopology
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a topology graph from effective connectivity and run deterministic detections.
+ *
+ * Never throws. Pure function. Does not mutate inputs.
+ */
+export function analyzeHarnessTopology(args: {
+  connectivity: HarnessConnectivityResult;
+}): HarnessTopologyResult {
+  const { wires } = args.connectivity;
+
+  // ── Build node map ─────────────────────────────────────────────────────
+  const nodeMap = new Map<string, TopologyNode>();
+
+  function getOrCreateNode(endpoint: WireEndpoint, wireId: string): string | null {
+    const id = makeNodeId(endpoint);
+    if (!id) return null;
+    if (!nodeMap.has(id)) {
+      nodeMap.set(id, {
+        id,
+        component:       endpoint.component!.trim(),
+        cavity:          endpoint.cavity?.trim() ?? null,
+        terminationType: resolveTerminationType(endpoint),
+        wireIds:         [],
+      });
+    }
+    const node = nodeMap.get(id)!;
+    if (!node.wireIds.includes(wireId)) node.wireIds.push(wireId);
+    return id;
+  }
+
+  // ── Build edge list ────────────────────────────────────────────────────
+  const edges: TopologyEdge[] = wires.map(wire => ({
+    wireId:          wire.wireId,
+    fromNodeId:      getOrCreateNode(wire.from, wire.wireId),
+    toNodeId:        getOrCreateNode(wire.to,   wire.wireId),
+    isDeclaredBranch: isDeclaredBranch(wire),
+  }));
+
+  const nodes = [...nodeMap.values()];
+
+  // ── Group nodes by component ───────────────────────────────────────────
+  const nodesByComponent = new Map<string, TopologyNode[]>();
+  for (const node of nodes) {
+    const key = node.component.toLowerCase();
+    if (!nodesByComponent.has(key)) nodesByComponent.set(key, []);
+    nodesByComponent.get(key)!.push(node);
+  }
+
+  // ── A. Missing wire detection ──────────────────────────────────────────
+  const missingWireCandidates = detectMissingWires(nodesByComponent);
+
+  // ── B. Multi-wire / undeclared branch endpoints ───────────────────────
+  // Only meaningful for CONNECTOR_PIN type: same connector pin on >1 wire.
+  const multiWireEndpoints = nodes.filter(
+    n => n.wireIds.length > 1 && n.terminationType === 'CONNECTOR_PIN',
+  );
+
+  // ── C. Isolated subgraph detection (union-find) ────────────────────────
+  const uf = new UnionFind();
+  for (const edge of edges) {
+    if (edge.fromNodeId && edge.toNodeId) {
+      uf.union(edge.fromNodeId, edge.toNodeId);
+    }
+  }
+
+  const sgMap = new Map<string, { nodeIds: Set<string>; wireIds: Set<string> }>();
+  for (const edge of edges) {
+    const rep =
+      edge.fromNodeId ? uf.find(edge.fromNodeId) :
+      edge.toNodeId   ? uf.find(edge.toNodeId)   : null;
+    if (!rep) continue;
+    if (!sgMap.has(rep)) sgMap.set(rep, { nodeIds: new Set(), wireIds: new Set() });
+    const sg = sgMap.get(rep)!;
+    sg.wireIds.add(edge.wireId);
+    if (edge.fromNodeId) sg.nodeIds.add(edge.fromNodeId);
+    if (edge.toNodeId)   sg.nodeIds.add(edge.toNodeId);
+  }
+
+  const sgEntries           = [...sgMap.values()];
+  const hasMultipleSubgraphs = sgEntries.length > 1;
+
+  const isolatedSubgraphs: TopologySubgraph[] = sgEntries.map((sg, idx) => ({
+    id:         idx,
+    nodeIds:    [...sg.nodeIds],
+    wireIds:    [...sg.wireIds],
+    isIsolated: hasMultipleSubgraphs,
+  }));
+
+  // ── D. Dangling endpoint detection ────────────────────────────────────
+  // A wire is dangling when one endpoint resolves to a graph node (known component)
+  // but the other endpoint has null nodeId AND is not a valid open termination.
+  // Excludes: unresolved wires (flagged by T2), declared FLOATING wires.
+  const danglingSet = new Map<string, TopologyNode>();
+
+  for (const edge of edges) {
+    const wire = wires.find(w => w.wireId === edge.wireId);
+    if (!wire || wire.unresolved || isDeclaredFloating(wire)) continue;
+
+    if (edge.fromNodeId !== null && edge.toNodeId === null && !isValidOpenEnd(wire.to)) {
+      const node = nodeMap.get(edge.fromNodeId);
+      if (node) danglingSet.set(node.id, node);
+    }
+    if (edge.toNodeId !== null && edge.fromNodeId === null && !isValidOpenEnd(wire.from)) {
+      const node = nodeMap.get(edge.toNodeId);
+      if (node) danglingSet.set(node.id, node);
+    }
+  }
+
+  const danglingEndpoints = [...danglingSet.values()];
+
+  // ── E. Assemble warnings ───────────────────────────────────────────────
+  const warnings: TopologyWarning[] = [];
+
+  for (const c of missingWireCandidates) {
+    warnings.push({
+      code:            'MISSING_WIRE',
+      confidence:      c.confidence,
+      blocksCommit:    c.confidence === 'HIGH',
+      affectedNodeIds: [`${c.component.toLowerCase()}:${c.missingCavity.toLowerCase()}`],
+      affectedWireIds: [],
+      message:         `Missing wire: ${c.component} pin ${c.missingCavity}`,
+      reason:          c.reason,
+    });
+  }
+
+  for (const node of danglingEndpoints) {
+    warnings.push({
+      code:            'DANGLING_ENDPOINT',
+      confidence:      'HIGH',
+      blocksCommit:    true,
+      affectedNodeIds: [node.id],
+      affectedWireIds: node.wireIds,
+      message:         `Dangling endpoint: ${node.component}${node.cavity ? `:${node.cavity}` : ''}`,
+      reason:          `Wire connects to ${node.id} but the other end has no valid termination`,
+    });
+  }
+
+  for (const node of multiWireEndpoints) {
+    const allDeclared = node.wireIds.every(wid => {
+      const w = wires.find(ww => ww.wireId === wid);
+      return w ? isDeclaredBranch(w) : true;
+    });
+    if (!allDeclared) {
+      warnings.push({
+        code:            'UNDECLARED_BRANCH',
+        confidence:      'HIGH',
+        blocksCommit:    true,
+        affectedNodeIds: [node.id],
+        affectedWireIds: node.wireIds,
+        message:         `Undeclared branch at ${node.component}:${node.cavity ?? '?'}`,
+        reason:          `${node.wireIds.length} wires share endpoint ${node.id} without a declared BRANCH or SPLICE topology`,
+      });
+    }
+  }
+
+  if (hasMultipleSubgraphs) {
+    for (const sg of isolatedSubgraphs) {
+      const label = sg.wireIds.slice(0, 3).join(', ') + (sg.wireIds.length > 3 ? '…' : '');
+      warnings.push({
+        code:            'ISOLATED_SUBGRAPH',
+        confidence:      'MEDIUM',
+        blocksCommit:    false,
+        affectedNodeIds: sg.nodeIds,
+        affectedWireIds: sg.wireIds,
+        message:         `Isolated wire group: ${label}`,
+        reason:          `${sg.wireIds.length} wire(s) form a subgraph disconnected from the rest of the harness`,
+      });
+    }
+  }
+
+  console.log('[T13 TOPOLOGY]', {
+    nodeCount:        nodes.length,
+    edgeCount:        edges.length,
+    missingWireCount: missingWireCandidates.length,
+    danglingCount:    danglingEndpoints.length,
+    multiWireCount:   multiWireEndpoints.length,
+    subgraphCount:    isolatedSubgraphs.length,
+    warningCount:     warnings.length,
+    blockingCount:    warnings.filter(w => w.blocksCommit).length,
+  });
+
+  return {
+    nodes,
+    edges,
+    danglingEndpoints,
+    multiWireEndpoints,
+    isolatedSubgraphs,
+    missingWireCandidates,
+    warnings,
+  };
+}
