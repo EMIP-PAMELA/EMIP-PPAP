@@ -31,6 +31,7 @@ import type { RegionOverlay } from '@/src/features/harness-work-instructions/typ
 import DocumentOverlayViewer from './DocumentOverlayViewer';
 import HarnessConnectivityPanel from './HarnessConnectivityPanel';
 import SkuModelEditorPanel, { type SkuModelDeleteRequest, type ExternalEditorRequest } from './SkuModelEditorPanel';
+import ComaxCutSheetPanel from './ComaxCutSheetPanel';
 import type { OperatorWireModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 import {
   buildEffectiveHarnessState,
@@ -1850,6 +1851,13 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   />
                 </div>
               ) : null}
+
+              {effectiveState && (
+                <ComaxCutSheetPanel
+                  effectiveState={effectiveState}
+                  partNumber={effectiveState.effectivePartNumber ?? undefined}
+                />
+              )}
 
               {selectedItem.analysis ? (
                 <details
