@@ -323,6 +323,16 @@ export function evaluateHarnessDecision(args: {
   );
   const topIssues = computeTopIssues(validation);
 
+  // T23.5: Log physical endpoint descriptions for blocked wires so the log
+  // identifies unconnected nodes by component:cavity, not customer wire labels.
+  const blockedPhysical = blockedWires.map(wid => {
+    const wire = connectivity.wires.find(w => w.wireId === wid);
+    if (!wire) return wid;
+    const from = `${wire.from.component ?? '?'}${wire.from.cavity ? ` pin ${wire.from.cavity}` : ''}`;
+    const to   = `${wire.to.component   ?? '?'}${wire.to.cavity   ? ` pin ${wire.to.cavity}` : ''}`;
+    return `${from} → ${to}`;
+  });
+
   console.log('[T9 DECISION]', {
     overallDecision,
     readinessScore: readinessScore.toFixed(1),
@@ -331,6 +341,10 @@ export function evaluateHarnessDecision(args: {
     blocked: blockedWires.length,
     topIssues,
   });
+
+  if (blockedWires.length > 0) {
+    console.log('[T23.5 VALIDATION] unconnected nodes:', blockedPhysical);
+  }
 
   return {
     wires: wireDecisions,

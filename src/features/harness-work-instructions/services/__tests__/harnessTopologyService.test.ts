@@ -174,4 +174,71 @@ describe('analyzeHarnessTopology', () => {
     assert.strictEqual(result.danglingEndpoints.length, 0);
   });
 
+  // G. T23.5: Two operator-added FERRULE wires sharing a FROM endpoint — no UNDECLARED_BRANCH
+  // FERRULE nodes have terminationType !== CONNECTOR_PIN so they are excluded from
+  // multiWireEndpoints. This test confirms existing correct behaviour is preserved.
+  it('G: operator FERRULE double-crimp wires share a physical node without UNDECLARED_BRANCH', () => {
+    const ferruleEndpoint = makeEndpoint('PHOENIX_1700443', '5', 'FERRULE');
+
+    const wires = [
+      makeWire('op-abc', ferruleEndpoint, makeEndpoint('J1', '1', 'CONNECTOR_PIN'), '[OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP]'),
+      makeWire('op-def', ferruleEndpoint, makeEndpoint('J1', '2', 'CONNECTOR_PIN'), '[OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP]'),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    const branchWarnings = result.warnings.filter(w => w.code === 'UNDECLARED_BRANCH');
+    assert.strictEqual(branchWarnings.length, 0, 'FERRULE shared node must not trigger UNDECLARED_BRANCH');
+
+    const sharedNode = result.nodes.find(n => n.id === 'phoenix_1700443:5');
+    assert.ok(sharedNode, 'Shared FERRULE node must exist');
+    assert.strictEqual(sharedNode!.wireIds.length, 2, 'Both wires must reference the shared node');
+  });
+
+  // H. T23.5: Mixed extracted wire + operator BRANCH_DOUBLE_CRIMP wire at the same CONNECTOR_PIN.
+  // The extracted wire has no [OPERATOR_MODEL:] tag, but the operator wire declares the branch.
+  // anyDeclared fix: if ANY wire on the shared node declares a branch, no UNDECLARED_BRANCH fires.
+  it('H: extracted wire + operator branch wire at same CONNECTOR_PIN — anyDeclared suppresses warning', () => {
+    const sharedPin = makeEndpoint('J1', '5', 'CONNECTOR_PIN');
+
+    const wires = [
+      makeWire('W-extracted', sharedPin, makeEndpoint('T1', null, 'TERMINAL')),
+      makeWire('op-branch',   sharedPin, makeEndpoint('T2', null, 'TERMINAL'), '[OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP]'),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    const branchWarnings = result.warnings.filter(w => w.code === 'UNDECLARED_BRANCH');
+    assert.strictEqual(
+      branchWarnings.length, 0,
+      'Extracted wire at operator-declared branch node must NOT trigger UNDECLARED_BRANCH',
+    );
+    assert.strictEqual(result.multiWireEndpoints.length, 1, 'j1:5 is still a multi-wire endpoint');
+  });
+
+  // I. T23.5: ISOLATED_SUBGRAPH warning message must use node IDs (component:cavity),
+  // not customer wire labels, so the report is label-agnostic.
+  it('I: ISOLATED_SUBGRAPH warning message uses node IDs not wire labels', () => {
+    const wires = [
+      makeWire('CUSTOMER-LABEL-A', makeEndpoint('J1', '1', 'CONNECTOR_PIN'), makeEndpoint('T1', null, 'TERMINAL')),
+      makeWire('CUSTOMER-LABEL-B', makeEndpoint('J2', '1', 'CONNECTOR_PIN'), makeEndpoint('T2', null, 'TERMINAL')),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    const isoWarnings = result.warnings.filter(w => w.code === 'ISOLATED_SUBGRAPH');
+    assert.strictEqual(isoWarnings.length, 2, 'Two isolated subgraphs expected');
+
+    for (const w of isoWarnings) {
+      assert.ok(
+        !w.message.includes('CUSTOMER-LABEL-A') && !w.message.includes('CUSTOMER-LABEL-B'),
+        'ISOLATED_SUBGRAPH message must not contain customer wire labels',
+      );
+      assert.ok(
+        w.message.startsWith('Isolated subgraph:'),
+        'ISOLATED_SUBGRAPH message must start with "Isolated subgraph:"',
+      );
+    }
+  });
+
 });

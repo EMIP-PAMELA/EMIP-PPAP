@@ -163,6 +163,11 @@ function isDeclaredBranch(wire: WireConnectivity): boolean {
   if (DECLARED_BRANCH_RE.test(wire.rawText)) return true;
   if (wire.from.treatment?.toUpperCase() === 'SPLICE') return true;
   if (wire.to.treatment?.toUpperCase()   === 'SPLICE') return true;
+  // T23.5: FERRULE or TERMINAL on the FROM endpoint is a physical branch
+  // indicator. Extracted wires at ferrule/terminal junction points share a
+  // physical crimp and do not require an explicit [OPERATOR_MODEL:] tag.
+  const ft = wire.from.terminationType;
+  if (ft === 'FERRULE' || ft === 'TERMINAL') return true;
   return false;
 }
 
@@ -301,6 +306,14 @@ export function analyzeHarnessTopology(args: {
 
   const nodes = [...nodeMap.values()];
 
+  console.log('[T23.5 NODE BUILD]', {
+    totalNodes:      nodes.length,
+    nodeKeys:        nodes.slice(0, 20).map(n => n.id),
+    multiWireNodes:  nodes
+      .filter(n => n.wireIds.length > 1)
+      .map(n => `${n.id}(${n.wireIds.length}w,${n.terminationType ?? 'null'})`),
+  });
+
   // ── Group nodes by component ───────────────────────────────────────────
   const nodesByComponent = new Map<string, TopologyNode[]>();
   for (const node of nodes) {
@@ -314,9 +327,18 @@ export function analyzeHarnessTopology(args: {
 
   // ── B. Multi-wire / undeclared branch endpoints ───────────────────────
   // Only meaningful for CONNECTOR_PIN type: same connector pin on >1 wire.
+  // T23.5: Nodes with FERRULE/TERMINAL terminationType represent valid physical
+  // branch points and are excluded here — their wires need no explicit declaration.
   const multiWireEndpoints = nodes.filter(
     n => n.wireIds.length > 1 && n.terminationType === 'CONNECTOR_PIN',
   );
+
+  console.log('[T23.5 VALIDATION]', {
+    multiWireEndpointCount: multiWireEndpoints.length,
+    multiWireEndpoints:     multiWireEndpoints.map(n => `${n.id}(${n.wireIds.length}w)`),
+    declaredBranchEdges:    edges.filter(e => e.isDeclaredBranch).length,
+    unlabeledWireCount:     wires.filter(w => !w.wireId || w.wireId.startsWith('op-')).length,
+  });
 
   // ── C. Isolated subgraph detection (union-find) ────────────────────────
   const uf = new UnionFind();
@@ -399,18 +421,22 @@ export function analyzeHarnessTopology(args: {
   }
 
   for (const node of multiWireEndpoints) {
-    const allDeclared = node.wireIds.every(wid => {
+    // T23.5: A node is a valid branch if ANY co-located wire declares branch
+    // topology. Extracted wires at operator-declared branch nodes inherit the
+    // declaration — requiring ALL wires to independently declare would produce
+    // false positives when extracted and operator wires share the same pin.
+    const anyDeclared = node.wireIds.some(wid => {
       const w = wires.find(ww => ww.wireId === wid);
-      return w ? isDeclaredBranch(w) : true;
+      return w ? isDeclaredBranch(w) : false;
     });
-    if (!allDeclared) {
+    if (!anyDeclared) {
       warnings.push({
         code:            'UNDECLARED_BRANCH',
         confidence:      'HIGH',
         blocksCommit:    true,
         affectedNodeIds: [node.id],
         affectedWireIds: node.wireIds,
-        message:         `Undeclared branch at ${node.component}:${node.cavity ?? '?'}`,
+        message:         `Undeclared branch at ${node.id}`,
         reason:          `${node.wireIds.length} wires share endpoint ${node.id} without a declared BRANCH or SPLICE topology`,
       });
     }
@@ -418,15 +444,17 @@ export function analyzeHarnessTopology(args: {
 
   if (hasMultipleSubgraphs) {
     for (const sg of isolatedSubgraphs) {
-      const label = sg.wireIds.slice(0, 3).join(', ') + (sg.wireIds.length > 3 ? '…' : '');
+      // T23.5: Use physical node IDs (component:cavity) instead of wire labels
+      // so the message describes topology, not customer wire naming.
+      const nodeLabel = sg.nodeIds.slice(0, 3).join(', ') + (sg.nodeIds.length > 3 ? '…' : '');
       warnings.push({
         code:            'ISOLATED_SUBGRAPH',
         confidence:      'MEDIUM',
         blocksCommit:    false,
         affectedNodeIds: sg.nodeIds,
         affectedWireIds: sg.wireIds,
-        message:         `Isolated wire group: ${label}`,
-        reason:          `${sg.wireIds.length} wire(s) form a subgraph disconnected from the rest of the harness`,
+        message:         `Isolated subgraph: ${nodeLabel}`,
+        reason:          `${sg.nodeIds.length} node(s) in ${sg.wireIds.length} wire(s) form a subgraph disconnected from the rest of the harness`,
       });
     }
   }
