@@ -33,6 +33,7 @@ import HarnessConnectivityPanel from './HarnessConnectivityPanel';
 import SkuModelEditorPanel, { type SkuModelDeleteRequest, type ExternalEditorRequest } from './SkuModelEditorPanel';
 import KomaxCutSheetPanel from './KomaxCutSheetPanel';
 import SkuLifecycleHistoryPanel from './SkuLifecycleHistoryPanel';
+import KomaxProgramPanel from './KomaxProgramPanel';
 import {
   recordSkuAuditEvent,
   recordSkuAuditSnapshot,
@@ -2005,6 +2006,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   effectiveState={effectiveState}
                   partNumber={effectiveState.effectivePartNumber ?? undefined}
                 />
+              )}
+
+              {effectiveState && (
+                <KomaxProgramPanel effectiveState={effectiveState} />
               )}
 
               <SkuLifecycleHistoryPanel
