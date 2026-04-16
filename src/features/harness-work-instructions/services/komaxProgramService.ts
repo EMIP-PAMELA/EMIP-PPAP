@@ -47,10 +47,16 @@
  *   - Strip lengths: resolved from ACI table when partNumber is present; otherwise operator-required.
  *   - Terminal/applicator part numbers: operator-set or ACI-resolved; BLOCKED when missing for crimp ends.
  *   - Process source (ACI_TABLE / OPERATOR / null) is surfaced per endpoint for UI display.
- *   - Applicator/tooling assignments: out of scope for this phase.
+ *
+ * T19 update:
+ *   - Tooling resolved via toolingService (ACI-first, direct-fallback).
+ *   - BLOCKED when CRIMP/FERRULE_CRIMP has part number but no applicator (method === NONE).
+ *   - DIRECT match: not blocked, adds warning.
+ *   - Batch-level toolingCoverage: SINGLE_SETUP | MULTI_SETUP | MISSING.
  */
 
 import type { EffectiveHarnessState } from './effectiveHarnessModelService';
+import { resolveToolingForPart } from './toolingService';
 import type { KomaxCutSheetRow, KomaxBatch } from './komaxCutSheetService';
 import { buildKomaxCutSheet, buildKomaxBatches } from './komaxCutSheetService';
 import type {
@@ -114,14 +120,18 @@ export function deriveEndpointProcessType(
  * READY:   not BLOCKED and no missingFields and no warnings.
  */
 export function deriveProgramReadiness(args: {
-  lengthInches:      number | null | undefined;
-  wireGauge:         string | null | undefined;
-  leftProcessType:   string | null;
-  rightProcessType:  string | null;
-  leftPartNumber:    string | null | undefined;
-  rightPartNumber:   string | null | undefined;
-  missingFields:     string[];
-  warnings:          string[];
+  lengthInches:        number | null | undefined;
+  wireGauge:           string | null | undefined;
+  leftProcessType:     string | null;
+  rightProcessType:    string | null;
+  leftPartNumber:      string | null | undefined;
+  rightPartNumber:     string | null | undefined;
+  /** T19: Resolution method for left-end tooling. 'NONE' + part number present → BLOCKED. */
+  leftToolingMethod?:  string | null;
+  /** T19: Resolution method for right-end tooling. 'NONE' + part number present → BLOCKED. */
+  rightToolingMethod?: string | null;
+  missingFields:       string[];
+  warnings:            string[];
 }): KomaxProgramReadiness {
   if (args.lengthInches == null)        return 'BLOCKED';
   if (!args.wireGauge)                  return 'BLOCKED';
@@ -129,6 +139,11 @@ export function deriveProgramReadiness(args: {
   if (args.rightProcessType === null)   return 'BLOCKED';
   if (CRIMP_PROCESS_TYPES.has(args.leftProcessType)  && !args.leftPartNumber)  return 'BLOCKED';
   if (CRIMP_PROCESS_TYPES.has(args.rightProcessType) && !args.rightPartNumber) return 'BLOCKED';
+
+  // T19: Block when part number is known but no applicator can be found.
+  // DIRECT match is NOT blocked — it adds a warning instead (handled in buildWireProgram).
+  if (CRIMP_PROCESS_TYPES.has(args.leftProcessType)  && args.leftPartNumber  && args.leftToolingMethod  === 'NONE') return 'BLOCKED';
+  if (CRIMP_PROCESS_TYPES.has(args.rightProcessType) && args.rightPartNumber && args.rightToolingMethod === 'NONE') return 'BLOCKED';
 
   if (args.missingFields.length > 0 || args.warnings.length > 0) return 'PARTIAL';
   return 'READY';
@@ -211,6 +226,13 @@ export function buildWireProgram(
   const printRequired = Boolean(row.customerWireId && row.customerWireId.trim() !== '');
   const printText     = printRequired ? (row.customerWireId ?? null) : null;
 
+  // ── T19: Tooling resolution (crimp endpoints with known part numbers only) ───
+  const leftNeedsCrimp  = leftProcessType  !== null && CRIMP_PROCESS_TYPES.has(leftProcessType);
+  const rightNeedsCrimp = rightProcessType !== null && CRIMP_PROCESS_TYPES.has(rightProcessType);
+
+  const leftTooling  = (leftNeedsCrimp  && leftPartNumber)  ? resolveToolingForPart(leftPartNumber)  : null;
+  const rightTooling = (rightNeedsCrimp && rightPartNumber) ? resolveToolingForPart(rightPartNumber) : null;
+
   // ── missingFields ───────────────────────────────────────────────────────────
   const missingFields: string[] = summarizeMissingProgramFields({
     leftProcessType,
@@ -220,6 +242,14 @@ export function buildWireProgram(
     stripLengthLeft,
     stripLengthRight,
   });
+
+  // Tooling missing fields (only when part number is known but no applicator found)
+  if (leftNeedsCrimp  && leftPartNumber  && leftTooling?.method  === 'NONE') {
+    missingFields.push('leftTooling (no applicator found)');
+  }
+  if (rightNeedsCrimp && rightPartNumber && rightTooling?.method === 'NONE') {
+    missingFields.push('rightTooling (no applicator found)');
+  }
 
   // Unresolvable endpoints — note explicitly
   if (leftProcessType === null) {
@@ -245,19 +275,50 @@ export function buildWireProgram(
     warnings.push('Review branch setup before machine run');
   }
 
+  // T19: Direct tooling match — not blocked but operator should verify
+  if (leftTooling?.method  === 'DIRECT') warnings.push('Left tooling resolved via direct part match — verify applicator');
+  if (rightTooling?.method === 'DIRECT') warnings.push('Right tooling resolved via direct part match — verify applicator');
+
   // Pass through notes from cut sheet (de-duplicated)
   for (const note of row.notes) {
     if (!warnings.includes(note)) warnings.push(note);
   }
 
+  // ── T19: Wire-level tooling summary ─────────────────────────────────────
+  const leftHasTooling  = !leftNeedsCrimp  || !leftPartNumber  || leftTooling?.method  !== 'NONE';
+  const rightHasTooling = !rightNeedsCrimp || !rightPartNumber || rightTooling?.method !== 'NONE';
+  const toolingAvailable: boolean | null =
+    (leftNeedsCrimp || rightNeedsCrimp) ? (leftHasTooling && rightHasTooling) : null;
+
+  const toolingLocations = [...new Set([
+    ...(leftTooling?.locations  ?? []),
+    ...(rightTooling?.locations ?? []),
+  ])];
+
+  // Worst-case method across crimp endpoints
+  let toolingMethod: string | null = null;
+  if (leftNeedsCrimp  && leftPartNumber)  toolingMethod = leftTooling?.method  ?? 'NONE';
+  if (rightNeedsCrimp && rightPartNumber) {
+    const rm = rightTooling?.method ?? 'NONE';
+    if      (toolingMethod === null)    toolingMethod = rm;
+    else if (rm === 'NONE')             toolingMethod = 'NONE';
+    else if (toolingMethod !== 'NONE' && rm === 'DIRECT') toolingMethod = 'DIRECT';
+  }
+  const toolingConfidence: string | null =
+    toolingMethod === 'ACI'    ? 'HIGH'   :
+    toolingMethod === 'DIRECT' ? 'MEDIUM' :
+    toolingMethod === 'NONE'   ? 'NONE'   : null;
+
   // ── readiness ───────────────────────────────────────────────────────────
   const readiness = deriveProgramReadiness({
-    lengthInches:     row.lengthInches,
-    wireGauge:        row.wireGauge,
+    lengthInches:       row.lengthInches,
+    wireGauge:          row.wireGauge,
     leftProcessType,
     rightProcessType,
     leftPartNumber,
     rightPartNumber,
+    leftToolingMethod:  leftTooling?.method  ?? null,
+    rightToolingMethod: rightTooling?.method ?? null,
     missingFields,
     warnings,
   });
@@ -280,6 +341,10 @@ export function buildWireProgram(
     stripLengthRight,
     leftProcessSource,
     rightProcessSource,
+    toolingAvailable,
+    toolingMethod,
+    toolingConfidence,
+    toolingLocations,
     printRequired,
     printText,
     topology:            row.topology,
@@ -341,6 +406,35 @@ export function buildBatchProgram(
     warnings.push('Mixed right-end process types within batch — review setup before run');
   }
 
+  // ── T19: Batch tooling coverage ─────────────────────────────────────────
+  const CRIMP_SET = new Set(['CRIMP', 'CRIMP_FOR_INSERTION', 'FERRULE_CRIMP']);
+  const crimpWires = wirePrograms.filter(w =>
+    CRIMP_SET.has(w.leftProcessType ?? '') || CRIMP_SET.has(w.rightProcessType ?? ''),
+  );
+
+  let toolingCoverage: 'SINGLE_SETUP' | 'MULTI_SETUP' | 'MISSING' | null = null;
+  if (crimpWires.length > 0) {
+    const anyMissing = crimpWires.some(w => w.toolingAvailable === false);
+    if (anyMissing) {
+      toolingCoverage = 'MISSING';
+      warnings.push('Batch missing tooling for one or more wires');
+    } else {
+      const locSets = crimpWires.map(w => new Set(w.toolingLocations ?? []));
+      let intersection = new Set(locSets[0]);
+      for (let i = 1; i < locSets.length; i++) {
+        for (const loc of intersection) {
+          if (!locSets[i].has(loc)) intersection.delete(loc);
+        }
+      }
+      if (intersection.size === 0 && locSets.length > 1) {
+        toolingCoverage = 'MULTI_SETUP';
+        warnings.push('Batch requires multiple plant/tooling setups');
+      } else {
+        toolingCoverage = 'SINGLE_SETUP';
+      }
+    }
+  }
+
   // ── Aggregate missing fields (unique, across all wires) ────────────────
   const allMissing = new Set<string>();
   for (const wp of wirePrograms) {
@@ -359,6 +453,7 @@ export function buildBatchProgram(
     branchWiresPresent:   batch.hasBranchWires,
     sharedLeftProcessType,
     sharedRightProcessType,
+    toolingCoverage,
     readiness,
     missingFields:        Array.from(allMissing),
     warnings,

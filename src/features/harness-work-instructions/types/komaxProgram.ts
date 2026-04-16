@@ -12,6 +12,11 @@
  *   - Missing fields are enumerated in `missingFields[]` with explicit labels.
  *   - readiness reflects data completeness — never optimistic.
  *   - Types are read-only output models; nothing in this file is mutated.
+ *
+ * T19 update:
+ *   - Tooling availability (toolingAvailable / toolingMethod / toolingConfidence /
+ *     toolingLocations) added to KomaxWireProgram.
+ *   - toolingCoverage (SINGLE_SETUP | MULTI_SETUP | MISSING) added to KomaxBatchProgram.
  */
 
 // ---------------------------------------------------------------------------
@@ -98,6 +103,20 @@ export interface KomaxWireProgram {
   leftProcessSource?:  string | null;
   rightProcessSource?: string | null;
 
+  /**
+   * T19: Tooling (applicator) availability for this wire.
+   * Only evaluated for CRIMP / FERRULE_CRIMP endpoints that have a part number.
+   * True when at least one ACTIVE applicator is found for all required crimp ends.
+   * Null when neither endpoint needs tooling (e.g. CUT_STRIP | SPLICE).
+   */
+  toolingAvailable?:    boolean | null;
+  /** Resolution method used to find tooling: ACI | DIRECT | NONE, or null when N/A. */
+  toolingMethod?:       string | null;
+  /** Confidence level derived from resolution method: HIGH | MEDIUM | NONE, or null when N/A. */
+  toolingConfidence?:   string | null;
+  /** Unique plant locations where tooling is available for this wire. */
+  toolingLocations?:    string[];
+
   /** True when a machine-printed wire label is required for this wire. */
   printRequired: boolean;
   /** The label text to print. null when printRequired is false. */
@@ -157,6 +176,15 @@ export interface KomaxBatchProgram {
    */
   sharedLeftProcessType?: string | null;
   sharedRightProcessType?: string | null;
+
+  /**
+   * T19: Batch-level tooling coverage across all crimp wires.
+   * SINGLE_SETUP — all crimp wires share at least one common plant location.
+   * MULTI_SETUP  — all crimp wires have tooling but no common location.
+   * MISSING      — one or more crimp wires have no tooling.
+   * Null when batch contains no crimp wires.
+   */
+  toolingCoverage?: 'SINGLE_SETUP' | 'MULTI_SETUP' | 'MISSING' | null;
 
   readiness: KomaxProgramReadiness;
   missingFields: string[];

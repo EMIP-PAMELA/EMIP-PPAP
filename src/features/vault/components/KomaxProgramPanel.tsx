@@ -77,6 +77,43 @@ function ReadinessBadge({ r }: { r: KomaxProgramReadiness }) {
 }
 
 // ---------------------------------------------------------------------------
+// Tooling badge (T19)
+// ---------------------------------------------------------------------------
+
+function ToolingBadge({ method, confidence, locations }: {
+  method?:     string | null;
+  confidence?: string | null;
+  locations?:  string[];
+}) {
+  if (!method || method === 'NONE') {
+    return <span className="inline-block rounded bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 text-[9px] font-bold">❌ None</span>;
+  }
+  const locStr = locations && locations.length > 0
+    ? locations.map(l => l.replace('_', '\u00a0')).join(', ')
+    : '?';
+  if (method === 'ACI') {
+    return (
+      <span className="inline-block rounded bg-emerald-100 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 text-[9px] font-bold">
+        ✔ ACI ({locStr})
+      </span>
+    );
+  }
+  return (
+    <span className="inline-block rounded bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.5 text-[9px] font-bold">
+      ⚠ Direct ({locStr})
+    </span>
+  );
+}
+
+function ToolingCoverageBadge({ coverage }: { coverage?: string | null }) {
+  if (!coverage) return null;
+  if (coverage === 'SINGLE_SETUP')  return <span className="rounded bg-emerald-100 text-emerald-800 px-1.5 py-0.5 text-[9px] font-bold">✔ Single Setup</span>;
+  if (coverage === 'MULTI_SETUP')   return <span className="rounded bg-amber-100   text-amber-800   px-1.5 py-0.5 text-[9px] font-bold">⚠ Multi-Setup</span>;
+  if (coverage === 'MISSING')       return <span className="rounded bg-red-100     text-red-800     px-1.5 py-0.5 text-[9px] font-bold">❌ Missing</span>;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Process source badge (T18.5)
 // ---------------------------------------------------------------------------
 
@@ -113,6 +150,11 @@ function WireRow({ wp }: { wp: KomaxWireProgram }) {
             : <span className="text-gray-300 text-[9px]">—</span>}
         </td>
         <td className="px-2 py-1">
+          {wp.toolingAvailable != null
+            ? <ToolingBadge method={wp.toolingMethod} confidence={wp.toolingConfidence} locations={wp.toolingLocations} />
+            : <span className="text-gray-300 text-[9px]">—</span>}
+        </td>
+        <td className="px-2 py-1">
           <ReadinessBadge r={wp.readiness} />
         </td>
         <td className="px-2 py-1 text-[10px]">
@@ -129,7 +171,7 @@ function WireRow({ wp }: { wp: KomaxWireProgram }) {
       </tr>
       {expanded && (
         <tr className="bg-amber-50">
-          <td colSpan={11} className="px-3 py-1.5 text-[10px] space-y-1">
+          <td colSpan={12} className="px-3 py-1.5 text-[10px] space-y-1">
             {/* T18.5: Part numbers + strip lengths with source badges */}
             <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-gray-600">
               {(wp.leftPartNumber || wp.stripLengthLeft || wp.leftProcessSource) && (
@@ -147,6 +189,13 @@ function WireRow({ wp }: { wp: KomaxWireProgram }) {
                 </span>
               )}
             </div>
+            {/* T19: Tooling */}
+            {wp.toolingAvailable != null && (
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500">Tooling:</span>
+                <ToolingBadge method={wp.toolingMethod} confidence={wp.toolingConfidence} locations={wp.toolingLocations} />
+              </div>
+            )}
             {wp.missingFields.length > 0 && (
               <div className="mb-1">
                 <span className="font-semibold text-amber-700">Missing: </span>
@@ -205,6 +254,13 @@ function BatchCard({ bp }: { bp: KomaxBatchProgram }) {
         </button>
       )}
 
+      {bp.toolingCoverage && (
+        <div className="flex items-center gap-2 text-[10px]">
+          <span className="text-gray-500">Tooling:</span>
+          <ToolingCoverageBadge coverage={bp.toolingCoverage} />
+        </div>
+      )}
+
       {open && (
         <div className="space-y-1 pt-1 border-t border-gray-200 text-[10px]">
           {bp.missingFields.length > 0 && (
@@ -231,7 +287,7 @@ function BatchCard({ bp }: { bp: KomaxBatchProgram }) {
 // ---------------------------------------------------------------------------
 
 export default function KomaxProgramPanel({ effectiveState }: KomaxProgramPanelProps) {
-  const [view, setView] = useState<'wires' | 'batches'>('wires');
+  const [view, setView] = useState<'wires' | 'batches' | 'tooling'>('wires');
   const programGeneratedRef = useRef(false);
 
   const result = useMemo(
@@ -261,6 +317,30 @@ export default function KomaxProgramPanel({ effectiveState }: KomaxProgramPanelP
         },
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result.wirePrograms.length, skuKey]);
+
+  // T19: Fire TOOLING_VALIDATED once per SKU when tooling has been evaluated.
+  const toolingAuditFiredRef = useRef(false);
+  useEffect(() => {
+    if (toolingAuditFiredRef.current || !skuKey) return;
+    const withTooling = result.wirePrograms.filter(w => w.toolingAvailable != null);
+    if (withTooling.length === 0) return;
+    toolingAuditFiredRef.current = true;
+    const available  = withTooling.filter(w => w.toolingAvailable === true).length;
+    const missing    = withTooling.filter(w => w.toolingAvailable === false).length;
+    void recordSkuAuditEvent({
+      skuKey,
+      eventType: 'TOOLING_VALIDATED',
+      actorType: 'SYSTEM',
+      summary:   `Tooling evaluated for ${withTooling.length} wire(s): ${available} available, ${missing} missing`,
+      payload:   {
+        machine:          MACHINE_KOMAX,
+        toolingWires:     withTooling.length,
+        toolingAvailable: available,
+        toolingMissing:   missing,
+      },
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result.wirePrograms.length, skuKey]);
 
@@ -366,7 +446,7 @@ export default function KomaxProgramPanel({ effectiveState }: KomaxProgramPanelP
 
             {/* View toggle */}
             <div className="flex rounded-md border border-gray-200 overflow-hidden text-[10px]">
-              {(['wires', 'batches'] as const).map(v => (
+              {(['wires', 'batches', 'tooling'] as const).map(v => (
                 <button
                   key={v}
                   type="button"
@@ -376,6 +456,7 @@ export default function KomaxProgramPanel({ effectiveState }: KomaxProgramPanelP
                       ? 'bg-violet-100 text-violet-800'
                       : 'bg-white text-gray-500 hover:bg-gray-50'
                   }`}
+              aria-label={v === 'tooling' ? 'Tooling Coverage' : undefined}
                 >
                   {v}
                 </button>
@@ -397,7 +478,7 @@ export default function KomaxProgramPanel({ effectiveState }: KomaxProgramPanelP
               <thead>
                 <tr className="border-b-2 border-gray-200">
                   {['Wire', 'Cust ID', 'Batch', 'Length', 'Gauge', 'Color',
-                    'Left Process', 'Right Process', 'Print', 'Readiness', ''].map(h => (
+                    'Left Process', 'Right Process', 'Print', 'Tooling', 'Readiness', ''].map(h => (
                     <th key={h} className="px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-gray-500 whitespace-nowrap">
                       {h}
                     </th>
@@ -424,6 +505,55 @@ export default function KomaxProgramPanel({ effectiveState }: KomaxProgramPanelP
 
         {view === 'batches' && totalBatches === 0 && totalWires > 0 && (
           <p className="text-[11px] text-gray-400 italic">No batch groupings available.</p>
+        )}
+
+        {/* ── T19: Tooling coverage summary */}
+        {view === 'tooling' && totalWires > 0 && (
+          <div className="space-y-2">
+            <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide pt-1">Tooling Coverage by Wire</p>
+            <table className="w-full min-w-max text-left border-collapse text-[10px]">
+              <thead>
+                <tr className="border-b-2 border-gray-200">
+                  {['Wire', 'Left Process', 'Left PN', 'Right Process', 'Right PN', 'Tooling', 'Confidence', 'Locations'].map(h => (
+                    <th key={h} className="px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-gray-500 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {result.wirePrograms
+                  .filter(wp => wp.toolingAvailable != null)
+                  .map(wp => (
+                  <tr key={wp.internalWireId} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-2 py-1 font-mono text-gray-800">{wp.internalWireId}</td>
+                    <td className="px-2 py-1 font-mono text-blue-700">{wp.leftProcessType ?? '?'}</td>
+                    <td className="px-2 py-1 text-gray-600">{wp.leftPartNumber ?? '—'}</td>
+                    <td className="px-2 py-1 font-mono text-blue-700">{wp.rightProcessType ?? '?'}</td>
+                    <td className="px-2 py-1 text-gray-600">{wp.rightPartNumber ?? '—'}</td>
+                    <td className="px-2 py-1">
+                      <ToolingBadge method={wp.toolingMethod} confidence={wp.toolingConfidence} locations={wp.toolingLocations} />
+                    </td>
+                    <td className="px-2 py-1">
+                      {wp.toolingConfidence
+                        ? <span className={`rounded px-1 py-0.5 text-[9px] font-bold ${
+                            wp.toolingConfidence === 'HIGH'   ? 'bg-emerald-100 text-emerald-800' :
+                            wp.toolingConfidence === 'MEDIUM' ? 'bg-amber-100 text-amber-800' :
+                            'bg-red-100 text-red-700'
+                          }`}>{wp.toolingConfidence}</span>
+                        : '—'}
+                    </td>
+                    <td className="px-2 py-1 text-gray-600">
+                      {(wp.toolingLocations ?? []).length > 0
+                        ? wp.toolingLocations!.join(', ')
+                        : <span className="text-gray-300">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {result.wirePrograms.filter(wp => wp.toolingAvailable != null).length === 0 && (
+              <p className="text-[11px] text-gray-400 italic">No tooling data — wire programs have no crimp endpoints with known part numbers.</p>
+            )}
+          </div>
         )}
 
         {/* ── D. Export buttons */}

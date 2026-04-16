@@ -34,6 +34,7 @@ import SkuModelEditorPanel, { type SkuModelDeleteRequest, type ExternalEditorReq
 import KomaxCutSheetPanel from './KomaxCutSheetPanel';
 import SkuLifecycleHistoryPanel from './SkuLifecycleHistoryPanel';
 import KomaxProgramPanel from './KomaxProgramPanel';
+import ToolingPanel from './ToolingPanel';
 import {
   recordSkuAuditEvent,
   recordSkuAuditSnapshot,
@@ -2011,6 +2012,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               {effectiveState && (
                 <KomaxProgramPanel effectiveState={effectiveState} />
               )}
+
+              <ToolingPanel />
 
               <SkuLifecycleHistoryPanel
                 skuKey={effectiveState?.effectivePartNumber ?? selectedItem?.confirmedPartNumber ?? null}
