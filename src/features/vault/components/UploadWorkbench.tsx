@@ -32,6 +32,12 @@ import DocumentOverlayViewer from './DocumentOverlayViewer';
 import HarnessConnectivityPanel from './HarnessConnectivityPanel';
 import SkuModelEditorPanel, { type SkuModelDeleteRequest, type ExternalEditorRequest } from './SkuModelEditorPanel';
 import KomaxCutSheetPanel from './KomaxCutSheetPanel';
+import SkuLifecycleHistoryPanel from './SkuLifecycleHistoryPanel';
+import {
+  recordSkuAuditEvent,
+  recordSkuAuditSnapshot,
+  normalizeSkuKey,
+} from '@/src/features/harness-work-instructions/services/skuAuditService';
 import type { OperatorWireModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 import {
   buildEffectiveHarnessState,
@@ -815,6 +821,18 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       reconciliation: item?.analysis?.harnessReconciliation ?? null,
     });
     setResolvedOutputs(prev => ({ ...prev, [itemId]: result }));
+
+    // Audit — fire-and-forget
+    const skuKey = normalizeSkuKey(item?.confirmedPartNumber ?? item?.analysis?.proposedPartNumber ?? itemId);
+    void recordSkuAuditEvent({
+      skuKey,
+      eventType: 'WIRE_OVERRIDE_APPLIED',
+      actorType: 'UNKNOWN',
+      actorName: 'Unknown Operator',
+      summary:   `Wire override applied: ${override.wireId} (${override.mode})`,
+      reason:    override.reason,
+      payload:   { wireId: override.wireId, mode: override.mode },
+    });
   }, [items, wireOverrides]);
 
   const handleSkuAddWire = useCallback((itemId: string, wire: OperatorWireModel) => {
@@ -822,14 +840,34 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       const current = prev[itemId] ?? [];
       return { ...prev, [itemId]: [...current.filter(w => w.id !== wire.id), wire] };
     });
-  }, []);
+    const item = items.find(i => i.id === itemId);
+    const skuKey = normalizeSkuKey(item?.confirmedPartNumber ?? item?.analysis?.proposedPartNumber ?? itemId);
+    void recordSkuAuditEvent({
+      skuKey,
+      eventType: 'SKU_WIRE_ADDED',
+      actorType: 'UNKNOWN',
+      actorName: 'Unknown Operator',
+      summary:   `Wire added: ${wire.id}`,
+      payload:   { wireId: wire.id },
+    });
+  }, [items]);
 
   const handleSkuEditWire = useCallback((itemId: string, wire: OperatorWireModel) => {
     setSkuEditedWires(prev => {
       const current = prev[itemId] ?? [];
       return { ...prev, [itemId]: [...current.filter(w => w.id !== wire.id), wire] };
     });
-  }, []);
+    const item = items.find(i => i.id === itemId);
+    const skuKey = normalizeSkuKey(item?.confirmedPartNumber ?? item?.analysis?.proposedPartNumber ?? itemId);
+    void recordSkuAuditEvent({
+      skuKey,
+      eventType: 'SKU_WIRE_EDITED',
+      actorType: 'UNKNOWN',
+      actorName: 'Unknown Operator',
+      summary:   `Wire edited: ${wire.targetWireId ?? wire.id}`,
+      payload:   { wireId: wire.targetWireId ?? wire.id, operatorId: wire.id },
+    });
+  }, [items]);
 
   const handleSkuDeleteWire = useCallback((itemId: string, request: SkuModelDeleteRequest) => {
     if (request.scope === 'operator') {
@@ -853,7 +891,19 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       const next = undo ? cur.filter(id => id !== wireId) : [...cur.filter(id => id !== wireId), wireId];
       return { ...prev, [itemId]: next };
     });
-  }, []);
+    if (!undo && wireId) {
+      const item = items.find(i => i.id === itemId);
+      const skuKey = normalizeSkuKey(item?.confirmedPartNumber ?? item?.analysis?.proposedPartNumber ?? itemId);
+      void recordSkuAuditEvent({
+        skuKey,
+        eventType: 'SKU_WIRE_DELETED',
+        actorType: 'UNKNOWN',
+        actorName: 'Unknown Operator',
+        summary:   `Wire deleted: ${wireId}`,
+        payload:   { wireId },
+      });
+    }
+  }, [items]);
 
   const setConfirmedField = useCallback((
     itemId: string,
@@ -898,7 +948,30 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
 
       return { ...item, ...patch };
     }));
-  }, []);
+
+    // Audit — fire-and-forget
+    const auditItem = items.find(i => i.id === itemId);
+    const skuKey = normalizeSkuKey(auditItem?.confirmedPartNumber ?? auditItem?.analysis?.proposedPartNumber ?? itemId);
+    if (field === 'documentType') {
+      void recordSkuAuditEvent({
+        skuKey,
+        eventType: 'DOC_TYPE_CONFIRMED',
+        actorType: 'UNKNOWN',
+        actorName: 'Unknown Operator',
+        summary:   `Document type confirmed: ${rawValue}`,
+        payload:   { field, value: rawValue },
+      });
+    } else {
+      void recordSkuAuditEvent({
+        skuKey,
+        eventType: 'FIELD_CONFIRMED',
+        actorType: 'UNKNOWN',
+        actorName: 'Unknown Operator',
+        summary:   `Field "${field}" confirmed: ${rawValue}`,
+        payload:   { field, value: rawValue },
+      });
+    }
+  }, [items]);
 
   const focusRegion = useCallback((regionId?: string | null) => {
     if (!regionId) return;
@@ -1102,6 +1175,32 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
         confirmedRevision,
         confirmedDrawingNumber,
       });
+
+      // Audit — fire-and-forget: upload event + ingestion baseline snapshot
+      const uploadSkuKey = normalizeSkuKey(confirmedPartNumber ?? analysis.proposedPartNumber ?? id);
+      const uploadEventType = confirmedDocumentType === 'BOM' ? 'BOM_UPLOADED' : 'DRAWING_UPLOADED';
+      void recordSkuAuditEvent({
+        skuKey:    uploadSkuKey,
+        eventType: uploadEventType,
+        actorType: 'SYSTEM',
+        summary:   `${confirmedDocumentType ?? analysis.proposedDocumentType} uploaded: ${analysis.fileName}`,
+        payload:   { fileName: analysis.fileName, fileSize: analysis.fileSize, docType: confirmedDocumentType ?? analysis.proposedDocumentType },
+        sourceArtifactIds: [analysis.fileName],
+      });
+      void recordSkuAuditSnapshot({
+        skuKey:       uploadSkuKey,
+        snapshotType: 'INGESTION_BASELINE',
+        effectiveState: {
+          proposedDocumentType:  analysis.proposedDocumentType,
+          proposedPartNumber:    analysis.proposedPartNumber,
+          proposedRevision:      analysis.proposedRevision,
+          wireCount:             analysis.harnessConnectivity?.wires.length ?? null,
+          readyToCommit:         analysis.readyToCommit,
+          unresolvedCount:       analysis.unresolvedQuestions.length,
+          analyzedAt:            analysis.analyzedAt,
+        },
+        summary: `Ingestion baseline: ${analysis.fileName} (${analysis.harnessConnectivity?.wires.length ?? 0} wires)`,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Analysis request failed.';
       updateItem(id, { status: 'failed', error: msg });
@@ -1128,6 +1227,30 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     const { documentType, partNumber, revision, drawingNumber } = getCommitValues(item);
     updateItem(item.id, { status: 'committing' });
 
+    const commitSkuKey = normalizeSkuKey(partNumber || item.id);
+
+    // Audit: pre-commit event + PRE_COMMIT snapshot
+    void recordSkuAuditEvent({
+      skuKey:    commitSkuKey,
+      eventType: 'SKU_READY_TO_COMMIT',
+      actorType: 'UNKNOWN',
+      actorName: 'Unknown Operator',
+      summary:   `SKU ready to commit: ${partNumber} (${documentType})`,
+      payload:   { partNumber, revision, documentType, drawingNumber },
+    });
+    void recordSkuAuditSnapshot({
+      skuKey:       commitSkuKey,
+      snapshotType: 'PRE_COMMIT',
+      effectiveState: {
+        partNumber,
+        revision,
+        documentType,
+        drawingNumber,
+        wireCount: item.analysis?.harnessConnectivity?.wires.length ?? null,
+      },
+      summary: `Pre-commit: ${partNumber} rev ${revision || 'UNSPECIFIED'}`,
+    });
+
     try {
       const fd = new FormData();
       fd.append('file', item.file);
@@ -1153,6 +1276,31 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
         confirmationMode: 'ADMIN_CONFIRMED',
         commitResult: { ok: true, sku: json.sku, message: json.message },
       });
+
+      // Audit: committed event + COMMITTED snapshot
+      const committedSkuKey = normalizeSkuKey(json.sku?.part_number ?? partNumber);
+      void recordSkuAuditEvent({
+        skuKey:    committedSkuKey,
+        eventType: 'SKU_COMMITTED',
+        actorType: 'UNKNOWN',
+        actorName: 'Unknown Operator',
+        summary:   `SKU committed: ${committedSkuKey} rev ${revision || 'UNSPECIFIED'}`,
+        payload:   { skuId: json.sku?.id, partNumber: committedSkuKey, revision, documentType },
+      });
+      void recordSkuAuditSnapshot({
+        skuKey:       committedSkuKey,
+        snapshotType: 'COMMITTED',
+        effectiveState: {
+          skuId:        json.sku?.id,
+          partNumber:   committedSkuKey,
+          revision,
+          documentType,
+          drawingNumber,
+          wireCount:    item.analysis?.harnessConnectivity?.wires.length ?? null,
+        },
+        summary: `Committed: ${committedSkuKey} rev ${revision || 'UNSPECIFIED'} (skuId: ${json.sku?.id ?? 'unknown'})`,
+      });
+
       onCommitComplete?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Commit request failed.';
@@ -1858,6 +2006,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   partNumber={effectiveState.effectivePartNumber ?? undefined}
                 />
               )}
+
+              <SkuLifecycleHistoryPanel
+                skuKey={effectiveState?.effectivePartNumber ?? selectedItem?.confirmedPartNumber ?? null}
+              />
 
               {selectedItem.analysis ? (
                 <details

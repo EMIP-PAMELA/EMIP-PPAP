@@ -29,6 +29,10 @@ import {
   type KomaxBatch,
 } from '@/src/features/harness-work-instructions/services/komaxCutSheetService';
 import { MACHINE_KOMAX } from '@/src/constants/manufacturing';
+import {
+  recordSkuAuditEvent,
+  normalizeSkuKey,
+} from '@/src/features/harness-work-instructions/services/skuAuditService';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -135,13 +139,33 @@ export default function KomaxCutSheetPanel({
     } catch { /* clipboard unavailable — no-op */ }
   }, [wireCsv]);
 
-  const handleDownloadWire  = useCallback(() =>
-    downloadCsv(wireCsv,  slug ? `komax-cut-sheet-${slug}.csv`  : 'komax-cut-sheet.csv'),
-  [wireCsv, slug]);
+  const handleDownloadWire = useCallback(() => {
+    const filename = slug ? `komax-cut-sheet-${slug}.csv` : 'komax-cut-sheet.csv';
+    downloadCsv(wireCsv, filename);
+    void recordSkuAuditEvent({
+      skuKey:    normalizeSkuKey(partNumber ?? ''),
+      eventType: 'KOMAX_CUT_SHEET_GENERATED',
+      actorType: 'USER',
+      actorName: 'Unknown Operator',
+      summary:   `Komax cut sheet exported: ${filename} (${result.rows.length} wires)`,
+      payload:   { filename, wireCount: result.rows.length, machine: MACHINE_KOMAX },
+      generatedArtifactIds: [filename],
+    });
+  }, [wireCsv, slug, partNumber, result]);
 
-  const handleDownloadBatch = useCallback(() =>
-    downloadCsv(batchCsv, slug ? `komax-batches-${slug}.csv` : 'komax-batches.csv'),
-  [batchCsv, slug]);
+  const handleDownloadBatch = useCallback(() => {
+    const filename = slug ? `komax-batches-${slug}.csv` : 'komax-batches.csv';
+    downloadCsv(batchCsv, filename);
+    void recordSkuAuditEvent({
+      skuKey:    normalizeSkuKey(partNumber ?? ''),
+      eventType: 'KOMAX_BATCHES_GENERATED',
+      actorType: 'USER',
+      actorName: 'Unknown Operator',
+      summary:   `Komax batches exported: ${filename} (${batchResult.batches.length} batches)`,
+      payload:   { filename, batchCount: batchResult.batches.length, machine: MACHINE_KOMAX },
+      generatedArtifactIds: [filename],
+    });
+  }, [batchCsv, slug, partNumber, batchResult.batches.length]);
 
   const { rows, summary } = result;
   const { batches }       = batchResult;
