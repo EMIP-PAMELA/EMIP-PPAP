@@ -48,7 +48,7 @@ function confidenceDot(score: number): string {
 
 function SkeletonCard() {
   return (
-    <div className="animate-pulse rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-2">
+    <div className="animate-pulse rounded-xl border border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-[color:var(--surface-elevated)] p-3 space-y-2">
       <div className="h-3 bg-gray-200 rounded w-2/3" />
       <div className="h-2 bg-gray-100 rounded w-1/2" />
     </div>
@@ -60,7 +60,7 @@ function SKUCard({ summary }: { summary: SKUReadinessSummary }) {
   return (
     <Link
       href={`/sku/${encodeURIComponent(summary.part_number)}`}
-      className="flex items-start justify-between gap-3 rounded-xl border border-gray-100 bg-white p-3 hover:bg-gray-50 hover:border-gray-200 transition group"
+      className="flex items-start justify-between gap-3 rounded-xl border border-gray-100 dark:border-slate-700 bg-white dark:bg-[color:var(--surface-elevated)] p-3 hover:bg-gray-50 dark:hover:bg-slate-700 hover:border-gray-200 transition group"
     >
       <div className="min-w-0">
         <p className="text-sm font-semibold text-gray-900 group-hover:text-blue-700 truncate">{summary.part_number}</p>
@@ -342,7 +342,7 @@ export default function EMIPDashboardPage() {
         {/* RESUME WORK */}
         {ctxReady && (
           <section className={`rounded-2xl border shadow-sm p-5 ${
-            stale ? 'border-gray-200 bg-gray-50' : 'border-blue-100 bg-blue-50'
+            stale ? 'border-gray-200 bg-gray-50 dark:border-slate-700 dark:bg-[color:var(--surface-elevated)]' : 'border-blue-100 bg-blue-50 dark:border-blue-900/50 dark:bg-blue-950/30'
           }`}>
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -353,13 +353,13 @@ export default function EMIPDashboardPage() {
                   <p className="text-xs text-gray-400 mt-0.5">Last activity over 30 days ago</p>
                 )}
               </div>
-              <span className="text-[10px] uppercase tracking-widest text-gray-400 border border-gray-200 bg-white rounded px-1.5 py-0.5">
+              <span className="text-[10px] uppercase tracking-widest text-gray-400 dark:text-slate-500 border border-gray-200 dark:border-slate-700 bg-white dark:bg-[color:var(--surface-elevated)] rounded px-1.5 py-0.5">
                 My Active Work
               </span>
             </div>
 
             {resumePrimary === null ? (
-              <div className="rounded-xl border border-dashed border-gray-300 bg-white px-5 py-6 text-center">
+              <div className="rounded-xl border border-dashed border-gray-300 dark:border-slate-600 bg-white dark:bg-[color:var(--surface-elevated)] px-5 py-6 text-center">
                 <p className="text-sm font-medium text-gray-500">No recent work yet</p>
                 <p className="text-xs text-gray-400 mt-1">
                   Open a SKU to begin — it will appear here for quick resumption.
@@ -391,7 +391,7 @@ export default function EMIPDashboardPage() {
                         <Link
                           key={pn}
                           href={`/sku/${encodeURIComponent(pn)}?from=resume`}
-                          className="flex flex-col gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2.5 hover:border-blue-200 hover:bg-blue-50/40 transition group"
+                          className="flex flex-col gap-1.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[color:var(--surface-elevated)] px-3 py-2.5 hover:border-blue-200 hover:bg-blue-50/40 dark:hover:bg-slate-700 transition group"
                         >
                           <p className="text-xs font-semibold text-gray-800 group-hover:text-blue-700 truncate">{pn}</p>
                           {s && !s.loading ? (
@@ -418,20 +418,20 @@ export default function EMIPDashboardPage() {
 
         {/* Stat Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Active BOMs</p>
+          <div className="bg-white dark:bg-[color:var(--surface-elevated)] rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm p-5">
+            <p className="text-xs uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Active BOMs</p>
             <p className="text-3xl font-bold text-green-600">
               {statsLoading ? <span className="text-gray-300 animate-pulse">—</span> : bomStats.activeBOMs}
             </p>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Total Components</p>
+          <div className="bg-white dark:bg-[color:var(--surface-elevated)] rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm p-5">
+            <p className="text-xs uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Total Components</p>
             <p className="text-3xl font-bold text-blue-600">
               {statsLoading ? <span className="text-gray-300 animate-pulse">—</span> : bomStats.totalComponents.toLocaleString()}
             </p>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Copper Weight (lbs)</p>
+          <div className="bg-white dark:bg-[color:var(--surface-elevated)] rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm p-5">
+            <p className="text-xs uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Copper Weight (lbs)</p>
             <p className="text-3xl font-bold text-orange-500">
               {copperLoading ? (
                 <span className="text-gray-300 animate-pulse">…</span>
@@ -447,7 +447,7 @@ export default function EMIPDashboardPage() {
         {/* ATTENTION REQUIRED */}
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-900">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 pb-2 border-b border-gray-100 dark:border-slate-800">
               🔴 Attention Required
             </h2>
             <span className="text-xs text-gray-400">
@@ -472,7 +472,7 @@ export default function EMIPDashboardPage() {
         {/* IN PROGRESS */}
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-900">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 pb-2 border-b border-gray-100 dark:border-slate-800">
               🟡 In Progress
             </h2>
             <span className="text-xs text-gray-400">
@@ -498,8 +498,8 @@ export default function EMIPDashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
           {/* System Health */}
-          <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            <h2 className="text-base font-semibold text-gray-900 mb-4">System Health</h2>
+          <section className="bg-white dark:bg-[color:var(--surface-elevated)] rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm p-5">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100 mb-4">System Health</h2>
             {isLoadingAny && totalLoaded === 0 ? (
               <div className="space-y-3">
                 {[...Array(4)].map((_, i) => <div key={i} className="animate-pulse h-10 bg-gray-100 rounded-xl" />)}

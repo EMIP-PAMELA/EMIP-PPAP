@@ -38,10 +38,11 @@
   --bg-primary:   #0f172a;
   --bg-secondary: #1e293b;
   --bg-surface:   #263349;
+  --surface-elevated: #1f2937;
 
   /* Typography */
   --text-primary:   #f1f5f9;
-  --text-secondary: #94a3b8;
+  --text-secondary: #b0bccf;
   --text-muted:     #64748b;
 
   /* Borders */
@@ -68,6 +69,7 @@
 :root {
   --panel-bg:     #ffffff;
   --panel-border: #e5e7eb;
+  --surface-elevated: #f9fafb;
 
   --table-header-bg:   #f9fafb;
   --table-row-hover:   #f3f4f6;
@@ -85,8 +87,8 @@
 }
 
 [data-theme="dark"] {
-  --panel-bg:     #1e293b;
-  --panel-border: #334155;
+  --panel-bg:     #111827;
+  --panel-border: #1f2937;
 
   --table-header-bg:   #1e293b;
   --table-row-hover:   #334155;
