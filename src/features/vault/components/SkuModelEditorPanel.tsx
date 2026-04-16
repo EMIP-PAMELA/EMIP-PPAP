@@ -28,6 +28,7 @@ import type {
   WireTopology,
   OperatorWireBranch,
   AddedWireKind,
+  SharedNodeInput,
 } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 import {
   makeEmptyOperatorWire,
@@ -294,15 +295,82 @@ interface WireEditorProps {
   mode: 'add' | 'edit';
   onSave: (wire: OperatorWireModel) => void;
   onCancel: () => void;
+  wizardContext?: {
+    addedWireKind: AddedWireKind;
+    sharedNode?: SharedNodeInput;
+  };
 }
 
-function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWireId, mode, onSave, onCancel }: WireEditorProps) {
+function WireEditorForm({
+  initialForm,
+  existingId,
+  existingCreatedAt,
+  targetWireId,
+  mode,
+  onSave,
+  onCancel,
+  wizardContext,
+}: WireEditorProps) {
   const [form, setForm] = useState<WireFormState>(initialForm);
   const [errors, setErrors] = useState<Partial<Record<keyof WireFormState | 'fromTermination' | 'toTermination', string>>>({});
 
   const set = (key: keyof WireFormState) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => setForm(prev => ({ ...prev, [key]: e.target.value }));
+
+  const wizardKind = wizardContext?.addedWireKind;
+  const sharedNode = wizardContext?.sharedNode;
+  const isWizardAddFlow = mode === 'add' && Boolean(wizardKind);
+  const isSharedNodeWizard = Boolean(isWizardAddFlow && wizardKind && wizardKind !== 'STANDALONE');
+  const isFerruleKind = wizardKind === 'DOUBLE_CRIMP_FERRULE' || wizardKind === 'MACHINE_CRIMP_BAND';
+  const isTerminalDoubleCrimp = wizardKind === 'DOUBLE_CRIMP_TERMINAL';
+  const lockedFromTermination: EndpointTerminationType | null = isFerruleKind
+    ? 'FERRULE'
+    : isTerminalDoubleCrimp
+      ? 'TERMINAL'
+      : wizardKind === 'SPLICE'
+        ? 'SPLICE'
+        : null;
+  const lockedTopology = wizardKind ? addedWireKindToTopology(wizardKind) : null;
+  const sharedHardwareLabel = wizardKind && wizardKind !== 'STANDALONE'
+    ? KIND_HW_PN_LABEL[wizardKind]
+    : 'Shared hardware PN';
+  const sharedNodeLabel = wizardKind && wizardKind !== 'STANDALONE'
+    ? KIND_SHARED_NODE_LABEL[wizardKind]
+    : null;
+  const lockedSharedPartNumber = sharedNode?.sharedPartNumber?.trim() ?? '';
+
+  useEffect(() => {
+    if (!isWizardAddFlow || !wizardKind) return;
+    setForm(prev => {
+      const updates: Partial<WireFormState> = {};
+      if (sharedNode?.sharedComponent && prev.fromComponent !== sharedNode.sharedComponent) {
+        updates.fromComponent = sharedNode.sharedComponent;
+      }
+      if (sharedNode?.sharedCavity && prev.fromCavity !== sharedNode.sharedCavity) {
+        updates.fromCavity = sharedNode.sharedCavity;
+      }
+      if (lockedTopology && prev.topology !== lockedTopology) {
+        updates.topology = lockedTopology;
+      }
+      if (lockedFromTermination && prev.fromTermination !== lockedFromTermination) {
+        updates.fromTermination = lockedFromTermination;
+      }
+      if (sharedNode?.sharedAci && prev.branchAci !== sharedNode.sharedAci) {
+        updates.branchAci = sharedNode.sharedAci;
+      }
+      if (lockedSharedPartNumber) {
+        if (isFerruleKind && prev.branchFerrulePN !== lockedSharedPartNumber) {
+          updates.branchFerrulePN = lockedSharedPartNumber;
+        }
+        if (isTerminalDoubleCrimp && prev.branchTerminalPN !== lockedSharedPartNumber) {
+          updates.branchTerminalPN = lockedSharedPartNumber;
+        }
+      }
+      if (Object.keys(updates).length === 0) return prev;
+      return { ...prev, ...updates };
+    });
+  }, [isWizardAddFlow, wizardKind, sharedNode, lockedTopology, lockedFromTermination, isFerruleKind, isTerminalDoubleCrimp, lockedSharedPartNumber]);
 
   const validate = (): boolean => {
     const errs: typeof errors = {};
@@ -341,6 +409,20 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
   const labelCls = 'text-[11px] font-semibold text-gray-500 uppercase tracking-wide';
   const inputCls = (err?: string) =>
     `w-full rounded border ${err ? 'border-red-400 bg-red-50' : 'border-[color:var(--panel-border)] bg-[color:var(--input-bg)]'} px-2 py-1 text-[12px] text-[color:var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-blue-400`;
+  const helperCls = 'text-[10px] text-gray-500 mt-0.5';
+  const lockedPillCls = 'inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600';
+
+  const renderLockedValue = (label: string, value: string | null, helper?: string) => (
+    <div>
+      <p className={labelCls}>{label}</p>
+      <p className="text-[12px] font-semibold text-[color:var(--text-primary)]">{value?.trim() || dash}</p>
+      {helper && <p className={helperCls}>{helper}</p>}
+    </div>
+  );
+
+  const topologyLabel = form.topology
+    ? TOPOLOGY_OPTIONS.find(o => o.value === form.topology)?.label ?? form.topology
+    : '— Standard (unspecified) —';
 
   return (
     <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3 space-y-3">
@@ -356,8 +438,14 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
       {/* Identity */}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className={labelCls}>Wire ID (optional)</label>
-          <input value={form.wireId} onChange={set('wireId')} className={inputCls()} placeholder="Optional (e.g. COM, W1, etc.)" />
+          <label className={labelCls}>Customer Wire Label (printed on wire)</label>
+          <input
+            value={form.wireId}
+            onChange={set('wireId')}
+            className={inputCls()}
+            placeholder="e.g. COM, W1"
+          />
+          <p className={helperCls}>This is the label printed on the wire. The system assigns internal IDs automatically.</p>
         </div>
         <div>
           <label className={labelCls}>Length (in)</label>
@@ -376,40 +464,76 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
 
       {/* FROM endpoint */}
       <div>
-        <p className={`${labelCls} text-teal-700 mb-1`}>FROM endpoint</p>
-        <div className="grid grid-cols-3 gap-1.5">
-          <div>
-            <label className={labelCls}>Component *</label>
-            <input value={form.fromComponent} onChange={set('fromComponent')} className={inputCls(errors.fromComponent)} placeholder="J1" />
-            {errors.fromComponent && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromComponent}</p>}
+        <p className={`${labelCls} text-teal-700 mb-1 flex items-center justify-between`}>
+          FROM endpoint
+          {isSharedNodeWizard && sharedNodeLabel && (
+            <span className={lockedPillCls}>Locked · {sharedNodeLabel}</span>
+          )}
+        </p>
+        {isSharedNodeWizard ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-2 space-y-2">
+            <div className="grid grid-cols-2 gap-1.5">
+              {renderLockedValue('Component', form.fromComponent || sharedNode?.sharedComponent || null)}
+              {renderLockedValue('Cavity / Pin', form.fromCavity || sharedNode?.sharedCavity || null)}
+            </div>
+            {lockedFromTermination && (
+              <p className={helperCls}>
+                Termination type: <span className="font-semibold text-[color:var(--text-primary)]">{humanizeTermination(lockedFromTermination) ?? lockedFromTermination}</span>
+              </p>
+            )}
+            <p className={helperCls}>Edit shared-node details by returning to Step 2.</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <label className={labelCls}>Strip Length <span className="text-gray-400 normal-case font-normal">(optional)</span></label>
+                <input value={form.fromStripLength} onChange={set('fromStripLength')} className={inputCls()} placeholder="e.g. 8.5 mm" />
+              </div>
+              {!isWizardAddFlow && (
+                <div>
+                  <label className={labelCls}>Connection Method</label>
+                  <input value={form.fromTreatment} onChange={set('fromTreatment')} className={inputCls()} placeholder="SPLICE…" />
+                </div>
+              )}
+            </div>
           </div>
-          <div>
-            <label className={labelCls}>Cavity / Pin *</label>
-            <input value={form.fromCavity} onChange={set('fromCavity')} className={inputCls(errors.fromCavity)} placeholder="1" />
-            {errors.fromCavity && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromCavity}</p>}
+        ) : (
+          <div className="grid grid-cols-3 gap-1.5">
+            <div>
+              <label className={labelCls}>Component *</label>
+              <input value={form.fromComponent} onChange={set('fromComponent')} className={inputCls(errors.fromComponent)} placeholder="J1" />
+              {errors.fromComponent && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromComponent}</p>}
+            </div>
+            <div>
+              <label className={labelCls}>Cavity / Pin *</label>
+              <input value={form.fromCavity} onChange={set('fromCavity')} className={inputCls(errors.fromCavity)} placeholder="1" />
+              {errors.fromCavity && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromCavity}</p>}
+            </div>
+            <div>
+              <label className={labelCls}>Connection Method</label>
+              <input value={form.fromTreatment} onChange={set('fromTreatment')} className={inputCls()} placeholder="SPLICE…" />
+            </div>
+            <div className="col-span-3">
+              <label className={labelCls}>Termination Type</label>
+              <select value={form.fromTermination} onChange={set('fromTermination')} className={inputCls(errors.fromTermination)}>
+                {TERMINATION_OPTIONS.map(opt => (
+                  <option key={opt.value ?? 'blank'} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              {errors.fromTermination && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromTermination}</p>}
+            </div>
+            {!isWizardAddFlow && (
+              <>
+                <div>
+                  <label className={labelCls}>Part Number <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
+                  <input value={form.fromPartNumber} onChange={set('fromPartNumber')} className={inputCls()} placeholder="e.g. 929504-1" />
+                </div>
+                <div>
+                  <label className={labelCls}>Strip Length <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
+                  <input value={form.fromStripLength} onChange={set('fromStripLength')} className={inputCls()} placeholder="e.g. 8.5 mm" />
+                </div>
+              </>
+            )}
           </div>
-          <div>
-            <label className={labelCls}>Treatment</label>
-            <input value={form.fromTreatment} onChange={set('fromTreatment')} className={inputCls()} placeholder="SPLICE…" />
-          </div>
-          <div className="col-span-3">
-            <label className={labelCls}>Termination Type</label>
-            <select value={form.fromTermination} onChange={set('fromTermination')} className={inputCls(errors.fromTermination)}>
-              {TERMINATION_OPTIONS.map(opt => (
-                <option key={opt.value ?? 'blank'} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-            {errors.fromTermination && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromTermination}</p>}
-          </div>
-          <div>
-            <label className={labelCls}>Part Number <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
-            <input value={form.fromPartNumber} onChange={set('fromPartNumber')} className={inputCls()} placeholder="e.g. 929504-1" />
-          </div>
-          <div>
-            <label className={labelCls}>Strip Length <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
-            <input value={form.fromStripLength} onChange={set('fromStripLength')} className={inputCls()} placeholder="e.g. 8.5 mm" />
-          </div>
-        </div>
+        )}
       </div>
 
       {/* TO endpoint */}
@@ -426,7 +550,7 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
             <input value={form.toCavity} onChange={set('toCavity')} className={inputCls()} placeholder="" />
           </div>
           <div>
-            <label className={labelCls}>Treatment</label>
+            <label className={labelCls}>Connection Method</label>
             <input value={form.toTreatment} onChange={set('toTreatment')} className={inputCls()} placeholder="" />
           </div>
           <div className="col-span-3">
@@ -438,26 +562,43 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
             </select>
             {errors.toTermination && <p className="text-[10px] text-red-600 mt-0.5">{errors.toTermination}</p>}
           </div>
-          <div>
-            <label className={labelCls}>Part Number <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
-            <input value={form.toPartNumber} onChange={set('toPartNumber')} className={inputCls()} placeholder="e.g. 929504-1" />
-          </div>
-          <div>
-            <label className={labelCls}>Strip Length <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
-            <input value={form.toStripLength} onChange={set('toStripLength')} className={inputCls()} placeholder="e.g. 8.5 mm" />
-          </div>
+          {!isWizardAddFlow && (
+            <>
+              <div>
+                <label className={labelCls}>Part Number <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
+                <input value={form.toPartNumber} onChange={set('toPartNumber')} className={inputCls()} placeholder="e.g. 929504-1" />
+              </div>
+              <div>
+                <label className={labelCls}>Strip Length <span className="text-gray-400 normal-case font-normal">(Komax)</span></label>
+                <input value={form.toStripLength} onChange={set('toStripLength')} className={inputCls()} placeholder="e.g. 8.5 mm" />
+              </div>
+            </>
+          )}
+          {isWizardAddFlow && (
+            <div>
+              <label className={labelCls}>Strip Length <span className="text-gray-400 normal-case font-normal">(optional)</span></label>
+              <input value={form.toStripLength} onChange={set('toStripLength')} className={inputCls()} placeholder="e.g. 8.5 mm" />
+            </div>
+          )}
         </div>
       </div>
 
       {/* Topology */}
       <div>
         <label className={labelCls}>Topology</label>
-        <select value={form.topology} onChange={set('topology')} className={inputCls()}>
-          <option value="">— Standard (unspecified) —</option>
-          {TOPOLOGY_OPTIONS.map(o => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+        {isWizardAddFlow && lockedTopology ? (
+          <div className="rounded border border-dashed border-slate-200 bg-white px-2 py-1 text-[12px] text-[color:var(--text-primary)]">
+            {topologyLabel}
+            <p className={helperCls}>Wizard selections lock the topology. Use Step 1 to change the wire kind.</p>
+          </div>
+        ) : (
+          <select value={form.topology} onChange={set('topology')} className={inputCls()}>
+            <option value="">— Standard (unspecified) —</option>
+            {TOPOLOGY_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Branch / Double-Crimp / Splice shared-node fields */}
@@ -467,30 +608,51 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
             {form.topology === 'SPLICE' ? 'Splice / Shared-node data' : 'Branch / Double-Crimp data'}
           </p>
           <div className="grid grid-cols-2 gap-1.5">
-            <div>
-              <label className={labelCls}>Shared Source Component</label>
-              <input value={form.branchSrcComp} onChange={set('branchSrcComp')} className={inputCls()} placeholder="PHOENIX 1700443" />
-            </div>
-            <div>
-              <label className={labelCls}>Shared Source Cavity</label>
-              <input value={form.branchSrcCav} onChange={set('branchSrcCav')} className={inputCls()} placeholder="2" />
-            </div>
+            {isSharedNodeWizard ? (
+              <>
+                {renderLockedValue('Shared Source Component', form.branchSrcComp || sharedNode?.sharedComponent || null)}
+                {renderLockedValue('Shared Source Cavity', form.branchSrcCav || sharedNode?.sharedCavity || null)}
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className={labelCls}>Shared Source Component</label>
+                  <input value={form.branchSrcComp} onChange={set('branchSrcComp')} className={inputCls()} placeholder="PHOENIX 1700443" />
+                </div>
+                <div>
+                  <label className={labelCls}>Shared Source Cavity</label>
+                  <input value={form.branchSrcCav} onChange={set('branchSrcCav')} className={inputCls()} placeholder="2" />
+                </div>
+              </>
+            )}
             <div>
               <label className={labelCls}>Secondary Cavity</label>
               <input value={form.branchSecCav} onChange={set('branchSecCav')} className={inputCls()} placeholder="5" />
             </div>
-            <div>
-              <label className={labelCls}>Ferrule PN</label>
-              <input value={form.branchFerrulePN} onChange={set('branchFerrulePN')} className={inputCls()} placeholder="1381010" />
-            </div>
-            <div>
-              <label className={labelCls}>Terminal PN</label>
-              <input value={form.branchTerminalPN} onChange={set('branchTerminalPN')} className={inputCls()} placeholder="61944-1" />
-            </div>
-            <div>
-              <label className={labelCls}>Hardware ACI <span className="text-gray-400 normal-case font-normal">(optional)</span></label>
-              <input value={form.branchAci} onChange={set('branchAci')} className={inputCls()} placeholder="e.g. ACI10898" />
-            </div>
+            {isFerruleKind && lockedSharedPartNumber ? (
+              renderLockedValue(sharedHardwareLabel, form.branchFerrulePN || lockedSharedPartNumber, 'Captured in Shared Node step')
+            ) : (
+              <div>
+                <label className={labelCls}>Ferrule PN</label>
+                <input value={form.branchFerrulePN} onChange={set('branchFerrulePN')} className={inputCls()} placeholder="1381010" />
+              </div>
+            )}
+            {isTerminalDoubleCrimp && lockedSharedPartNumber ? (
+              renderLockedValue(sharedHardwareLabel, form.branchTerminalPN || lockedSharedPartNumber, 'Captured in Shared Node step')
+            ) : (
+              <div>
+                <label className={labelCls}>Terminal PN</label>
+                <input value={form.branchTerminalPN} onChange={set('branchTerminalPN')} className={inputCls()} placeholder="61944-1" />
+              </div>
+            )}
+            {isSharedNodeWizard && sharedNode?.sharedAci ? (
+              renderLockedValue('Hardware ACI', sharedNode.sharedAci, 'Provided in Shared Node step')
+            ) : (
+              <div>
+                <label className={labelCls}>Hardware ACI <span className="text-gray-400 normal-case font-normal">(optional)</span></label>
+                <input value={form.branchAci} onChange={set('branchAci')} className={inputCls()} placeholder="e.g. ACI10898" />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -685,7 +847,7 @@ export default function SkuModelEditorPanel({
   const [editorState, setEditorState] = useState<
     | { mode: 'add'; step: 'kind';        graphPrefill?: { fromComponent?: string; fromCavity?: string } }
     | { mode: 'add'; step: 'shared-node'; kind: Exclude<AddedWireKind, 'STANDALONE'>; graphPrefill?: { fromComponent?: string; fromCavity?: string } }
-    | { mode: 'add'; step: 'wire-form';   form: WireFormState; addedWireKind: AddedWireKind }
+    | { mode: 'add'; step: 'wire-form';   form: WireFormState; addedWireKind: AddedWireKind; sharedNode?: SharedNodeInput }
     | { mode: 'edit'; form: WireFormState; id: string; createdAt: string; targetWireId: string | null; isAddedWire: boolean }
     | null
   >(null);
@@ -769,6 +931,7 @@ export default function SkuModelEditorPanel({
         mode: 'add',
         step: 'wire-form',
         addedWireKind: 'STANDALONE',
+        sharedNode: undefined,
         form: { ...emptyForm(), fromComponent: gp?.fromComponent ?? '', fromCavity: gp?.fromCavity ?? '', topology: 'LINEAR' },
       });
     } else {
@@ -781,15 +944,23 @@ export default function SkuModelEditorPanel({
     const { kind } = editorState;
     const topology = addedWireKindToTopology(kind);
     const isFerruleKind = kind === 'DOUBLE_CRIMP_FERRULE' || kind === 'MACHINE_CRIMP_BAND';
+    const sharedNodeInput: SharedNodeInput = {
+      kind,
+      sharedComponent: data.sharedComp,
+      sharedCavity:    data.sharedCav,
+      sharedPartNumber: data.hardwarePN || null,
+      sharedAci:         data.hardwareAci || null,
+    };
     setEditorState({
       mode: 'add',
       step: 'wire-form',
       addedWireKind: kind,
+      sharedNode: sharedNodeInput,
       form: {
         ...emptyForm(),
         fromComponent:   data.sharedComp,
         fromCavity:      data.sharedCav,
-        fromTermination: 'CONNECTOR_PIN',
+        fromTermination: isFerruleKind ? 'FERRULE' : kind === 'DOUBLE_CRIMP_TERMINAL' ? 'TERMINAL' : 'CONNECTOR_PIN',
         topology,
         branchSrcComp:   data.sharedComp,
         branchSrcCav:    data.sharedCav,
@@ -904,6 +1075,7 @@ export default function SkuModelEditorPanel({
           {editorState.mode === 'add' && editorState.step === 'wire-form' && (
             <WireEditorForm
               initialForm={editorState.form}
+              wizardContext={{ addedWireKind: editorState.addedWireKind, sharedNode: editorState.sharedNode }}
               mode="add"
               onSave={handleSave}
               onCancel={() => setEditorState(null)}
