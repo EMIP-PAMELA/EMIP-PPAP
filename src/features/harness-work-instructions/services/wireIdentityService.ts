@@ -37,6 +37,13 @@ export interface WireIdentityEntry {
    * Never modified — read-only passthrough.
    */
   customerWireId?: string;
+  /**
+   * T16.5: Collision-safe map key for O(1) wire lookup.
+   * Equals wireId when wireId is non-empty; falls back to '_anon_N' where N
+   * is the wire's sourceRowIndex (or array index) for unlabeled wires.
+   * Use this key — never raw wireId — when building Maps over wire lists.
+   */
+  mapKey: string;
 }
 
 export interface WireIdentityResult {
@@ -129,8 +136,14 @@ export function assignWireIdentities(
   const assigned = new Set<string>();
   let seq = 1;
 
-  for (const { w } of indexed) {
-    if (assigned.has(w.wireId)) continue;
+  for (const { w, i } of indexed) {
+    // T16.5: stable dedup key — blank wireIds fall back to '_anon_N' so that
+    // multiple unlabeled wires are never silently collapsed into one.
+    const mapKey = w.wireId && w.wireId.trim()
+      ? w.wireId
+      : `_anon_${w.sourceRowIndex ?? i}`;
+
+    if (assigned.has(mapKey)) continue;
 
     const groupKey = wireGroupKey.get(w.wireId);
 
@@ -143,23 +156,28 @@ export function assignWireIdentities(
       );
       const base = `W${seq++}`;
 
-      orderedGroup.forEach((wid, i) => {
-        if (assigned.has(wid)) return;
-        const internalWireId = `${base}${String.fromCharCode(65 + i)}`; // A, B, C…
+      orderedGroup.forEach((wid, branchIdx) => {
+        // Find the source wire to compute a stable key for this group member.
+        const memberWire = indexed.find(({ w: mw }) => mw.wireId === wid);
+        const memberKey = wid && wid.trim()
+          ? wid
+          : `_anon_${memberWire?.w.sourceRowIndex ?? branchIdx}`;
+        if (assigned.has(memberKey)) return;
+        const internalWireId = `${base}${String.fromCharCode(65 + branchIdx)}`; // A, B, C…
         const customerWireId = wid.trim() || undefined;
-        const entry: WireIdentityEntry = { originalWireId: wid, internalWireId, customerWireId };
+        const entry: WireIdentityEntry = { originalWireId: wid, internalWireId, customerWireId, mapKey: memberKey };
         entries.push(entry);
-        byOriginalId.set(wid, entry);
-        assigned.add(wid);
+        byOriginalId.set(memberKey, entry);
+        assigned.add(memberKey);
       });
     } else {
       // Non-branch wire
       const internalWireId = `W${seq++}`;
       const customerWireId = w.wireId.trim() || undefined;
-      const entry: WireIdentityEntry = { originalWireId: w.wireId, internalWireId, customerWireId };
+      const entry: WireIdentityEntry = { originalWireId: w.wireId, internalWireId, customerWireId, mapKey };
       entries.push(entry);
-      byOriginalId.set(w.wireId, entry);
-      assigned.add(w.wireId);
+      byOriginalId.set(mapKey, entry);
+      assigned.add(mapKey);
     }
   }
 

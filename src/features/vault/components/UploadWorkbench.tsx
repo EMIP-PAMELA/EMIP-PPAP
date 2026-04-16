@@ -1893,6 +1893,23 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                 </details>
               ) : null}
 
+              {/* T16.5 R7: topology commit-blocker panel — shown whenever blocking topology
+                  warnings exist so the operator knows exactly why commit is gated. */}
+              {(() => {
+                const blockingWarnings = effectiveState?.effectiveTopology?.warnings?.filter(w => w.blocksCommit) ?? [];
+                if (blockingWarnings.length === 0) return null;
+                return (
+                  <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 space-y-1.5">
+                    <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
+                      Commit blocked — topology issues must be resolved
+                    </p>
+                    {blockingWarnings.map((w, idx) => (
+                      <p key={idx} className="text-xs text-red-700">⚠ {w.message}</p>
+                    ))}
+                  </div>
+                );
+              })()}
+
               {(selectedItem.status === 'ready_to_commit' || (
                 effectiveState?.readyToCommit === true &&
                 Boolean(selectedItem.confirmedDocumentType) &&

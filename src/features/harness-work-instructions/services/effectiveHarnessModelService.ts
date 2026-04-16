@@ -169,6 +169,7 @@ export function buildEffectiveHarnessState(args: {
       operatorAddedWires:     skuAddedWires,
       operatorEditedWires:    skuEditedWires,
       operatorDeletedWireIds: skuDeletedWireIds,
+      reconciliation:         analysis.harnessReconciliation ?? undefined,
     });
     effectiveConnectivity = t12.connectivity;
     effectiveValidation   = t12.validation;

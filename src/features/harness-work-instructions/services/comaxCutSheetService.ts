@@ -133,9 +133,17 @@ export function buildComaxCutSheet(
   }
 
   // ── Build wire lookup ────────────────────────────────────────────────────
-  const wireMap = new Map<string, WireConnectivity>(
-    connectivity.wires.map(w => [w.wireId, w]),
-  );
+  // T16.5: keyed by stable mapKey (mirrors wireIdentityService formula) so that
+  // wires with blank or duplicate wireIds are never silently lost.
+  const wireMap = new Map<string, WireConnectivity>();
+  connectivity.wires.forEach((w, idx) => {
+    const key = w.wireId && w.wireId.trim() ? w.wireId : `_anon_${w.sourceRowIndex ?? idx}`;
+    if (wireMap.has(key)) {
+      console.warn('[T16.5] Duplicate wire key detected — second wire dropped from cut sheet', { key, wireId: w.wireId });
+    } else {
+      wireMap.set(key, w);
+    }
+  });
 
   // ── Pre-compute branch sibling labels ────────────────────────────────────
   // Branch wires share the same base number: W4A and W4B both have base "W4".
@@ -154,7 +162,7 @@ export function buildComaxCutSheet(
   const rows: ComaxCutSheetRow[] = [];
 
   for (const entry of wireIdentities.wires) {
-    const wire = wireMap.get(entry.originalWireId);
+    const wire = wireMap.get(entry.mapKey);
     if (!wire) continue; // identity entry exists but wire was removed — skip
 
     const topology = classifyTopology(wire, entry.internalWireId);

@@ -204,10 +204,13 @@ describe('wireIdentityService', () => {
     assert.equal(entry1234!.customerWireId, '1234');
     assert.ok(entry1234!.internalWireId.startsWith('W'));
 
-    const entryEmpty = result.byOriginalId.get('');
+    // T16.5: byOriginalId is keyed by mapKey (not wireId) for blank wires.
+    // Locate the entry via the wires array instead.
+    const entryEmpty = result.wires.find(e => e.originalWireId === '');
     assert.ok(entryEmpty, 'should have entry for empty wireId');
     assert.equal(entryEmpty!.customerWireId, undefined);
     assert.ok(entryEmpty!.internalWireId.startsWith('W'));
+    assert.ok(entryEmpty!.mapKey.startsWith('_anon_'), 'mapKey should use _anon_ prefix for blank wireId');
 
     // Internal IDs must differ
     assert.notEqual(entry1234!.internalWireId, entryEmpty!.internalWireId);

@@ -65,13 +65,14 @@ function makeTopology(multiWireEndpoints: TopologyNode[] = []): HarnessTopologyR
 }
 
 function makeIdentityEntry(originalWireId: string, internalWireId: string, customerWireId?: string): WireIdentityEntry {
-  return { originalWireId, internalWireId, customerWireId };
+  const mapKey = originalWireId && originalWireId.trim() ? originalWireId : `_anon_test_${internalWireId}`;
+  return { originalWireId, internalWireId, customerWireId, mapKey };
 }
 
 function makeIdentities(entries: WireIdentityEntry[]): WireIdentityResult {
   return {
     wires: entries,
-    byOriginalId: new Map(entries.map(e => [e.originalWireId, e])),
+    byOriginalId: new Map(entries.map(e => [e.mapKey, e])),
   };
 }
 

@@ -25,6 +25,7 @@ import { evaluateHarnessDecision } from './harnessDecisionService';
 import type { HarnessValidationResult } from './harnessValidationService';
 import type { HarnessConfidenceResult } from './harnessConfidenceService';
 import type { HarnessDecisionResult } from './harnessDecisionService';
+import type { HarnessReconciliationResult } from './harnessReconciliationService';
 
 // ---------------------------------------------------------------------------
 // OperatorWireModel — SKU-level authoritative wire record
@@ -143,6 +144,8 @@ export function buildEffectiveSkuHarnessModel(args: {
   operatorAddedWires: OperatorWireModel[];
   operatorEditedWires: OperatorWireModel[];
   operatorDeletedWireIds: string[];
+  /** T5 reconciliation — passed through to validateHarness so R7/R10/H2 remain active after SKU edits. */
+  reconciliation?: HarnessReconciliationResult | null;
 }): EffectiveSkuHarnessModel {
   const {
     extractedConnectivity,
@@ -187,7 +190,7 @@ export function buildEffectiveSkuHarnessModel(args: {
     confidenceSummary: recomputeSummary(merged),
   };
 
-  const validation = validateHarness({ connectivity });
+  const validation = validateHarness({ connectivity, reconciliation: args.reconciliation ?? undefined });
   const confidence = adjustHarnessConfidence({ connectivity, validation });
   const decision   = evaluateHarnessDecision({ connectivity, validation, confidence });
 
