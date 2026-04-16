@@ -29,6 +29,7 @@ import type {
 import type { HarnessDecisionResult } from '@/src/features/harness-work-instructions/services/harnessDecisionService';
 import type { WireOperatorOverride, WireResolutionMode } from '@/src/features/vault/types/ingestionReview';
 import type { HarnessTopologyResult, TopologyWarning } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
+import HarnessTopologyVisualizer from './HarnessTopologyVisualizer';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -747,6 +748,11 @@ export default function HarnessConnectivityPanel({
             <span className="font-semibold">Unresolved wire IDs:</span>{' '}
             {unresolvedWires.join(', ')}
           </div>
+        )}
+
+        {/* ── T14: Topology visualizer ────────────────────────────── */}
+        {topology && model && (
+          <HarnessTopologyVisualizer connectivity={model} topology={topology} />
         )}
 
         {/* ── Primary wire table ──────────────────────────────────── */}
