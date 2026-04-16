@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'assert/strict';
 
-import { buildComaxCutSheet, buildCsvString } from '../comaxCutSheetService';
+import { buildKomaxCutSheet, buildWireCsvString, type KomaxCutSheetRow } from '../komaxCutSheetService';
 import type { EffectiveHarnessState } from '../effectiveHarnessModelService';
 import type { HarnessConnectivityResult, WireConnectivity, WireEndpoint, EndpointTerminationType } from '../harnessConnectivityService';
 import type { HarnessTopologyResult, TopologyNode } from '../harnessTopologyService';
@@ -102,7 +102,7 @@ function makeState(
 // A. Simple harness → rows match wires in natural ID order
 // ---------------------------------------------------------------------------
 
-describe('comaxCutSheetService', () => {
+describe('komaxCutSheetService', () => {
   it('A: simple harness rows match wires in natural W1/W2/W3 order', () => {
     const wires = [
       makeWire('alpha', 'J1', '1', 'J2', '1', { color: 'RED',  gauge: '20 AWG', lengthInches: 5 }),
@@ -115,7 +115,7 @@ describe('comaxCutSheetService', () => {
       makeIdentityEntry('gamma', 'W3', 'gamma'),
     ];
     const state = makeState(wires, identities);
-    const result = buildComaxCutSheet(state);
+    const result = buildKomaxCutSheet(state);
 
     assert.equal(result.rows.length, 3);
     assert.equal(result.summary.totalWires, 3);
@@ -148,20 +148,20 @@ describe('comaxCutSheetService', () => {
       makeIdentityEntry('plain', 'W2',  'plain'),
     ];
     const state = makeState(wires, identities);
-    const result = buildComaxCutSheet(state);
+    const result = buildKomaxCutSheet(state);
 
     assert.equal(result.summary.branchCount, 2);
 
-    const rowW1A = result.rows.find(r => r.internalWireId === 'W1A')!;
-    const rowW1B = result.rows.find(r => r.internalWireId === 'W1B')!;
-    const rowW2  = result.rows.find(r => r.internalWireId === 'W2')!;
+    const rowW1A = result.rows.find((r: KomaxCutSheetRow) => r.internalWireId === 'W1A')!;
+    const rowW1B = result.rows.find((r: KomaxCutSheetRow) => r.internalWireId === 'W1B')!;
+    const rowW2  = result.rows.find((r: KomaxCutSheetRow) => r.internalWireId === 'W2')!;
 
     assert.ok(rowW1A, 'W1A row should exist');
     assert.equal(rowW1A.topology, 'BRANCH_DOUBLE_CRIMP');
-    assert.ok(rowW1A.notes.some(n => n.includes('W1B')), 'W1A should note W1B as sibling');
+    assert.ok(rowW1A.notes.some((n: string) => n.includes('W1B')), 'W1A should note W1B as sibling');
 
     assert.equal(rowW1B.topology, 'BRANCH_DOUBLE_CRIMP');
-    assert.ok(rowW1B.notes.some(n => n.includes('W1A')), 'W1B should note W1A as sibling');
+    assert.ok(rowW1B.notes.some((n: string) => n.includes('W1A')), 'W1B should note W1A as sibling');
 
     assert.equal(rowW2.topology, 'NORMAL');
     assert.equal(rowW2.notes.length, 0);
@@ -185,14 +185,14 @@ describe('comaxCutSheetService', () => {
       [wireStrip],
       [makeIdentityEntry('s1', 'W1', 's1')],
     );
-    const result = buildComaxCutSheet(state);
+    const result = buildKomaxCutSheet(state);
 
     assert.equal(result.rows.length, 1);
     assert.equal(result.rows[0].fromTerminationType, 'STRIP');
     assert.equal(result.rows[0].toTerminationType,   'CONNECTOR_PIN');
     assert.equal(result.summary.stripOnlyCount, 1);
     assert.ok(
-      result.rows[0].notes.some(n => n.toLowerCase().includes('from end')),
+      result.rows[0].notes.some((n: string) => n.toLowerCase().includes('from end')),
       'should note strip-only FROM end',
     );
   });
@@ -213,11 +213,11 @@ describe('comaxCutSheetService', () => {
       makeIdentityEntry('t3', 'W3'),
     ];
     const state = makeState(wires, identities);
-    const result = buildComaxCutSheet(state);
+    const result = buildKomaxCutSheet(state);
 
-    const r1 = result.rows.find(r => r.internalWireId === 'W1')!;
-    const r2 = result.rows.find(r => r.internalWireId === 'W2')!;
-    const r3 = result.rows.find(r => r.internalWireId === 'W3')!;
+    const r1 = result.rows.find((r: KomaxCutSheetRow) => r.internalWireId === 'W1')!;
+    const r2 = result.rows.find((r: KomaxCutSheetRow) => r.internalWireId === 'W2')!;
+    const r3 = result.rows.find((r: KomaxCutSheetRow) => r.internalWireId === 'W3')!;
 
     assert.equal(r1.fromTerminationType, 'FERRULE');
     assert.equal(r1.toTerminationType,   'TERMINAL');
@@ -244,8 +244,8 @@ describe('comaxCutSheetService', () => {
     ];
     const state = makeState(wires, identities);
 
-    const r1 = buildComaxCutSheet(state);
-    const r2 = buildComaxCutSheet(state);
+    const r1 = buildKomaxCutSheet(state);
+    const r2 = buildKomaxCutSheet(state);
 
     assert.equal(r1.rows.length, r2.rows.length);
     assert.equal(r1.rows[0].internalWireId, r2.rows[0].internalWireId);
@@ -253,8 +253,8 @@ describe('comaxCutSheetService', () => {
     assert.equal(r1.summary.totalWires, r2.summary.totalWires);
 
     // CSV output must also be identical
-    const csv1 = buildCsvString(r1);
-    const csv2 = buildCsvString(r2);
+    const csv1 = buildWireCsvString(r1);
+    const csv2 = buildWireCsvString(r2);
     assert.equal(csv1, csv2);
 
     // CSV must contain the wire IDs and headers
