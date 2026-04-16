@@ -64,9 +64,111 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* T22.1: Extended semantic tokens */
+:root {
+  --panel-bg:     #ffffff;
+  --panel-border: #e5e7eb;
+
+  --table-header-bg:   #f9fafb;
+  --table-row-hover:   #f3f4f6;
+  --table-row-selected:#e5e7eb;
+
+  --input-bg:     #ffffff;
+  --input-border: #d1d5db;
+
+  --badge-bg:   #f3f4f6;
+  --badge-text: #374151;
+
+  --status-success: #16a34a;
+  --status-warning: #f59e0b;
+  --status-error:   #dc2626;
+}
+
+[data-theme="dark"] {
+  --panel-bg:     #1e293b;
+  --panel-border: #334155;
+
+  --table-header-bg:   #1e293b;
+  --table-row-hover:   #334155;
+  --table-row-selected:#475569;
+
+  --input-bg:     #0f172a;
+  --input-border: #334155;
+
+  --badge-bg:   #334155;
+  --badge-text: #e2e8f0;
+
+  --status-success: #22c55e;
+  --status-warning: #fbbf24;
+  --status-error:   #ef4444;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* ---------------------------------------------------------------------------
+   T22.1: Global dark-mode overrides
+   Rules are outside @layer utilities so they win the cascade over Tailwind
+   utility classes (layered rules always lose to unlayered rules of equal
+   or lower specificity per the CSS cascade algorithm).
+--------------------------------------------------------------------------- */
+
+/* Panel/card containers (details-based) */
+[data-theme="dark"] details {
+  background-color: var(--panel-bg);
+  border-color: var(--panel-border);
+  color: var(--text-primary);
+}
+[data-theme="dark"] details > summary {
+  color: var(--text-secondary);
+}
+
+/* Tables */
+[data-theme="dark"] table { color: var(--text-primary); }
+
+[data-theme="dark"] thead tr  { border-color: var(--panel-border); }
+[data-theme="dark"] thead th  {
+  background-color: var(--table-header-bg);
+  color: var(--text-secondary);
+  border-color: var(--panel-border);
+}
+[data-theme="dark"] tbody tr  { border-color: var(--panel-border); }
+[data-theme="dark"] tbody tr:hover { background-color: var(--table-row-hover); }
+[data-theme="dark"] td        { color: var(--text-primary); }
+
+/* Form elements */
+[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+  background-color: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+[data-theme="dark"] select {
+  background-color: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+[data-theme="dark"] textarea {
+  background-color: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Scrollbars */
+[data-theme="dark"] ::-webkit-scrollbar {
+  background-color: var(--bg-secondary);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 4px;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-muted);
 }

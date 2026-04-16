@@ -53,16 +53,16 @@ function classifyWire(w: WireConnectivity): WireStatus {
 }
 
 const STATUS_STYLES: Record<WireStatus, { label: string; className: string }> = {
-  RESOLVED:   { label: 'Resolved',   className: 'bg-emerald-100 text-emerald-800' },
-  PARTIAL:    { label: 'Partial',    className: 'bg-amber-100 text-amber-800' },
-  UNRESOLVED: { label: 'Unresolved', className: 'bg-red-100 text-red-700' },
+  RESOLVED:   { label: 'Resolved',   className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' },
+  PARTIAL:    { label: 'Partial',    className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
+  UNRESOLVED: { label: 'Unresolved', className: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' },
 };
 
 function confidencePill(conf: number): { label: string; className: string } {
   const pct = `${Math.round(conf * 100)}%`;
-  if (conf >= 0.9) return { label: pct, className: 'bg-emerald-100 text-emerald-800' };
-  if (conf >= 0.5) return { label: pct, className: 'bg-amber-100 text-amber-900' };
-  return { label: pct, className: 'bg-red-100 text-red-800' };
+  if (conf >= 0.9) return { label: pct, className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' };
+  if (conf >= 0.5) return { label: pct, className: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-300' };
+  return { label: pct, className: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400' };
 }
 
 /** Infer the reason a wire is unresolved from its existing data. */

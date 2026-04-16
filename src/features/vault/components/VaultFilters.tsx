@@ -21,10 +21,10 @@ export default function VaultFilters({ value, onChange }: VaultFiltersProps) {
   };
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
+    <div className="rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 shadow-sm">
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex-1 min-w-[140px] flex flex-col gap-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">SKU</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500">SKU</span>
           <input
             type="text"
             value={value.sku ?? ''}
@@ -35,7 +35,7 @@ export default function VaultFilters({ value, onChange }: VaultFiltersProps) {
         </label>
 
         <label className="flex-1 min-w-[120px] flex flex-col gap-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Doc Type</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500">Doc Type</span>
           <select
             value={value.documentType ?? ''}
             onChange={event => handleChange('documentType', event.target.value)}
@@ -49,7 +49,7 @@ export default function VaultFilters({ value, onChange }: VaultFiltersProps) {
         </label>
 
         <label className="flex-1 min-w-[100px] flex flex-col gap-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Status</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500">Status</span>
           <select
             value={value.status ?? ''}
             onChange={event => handleChange('status', event.target.value)}
@@ -63,7 +63,7 @@ export default function VaultFilters({ value, onChange }: VaultFiltersProps) {
         </label>
 
         <label className="flex-1 min-w-[140px] flex flex-col gap-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Classification</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500">Classification</span>
           <select
             value={value.classificationStatus ?? ''}
             onChange={event => handleChange('classificationStatus', event.target.value)}
@@ -80,7 +80,7 @@ export default function VaultFilters({ value, onChange }: VaultFiltersProps) {
         </label>
 
         <label className="flex-1 min-w-[160px] flex flex-col gap-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Search</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500">Search</span>
           <input
             type="text"
             value={value.search ?? ''}

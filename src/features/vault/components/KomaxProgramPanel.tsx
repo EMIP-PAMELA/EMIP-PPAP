@@ -63,9 +63,9 @@ function slug(partNumber: string | null | undefined): string {
 // ---------------------------------------------------------------------------
 
 const READINESS_STYLE: Record<KomaxProgramReadiness, string> = {
-  READY:   'bg-emerald-100 text-emerald-800 border-emerald-300',
-  PARTIAL: 'bg-amber-100   text-amber-800   border-amber-300',
-  BLOCKED: 'bg-red-100     text-red-800     border-red-300',
+  READY:   'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700',
+  PARTIAL: 'bg-amber-100   text-amber-800   border-amber-300   dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700',
+  BLOCKED: 'bg-red-100     text-red-800     border-red-300     dark:bg-red-900/40 dark:text-red-400 dark:border-red-700',
 };
 
 function ReadinessBadge({ r }: { r: KomaxProgramReadiness }) {
@@ -86,20 +86,20 @@ function ToolingBadge({ method, confidence, locations }: {
   locations?:  string[];
 }) {
   if (!method || method === 'NONE') {
-    return <span className="inline-block rounded bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 text-[9px] font-bold">❌ None</span>;
+    return <span className="inline-block rounded bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-700 px-1.5 py-0.5 text-[9px] font-bold">❌ None</span>;
   }
   const locStr = locations && locations.length > 0
     ? locations.map(l => l.replace('_', '\u00a0')).join(', ')
     : '?';
   if (method === 'ACI') {
     return (
-      <span className="inline-block rounded bg-emerald-100 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 text-[9px] font-bold">
+      <span className="inline-block rounded bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700 px-1.5 py-0.5 text-[9px] font-bold">
         ✔ ACI ({locStr})
       </span>
     );
   }
   return (
-    <span className="inline-block rounded bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.5 text-[9px] font-bold">
+    <span className="inline-block rounded bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700 px-1.5 py-0.5 text-[9px] font-bold">
       ⚠ Direct ({locStr})
     </span>
   );
@@ -107,9 +107,9 @@ function ToolingBadge({ method, confidence, locations }: {
 
 function ToolingCoverageBadge({ coverage }: { coverage?: string | null }) {
   if (!coverage) return null;
-  if (coverage === 'SINGLE_SETUP')  return <span className="rounded bg-emerald-100 text-emerald-800 px-1.5 py-0.5 text-[9px] font-bold">✔ Single Setup</span>;
-  if (coverage === 'MULTI_SETUP')   return <span className="rounded bg-amber-100   text-amber-800   px-1.5 py-0.5 text-[9px] font-bold">⚠ Multi-Setup</span>;
-  if (coverage === 'MISSING')       return <span className="rounded bg-red-100     text-red-800     px-1.5 py-0.5 text-[9px] font-bold">❌ Missing</span>;
+  if (coverage === 'SINGLE_SETUP')  return <span className="rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 px-1.5 py-0.5 text-[9px] font-bold">✔ Single Setup</span>;
+  if (coverage === 'MULTI_SETUP')   return <span className="rounded bg-amber-100   text-amber-800   dark:bg-amber-900/40 dark:text-amber-300 px-1.5 py-0.5 text-[9px] font-bold">⚠ Multi-Setup</span>;
+  if (coverage === 'MISSING')       return <span className="rounded bg-red-100     text-red-800     dark:bg-red-900/40 dark:text-red-400 px-1.5 py-0.5 text-[9px] font-bold">❌ Missing</span>;
   return null;
 }
 
@@ -133,7 +133,7 @@ function WireRow({ wp }: { wp: KomaxWireProgram }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <>
-      <tr className="border-b border-gray-100 hover:bg-gray-50">
+      <tr className="border-b border-gray-100 hover:bg-gray-50 dark:hover:bg-slate-700">
         <td className="px-2 py-1 font-mono text-[10px] text-gray-800 whitespace-nowrap">{wp.internalWireId}</td>
         <td className="px-2 py-1 text-[10px] text-gray-500">{wp.customerWireId ?? '—'}</td>
         <td className="px-2 py-1 text-[10px] text-gray-500">{wp.batchId ?? '—'}</td>
@@ -454,7 +454,7 @@ export default function KomaxProgramPanel({ effectiveState }: KomaxProgramPanelP
                   className={`px-3 py-1 font-medium capitalize transition ${
                     view === v
                       ? 'bg-violet-100 text-violet-800'
-                      : 'bg-white text-gray-500 hover:bg-gray-50'
+                      : 'bg-white text-gray-500 hover:bg-gray-50 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
                   }`}
               aria-label={v === 'tooling' ? 'Tooling Coverage' : undefined}
                 >

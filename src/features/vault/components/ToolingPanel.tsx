@@ -29,9 +29,9 @@ const LOCATION_LABELS: Record<ApplicatorLocation, string> = {
 };
 
 const STATUS_STYLE: Record<ApplicatorStatus, string> = {
-  ACTIVE:      'bg-emerald-100 text-emerald-800',
-  INACTIVE:    'bg-gray-100    text-gray-500',
-  MAINTENANCE: 'bg-amber-100   text-amber-800',
+  ACTIVE:      'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+  INACTIVE:    'bg-gray-100    text-gray-500    dark:bg-slate-700 dark:text-slate-400',
+  MAINTENANCE: 'bg-amber-100   text-amber-800   dark:bg-amber-900/40 dark:text-amber-300',
 };
 
 // ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ function LocationBadge({ location }: { location: string | null }) {
   if (!location) return <span className="text-gray-300 text-[9px]">—</span>;
   const label = LOCATION_LABELS[location as ApplicatorLocation] ?? location;
   return (
-    <span className="rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[9px] font-semibold">
+    <span className="rounded bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 text-[9px] font-semibold">
       {label}
     </span>
   );
@@ -98,11 +98,11 @@ export default function ToolingPanel() {
         <span className="text-orange-600 text-[11px] font-bold uppercase tracking-wide">
           T19 · Tooling Inventory
         </span>
-        <span className="rounded-full bg-orange-100 text-orange-800 px-2 py-0.5 text-[9px] font-bold">
+        <span className="rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 px-2 py-0.5 text-[9px] font-bold">
           {allApplicators.length} applicators
         </span>
         {Object.entries(locationCounts).map(([loc, count]) => (
-          <span key={loc} className="rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[9px] font-semibold">
+          <span key={loc} className="rounded-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-2 py-0.5 text-[9px] font-semibold">
             {LOCATION_LABELS[loc as ApplicatorLocation] ?? loc}: {count}
           </span>
         ))}
@@ -144,7 +144,7 @@ export default function ToolingPanel() {
             <option value="MAINTENANCE">Maintenance</option>
           </select>
 
-          <span className="text-[10px] text-gray-400 ml-auto">
+          <span className="text-[10px] text-gray-400 dark:text-slate-500 ml-auto">
             {filtered.length} of {allApplicators.length} shown
           </span>
         </div>
@@ -166,15 +166,15 @@ export default function ToolingPanel() {
                 {filtered.map((app, idx) => (
                   <tr
                     key={`${app.applicatorModel}-${app.serialNumber ?? idx}-${app.location}`}
-                    className="border-b border-gray-100 hover:bg-orange-50 transition-colors"
+                    className="border-b border-gray-100 hover:bg-orange-50 dark:hover:bg-slate-700 transition-colors"
                   >
-                    <td className="px-2 py-1.5 font-mono text-gray-800 whitespace-nowrap">
+                    <td className="px-2 py-1.5 font-mono text-gray-800 dark:text-slate-200 whitespace-nowrap">
                       {app.applicatorModel}
                     </td>
-                    <td className="px-2 py-1.5 font-mono text-orange-700 whitespace-nowrap">
+                    <td className="px-2 py-1.5 font-mono text-orange-700 dark:text-orange-400 whitespace-nowrap">
                       {app.aci ?? <span className="text-gray-300">—</span>}
                     </td>
-                    <td className="px-2 py-1.5 text-gray-600 max-w-[220px]">
+                    <td className="px-2 py-1.5 text-gray-600 dark:text-slate-400 max-w-[220px]">
                       {app.terminalPartNumbers.length > 0 ? (
                         <div className="flex flex-wrap gap-0.5">
                           {app.terminalPartNumbers.slice(0, 5).map(pn => (
@@ -190,10 +190,10 @@ export default function ToolingPanel() {
                         <span className="text-gray-300">—</span>
                       )}
                     </td>
-                    <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">
+                    <td className="px-2 py-1.5 text-gray-600 dark:text-slate-400 whitespace-nowrap">
                       {app.manufacturer ?? <span className="text-gray-300">—</span>}
                     </td>
-                    <td className="px-2 py-1.5 font-mono text-gray-600 whitespace-nowrap">
+                    <td className="px-2 py-1.5 font-mono text-gray-600 dark:text-slate-400 whitespace-nowrap">
                       {app.serialNumber ?? <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap">
@@ -202,7 +202,7 @@ export default function ToolingPanel() {
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       <StatusBadge status={app.status} />
                     </td>
-                    <td className="px-2 py-1.5 text-center text-gray-700">
+                    <td className="px-2 py-1.5 text-center text-gray-700 dark:text-slate-300">
                       {app.quantity}
                     </td>
                   </tr>

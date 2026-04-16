@@ -21,11 +21,11 @@ import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValid
 import type { DocumentExtractionEvidence } from '@/src/features/harness-work-instructions/types/extractionEvidence';
 
 const readinessBadgeTone: Record<ReadinessStatus, string> = {
-  READY:                'bg-emerald-100 text-emerald-800',
-  READY_LOW_CONFIDENCE: 'bg-emerald-50 text-emerald-700',
-  NEEDS_REVIEW:         'bg-amber-100 text-amber-800',
-  PARTIAL:              'bg-amber-100 text-amber-800',
-  BLOCKED:              'bg-red-100 text-red-700',
+  READY:                'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+  READY_LOW_CONFIDENCE: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  NEEDS_REVIEW:         'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  PARTIAL:              'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  BLOCKED:              'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400',
 };
 
 const readinessLabel: Record<ReadinessStatus, string> = {
@@ -105,28 +105,28 @@ interface VaultDocumentTableProps {
 }
 
 const statusColors: Record<RevisionState, string> = {
-  CURRENT: 'bg-emerald-100 text-emerald-800',
-  SUPERSEDED: 'bg-gray-100 text-gray-600',
-  CONFLICT: 'bg-red-100 text-red-700',
-  UNKNOWN: 'bg-amber-100 text-amber-800',
+  CURRENT:    'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+  SUPERSEDED: 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-400',
+  CONFLICT:   'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400',
+  UNKNOWN:    'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
 };
 
 type ExtractionStatus = 'parsed' | 'weak' | 'failed';
 
 const extractionStatusBadge: Record<ExtractionStatus, { label: string; tone: string }> = {
-  parsed: { label: '🟢 Parsed', tone: 'bg-emerald-50 text-emerald-700 border border-emerald-100' },
-  weak: { label: '🟡 Weak', tone: 'bg-amber-50 text-amber-700 border border-amber-100' },
-  failed: { label: '🔴 Failed', tone: 'bg-red-50 text-red-700 border border-red-100' },
+  parsed: { label: '🟢 Parsed', tone: 'bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' },
+  weak:   { label: '🟡 Weak',   tone: 'bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800' },
+  failed: { label: '🔴 Failed', tone: 'bg-red-50 text-red-700 border border-red-100 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' },
 };
 
 const CANONICAL_STATUS_BADGE: Record<CanonicalDocumentStatus, { label: string; tone: string }> = {
-  CANONICAL: { label: '⭐ Canonical',        tone: 'bg-yellow-50 text-yellow-800 border border-yellow-200' },
-  MATCHING:  { label: '✓ Matches expected', tone: 'bg-emerald-50 text-emerald-700 border border-emerald-100' },
-  OUTDATED:  { label: '⚠ Outdated',          tone: 'bg-amber-50 text-amber-700 border border-amber-100' },
-  CONFLICT:  { label: '🔥 Conflict',         tone: 'bg-red-50 text-red-700 border border-red-100' },
-  PENDING:   { label: '⏳ Pending SKU',       tone: 'bg-gray-100 text-gray-600 border border-gray-200' },
-  UNLINKED:  { label: '⚠ Unlinked',          tone: 'bg-orange-50 text-orange-700 border border-orange-100' },
-  UNKNOWN:   { label: '? Authority unknown', tone: 'bg-gray-100 text-gray-500 border border-gray-200' },
+  CANONICAL: { label: '⭐ Canonical',        tone: 'bg-yellow-50 text-yellow-800 border border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800' },
+  MATCHING:  { label: '✓ Matches expected', tone: 'bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' },
+  OUTDATED:  { label: '⚠ Outdated',          tone: 'bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800' },
+  CONFLICT:  { label: '🔥 Conflict',         tone: 'bg-red-50 text-red-700 border border-red-100 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' },
+  PENDING:   { label: '⏳ Pending SKU',       tone: 'bg-gray-100 text-gray-600 border border-gray-200 dark:bg-slate-700 dark:text-slate-400 dark:border-slate-600' },
+  UNLINKED:  { label: '⚠ Unlinked',          tone: 'bg-orange-50 text-orange-700 border border-orange-100 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800' },
+  UNKNOWN:   { label: '? Authority unknown', tone: 'bg-gray-100 text-gray-500 border border-gray-200 dark:bg-slate-700 dark:text-slate-500 dark:border-slate-600' },
 };
 
 const extractorLabel: Record<VaultDocumentRow['document_type'], string> = {
@@ -145,12 +145,12 @@ const statusAccent: Record<DocumentClassificationStatus, { bar: string; tint: st
 };
 
 const classificationBadges: Record<DocumentClassificationStatus, { label: string; tone: string }> = {
-  PENDING: { label: '🟡 Pending', tone: 'bg-amber-50 text-amber-800 border border-amber-100' },
-  PROCESSING: { label: '🔵 Processing', tone: 'bg-blue-50 text-blue-700 border border-blue-100' },
-  PARTIAL: { label: '🟠 Partial', tone: 'bg-orange-50 text-orange-800 border border-orange-100' },
-  PARTIAL_MISMATCH: { label: '🟠 Type Mismatch', tone: 'bg-orange-100 text-orange-900 border border-orange-200' },
-  NEEDS_REVIEW: { label: '🔴 Needs Review', tone: 'bg-red-50 text-red-800 border border-red-100' },
-  RESOLVED: { label: '🟢 Resolved', tone: 'bg-emerald-50 text-emerald-800 border border-emerald-100' },
+  PENDING:          { label: '🟡 Pending',      tone: 'bg-amber-50 text-amber-800 border border-amber-100 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800' },
+  PROCESSING:       { label: '🔵 Processing',   tone: 'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800' },
+  PARTIAL:          { label: '🟠 Partial',      tone: 'bg-orange-50 text-orange-800 border border-orange-100 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800' },
+  PARTIAL_MISMATCH: { label: '🟠 Type Mismatch',tone: 'bg-orange-100 text-orange-900 border border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-700' },
+  NEEDS_REVIEW:     { label: '🔴 Needs Review', tone: 'bg-red-50 text-red-800 border border-red-100 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' },
+  RESOLVED:         { label: '🟢 Resolved',     tone: 'bg-emerald-50 text-emerald-800 border border-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' },
 };
 
 function groupBySkuAndType(
