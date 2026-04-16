@@ -32,8 +32,6 @@ import DocumentOverlayViewer from './DocumentOverlayViewer';
 import HarnessConnectivityPanel from './HarnessConnectivityPanel';
 import SkuModelEditorPanel, { type SkuModelDeleteRequest } from './SkuModelEditorPanel';
 import type { OperatorWireModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
-import type { EffectiveSkuHarnessModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
-import { buildEffectiveSkuHarnessModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 import {
   buildEffectiveHarnessState,
   type EffectiveHarnessState,
@@ -734,7 +732,6 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const [skuAddedWires,   setSkuAddedWires]   = useState<Record<string, OperatorWireModel[]>>({});
   const [skuEditedWires,  setSkuEditedWires]  = useState<Record<string, OperatorWireModel[]>>({});
   const [skuDeletedIds,   setSkuDeletedIds]   = useState<Record<string, string[]>>({});
-  const [skuEffective,    setSkuEffective]    = useState<Record<string, EffectiveSkuHarnessModel | null>>({});
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
   const isResizingPanelRef = useRef(false);
   const panelWidthRef = useRef(panelWidth);
@@ -817,63 +814,43 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     setResolvedOutputs(prev => ({ ...prev, [itemId]: result }));
   }, [items, wireOverrides]);
 
-  const rebuildSkuModel = useCallback((itemId: string, added: OperatorWireModel[], edited: OperatorWireModel[], deleted: string[]) => {
-    const item = items.find(i => i.id === itemId);
-    const extracted = item?.analysis?.harnessConnectivity ?? null;
-    const effective = buildEffectiveSkuHarnessModel({ extractedConnectivity: extracted, operatorAddedWires: added, operatorEditedWires: edited, operatorDeletedWireIds: deleted });
-    setSkuEffective(prev => ({ ...prev, [itemId]: effective }));
-  }, [items]);
-
   const handleSkuAddWire = useCallback((itemId: string, wire: OperatorWireModel) => {
     setSkuAddedWires(prev => {
       const current = prev[itemId] ?? [];
-      const next = [...current.filter(w => w.id !== wire.id), wire];
-      rebuildSkuModel(itemId, next, skuEditedWires[itemId] ?? [], skuDeletedIds[itemId] ?? []);
-      return { ...prev, [itemId]: next };
+      return { ...prev, [itemId]: [...current.filter(w => w.id !== wire.id), wire] };
     });
-  }, [rebuildSkuModel, skuEditedWires, skuDeletedIds]);
+  }, []);
 
   const handleSkuEditWire = useCallback((itemId: string, wire: OperatorWireModel) => {
     setSkuEditedWires(prev => {
       const current = prev[itemId] ?? [];
-      const next = [...current.filter(w => w.id !== wire.id), wire];
-      rebuildSkuModel(itemId, skuAddedWires[itemId] ?? [], next, skuDeletedIds[itemId] ?? []);
-      return { ...prev, [itemId]: next };
+      return { ...prev, [itemId]: [...current.filter(w => w.id !== wire.id), wire] };
     });
-  }, [rebuildSkuModel, skuAddedWires, skuDeletedIds]);
+  }, []);
 
   const handleSkuDeleteWire = useCallback((itemId: string, request: SkuModelDeleteRequest) => {
     if (request.scope === 'operator') {
-      let addedNext = skuAddedWires[itemId] ?? [];
-      let editedNext = skuEditedWires[itemId] ?? [];
       setSkuAddedWires(prev => {
         const current = prev[itemId] ?? [];
-        addedNext = current.filter(w => w.id !== request.operatorId);
-        return { ...prev, [itemId]: addedNext };
+        return { ...prev, [itemId]: current.filter(w => w.id !== request.operatorId) };
       });
       setSkuEditedWires(prev => {
         const current = prev[itemId] ?? [];
-        editedNext = current.filter(w => w.id !== request.operatorId);
-        return { ...prev, [itemId]: editedNext };
+        return { ...prev, [itemId]: current.filter(w => w.id !== request.operatorId) };
       });
-      rebuildSkuModel(itemId, addedNext, editedNext, skuDeletedIds[itemId] ?? []);
       return;
     }
-
     const { wireId, undo } = request;
-    let editedNext = skuEditedWires[itemId] ?? [];
     setSkuEditedWires(prev => {
       const current = prev[itemId] ?? [];
-      editedNext = current.filter(w => w.targetWireId !== wireId);
-      return { ...prev, [itemId]: editedNext };
+      return { ...prev, [itemId]: current.filter(w => w.targetWireId !== wireId) };
     });
     setSkuDeletedIds(prev => {
       const cur = prev[itemId] ?? [];
       const next = undo ? cur.filter(id => id !== wireId) : [...cur.filter(id => id !== wireId), wireId];
-      rebuildSkuModel(itemId, skuAddedWires[itemId] ?? [], editedNext, next);
       return { ...prev, [itemId]: next };
     });
-  }, [rebuildSkuModel, skuAddedWires, skuEditedWires, skuDeletedIds]);
+  }, []);
 
   const setConfirmedField = useCallback((
     itemId: string,
@@ -1842,7 +1819,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               {selectedItem.analysis?.harnessConnectivity ? (
                 <SkuModelEditorPanel
                   extractedConnectivity={selectedItem.analysis.harnessConnectivity}
-                  effectiveModel={skuEffective[selectedId ?? ''] ?? null}
+                  effectiveConnectivity={effectiveState?.effectiveConnectivity ?? null}
+                  effectiveDecision={effectiveState?.effectiveDecision ?? null}
                   operatorAddedWires={skuAddedWires[selectedId ?? ''] ?? []}
                   operatorEditedWires={skuEditedWires[selectedId ?? ''] ?? []}
                   operatorDeletedWireIds={skuDeletedIds[selectedId ?? ''] ?? []}

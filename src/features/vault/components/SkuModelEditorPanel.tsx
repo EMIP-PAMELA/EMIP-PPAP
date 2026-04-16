@@ -32,7 +32,7 @@ import {
   makeEmptyOperatorWire,
   wireConnectivityToOperatorModel,
 } from '@/src/features/harness-work-instructions/services/skuModelEditService';
-import type { EffectiveSkuHarnessModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
+import type { HarnessDecisionResult } from '@/src/features/harness-work-instructions/services/harnessDecisionService';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -44,7 +44,10 @@ export type SkuModelDeleteRequest =
 
 export interface SkuModelEditorPanelProps {
   extractedConnectivity: HarnessConnectivityResult | null;
-  effectiveModel: EffectiveSkuHarnessModel | null;
+  /** T12.4 effective connectivity (T11 overrides + T12 SKU edits applied). */
+  effectiveConnectivity: HarnessConnectivityResult | null;
+  /** T12.4 effective decision recomputed from effective connectivity. */
+  effectiveDecision: HarnessDecisionResult | null;
   operatorAddedWires: OperatorWireModel[];
   operatorEditedWires: OperatorWireModel[];
   operatorDeletedWireIds: string[];
@@ -466,7 +469,8 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
 
 export default function SkuModelEditorPanel({
   extractedConnectivity,
-  effectiveModel,
+  effectiveConnectivity,
+  effectiveDecision,
   operatorAddedWires,
   operatorEditedWires,
   operatorDeletedWireIds,
@@ -476,7 +480,7 @@ export default function SkuModelEditorPanel({
 }: SkuModelEditorPanelProps) {
   const [editorState, setEditorState] = useState<
     | { mode: 'add'; form: WireFormState }
-    | { mode: 'edit'; form: WireFormState; id: string; createdAt: string; targetWireId: string | null }
+    | { mode: 'edit'; form: WireFormState; id: string; createdAt: string; targetWireId: string | null; isAddedWire: boolean }
     | null
   >(null);
 
@@ -490,8 +494,8 @@ export default function SkuModelEditorPanel({
   const addedIdentity = (wire: OperatorWireModel) => wire.targetWireId ?? wire.wireId ?? wire.id;
   const addedMap    = new Map(operatorAddedWires.map(w => [addedIdentity(w), w]));
 
-  const effectiveWires = effectiveModel?.connectivity.wires ?? extractedConnectivity?.wires ?? [];
-  const overallDecision = effectiveModel?.decision.overallDecision ?? null;
+  const effectiveWires = effectiveConnectivity?.wires ?? extractedConnectivity?.wires ?? [];
+  const overallDecision = effectiveDecision?.overallDecision ?? null;
 
   const openAddForm = useCallback(() => {
     setEditorState({ mode: 'add', form: emptyForm() });
@@ -508,11 +512,14 @@ export default function SkuModelEditorPanel({
       id: opVersion?.id ?? `op-${wire.wireId}-${Date.now()}`,
       createdAt: opVersion?.createdAt ?? new Date().toISOString(),
       targetWireId: opVersion?.targetWireId ?? wire.wireId ?? null,
+      isAddedWire: false,
     });
   }, [editedMap]);
 
   const handleSave = useCallback((wire: OperatorWireModel) => {
     if (editorState?.mode === 'add') {
+      onAddWire(wire);
+    } else if (editorState?.mode === 'edit' && editorState.isAddedWire) {
       onAddWire(wire);
     } else {
       onEditWire(wire);
@@ -603,6 +610,7 @@ export default function SkuModelEditorPanel({
                   id: wire.id,
                   createdAt: wire.createdAt,
                   targetWireId: wire.targetWireId ?? null,
+                  isAddedWire: true,
                 });
               }}
               onDelete={() => handleDelete({ scope: 'operator', operatorId: wire.id }, formatWireLabel(wire.wireId))}
@@ -660,14 +668,18 @@ export default function SkuModelEditorPanel({
       </div>
 
       {/* Footer: decision detail */}
-      {effectiveModel && (
+      {(effectiveConnectivity || effectiveDecision) && (
         <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-[10px] text-gray-500 flex flex-wrap gap-3">
-          <span>Readiness: <strong className="text-gray-700">{effectiveModel.decision.readinessScore}%</strong></span>
-          <span>Unresolved: <strong className={effectiveModel.connectivity.unresolvedWires.length > 0 ? 'text-red-600' : 'text-gray-700'}>
-            {effectiveModel.connectivity.unresolvedWires.length}
-          </strong></span>
-          {effectiveModel.decision.blockedWires.length > 0 && (
-            <span className="text-red-600 font-semibold">Blocked wires: {effectiveModel.decision.blockedWires.join(', ')}</span>
+          {effectiveDecision && (
+            <span>Readiness: <strong className="text-gray-700">{effectiveDecision.readinessScore}%</strong></span>
+          )}
+          {effectiveConnectivity && (
+            <span>Unresolved: <strong className={effectiveConnectivity.unresolvedWires.length > 0 ? 'text-red-600' : 'text-gray-700'}>
+              {effectiveConnectivity.unresolvedWires.length}
+            </strong></span>
+          )}
+          {effectiveDecision && effectiveDecision.blockedWires.length > 0 && (
+            <span className="text-red-600 font-semibold">Blocked wires: {effectiveDecision.blockedWires.join(', ')}</span>
           )}
         </div>
       )}
