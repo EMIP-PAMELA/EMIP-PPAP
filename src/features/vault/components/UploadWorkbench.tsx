@@ -1303,6 +1303,29 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
         summary: `Committed: ${committedSkuKey} rev ${revision || 'UNSPECIFIED'} (skuId: ${json.sku?.id ?? 'unknown'})`,
       });
 
+      // Audit: document attachment event — records the precise moment this doc type
+      // was linked to the SKU. Enables "when was the BOM/drawing attached?" queries.
+      const attachEventType =
+        documentType === 'BOM'
+          ? 'BOM_ATTACHED'
+          : documentType === 'INTERNAL_DRAWING'
+            ? 'APOGEE_DRAWING_ATTACHED'
+            : 'CUSTOMER_DRAWING_ATTACHED';
+      void recordSkuAuditEvent({
+        skuKey:    committedSkuKey,
+        eventType: attachEventType,
+        actorType: 'USER',
+        actorName: 'ADMIN_BATCH_WORKBENCH',
+        summary:   `${documentType} attached to SKU ${committedSkuKey} rev ${revision || 'UNSPECIFIED'}`,
+        payload: {
+          skuId:        json.sku?.id,
+          documentId:   json.document?.id,
+          documentType,
+          revision:     revision || null,
+          drawingNumber: drawingNumber || null,
+        },
+      });
+
       onCommitComplete?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Commit request failed.';

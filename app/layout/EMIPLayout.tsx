@@ -22,6 +22,7 @@
 import React from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { useTheme } from '@/src/features/theme/ThemeContext';
 
 interface NavigationItem {
   label: string;
@@ -58,6 +59,7 @@ interface EMIPLayoutProps {
 
 export default function EMIPLayout({ children }: EMIPLayoutProps) {
   const pathname = usePathname();
+  const { theme, toggleTheme } = useTheme();
 
   const isActive = (path?: string) => {
     if (!path) return false;
@@ -75,17 +77,21 @@ export default function EMIPLayout({ children }: EMIPLayoutProps) {
   const renderNavLink = (item: NavigationItem, isChild = false) => {
     const active = isItemActive(item);
     const baseClasses = isChild
-      ? 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm'
+      ? 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors'
       : 'flex items-center gap-3 px-4 py-3 rounded-lg transition-colors';
     const stateClasses = active
-      ? 'bg-blue-50 text-blue-700 font-medium'
-      : 'text-gray-700 hover:bg-gray-50';
+      ? 'bg-blue-50 text-blue-700 font-medium dark:bg-slate-800 dark:text-blue-400'
+      : 'text-gray-700 hover:bg-gray-50 dark:text-slate-400 dark:hover:bg-slate-700';
 
     const content = (
       <>
         {item.icon && <span className={isChild ? 'text-sm' : 'text-xl'}>{item.icon}</span>}
         <span>{item.label}</span>
-        {item.disabled && <span className="ml-auto text-[10px] uppercase tracking-wide text-gray-400">Soon</span>}
+        {item.disabled && (
+          <span className="ml-auto text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-600">
+            Soon
+          </span>
+        )}
       </>
     );
 
@@ -99,28 +105,38 @@ export default function EMIPLayout({ children }: EMIPLayoutProps) {
 
     const href = item.path!;
     return (
-      <Link
-        href={href}
-        className={`${baseClasses} ${stateClasses}`}
-      >
+      <Link href={href} className={`${baseClasses} ${stateClasses}`}>
         {content}
       </Link>
     );
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-150">
       {/* Top Header Bar */}
-      <header className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-10 h-16">
+      <header className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 fixed top-0 left-0 right-0 z-10 h-16 transition-colors duration-150">
         <div className="flex items-center justify-between px-6 h-full">
           <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-blue-600">EMIP</h1>
-            <span className="text-sm text-gray-500">Engineering Master Intelligence Platform</span>
+            <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">EMIP</h1>
+            <span className="text-sm text-gray-500 dark:text-slate-400">
+              Engineering Master Intelligence Platform
+            </span>
           </div>
-          
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">System User</span>
-            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm">
+
+          <div className="flex items-center gap-3">
+            {/* T22: Theme toggle */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+              aria-label="Toggle theme"
+              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-700 transition-colors"
+            >
+              {theme === 'dark' ? '☀️' : '🌙'}
+            </button>
+
+            <span className="text-sm text-gray-600 dark:text-slate-400">System User</span>
+            <div className="w-8 h-8 bg-blue-500 dark:bg-blue-700 rounded-full flex items-center justify-center text-white text-sm">
               U
             </div>
           </div>
@@ -129,7 +145,7 @@ export default function EMIPLayout({ children }: EMIPLayoutProps) {
 
       <div className="flex pt-16">
         {/* Left Sidebar Navigation */}
-        <aside className="w-64 bg-white border-r border-gray-200 fixed left-0 top-16 bottom-0 overflow-y-auto">
+        <aside className="w-64 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700 fixed left-0 top-16 bottom-0 overflow-y-auto transition-colors duration-150">
           <nav className="p-4">
             <ul className="space-y-2">
               {NAVIGATION_ITEMS.map((item) => (
@@ -149,9 +165,9 @@ export default function EMIPLayout({ children }: EMIPLayoutProps) {
             </ul>
           </nav>
 
-          {/* Footer Info */}
-          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 bg-gray-50">
-            <div className="text-xs text-gray-500">
+          {/* Sidebar Footer */}
+          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 transition-colors duration-150">
+            <div className="text-xs text-gray-500 dark:text-slate-500">
               <div>EMIP v6.1</div>
               <div>Core System</div>
             </div>
@@ -159,7 +175,7 @@ export default function EMIPLayout({ children }: EMIPLayoutProps) {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 ml-64 p-8">
+        <main className="flex-1 ml-64 p-8 dark:text-slate-100">
           {children}
         </main>
       </div>

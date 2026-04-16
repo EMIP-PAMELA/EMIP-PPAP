@@ -117,7 +117,9 @@ export default function VaultPageClient({ initialSearchParams }: VaultPageClient
   }));
   const [viewMode, setViewMode] = useState<'grid' | 'compact'>('grid');
   const [refreshToken, setRefreshToken] = useState(0);
-  const [showWorkbench, setShowWorkbench] = useState<boolean>(false);
+  const [showWorkbench, setShowWorkbench] = useState<boolean>(
+    actionIntent === 'UPLOAD_MISSING_DOC' && Boolean(skuParam),
+  );
   const displaySku = useMemo(() => filters.sku ?? skuParam, [filters.sku, skuParam]);
   const hasPrefilledFilters = Boolean(skuParam || docTypeParam);
 

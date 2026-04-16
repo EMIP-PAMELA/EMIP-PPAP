@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
   const extractedTextField    = formData.get('extracted_text');
   const partNumberHint        = formData.get('part_number_hint');
   const revisionHint          = formData.get('revision_hint');
+  const forcedDocTypeField    = formData.get('forced_document_type');
   const regionTextField       = formData.get('title_block_region_text');
   const cropDataUrlField      = formData.get('title_block_crop');
   const fallbackRegionField   = formData.get('title_block_fallback_region_text');
@@ -84,8 +85,11 @@ export async function POST(request: NextRequest) {
       fileName: file.name,
       fileSize: file.size,
       normalizedText: extractedText,
-      partNumberHint:         typeof partNumberHint === 'string' ? partNumberHint : null,
-      revisionHint:           typeof revisionHint   === 'string' ? revisionHint   : null,
+      partNumberHint:      typeof partNumberHint    === 'string' ? partNumberHint    : null,
+      revisionHint:        typeof revisionHint      === 'string' ? revisionHint      : null,
+      forcedDocumentType:  typeof forcedDocTypeField === 'string' && forcedDocTypeField.trim()
+        ? (forcedDocTypeField.trim() as 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING' | 'UNKNOWN')
+        : null,
       titleBlockRegionLines,
       titleBlockCropDataUrl,
       titleBlockFallbackLines,

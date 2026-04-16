@@ -59,6 +59,9 @@ const EVENT_CONFIG: Record<SkuAuditEventType, { label: string; color: string }> 
   KOMAX_PROGRAM_EXPORTED:      { label: 'Program Exported',         color: 'bg-violet-200 text-violet-900' },
   ENDPOINT_PROCESS_ENRICHED:   { label: 'ACI Enriched',             color: 'bg-teal-100 text-teal-800' },
   TOOLING_VALIDATED:           { label: 'Tooling Validated',        color: 'bg-orange-100 text-orange-800' },
+  BOM_ATTACHED:                { label: 'BOM Attached',             color: 'bg-blue-200 text-blue-900' },
+  CUSTOMER_DRAWING_ATTACHED:   { label: 'Customer Drawing Attached',color: 'bg-blue-200 text-blue-900' },
+  APOGEE_DRAWING_ATTACHED:     { label: 'Apogee Drawing Attached',  color: 'bg-blue-200 text-blue-900' },
   SKU_READY_TO_COMMIT:         { label: 'Ready to Commit',          color: 'bg-emerald-200 text-emerald-900' },
   SKU_COMMITTED:               { label: 'Committed',                color: 'bg-emerald-600 text-white' },
 };
