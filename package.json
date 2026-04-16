@@ -12,7 +12,8 @@
     "db:migration:list": "supabase migration list",
     "db:push:dry": "supabase db push --dry-run",
     "db:push": "supabase db push",
-    "db:types": "supabase gen types typescript src/types/database.types.ts --local"
+    "db:types": "supabase gen types typescript src/types/database.types.ts --local",
+    "test": "tsx --test src/features/harness-work-instructions/services/__tests__/*.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.3",
@@ -34,12 +35,13 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "cross-env": "^10.1.0",
-    "supabase": "^1.203.4",
     "eslint": "^9",
     "eslint-config-next": "16.2.0",
+    "supabase": "^1.203.4",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
