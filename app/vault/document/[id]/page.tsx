@@ -133,7 +133,7 @@ export default async function VaultDocumentDetailPage({ params }: { params: Prom
         </p>
       </div>
 
-      <div className="grid gap-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm md:grid-cols-2">
+      <div className="grid gap-4 rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-6 shadow-sm md:grid-cols-2">
         <div>
           <p className="text-xs uppercase text-gray-400">Classification</p>
           <p className="text-lg font-semibold text-gray-900">{document.classification_status}</p>
@@ -163,11 +163,11 @@ export default async function VaultDocumentDetailPage({ params }: { params: Prom
         </div>
       </div>
 
-      <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-600 space-y-3">
+      <div className="rounded-2xl border border-dashed border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-6 text-sm text-gray-600 space-y-3">
         <div className="flex flex-wrap gap-2">
           {callouts.length === 0 && <span className="text-xs text-emerald-600">No outstanding issues detected.</span>}
           {callouts.map(item => (
-            <span key={item} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-700">
+            <span key={item} className="rounded-full bg-[color:var(--surface-elevated)] px-3 py-1 text-xs font-semibold text-amber-700">
               {item}
             </span>
           ))}

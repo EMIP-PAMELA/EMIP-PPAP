@@ -507,7 +507,7 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
   };
 
   return (
-    <div className={`space-y-2 ${prefillContext ? 'rounded-2xl border border-blue-100 p-3 bg-blue-50/40' : ''}`}>
+    <div className={`space-y-2 ${prefillContext ? 'rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-3' : ''}`}>
       {canonicalSummary && (
         <div className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
           canonicalSummary.includes('conflict') || canonicalSummary.includes('No uploaded')
@@ -528,7 +528,7 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
       )}
 
       {prefillContext && (prefillContext.expectedRevision || prefillContext.docType || prefillContext.actionIntent) && (
-        <div className="rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs text-blue-900">
+        <div className="rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] px-3 py-2 text-xs text-blue-900">
           {prefillContext.expectedRevision && (
             <p>
               <span className="font-semibold">Expected revision:</span> {prefillContext.expectedRevision}
@@ -546,7 +546,7 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
       )}
 
       {loading && (
-        <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
+        <div className="rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] px-3 py-2 text-sm text-gray-600">
           Loading documents…
         </div>
       )}
@@ -560,15 +560,15 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
       )}
 
       {viewMode === 'compact' ? (
-        <div className="rounded-xl border border-gray-300 bg-gray-50 shadow-sm">
+        <div className="rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] shadow-sm">
           <div className="divide-y divide-gray-200">
             {compactDocuments.map(doc => renderDocumentRow(doc, { compact: true }))}
           </div>
         </div>
       ) : (
         groupedDocuments.map(group => (
-          <div key={group.groupKey} className="rounded-xl border border-gray-300 bg-gray-50 shadow-sm">
-            <div className="flex items-center justify-between border-b border-gray-200 bg-white px-3 py-2 rounded-t-xl">
+          <div key={group.groupKey} className="rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] shadow-sm">
+            <div className="flex items-center justify-between border-b border-gray-200 bg-[color:var(--surface-elevated)] px-3 py-2 rounded-t-xl">
               <div className="flex items-center gap-3">
                 <p className="text-sm font-semibold text-gray-900">{group.groupKey}</p>
                 <p className="text-xs text-gray-400">{group.documents.length} doc{group.documents.length === 1 ? '' : 's'}</p>

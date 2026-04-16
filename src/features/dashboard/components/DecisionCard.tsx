@@ -129,7 +129,7 @@ export default function DecisionCard({
   const isLoading = !summary || summary.loading;
 
   return (
-    <div className="rounded-xl border border-blue-200 bg-white shadow-sm">
+    <div className="rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] shadow-sm">
       {/* Header row — fixed structure prevents layout shift while readiness loads */}
       <div className="flex items-start justify-between gap-4 px-4 pt-4 pb-2">
         <div className="min-w-0 flex-1">

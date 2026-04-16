@@ -58,7 +58,7 @@ export function VaultCorrectionPanel({
   const disableAliasSave = !drawingNumber || !aliasPartNumber.trim();
 
   return (
-    <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+    <div className="space-y-4 rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-5 shadow-sm">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Guided Correction</p>
@@ -78,7 +78,7 @@ export function VaultCorrectionPanel({
       )}
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-4">
+        <div className="space-y-2 rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Part Number</p>
           <input
             type="text"
@@ -98,7 +98,7 @@ export function VaultCorrectionPanel({
           <p className="text-[11px] text-gray-500">Stores operator-confirmed value and re-runs classification/linking.</p>
         </div>
 
-        <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-4">
+        <div className="space-y-2 rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Link to SKU</p>
           <input
             type="text"
@@ -120,7 +120,7 @@ export function VaultCorrectionPanel({
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-4">
+        <div className="space-y-2 rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-4">
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Drawing Alias</p>
             {!drawingNumber && <span className="text-[10px] text-red-500">No drawing number on record</span>}
@@ -143,7 +143,7 @@ export function VaultCorrectionPanel({
           <p className="text-[11px] text-gray-500">Confirms alias mapping for future automated linking.</p>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-4">
+        <div className="space-y-3 rounded-xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Re-run Pipelines</p>
           <button
             type="button"
