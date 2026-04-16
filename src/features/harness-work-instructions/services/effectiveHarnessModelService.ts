@@ -30,6 +30,7 @@ import type { OperatorWireModel } from './skuModelEditService';
 import { revalidateWithOverrides } from './wireOperatorResolutionService';
 import { buildEffectiveSkuHarnessModel } from './skuModelEditService';
 import { analyzeHarnessTopology, type HarnessTopologyResult } from './harnessTopologyService';
+import { assignWireIdentities, type WireIdentityResult } from './wireIdentityService';
 
 // ---------------------------------------------------------------------------
 // Exports
@@ -61,6 +62,11 @@ export interface EffectiveHarnessState {
    * Null when no connectivity data is available.
    */
   effectiveTopology: HarnessTopologyResult | null;
+  /**
+   * T15: Deterministic wire identity assignments (W1, W4A, W4B…).
+   * Null when no connectivity data is available.
+   */
+  effectiveWireIdentities: WireIdentityResult | null;
   /**
    * True when no blocking unresolved questions remain AND no HIGH-confidence
    * blocking topology warnings exist.
@@ -175,6 +181,12 @@ export function buildEffectiveHarnessState(args: {
     ? analyzeHarnessTopology({ connectivity: effectiveConnectivity })
     : null;
 
+  // ── T15. Wire identities: deterministic W1/W4A/W4B labels ─────────────
+  const effectiveWireIdentities: WireIdentityResult | null =
+    effectiveConnectivity && effectiveTopology
+      ? assignWireIdentities(effectiveConnectivity, effectiveTopology)
+      : null;
+
   // ── C. Readiness: no blocking questions AND no HIGH-confidence blocking topology warnings ──
   const hasBlockingTopology =
     effectiveTopology?.warnings.some(w => w.blocksCommit && w.confidence === 'HIGH') ?? false;
@@ -203,6 +215,7 @@ export function buildEffectiveHarnessState(args: {
     effectiveConfidence,
     effectiveDecision,
     effectiveTopology,
+    effectiveWireIdentities,
     effectiveDocumentType,
     effectiveDocTypeSource,
     effectivePartNumber:    analysis.proposedPartNumber    ?? null,

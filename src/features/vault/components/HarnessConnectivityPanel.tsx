@@ -29,6 +29,7 @@ import type {
 import type { HarnessDecisionResult } from '@/src/features/harness-work-instructions/services/harnessDecisionService';
 import type { WireOperatorOverride, WireResolutionMode } from '@/src/features/vault/types/ingestionReview';
 import type { HarnessTopologyResult, TopologyWarning } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
+import type { WireIdentityResult } from '@/src/features/harness-work-instructions/services/wireIdentityService';
 import HarnessTopologyVisualizer from './HarnessTopologyVisualizer';
 
 // ---------------------------------------------------------------------------
@@ -289,6 +290,7 @@ function WireEvidenceRow({
   activeResolveWireId,
   onActivateResolve,
   onResolveFormClose,
+  wireIdentity,
 }: {
   wire: WireConnectivity;
   reconciledWire?: ReconciledWire;
@@ -298,6 +300,7 @@ function WireEvidenceRow({
   activeResolveWireId?: string | null;
   onActivateResolve?: (wireId: string) => void;
   onResolveFormClose?: () => void;
+  wireIdentity?: WireIdentityResult['wires'][number];
 }) {
   const [expanded, setExpanded] = useState(false);
   const isOperatorResolved = Boolean(operatorOverride);
@@ -343,7 +346,10 @@ function WireEvidenceRow({
         title="Click to expand evidence"
       >
         <td className="px-2 py-1 font-mono font-semibold text-gray-900 whitespace-nowrap">
-          {wire.wireId}
+          <span>{wireIdentity?.internalWireId ?? wire.wireId}</span>
+          {wireIdentity?.customerWireId && wireIdentity.customerWireId !== wireIdentity.internalWireId && (
+            <span className="ml-1 text-[9px] text-slate-400 font-normal">({wireIdentity.customerWireId})</span>
+          )}
           <span className="ml-1 text-[9px] text-gray-400">{expanded ? '▲' : '▾'}</span>
         </td>
         <td className="px-2 py-1 text-right font-mono">{formatLengthSummary(wire)}</td>
@@ -587,6 +593,8 @@ export interface HarnessConnectivityPanelProps {
   resolvedDecision?: HarnessDecisionResult | null;
   /** T13: Topology analysis result — missing wires, branches, isolated groups. */
   topology?: HarnessTopologyResult | null;
+  /** T15: Deterministic wire identity assignments — forwarded to visualizer and wire table. */
+  wireIdentities?: WireIdentityResult | null;
   /** T14.5: Graph interaction callbacks — forwarded to HarnessTopologyVisualizer. */
   onGraphWireClick?: (wireId: string) => void;
   onGraphMissingPinClick?: (payload: { component: string; cavity: string }) => void;
@@ -601,6 +609,7 @@ export default function HarnessConnectivityPanel({
   onOverrideSubmit,
   resolvedDecision,
   topology,
+  wireIdentities,
   onGraphWireClick,
   onGraphMissingPinClick,
   onGraphBranchClick,
@@ -762,6 +771,7 @@ export default function HarnessConnectivityPanel({
           <HarnessTopologyVisualizer
             connectivity={model}
             topology={topology}
+            wireIdentities={wireIdentities}
             onWireClick={onGraphWireClick}
             onMissingPinClick={onGraphMissingPinClick}
             onBranchClick={onGraphBranchClick}
@@ -798,6 +808,7 @@ export default function HarnessConnectivityPanel({
                   activeResolveWireId={activeResolveWireId}
                   onActivateResolve={openResolve}
                   onResolveFormClose={closeResolve}
+                  wireIdentity={wireIdentities?.byOriginalId.get(wire.wireId)}
                 />
               ))}
             </tbody>

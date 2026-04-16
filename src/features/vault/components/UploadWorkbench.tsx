@@ -1816,6 +1816,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   onOverrideSubmit={override => handleOverrideSubmit(selectedId ?? '', override)}
                   resolvedDecision={effectiveState?.effectiveDecision ?? resolvedOutputs[selectedId ?? '']?.resolvedDecision ?? null}
                   topology={effectiveState?.effectiveTopology ?? null}
+                  wireIdentities={effectiveState?.effectiveWireIdentities ?? null}
                   onGraphWireClick={wireId => {
                     setSkuEditorRequest({ type: 'edit', wireId });
                     skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1845,6 +1846,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                     onDeleteWire={request => handleSkuDeleteWire(selectedId ?? '', request)}
                     externalEditorRequest={skuEditorRequest}
                     onExternalRequestConsumed={() => setSkuEditorRequest(null)}
+                    wireIdentities={effectiveState?.effectiveWireIdentities ?? null}
                   />
                 </div>
               ) : null}

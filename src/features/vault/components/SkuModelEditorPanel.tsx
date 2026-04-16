@@ -33,6 +33,7 @@ import {
   wireConnectivityToOperatorModel,
 } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 import type { HarnessDecisionResult } from '@/src/features/harness-work-instructions/services/harnessDecisionService';
+import type { WireIdentityResult } from '@/src/features/harness-work-instructions/services/wireIdentityService';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -67,6 +68,8 @@ export interface SkuModelEditorPanelProps {
   externalEditorRequest?: ExternalEditorRequest | null;
   /** T14.5: Called once the external request has been consumed (to clear parent state). */
   onExternalRequestConsumed?: () => void;
+  /** T15: Wire identity assignments — shows internalWireId (read-only) alongside each wire. */
+  wireIdentities?: WireIdentityResult | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +495,7 @@ export default function SkuModelEditorPanel({
   onDeleteWire,
   externalEditorRequest,
   onExternalRequestConsumed,
+  wireIdentities,
 }: SkuModelEditorPanelProps) {
   const [editorState, setEditorState] = useState<
     | { mode: 'add'; form: WireFormState }
@@ -737,6 +741,7 @@ export default function SkuModelEditorPanel({
                     editorState.targetWireId === wire.wireId
                   }
                   extractedFrom={extractedConnectivity?.wires.find(w => w.wireId === wire.wireId) ?? null}
+                  internalWireId={wireIdentities?.byOriginalId.get(wire.wireId)?.internalWireId}
                   onEdit={() => openEditForm(wire)}
                   onDelete={() => handleDelete({ scope: 'extracted', wireId: wire.wireId }, formatWireLabel(wire.wireId))}
                   onUndoDelete={() => onDeleteWire({ scope: 'extracted', wireId: wire.wireId, undo: true })}
@@ -809,6 +814,7 @@ function ExtractedWireRow({
   isEdited,
   isCurrentlyEditing,
   extractedFrom,
+  internalWireId,
   onEdit,
   onDelete,
   onUndoDelete,
@@ -818,6 +824,7 @@ function ExtractedWireRow({
   isEdited: boolean;
   isCurrentlyEditing: boolean;
   extractedFrom: WireConnectivity | null;
+  internalWireId?: string;
   onEdit: () => void;
   onDelete: () => void;
   onUndoDelete: () => void;
@@ -844,7 +851,16 @@ function ExtractedWireRow({
 
   return (
     <div className={`grid grid-cols-[3rem_5rem_3rem_3rem_6rem_1rem_6rem_5rem_auto] gap-x-2 items-start px-4 py-1.5 border-b border-gray-100 hover:bg-gray-50/70 transition ${rowCls}`}>
-      <span className="font-mono font-semibold text-gray-800 text-[11px] pt-0.5">{displayId}</span>
+      <span className="font-mono font-semibold text-gray-800 text-[11px] pt-0.5">
+        {internalWireId ? (
+          <>
+            <span className="text-blue-700">{internalWireId}</span>
+            {displayId !== internalWireId && (
+              <span className="block text-[9px] text-gray-400 font-normal leading-tight">{displayId}</span>
+            )}
+          </>
+        ) : displayId}
+      </span>
       <span className="font-mono text-[11px] text-gray-600 pt-0.5">{lengthDisplay}</span>
       <span className="font-mono text-[11px] text-gray-500 pt-0.5">{wire.gauge ?? dash}</span>
       <span className="font-mono text-[11px] text-gray-500 pt-0.5">{wire.color ?? dash}</span>

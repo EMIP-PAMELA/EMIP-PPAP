@@ -21,6 +21,7 @@ import type {
   TopologyEdge,
   MissingWireCandidate,
 } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
+import type { WireIdentityResult } from '@/src/features/harness-work-instructions/services/wireIdentityService';
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -248,6 +249,8 @@ interface TooltipInfo {
 export interface HarnessTopologyVisualizerProps {
   connectivity: HarnessConnectivityResult;
   topology: HarnessTopologyResult;
+  /** T15: Wire identity assignments (internalWireId / customerWireId). When absent, falls back to local label generation. */
+  wireIdentities?: WireIdentityResult | null;
   /** T14.5: Click a wire edge — fires with the wireId. */
   onWireClick?: (wireId: string) => void;
   /** T14.5: Click a missing-pin placeholder — pre-fill add-wire editor. */
@@ -263,6 +266,7 @@ export interface HarnessTopologyVisualizerProps {
 export default function HarnessTopologyVisualizer({
   connectivity,
   topology,
+  wireIdentities,
   onWireClick,
   onMissingPinClick,
   onBranchClick,
@@ -437,10 +441,12 @@ export default function HarnessTopologyVisualizer({
             </g>
           ))}
 
-          {/* ── Wire edges ────────────────────────────────────────── */}
+          {/* ── Wire edges ──────────────────────────────────────────── */}
           {topology.edges.map(edge => {
-            const wire    = wireMap.get(edge.wireId);
-            const label   = wireLabels.get(edge.wireId) ?? edge.wireId;
+            const wire         = wireMap.get(edge.wireId);
+            const idEntry      = wireIdentities?.byOriginalId.get(edge.wireId);
+            const label        = idEntry?.internalWireId ?? wireLabels.get(edge.wireId) ?? edge.wireId;
+            const customerLabel = idEntry?.customerWireId && idEntry.customerWireId !== label ? idEntry.customerWireId : undefined;
             const stroke  = wireStroke(wire?.color);
             const isIso   = isolatedWires.has(edge.wireId);
 
@@ -520,6 +526,13 @@ export default function HarnessTopologyVisualizer({
                   style={{ pointerEvents: 'none' }}>
                   {label}
                 </text>
+                {customerLabel && (
+                  <text x={lx} y={ly + 9} textAnchor="middle"
+                    fontSize={7} fill="#94a3b8" fontWeight="400"
+                    style={{ pointerEvents: 'none' }}>
+                    {customerLabel}
+                  </text>
+                )}
                 {/* FROM stub termination box */}
                 {showFromStub && (
                   <g>
