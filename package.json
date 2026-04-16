@@ -13,7 +13,7 @@
     "db:push:dry": "supabase db push --dry-run",
     "db:push": "supabase db push",
     "db:types": "supabase gen types typescript src/types/database.types.ts --local",
-    "test": "tsx --test src/features/harness-work-instructions/services/__tests__/*.test.ts"
+    "test": "tsx --test src/features/harness-work-instructions/services/__tests__/*.test.ts src/services/sharepoint/__tests__/*.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.3",
