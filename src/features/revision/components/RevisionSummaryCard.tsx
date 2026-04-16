@@ -164,7 +164,7 @@ export default function RevisionSummaryCard({
               )}
             </div>
           )}
-          <h2 className="text-xl font-semibold text-gray-900">Canonical Revision {canonical_revision ?? '—'}</h2>
+          <h2 className="text-xl font-semibold text-[color:var(--text-primary)]">Canonical Revision {canonical_revision ?? '—'}</h2>
           <p className="text-sm text-gray-600">
             {canonical_source ? `Source: ${SOURCE_LABEL[canonical_source]?.title ?? canonical_source}` : 'No canonical source selected'}
           </p>

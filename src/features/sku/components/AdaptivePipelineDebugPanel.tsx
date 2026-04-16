@@ -83,7 +83,7 @@ export default function AdaptivePipelineDebugPanel({
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-6 py-4 bg-gray-50 border-b border-gray-200">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-gray-900">Adaptive Pipeline</h2>
+          <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">Adaptive Pipeline</h2>
           {analysis && (
             <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${modeBadgeStyle(analysis.mode)}`}>
               {modeLabel(analysis.mode)}

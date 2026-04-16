@@ -136,7 +136,7 @@ export function PPAPHeader({ ppap }: PPAPHeaderProps) {
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
             <div className="flex items-center gap-4 mb-3">
-              <h1 className="text-4xl font-bold text-gray-900">{ppap.ppap_number}</h1>
+              <h1 className="text-4xl font-bold text-[color:var(--text-primary)]">{ppap.ppap_number}</h1>
               <StatusUpdateControl ppapId={ppap.id} currentStatus={ppap.status} />
             </div>
             <div className="flex items-baseline gap-3">

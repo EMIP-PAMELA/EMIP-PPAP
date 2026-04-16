@@ -14,7 +14,7 @@ export function EventHistory({ events }: EventHistoryProps) {
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6">
-      <h2 className="text-xl font-bold text-gray-900 mb-4">Event History</h2>
+      <h2 className="text-xl font-bold text-[color:var(--text-primary)] mb-4">Event History</h2>
 
       {events.length === 0 ? (
         <div className="text-center py-8">

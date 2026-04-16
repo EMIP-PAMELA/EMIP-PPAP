@@ -62,7 +62,7 @@ export function VaultCorrectionPanel({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Guided Correction</p>
-          <h2 className="text-lg font-bold text-gray-900">Self-Healing Workspace</h2>
+          <h2 className="text-lg font-bold text-[color:var(--text-primary)]">Self-Healing Workspace</h2>
         </div>
         <div className="text-xs text-gray-500">Status: {classificationStatus}</div>
       </div>

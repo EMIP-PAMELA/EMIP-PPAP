@@ -110,7 +110,7 @@ export default function BOMDrawer({
         <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-gray-400">BOM Inspection</p>
-            <h2 className="text-lg font-semibold text-gray-900">Bill of Materials</h2>
+            <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">Bill of Materials</h2>
             <p className="text-sm text-gray-500 font-mono mt-0.5">{partNumber}</p>
           </div>
           <button

@@ -800,7 +800,7 @@ export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolP
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Drawing Markup Tool</h2>
+            <h2 className="text-2xl font-bold text-[color:var(--text-primary)]">Drawing Markup Tool</h2>
             <p className="text-sm text-gray-600">Part: {partNumber || ''}</p>
           </div>
           <div className="flex items-center gap-4">
@@ -1150,7 +1150,7 @@ export function MarkupTool({ context, ppapId, partNumber, onClose }: MarkupToolP
           {rightPanelOpen ? (
             <div className="absolute top-4 right-4 z-40 w-80 max-h-[80vh] overflow-auto bg-white border rounded-lg shadow-lg pointer-events-auto export-hide">
               <div className="flex justify-between items-center px-4 py-3 border-b">
-                <h3 className="text-base font-bold text-gray-900">
+                <h3 className="text-base font-bold text-[color:var(--text-primary)]">
                   Annotations ({annotations.length})
                 </h3>
                 <button

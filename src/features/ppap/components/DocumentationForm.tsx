@@ -400,7 +400,7 @@ export function DocumentationForm({
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="text-xl font-bold text-gray-900">Document Execution</h3>
+                  <h3 className="text-xl font-bold text-[color:var(--text-primary)]">Document Execution</h3>
                   <p className="text-sm text-gray-600 mt-1">
                     Scope-driven • {completeCount} of {requiredCount} required documents complete
                   </p>
@@ -483,7 +483,7 @@ export function DocumentationForm({
               <div className="flex items-center gap-3 mb-4">
                 <span className="text-2xl">{allRequiredComplete ? '🟢' : '🔴'}</span>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">Submission Gate</h3>
+                  <h3 className="text-lg font-bold text-[color:var(--text-primary)]">Submission Gate</h3>
                   <p className="text-sm text-gray-600">
                     {allRequiredComplete 
                       ? 'Ready for submission - all required documents complete' 

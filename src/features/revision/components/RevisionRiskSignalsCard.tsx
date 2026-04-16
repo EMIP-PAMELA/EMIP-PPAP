@@ -105,7 +105,7 @@ export default function RevisionRiskSignalsCard({ risk, className = '' }: Revisi
         <div className="flex-1 min-w-[200px]">
           <p className="text-xs uppercase tracking-[0.35em] text-gray-500">Historical Revision Risk</p>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-gray-900">{aggregate === 'NONE' ? 'No active signals' : `${aggregate} risk`}</h2>
+            <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">{aggregate === 'NONE' ? 'No active signals' : `${aggregate} risk`}</h2>
             <span className={`rounded-full px-3 py-0.5 text-xs font-semibold ${SEVERITY_BADGE[aggregate] ?? SEVERITY_BADGE.NONE}`}>
               {aggregate}
             </span>

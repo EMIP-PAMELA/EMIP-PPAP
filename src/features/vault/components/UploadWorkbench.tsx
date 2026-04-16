@@ -1403,7 +1403,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       {/* Header */}
       <div className="flex items-center justify-between gap-4 border-b bg-gray-50 px-6 py-4">
         <div className="flex items-center gap-3 min-w-0">
-          <h2 className="text-lg font-bold text-gray-900 whitespace-nowrap">Upload Workbench</h2>
+          <h2 className="text-lg font-bold text-[color:var(--text-primary)] whitespace-nowrap">Upload Workbench</h2>
           <span className="text-gray-300">·</span>
           <p className="text-sm text-gray-500">Analyze → Review → Commit verified files only</p>
           {preselectedSku && (

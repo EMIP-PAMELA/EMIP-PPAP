@@ -271,7 +271,7 @@ export function CopilotChatPanel({
     <div className="flex flex-col h-full bg-white rounded-lg shadow-md">
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900">Document Copilot</h3>
+        <h3 className="text-lg font-semibold text-[color:var(--text-primary)]">Document Copilot</h3>
         <p className="text-sm text-gray-600 mt-1">AI-guided document generation with Claude</p>
       </div>
 

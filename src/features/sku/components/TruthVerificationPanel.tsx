@@ -163,7 +163,7 @@ export default function TruthVerificationPanel({
       <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.4em] text-gray-400">Gap Detection</p>
-          <h2 className="text-lg font-semibold text-gray-900">Extraction Quality</h2>
+          <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">Extraction Quality</h2>
         </div>
 
         {coverage && scoreInfo && (

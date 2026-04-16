@@ -44,7 +44,7 @@ export default function HarnessStructurePanel({
       {/* ── ZONE A: Header ─────────────────────────────────────────────────── */}
       <div className="px-6 py-4 border-b border-gray-100">
         <p className="text-xs uppercase tracking-[0.4em] text-gray-400">System Interpretation</p>
-        <h2 className="text-lg font-semibold text-gray-900">Harness Structure</h2>
+        <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">Harness Structure</h2>
         <p className="text-sm text-gray-500">Derived from pipeline outputs for this SKU</p>
       </div>
 

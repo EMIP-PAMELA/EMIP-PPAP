@@ -184,7 +184,7 @@ export default function HarnessVisualizationPanel({
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="px-6 py-4 border-b border-gray-100">
         <p className="text-xs uppercase tracking-[0.4em] text-gray-400">Wire-Level View</p>
-        <h2 className="text-lg font-semibold text-gray-900">Harness Visualization</h2>
+        <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">Harness Visualization</h2>
         <p className="text-sm text-gray-500">Wires grouped by connector</p>
       </div>
 

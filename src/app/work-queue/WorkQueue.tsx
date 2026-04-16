@@ -82,7 +82,7 @@ export default function WorkQueue({
   if (items.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-xl font-semibold mb-4">{title}</h2>
+        <h2 className="text-xl font-semibold mb-4 text-[color:var(--text-primary)]">{title}</h2>
         <div className="text-center py-8 text-gray-500">
           {emptyMessage}
         </div>
@@ -93,7 +93,7 @@ export default function WorkQueue({
   return (
     <div className="bg-white rounded-lg shadow">
       <div className="p-6 border-b border-gray-200">
-        <h2 className="text-xl font-semibold">{title}</h2>
+        <h2 className="text-xl font-semibold text-[color:var(--text-primary)]">{title}</h2>
       </div>
 
       <div className="divide-y divide-gray-200">
@@ -115,7 +115,7 @@ export default function WorkQueue({
                   `}>
                     {item.type}
                   </span>
-                  <h3 className="font-medium text-gray-900">{item.title}</h3>
+                  <h3 className="font-medium text-[color:var(--text-primary)]">{item.title}</h3>
                 </div>
 
                 <div className="flex items-center gap-4 text-sm text-gray-600">

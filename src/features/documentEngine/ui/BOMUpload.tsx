@@ -49,7 +49,7 @@ export function BOMUpload({ onBOMProcessed }: BOMUploadProps) {
   return (
     <div className="border-2 border-dashed border-gray-300 rounded-lg p-8">
       <div className="text-center">
-        <h3 className="text-lg font-semibold mb-2">Upload BOM File</h3>
+        <h3 className="text-lg font-semibold mb-2 text-[color:var(--text-primary)]">Upload BOM File</h3>
         <p className="text-gray-600 mb-4">
           Upload a Visual Engineering Master BOM file (.txt or .pdf)
         </p>

@@ -203,7 +203,7 @@ export function CreatePPAPForm() {
       )}
 
       <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b border-gray-200">PPAP Information</h3>
+        <h3 className="text-xl font-bold text-[color:var(--text-primary)] mb-6 pb-3 border-b border-gray-200">PPAP Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label htmlFor="ppap_number" className="block text-sm font-semibold text-gray-700 mb-2">
@@ -334,7 +334,7 @@ export function CreatePPAPForm() {
       <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-8">
         <div className="flex items-center justify-between mb-6 pb-3 border-b border-gray-200">
           <div>
-            <h3 className="text-xl font-bold text-gray-900">Document Scope</h3>
+            <h3 className="text-xl font-bold text-[color:var(--text-primary)]">Document Scope</h3>
             <p className="text-sm text-gray-600 mt-1">
               Configure which documents are required and how each will be produced.
             </p>
@@ -473,7 +473,7 @@ export function CreatePPAPForm() {
 
       {/* Optional: Initial Customer Documents */}
       <div className="bg-white border border-gray-300 rounded-xl shadow-sm p-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-6 pb-3 border-b border-gray-200">Initial Customer Documents (Optional)</h3>
+        <h3 className="text-xl font-bold text-[color:var(--text-primary)] mb-6 pb-3 border-b border-gray-200">Initial Customer Documents (Optional)</h3>
         <p className="text-sm text-gray-600 mb-4">
           Upload any initial documents received from the customer (e.g., drawings, PPAP request forms, specifications).
           This front-loads all incoming data for easier tracking.
