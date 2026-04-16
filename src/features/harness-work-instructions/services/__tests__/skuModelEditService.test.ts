@@ -21,7 +21,9 @@ import {
   buildEffectiveSkuHarnessModel,
   makeEmptyOperatorWire,
   wireConnectivityToOperatorModel,
+  addedWireKindToTopology,
   type OperatorWireModel,
+  type AddedWireKind,
 } from '../skuModelEditService';
 import type {
   HarnessConnectivityResult,
@@ -284,5 +286,117 @@ describe('wireConnectivityToOperatorModel', () => {
     const op = wireConnectivityToOperatorModel(extracted);
     op.from.component = 'MUTATED';
     assert.equal(extracted.from.component, 'J1', 'original should be untouched');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T23: AddedWireKind and branch-aware add-wire wizard
+// ---------------------------------------------------------------------------
+
+describe('addedWireKindToTopology', () => {
+  const cases: Array<[AddedWireKind, string]> = [
+    ['STANDALONE',            'LINEAR'],
+    ['DOUBLE_CRIMP_TERMINAL', 'BRANCH_DOUBLE_CRIMP'],
+    ['DOUBLE_CRIMP_FERRULE',  'BRANCH_DOUBLE_CRIMP'],
+    ['MACHINE_CRIMP_BAND',    'BRANCH_DOUBLE_CRIMP'],
+    ['SPLICE',                'SPLICE'],
+  ];
+  for (const [kind, expected] of cases) {
+    it(`${kind} → ${expected}`, () => {
+      assert.equal(addedWireKindToTopology(kind), expected);
+    });
+  }
+});
+
+describe('T23: branch-aware operator wire integration', () => {
+  it('DOUBLE_CRIMP_FERRULE wire emits BRANCH_DOUBLE_CRIMP rawText in effective model', () => {
+    const ferruleWire = makeOperatorWire('W4', {
+      topology: 'BRANCH_DOUBLE_CRIMP',
+      addedWireKind: 'DOUBLE_CRIMP_FERRULE',
+      branch: {
+        sharedSourceComponent: 'PHOENIX-1700443',
+        sharedSourceCavity:    '2',
+        ferrulePartNumber:     '1381010',
+        sharedAci:             'ACI10898',
+      },
+    });
+    const result = buildEffectiveSkuHarnessModel({
+      extractedConnectivity: null,
+      operatorAddedWires: [ferruleWire],
+      operatorEditedWires: [],
+      operatorDeletedWireIds: [],
+    });
+    const wire = result.connectivity.wires.find(w => w.wireId === 'W4');
+    assert.ok(wire, 'W4 should be in effective model');
+    assert.ok(
+      wire!.rawText.includes('OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP'),
+      'rawText must carry BRANCH_DOUBLE_CRIMP provenance for topology service',
+    );
+  });
+
+  it('sharedAci is preserved in OperatorWireBranch through makeEmptyOperatorWire', () => {
+    const wire = makeEmptyOperatorWire({
+      wireId: 'W5',
+      topology: 'BRANCH_DOUBLE_CRIMP',
+      addedWireKind: 'DOUBLE_CRIMP_FERRULE',
+      branch: {
+        sharedSourceComponent: 'J9',
+        sharedSourceCavity:    '3',
+        ferrulePartNumber:     '1381010',
+        sharedAci:             'ACI10898',
+      },
+    });
+    assert.equal(wire.branch?.sharedAci, 'ACI10898', 'sharedAci must be stored in branch');
+    assert.equal(wire.addedWireKind, 'DOUBLE_CRIMP_FERRULE', 'addedWireKind must be set');
+  });
+
+  it('customer wireId is distinct from addedWireKind', () => {
+    const wire = makeEmptyOperatorWire({
+      wireId: 'COM-14',
+      addedWireKind: 'STANDALONE',
+    });
+    assert.equal(wire.wireId, 'COM-14', 'customer wire label should be preserved');
+    assert.equal(wire.addedWireKind, 'STANDALONE', 'addedWireKind stored separately');
+    assert.notEqual(wire.wireId, wire.addedWireKind, 'never conflated');
+  });
+
+  it('STANDALONE wire has null branch and LINEAR topology in effective model', () => {
+    const wire = makeOperatorWire('W1', {
+      topology:       'LINEAR',
+      addedWireKind:  'STANDALONE',
+      branch:         null,
+    });
+    const result = buildEffectiveSkuHarnessModel({
+      extractedConnectivity: null,
+      operatorAddedWires: [wire],
+      operatorEditedWires: [],
+      operatorDeletedWireIds: [],
+    });
+    const eff = result.connectivity.wires.find(w => w.wireId === 'W1');
+    assert.ok(eff, 'W1 should be present');
+    assert.ok(!eff!.rawText.includes('BRANCH_DOUBLE_CRIMP'), 'STANDALONE wire must not carry branch provenance');
+  });
+
+  it('SPLICE wire emits SPLICE rawText in effective model', () => {
+    const wire = makeOperatorWire('W6', {
+      topology:      'SPLICE',
+      addedWireKind: 'SPLICE',
+      branch: {
+        sharedSourceComponent: 'SPLICE-POINT-1',
+        sharedSourceCavity:    'A',
+      },
+    });
+    const result = buildEffectiveSkuHarnessModel({
+      extractedConnectivity: null,
+      operatorAddedWires: [wire],
+      operatorEditedWires: [],
+      operatorDeletedWireIds: [],
+    });
+    const eff = result.connectivity.wires.find(w => w.wireId === 'W6');
+    assert.ok(eff, 'W6 should be present');
+    assert.ok(
+      eff!.rawText.includes('OPERATOR_MODEL:SPLICE'),
+      'rawText must carry SPLICE provenance',
+    );
   });
 });

@@ -27,10 +27,12 @@ import type {
   OperatorWireModel,
   WireTopology,
   OperatorWireBranch,
+  AddedWireKind,
 } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 import {
   makeEmptyOperatorWire,
   wireConnectivityToOperatorModel,
+  addedWireKindToTopology,
 } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 import type { HarnessDecisionResult } from '@/src/features/harness-work-instructions/services/harnessDecisionService';
 import type { WireIdentityResult } from '@/src/features/harness-work-instructions/services/wireIdentityService';
@@ -168,6 +170,7 @@ interface WireFormState {
   branchSecCav: string;
   branchFerrulePN: string;
   branchTerminalPN: string;
+  branchAci: string;
   reason: string;
 }
 
@@ -179,7 +182,7 @@ function emptyForm(): WireFormState {
     toComponent: '', toCavity: '', toTreatment: '', toTermination: '',
     toPartNumber: '', toStripLength: '',
     topology: '', branchSrcComp: '', branchSrcCav: '', branchSecCav: '',
-    branchFerrulePN: '', branchTerminalPN: '', reason: '',
+    branchFerrulePN: '', branchTerminalPN: '', branchAci: '', reason: '',
   };
 }
 
@@ -214,6 +217,7 @@ function wireToForm(wire: WireConnectivity | OperatorWireModel): WireFormState {
     branchSecCav:   branch?.secondaryCavity        ?? '',
     branchFerrulePN:  branch?.ferrulePartNumber    ?? '',
     branchTerminalPN: branch?.terminalPartNumber   ?? '',
+    branchAci:        branch?.sharedAci            ?? '',
     reason:         opWire?.reason ?? '',
   };
 }
@@ -226,16 +230,17 @@ function formToOperatorWire(
 ): OperatorWireModel {
   const now = new Date().toISOString();
   const topology = (form.topology || null) as WireTopology | null;
-  const branch: OperatorWireBranch | null =
-    topology === 'BRANCH_DOUBLE_CRIMP'
-      ? {
-          sharedSourceComponent:  form.branchSrcComp   || null,
-          sharedSourceCavity:     form.branchSrcCav    || null,
-          secondaryCavity:        form.branchSecCav    || null,
-          ferrulePartNumber:      form.branchFerrulePN || null,
-          terminalPartNumber:     form.branchTerminalPN || null,
-        }
-      : null;
+  const needsBranch = topology === 'BRANCH_DOUBLE_CRIMP' || topology === 'SPLICE';
+  const branch: OperatorWireBranch | null = needsBranch
+    ? {
+        sharedSourceComponent:  form.branchSrcComp   || null,
+        sharedSourceCavity:     form.branchSrcCav    || null,
+        secondaryCavity:        form.branchSecCav    || null,
+        ferrulePartNumber:      form.branchFerrulePN || null,
+        terminalPartNumber:     form.branchTerminalPN || null,
+        sharedAci:              form.branchAci       || null,
+      }
+    : null;
   const trimmedWireId = form.wireId.trim();
   const sanitizedWireId = trimmedWireId.length > 0 ? trimmedWireId : null;
   const fromTermination = (form.fromTermination || null) as EndpointTerminationType | null;
@@ -455,10 +460,12 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
         </select>
       </div>
 
-      {/* Branch / Double-Crimp fields */}
-      {form.topology === 'BRANCH_DOUBLE_CRIMP' && (
+      {/* Branch / Double-Crimp / Splice shared-node fields */}
+      {(form.topology === 'BRANCH_DOUBLE_CRIMP' || form.topology === 'SPLICE') && (
         <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-2 space-y-2">
-          <p className={`${labelCls} text-amber-700`}>Branch / Double-Crimp data</p>
+          <p className={`${labelCls} text-amber-700`}>
+            {form.topology === 'SPLICE' ? 'Splice / Shared-node data' : 'Branch / Double-Crimp data'}
+          </p>
           <div className="grid grid-cols-2 gap-1.5">
             <div>
               <label className={labelCls}>Shared Source Component</label>
@@ -479,6 +486,10 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
             <div>
               <label className={labelCls}>Terminal PN</label>
               <input value={form.branchTerminalPN} onChange={set('branchTerminalPN')} className={inputCls()} placeholder="61944-1" />
+            </div>
+            <div>
+              <label className={labelCls}>Hardware ACI <span className="text-gray-400 normal-case font-normal">(optional)</span></label>
+              <input value={form.branchAci} onChange={set('branchAci')} className={inputCls()} placeholder="e.g. ACI10898" />
             </div>
           </div>
         </div>
@@ -512,6 +523,148 @@ function WireEditorForm({ initialForm, existingId, existingCreatedAt, targetWire
 }
 
 // ---------------------------------------------------------------------------
+// T23: Add-wire wizard sub-components
+// ---------------------------------------------------------------------------
+
+/** Data collected in wizard step 2 (shared-node details). */
+interface SharedNodeStepData {
+  sharedComp: string;
+  sharedCav: string;
+  hardwarePN: string;
+  hardwareAci: string;
+}
+
+const KIND_WIZARD_OPTIONS: { value: AddedWireKind; label: string; desc: string }[] = [
+  { value: 'STANDALONE',            label: 'Standalone wire',         desc: 'Point-to-point — no shared hardware' },
+  { value: 'DOUBLE_CRIMP_TERMINAL', label: 'Double-crimp in terminal', desc: 'Two wires share a crimp terminal' },
+  { value: 'DOUBLE_CRIMP_FERRULE',  label: 'Double-crimp in ferrule',  desc: 'Two wires share a ferrule (e.g. ACI10898)' },
+  { value: 'MACHINE_CRIMP_BAND',    label: 'Machine crimp band',       desc: 'Multiple wires in a crimped band' },
+  { value: 'SPLICE',                label: 'Splice / shared node',     desc: 'Wire connects at a splice point' },
+];
+
+const KIND_SHARED_NODE_LABEL: Record<Exclude<AddedWireKind, 'STANDALONE'>, string> = {
+  DOUBLE_CRIMP_TERMINAL: 'terminal double-crimp',
+  DOUBLE_CRIMP_FERRULE:  'ferrule double-crimp',
+  MACHINE_CRIMP_BAND:    'machine crimp band',
+  SPLICE:                'splice / shared node',
+};
+
+const KIND_HW_PN_LABEL: Record<Exclude<AddedWireKind, 'STANDALONE'>, string> = {
+  DOUBLE_CRIMP_TERMINAL: 'Terminal part number',
+  DOUBLE_CRIMP_FERRULE:  'Ferrule part number',
+  MACHINE_CRIMP_BAND:    'Crimp band part number',
+  SPLICE:                'Splice hardware PN',
+};
+
+function KindStepPanel({
+  onKindSelected,
+  onCancel,
+}: {
+  onKindSelected: (kind: AddedWireKind) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[12px] font-bold text-blue-700">+ Add Wire — Step 1 of 3: Wire Kind</p>
+        <button type="button" onClick={onCancel} className="text-gray-400 hover:text-gray-600 text-[11px]">Cancel</button>
+      </div>
+      <p className="text-[11px] font-semibold text-[color:var(--text-primary)]">What kind of wire are you adding?</p>
+      <div className="space-y-1">
+        {KIND_WIZARD_OPTIONS.map(opt => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onKindSelected(opt.value)}
+            className="w-full text-left px-3 py-2 rounded-lg border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] hover:border-blue-400 hover:bg-blue-50/60 transition-colors"
+          >
+            <span className="text-[12px] font-semibold text-[color:var(--text-primary)]">{opt.label}</span>
+            <span className="ml-2 text-[11px] text-[color:var(--text-secondary)]">{opt.desc}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SharedNodeStepPanel({
+  kind,
+  prefillComp,
+  prefillCav,
+  onContinue,
+  onBack,
+  onCancel,
+}: {
+  kind: Exclude<AddedWireKind, 'STANDALONE'>;
+  prefillComp?: string;
+  prefillCav?: string;
+  onContinue: (data: SharedNodeStepData) => void;
+  onBack: () => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState({ sharedComp: prefillComp ?? '', sharedCav: prefillCav ?? '', hardwarePN: '', hardwareAci: '' });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(prev => ({ ...prev, [k]: e.target.value }));
+
+  const handleContinue = () => {
+    const errs: Record<string, string> = {};
+    if (!form.sharedComp.trim()) errs.sharedComp = 'Required';
+    if (!form.sharedCav.trim()) errs.sharedCav = 'Required';
+    setErrors(errs);
+    if (Object.keys(errs).length === 0) onContinue(form);
+  };
+
+  const lbl = 'text-[11px] font-semibold text-gray-500 uppercase tracking-wide';
+  const inp = (err?: string) =>
+    `w-full rounded border ${err ? 'border-red-400 bg-red-50' : 'border-[color:var(--panel-border)] bg-[color:var(--input-bg)]'} px-2 py-1 text-[12px] text-[color:var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-blue-400`;
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[12px] font-bold text-amber-700">+ Add Wire — Step 2 of 3: Shared Node</p>
+        <button type="button" onClick={onCancel} className="text-gray-400 hover:text-gray-600 text-[11px]">Cancel</button>
+      </div>
+      <p className="text-[11px] text-[color:var(--text-secondary)]">
+        Node type: <span className="font-semibold text-amber-700">{KIND_SHARED_NODE_LABEL[kind]}</span>
+        {' — '}Where is the shared crimp located?
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className={lbl}>Shared component *</label>
+          <input value={form.sharedComp} onChange={set('sharedComp')} className={inp(errors.sharedComp)} placeholder="e.g. PHOENIX 1700443" />
+          {errors.sharedComp && <p className="text-[10px] text-red-600 mt-0.5">{errors.sharedComp}</p>}
+        </div>
+        <div>
+          <label className={lbl}>Shared cavity / pin *</label>
+          <input value={form.sharedCav} onChange={set('sharedCav')} className={inp(errors.sharedCav)} placeholder="e.g. 2" />
+          {errors.sharedCav && <p className="text-[10px] text-red-600 mt-0.5">{errors.sharedCav}</p>}
+        </div>
+        <div>
+          <label className={lbl}>{KIND_HW_PN_LABEL[kind]}</label>
+          <input value={form.hardwarePN} onChange={set('hardwarePN')} className={inp()} placeholder="e.g. 1381010" />
+        </div>
+        <div>
+          <label className={lbl}>Hardware ACI <span className="text-gray-400 normal-case font-normal">(optional)</span></label>
+          <input value={form.hardwareAci} onChange={set('hardwareAci')} className={inp()} placeholder="e.g. ACI10898" />
+        </div>
+      </div>
+      <div className="flex justify-between gap-2 pt-1">
+        <button type="button" onClick={onBack}
+          className="px-3 py-1 text-[12px] rounded border border-[color:var(--panel-border)] text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-elevated)]">
+          ← Back
+        </button>
+        <button type="button" onClick={handleContinue}
+          className="px-3 py-1 text-[12px] rounded bg-blue-600 text-white hover:bg-blue-700 font-semibold">
+          Next: Wire Details →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main panel component
 // ---------------------------------------------------------------------------
 
@@ -530,7 +683,9 @@ export default function SkuModelEditorPanel({
   wireIdentities,
 }: SkuModelEditorPanelProps) {
   const [editorState, setEditorState] = useState<
-    | { mode: 'add'; form: WireFormState }
+    | { mode: 'add'; step: 'kind';        graphPrefill?: { fromComponent?: string; fromCavity?: string } }
+    | { mode: 'add'; step: 'shared-node'; kind: Exclude<AddedWireKind, 'STANDALONE'>; graphPrefill?: { fromComponent?: string; fromCavity?: string } }
+    | { mode: 'add'; step: 'wire-form';   form: WireFormState; addedWireKind: AddedWireKind }
     | { mode: 'edit'; form: WireFormState; id: string; createdAt: string; targetWireId: string | null; isAddedWire: boolean }
     | null
   >(null);
@@ -562,14 +717,10 @@ export default function SkuModelEditorPanel({
       const p = externalEditorRequest.prefill;
       setEditorState({
         mode: 'add',
-        form: {
-          ...emptyForm(),
-          fromComponent:   p.fromComponent   ?? '',
-          fromCavity:      p.fromCavity      ?? '',
-          fromTermination: (p.fromTermination ?? '') as EndpointTerminationType | '',
-          topology:        (p.topology        ?? '') as WireTopology | '',
-          branchSrcComp:   p.branchSrcComp   ?? '',
-          branchSrcCav:    p.branchSrcCav    ?? '',
+        step: 'kind',
+        graphPrefill: {
+          fromComponent: p.fromComponent ?? p.branchSrcComp,
+          fromCavity:    p.fromCavity    ?? p.branchSrcCav,
         },
       });
       onExternalRequestConsumed?.();
@@ -598,15 +749,8 @@ export default function SkuModelEditorPanel({
       const { fromComponent, fromCavity } = externalEditorRequest;
       setEditorState({
         mode: 'add',
-        form: {
-          ...emptyForm(),
-          fromComponent,
-          fromCavity,
-          fromTermination: 'CONNECTOR_PIN',
-          topology:        'BRANCH_DOUBLE_CRIMP',
-          branchSrcComp:   fromComponent,
-          branchSrcCav:    fromCavity,
-        },
+        step: 'kind',
+        graphPrefill: { fromComponent, fromCavity },
       });
       onExternalRequestConsumed?.();
       return;
@@ -614,8 +758,52 @@ export default function SkuModelEditorPanel({
   }, [externalEditorRequest, onExternalRequestConsumed]);
 
   const openAddForm = useCallback(() => {
-    setEditorState({ mode: 'add', form: emptyForm() });
+    setEditorState({ mode: 'add', step: 'kind' });
   }, []);
+
+  const handleKindSelected = useCallback((kind: AddedWireKind) => {
+    if (!editorState || editorState.mode !== 'add' || editorState.step !== 'kind') return;
+    const gp = editorState.graphPrefill;
+    if (kind === 'STANDALONE') {
+      setEditorState({
+        mode: 'add',
+        step: 'wire-form',
+        addedWireKind: 'STANDALONE',
+        form: { ...emptyForm(), fromComponent: gp?.fromComponent ?? '', fromCavity: gp?.fromCavity ?? '', topology: 'LINEAR' },
+      });
+    } else {
+      setEditorState({ mode: 'add', step: 'shared-node', kind, graphPrefill: gp });
+    }
+  }, [editorState]);
+
+  const handleSharedNodeContinue = useCallback((data: SharedNodeStepData) => {
+    if (!editorState || editorState.mode !== 'add' || editorState.step !== 'shared-node') return;
+    const { kind } = editorState;
+    const topology = addedWireKindToTopology(kind);
+    const isFerruleKind = kind === 'DOUBLE_CRIMP_FERRULE' || kind === 'MACHINE_CRIMP_BAND';
+    setEditorState({
+      mode: 'add',
+      step: 'wire-form',
+      addedWireKind: kind,
+      form: {
+        ...emptyForm(),
+        fromComponent:   data.sharedComp,
+        fromCavity:      data.sharedCav,
+        fromTermination: 'CONNECTOR_PIN',
+        topology,
+        branchSrcComp:   data.sharedComp,
+        branchSrcCav:    data.sharedCav,
+        branchFerrulePN:  isFerruleKind ? data.hardwarePN : '',
+        branchTerminalPN: isFerruleKind ? '' : data.hardwarePN,
+        branchAci:        data.hardwareAci,
+      },
+    });
+  }, [editorState]);
+
+  const handleSharedNodeBack = useCallback(() => {
+    if (!editorState || editorState.mode !== 'add' || editorState.step !== 'shared-node') return;
+    setEditorState({ mode: 'add', step: 'kind', graphPrefill: editorState.graphPrefill });
+  }, [editorState]);
 
   const openEditForm = useCallback((wire: WireConnectivity) => {
     const opVersion = editedMap.get(wire.wireId);
@@ -633,8 +821,8 @@ export default function SkuModelEditorPanel({
   }, [editedMap]);
 
   const handleSave = useCallback((wire: OperatorWireModel) => {
-    if (editorState?.mode === 'add') {
-      onAddWire(wire);
+    if (editorState?.mode === 'add' && editorState.step === 'wire-form') {
+      onAddWire({ ...wire, addedWireKind: editorState.addedWireKind });
     } else if (editorState?.mode === 'edit' && editorState.isAddedWire) {
       onAddWire(wire);
     } else {
@@ -694,18 +882,44 @@ export default function SkuModelEditorPanel({
         )}
       </div>
 
-      {/* Editor form (inline) */}
+      {/* Wire-add wizard + editor form (inline) */}
       {editorState && (
         <div className="px-4 py-3 border-b border-blue-100 bg-blue-50/20">
-          <WireEditorForm
-            initialForm={editorState.form}
-            existingId={editorState.mode === 'edit' ? editorState.id : undefined}
-            existingCreatedAt={editorState.mode === 'edit' ? editorState.createdAt : undefined}
-            targetWireId={editorState.mode === 'edit' ? editorState.targetWireId : undefined}
-            mode={editorState.mode}
-            onSave={handleSave}
-            onCancel={() => setEditorState(null)}
-          />
+          {editorState.mode === 'add' && editorState.step === 'kind' && (
+            <KindStepPanel
+              onKindSelected={handleKindSelected}
+              onCancel={() => setEditorState(null)}
+            />
+          )}
+          {editorState.mode === 'add' && editorState.step === 'shared-node' && (
+            <SharedNodeStepPanel
+              kind={editorState.kind}
+              prefillComp={editorState.graphPrefill?.fromComponent}
+              prefillCav={editorState.graphPrefill?.fromCavity}
+              onContinue={handleSharedNodeContinue}
+              onBack={handleSharedNodeBack}
+              onCancel={() => setEditorState(null)}
+            />
+          )}
+          {editorState.mode === 'add' && editorState.step === 'wire-form' && (
+            <WireEditorForm
+              initialForm={editorState.form}
+              mode="add"
+              onSave={handleSave}
+              onCancel={() => setEditorState(null)}
+            />
+          )}
+          {editorState.mode === 'edit' && (
+            <WireEditorForm
+              initialForm={editorState.form}
+              existingId={editorState.id}
+              existingCreatedAt={editorState.createdAt}
+              targetWireId={editorState.targetWireId}
+              mode="edit"
+              onSave={handleSave}
+              onCancel={() => setEditorState(null)}
+            />
+          )}
         </div>
       )}
 

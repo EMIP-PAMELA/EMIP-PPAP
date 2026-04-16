@@ -38,12 +38,49 @@ export type WireTopology =
   | 'SPLICE'
   | 'FLOATING';
 
+/**
+ * T23: First-class wire-kind taxonomy for the branch-aware add-wire wizard.
+ * Captures explicit operator intent before generic wire properties are entered.
+ */
+export type AddedWireKind =
+  | 'STANDALONE'
+  | 'DOUBLE_CRIMP_TERMINAL'
+  | 'DOUBLE_CRIMP_FERRULE'
+  | 'MACHINE_CRIMP_BAND'
+  | 'SPLICE';
+
+/**
+ * T23: Shared-node descriptor collected in wizard step 2.
+ * Preserved in OperatorWireBranch so downstream services never have to guess
+ * whether a wire is part of a branch.
+ */
+export interface SharedNodeInput {
+  kind: AddedWireKind;
+  sharedComponent?: string | null;
+  sharedCavity?: string | null;
+  sharedPartNumber?: string | null;
+  sharedAci?: string | null;
+}
+
+/** T23: Maps the wizard wire-kind selection to the WireTopology used by downstream services. */
+export function addedWireKindToTopology(kind: AddedWireKind): WireTopology {
+  switch (kind) {
+    case 'STANDALONE':             return 'LINEAR';
+    case 'DOUBLE_CRIMP_TERMINAL':  return 'BRANCH_DOUBLE_CRIMP';
+    case 'DOUBLE_CRIMP_FERRULE':   return 'BRANCH_DOUBLE_CRIMP';
+    case 'MACHINE_CRIMP_BAND':     return 'BRANCH_DOUBLE_CRIMP';
+    case 'SPLICE':                 return 'SPLICE';
+  }
+}
+
 export interface OperatorWireBranch {
   sharedSourceComponent?: string | null;
   sharedSourceCavity?: string | null;
   secondaryCavity?: string | null;
   ferrulePartNumber?: string | null;
   terminalPartNumber?: string | null;
+  /** T23: ACI/hardware reference for the shared-node hardware (ferrule, terminal, band). */
+  sharedAci?: string | null;
 }
 
 /** SKU-level operator-authoritative wire model record. */
@@ -63,6 +100,8 @@ export interface OperatorWireModel {
   to: WireEndpoint;
   topology: WireTopology | null;
   branch: OperatorWireBranch | null;
+  /** T23: Explicit wire-kind from the branch-aware add-wire wizard. Null for pre-T23 or edited wires. */
+  addedWireKind?: AddedWireKind | null;
   /** Required — operator must supply a reason for every edit. */
   reason: string;
   source: 'OPERATOR_MODEL';
@@ -223,9 +262,10 @@ export function makeEmptyOperatorWire(overrides?: Partial<Omit<OperatorWireModel
     color:       overrides?.color ?? null,
     from:        overrides?.from ?? { component: null, cavity: null, treatment: null, terminationType: null },
     to:          overrides?.to   ?? { component: null, cavity: null, treatment: null, terminationType: null },
-    topology:    overrides?.topology ?? null,
-    branch:      overrides?.branch  ?? null,
-    reason:      overrides?.reason  ?? '',
+    topology:    overrides?.topology     ?? null,
+    branch:      overrides?.branch       ?? null,
+    addedWireKind: overrides?.addedWireKind ?? null,
+    reason:      overrides?.reason       ?? '',
     source:      'OPERATOR_MODEL',
     authoritative: true,
     createdAt:   overrides?.createdAt ?? now,
