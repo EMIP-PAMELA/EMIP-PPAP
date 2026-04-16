@@ -30,7 +30,7 @@ import FieldEvidencePanel from './FieldEvidencePanel';
 import type { RegionOverlay } from '@/src/features/harness-work-instructions/types/documentRegionOverlay';
 import DocumentOverlayViewer from './DocumentOverlayViewer';
 import HarnessConnectivityPanel from './HarnessConnectivityPanel';
-import SkuModelEditorPanel, { type SkuModelDeleteRequest } from './SkuModelEditorPanel';
+import SkuModelEditorPanel, { type SkuModelDeleteRequest, type ExternalEditorRequest } from './SkuModelEditorPanel';
 import type { OperatorWireModel } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 import {
   buildEffectiveHarnessState,
@@ -732,6 +732,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const [skuAddedWires,   setSkuAddedWires]   = useState<Record<string, OperatorWireModel[]>>({});
   const [skuEditedWires,  setSkuEditedWires]  = useState<Record<string, OperatorWireModel[]>>({});
   const [skuDeletedIds,   setSkuDeletedIds]   = useState<Record<string, string[]>>({});
+  const [skuEditorRequest, setSkuEditorRequest] = useState<ExternalEditorRequest | null>(null);
+  const skuEditorRef = useRef<HTMLDivElement>(null);
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
   const isResizingPanelRef = useRef(false);
   const panelWidthRef = useRef(panelWidth);
@@ -1814,21 +1816,37 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
                   onOverrideSubmit={override => handleOverrideSubmit(selectedId ?? '', override)}
                   resolvedDecision={effectiveState?.effectiveDecision ?? resolvedOutputs[selectedId ?? '']?.resolvedDecision ?? null}
                   topology={effectiveState?.effectiveTopology ?? null}
+                  onGraphWireClick={wireId => {
+                    setSkuEditorRequest({ type: 'edit', wireId });
+                    skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  onGraphMissingPinClick={({ component, cavity }) => {
+                    setSkuEditorRequest({ type: 'add', prefill: { fromComponent: component, fromCavity: cavity, fromTermination: 'CONNECTOR_PIN' } });
+                    skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  onGraphBranchClick={({ component, cavity, wireIds }) => {
+                    setSkuEditorRequest({ type: 'branch', wireIds, fromComponent: component, fromCavity: cavity });
+                    skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
                 />
               ) : null}
 
               {selectedItem.analysis?.harnessConnectivity ? (
-                <SkuModelEditorPanel
-                  extractedConnectivity={selectedItem.analysis.harnessConnectivity}
-                  effectiveConnectivity={effectiveState?.effectiveConnectivity ?? null}
-                  effectiveDecision={effectiveState?.effectiveDecision ?? null}
-                  operatorAddedWires={skuAddedWires[selectedId ?? ''] ?? []}
-                  operatorEditedWires={skuEditedWires[selectedId ?? ''] ?? []}
-                  operatorDeletedWireIds={skuDeletedIds[selectedId ?? ''] ?? []}
-                  onAddWire={wire => handleSkuAddWire(selectedId ?? '', wire)}
-                  onEditWire={wire => handleSkuEditWire(selectedId ?? '', wire)}
-                  onDeleteWire={request => handleSkuDeleteWire(selectedId ?? '', request)}
-                />
+                <div ref={skuEditorRef}>
+                  <SkuModelEditorPanel
+                    extractedConnectivity={selectedItem.analysis.harnessConnectivity}
+                    effectiveConnectivity={effectiveState?.effectiveConnectivity ?? null}
+                    effectiveDecision={effectiveState?.effectiveDecision ?? null}
+                    operatorAddedWires={skuAddedWires[selectedId ?? ''] ?? []}
+                    operatorEditedWires={skuEditedWires[selectedId ?? ''] ?? []}
+                    operatorDeletedWireIds={skuDeletedIds[selectedId ?? ''] ?? []}
+                    onAddWire={wire => handleSkuAddWire(selectedId ?? '', wire)}
+                    onEditWire={wire => handleSkuEditWire(selectedId ?? '', wire)}
+                    onDeleteWire={request => handleSkuDeleteWire(selectedId ?? '', request)}
+                    externalEditorRequest={skuEditorRequest}
+                    onExternalRequestConsumed={() => setSkuEditorRequest(null)}
+                  />
+                </div>
               ) : null}
 
               {selectedItem.analysis ? (

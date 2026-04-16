@@ -248,14 +248,27 @@ interface TooltipInfo {
 export interface HarnessTopologyVisualizerProps {
   connectivity: HarnessConnectivityResult;
   topology: HarnessTopologyResult;
+  /** T14.5: Click a wire edge — fires with the wireId. */
+  onWireClick?: (wireId: string) => void;
+  /** T14.5: Click a missing-pin placeholder — pre-fill add-wire editor. */
+  onMissingPinClick?: (payload: { component: string; cavity: string }) => void;
+  /** T14.5: Click an undeclared-branch pin — open declare-branch editor. */
+  onBranchClick?: (payload: { component: string; cavity: string; wireIds: string[] }) => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function HarnessTopologyVisualizer({ connectivity, topology }: HarnessTopologyVisualizerProps) {
-  const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
+export default function HarnessTopologyVisualizer({
+  connectivity,
+  topology,
+  onWireClick,
+  onMissingPinClick,
+  onBranchClick,
+}: HarnessTopologyVisualizerProps) {
+  const [tooltip, setTooltip]         = useState<TooltipInfo | null>(null);
+  const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
 
   const { columns, nodePos, missingPos, svgWidth, svgHeight } = useMemo(
     () => buildLayout(topology), [topology],
@@ -290,6 +303,9 @@ export default function HarnessTopologyVisualizer({ connectivity, topology }: Ha
     <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-[11px] font-semibold text-slate-600">Harness Graph</span>
+        {(onWireClick || onMissingPinClick || onBranchClick) && (
+          <span className="text-[9px] text-slate-400 italic">click to edit</span>
+        )}
         <span className="text-[10px] text-slate-400">
           {topology.nodes.length} nodes · {topology.edges.length} wires
         </span>
@@ -305,7 +321,7 @@ export default function HarnessTopologyVisualizer({ connectivity, topology }: Ha
           width={svgWidth}
           height={svgHeight}
           style={{ display: 'block', minHeight: 80 }}
-          onMouseLeave={() => setTooltip(null)}
+          onMouseLeave={() => { setTooltip(null); setHoveredWireId(null); }}
         >
           {/* ── Isolated subgraph borders ─────────────────────────── */}
           {isolatedRects.map((r, i) => (
@@ -350,7 +366,13 @@ export default function HarnessTopologyVisualizer({ connectivity, topology }: Ha
 
                 if (slot.isMissing) {
                   return (
-                    <g key={`miss-${slot.cavity}`}>
+                    <g key={`miss-${slot.cavity}`}
+                      style={{ cursor: onMissingPinClick ? 'pointer' : 'default' }}
+                      onClick={() => onMissingPinClick?.({ component: col.displayName, cavity: slot.cavity })}
+                    >
+                      {/* Invisible hit area */}
+                      <rect x={cx - 30} y={slot.y - PIN_H / 2} width={160} height={PIN_H}
+                        fill="transparent" />
                       {/* Dashed placeholder */}
                       <line
                         x1={cx + PIN_R + 2} y1={slot.y}
@@ -363,6 +385,12 @@ export default function HarnessTopologyVisualizer({ connectivity, topology }: Ha
                         fontSize={8} fill="#ef4444" fontWeight="600">
                         Pin {slot.cavity} (missing)
                       </text>
+                      {onMissingPinClick && (
+                        <text x={cx + PIN_R + 46} y={slot.y + 13}
+                          fontSize={7} fill="#f97316" fontWeight="500">
+                          → click to add
+                        </text>
+                      )}
                       <text x={cx - PIN_R - 3} y={slot.y + 3.5}
                         textAnchor="end" fontSize={9} fill="#64748b">{slot.cavity}</text>
                     </g>
@@ -370,7 +398,10 @@ export default function HarnessTopologyVisualizer({ connectivity, topology }: Ha
                 }
 
                 return (
-                  <g key={slot.nodeId ?? slot.cavity}>
+                  <g key={slot.nodeId ?? slot.cavity}
+                    style={{ cursor: isBranch && onBranchClick ? 'pointer' : 'default' }}
+                    onClick={isBranch ? () => onBranchClick?.({ component: col.displayName, cavity: slot.cavity, wireIds: slot.wireIds }) : undefined}
+                  >
                     {/* Branch highlight ring */}
                     {isBranch && (
                       <circle cx={cx} cy={slot.y} r={PIN_R + 5}
@@ -456,8 +487,10 @@ export default function HarnessTopologyVisualizer({ connectivity, topology }: Ha
               <g key={edge.wireId}>
                 {/* Clickable invisible fat stroke for hover */}
                 <path d={path} fill="none" stroke="transparent" strokeWidth={10}
-                  style={{ cursor: 'pointer' }}
+                  style={{ cursor: onWireClick ? 'pointer' : 'default' }}
+                  onClick={() => onWireClick?.(edge.wireId)}
                   onMouseEnter={ev => {
+                    setHoveredWireId(edge.wireId);
                     const svgEl = (ev.target as SVGPathElement).ownerSVGElement!;
                     const rect  = svgEl.getBoundingClientRect();
                     setTooltip({
@@ -471,13 +504,15 @@ export default function HarnessTopologyVisualizer({ connectivity, topology }: Ha
                       svgY: ev.clientY - rect.top  - 10,
                     });
                   }}
-                  onMouseLeave={() => setTooltip(null)}
+                  onMouseLeave={() => { setHoveredWireId(null); setTooltip(null); }}
                 />
                 {/* Visible wire path */}
                 <path d={path} fill="none"
-                  stroke={stroke} strokeWidth={1.8}
+                  stroke={stroke}
+                  strokeWidth={hoveredWireId === edge.wireId ? 3.5 : 1.8}
                   strokeDasharray={isoDash}
-                  opacity={0.85}
+                  opacity={hoveredWireId === edge.wireId ? 1 : 0.85}
+                  style={{ pointerEvents: 'none' }}
                 />
                 {/* Wire label */}
                 <text x={lx} y={ly} textAnchor="middle"

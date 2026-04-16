@@ -17,7 +17,7 @@
  *   - No direct writes to extraction pipeline.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import type {
   HarnessConnectivityResult,
   WireConnectivity,
@@ -42,6 +42,15 @@ export type SkuModelDeleteRequest =
   | { scope: 'operator'; operatorId: string }
   | { scope: 'extracted'; wireId: string; undo?: boolean };
 
+/**
+ * T14.5: External editor request — fired by graph interaction layer.
+ * Consumed by useEffect inside SkuModelEditorPanel; clears itself after opening.
+ */
+export type ExternalEditorRequest =
+  | { type: 'add';    prefill: { fromComponent?: string; fromCavity?: string; fromTermination?: EndpointTerminationType; topology?: WireTopology; branchSrcComp?: string; branchSrcCav?: string } }
+  | { type: 'edit';   wireId: string }
+  | { type: 'branch'; wireIds: string[]; fromComponent: string; fromCavity: string };
+
 export interface SkuModelEditorPanelProps {
   extractedConnectivity: HarnessConnectivityResult | null;
   /** T12.4 effective connectivity (T11 overrides + T12 SKU edits applied). */
@@ -54,6 +63,10 @@ export interface SkuModelEditorPanelProps {
   onAddWire: (wire: OperatorWireModel) => void;
   onEditWire: (wire: OperatorWireModel) => void;
   onDeleteWire: (request: SkuModelDeleteRequest) => void;
+  /** T14.5: Optional external request to open the editor from the graph. */
+  externalEditorRequest?: ExternalEditorRequest | null;
+  /** T14.5: Called once the external request has been consumed (to clear parent state). */
+  onExternalRequestConsumed?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -477,6 +490,8 @@ export default function SkuModelEditorPanel({
   onAddWire,
   onEditWire,
   onDeleteWire,
+  externalEditorRequest,
+  onExternalRequestConsumed,
 }: SkuModelEditorPanelProps) {
   const [editorState, setEditorState] = useState<
     | { mode: 'add'; form: WireFormState }
@@ -496,6 +511,71 @@ export default function SkuModelEditorPanel({
 
   const effectiveWires = effectiveConnectivity?.wires ?? extractedConnectivity?.wires ?? [];
   const overallDecision = effectiveDecision?.overallDecision ?? null;
+
+  // Stable refs so the external-request useEffect never goes stale
+  const effectiveWiresRef = useRef(effectiveWires);
+  effectiveWiresRef.current = effectiveWires;
+  const editedMapRef = useRef(editedMap);
+  editedMapRef.current = editedMap;
+
+  // T14.5: Consume external editor request from graph interaction
+  useEffect(() => {
+    if (!externalEditorRequest) return;
+
+    if (externalEditorRequest.type === 'add') {
+      const p = externalEditorRequest.prefill;
+      setEditorState({
+        mode: 'add',
+        form: {
+          ...emptyForm(),
+          fromComponent:   p.fromComponent   ?? '',
+          fromCavity:      p.fromCavity      ?? '',
+          fromTermination: (p.fromTermination ?? '') as EndpointTerminationType | '',
+          topology:        (p.topology        ?? '') as WireTopology | '',
+          branchSrcComp:   p.branchSrcComp   ?? '',
+          branchSrcCav:    p.branchSrcCav    ?? '',
+        },
+      });
+      onExternalRequestConsumed?.();
+      return;
+    }
+
+    if (externalEditorRequest.type === 'edit') {
+      const wire = effectiveWiresRef.current.find(w => w.wireId === externalEditorRequest.wireId);
+      if (wire) {
+        const opVersion = editedMapRef.current.get(wire.wireId);
+        const base = opVersion ? wireToForm(opVersion) : wireToForm(wire);
+        setEditorState({
+          mode: 'edit',
+          form: base,
+          id:           opVersion?.id ?? `op-${wire.wireId}-${Date.now()}`,
+          createdAt:    opVersion?.createdAt ?? new Date().toISOString(),
+          targetWireId: opVersion?.targetWireId ?? wire.wireId ?? null,
+          isAddedWire:  false,
+        });
+      }
+      onExternalRequestConsumed?.();
+      return;
+    }
+
+    if (externalEditorRequest.type === 'branch') {
+      const { fromComponent, fromCavity } = externalEditorRequest;
+      setEditorState({
+        mode: 'add',
+        form: {
+          ...emptyForm(),
+          fromComponent,
+          fromCavity,
+          fromTermination: 'CONNECTOR_PIN',
+          topology:        'BRANCH_DOUBLE_CRIMP',
+          branchSrcComp:   fromComponent,
+          branchSrcCav:    fromCavity,
+        },
+      });
+      onExternalRequestConsumed?.();
+      return;
+    }
+  }, [externalEditorRequest, onExternalRequestConsumed]);
 
   const openAddForm = useCallback(() => {
     setEditorState({ mode: 'add', form: emptyForm() });

@@ -587,6 +587,10 @@ export interface HarnessConnectivityPanelProps {
   resolvedDecision?: HarnessDecisionResult | null;
   /** T13: Topology analysis result — missing wires, branches, isolated groups. */
   topology?: HarnessTopologyResult | null;
+  /** T14.5: Graph interaction callbacks — forwarded to HarnessTopologyVisualizer. */
+  onGraphWireClick?: (wireId: string) => void;
+  onGraphMissingPinClick?: (payload: { component: string; cavity: string }) => void;
+  onGraphBranchClick?: (payload: { component: string; cavity: string; wireIds: string[] }) => void;
 }
 
 export default function HarnessConnectivityPanel({
@@ -597,6 +601,9 @@ export default function HarnessConnectivityPanel({
   onOverrideSubmit,
   resolvedDecision,
   topology,
+  onGraphWireClick,
+  onGraphMissingPinClick,
+  onGraphBranchClick,
 }: HarnessConnectivityPanelProps) {
   const model = connectivity ?? harnessConnectivity ?? null;
   const overrideMap = new Map((operatorOverrides ?? []).map(o => [o.wireId, o]));
@@ -752,7 +759,13 @@ export default function HarnessConnectivityPanel({
 
         {/* ── T14: Topology visualizer ────────────────────────────── */}
         {topology && model && (
-          <HarnessTopologyVisualizer connectivity={model} topology={topology} />
+          <HarnessTopologyVisualizer
+            connectivity={model}
+            topology={topology}
+            onWireClick={onGraphWireClick}
+            onMissingPinClick={onGraphMissingPinClick}
+            onBranchClick={onGraphBranchClick}
+          />
         )}
 
         {/* ── Primary wire table ──────────────────────────────────── */}
