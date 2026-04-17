@@ -63,9 +63,13 @@ function makeTopology(multiWireEndpoints: TopologyNode[] = []): HarnessTopologyR
 
 /** Build a TopologyNode representing a branch origin. */
 function branchNode(component: string, cavity: string, wireIds: string[]): TopologyNode {
+  const canonical = component.toLowerCase();
   return {
-    id: `${component.toLowerCase()}:${cavity.toLowerCase()}`,
+    id: `${canonical}:${cavity.toLowerCase()}`,
     component,
+    displayName: component,
+    canonicalComponent: canonical,
+    canonicalId: canonical,
     cavity,
     terminationType: 'CONNECTOR_PIN',
     wireIds,

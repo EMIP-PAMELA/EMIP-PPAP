@@ -40,8 +40,14 @@ export type TopologyWarningCode =
 export interface TopologyNode {
   /** Stable node identity: "component:cavity" or "component" (normalized lowercase). */
   id: string;
+  /** Original/raw component label preserved for operator display. */
   component: string;
+  /** Canonical human-friendly label used in UI (trimmed raw string). */
+  displayName: string;
+  /** Canonicalized identifier (manufacturer:part) used for graph identity. */
   canonicalComponent: string;
+  /** Explicit canonical ID alias for downstream consumers. */
+  canonicalId: string;
   cavity: string | null;
   terminationType: EndpointTerminationType | null;
   /** IDs of all wires whose FROM or TO endpoint maps to this node. */
@@ -134,23 +140,23 @@ const DECLARED_FLOATING_RE = /\[OPERATOR_MODEL:FLOATING\]/;
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/** Normalize the component identifier (case, OCR noise). */
-function normalizeComponentId(raw: string): string {
+/** Build manufacturer:part canonical key eliminating duplicates from OCR variance. */
+function canonicalComponentKey(raw?: string | null): string {
+  if (!raw) return '';
   return raw
     .toLowerCase()
-    .replace(/pheonix/g, 'phoenix')
+    .replace(/#/g, '')
     .replace(/[^a-z0-9]/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    .replace(/^phoenix\s+/, 'phoenix:')
+    .replace(/\s+/g, '');
 }
 
-/** Build manufacturer:part canonical key from the normalized identifier. */
-function buildCanonicalComponentKey(raw: string): string {
-  const normalized = normalizeComponentId(raw);
-  const match = normalized.match(/([a-z]+)\s*(\d+)/);
-  if (!match) return normalized;
-  const [, manufacturer, part] = match;
-  return `${manufacturer}:${part}`;
+function componentDisplayName(raw: string | null | undefined, canonical: string): string {
+  const trimmed = raw?.trim();
+  if (trimmed && trimmed.length > 0) return trimmed;
+  return canonical.toUpperCase();
 }
 
 interface NodeIdentity {
@@ -165,11 +171,12 @@ interface NodeIdentity {
 function resolveNodeIdentity(endpoint: WireEndpoint): NodeIdentity {
   const comp = endpoint.component?.trim();
   if (!comp) return { nodeKey: null, canonicalComponent: null };
-  const canonicalComponent = buildCanonicalComponentKey(comp);
-  console.log('[T23.6.3 CANONICALIZATION]', { raw: comp, canonicalComponent });
+  const canonicalComponent = canonicalComponentKey(comp);
+  if (!canonicalComponent) return { nodeKey: null, canonicalComponent: null };
+  console.log('[T23.6.5 CANONICAL]', { raw: comp, canonical: canonicalComponent });
   const cavity = endpoint.cavity?.trim()?.toLowerCase() ?? null;
   const nodeKey = cavity ? `${canonicalComponent}:${cavity}` : canonicalComponent;
-  console.log('[T23.6.3 NODE KEY]', { nodeKey });
+  console.log('[T23.6.5 NODE KEY]', { nodeKey });
   return { nodeKey, canonicalComponent };
 }
 
@@ -393,16 +400,21 @@ export function analyzeHarnessTopology(args: {
     const identity = resolveNodeIdentity(endpoint);
     const id = identity.nodeKey;
     if (!id || !identity.canonicalComponent) return null;
+    const canonicalId = identity.canonicalComponent;
+    const rawComponent = endpoint.component?.trim() ?? canonicalId;
+    const displayName = componentDisplayName(rawComponent, canonicalId);
 
-    const ferruleNodeId = resolveFerruleNodeId(endpoint, identity.canonicalComponent);
+    const ferruleNodeId = resolveFerruleNodeId(endpoint, canonicalId);
     if (ferruleNodeId) {
       // T23.6.4: FERRULE endpoint with component+cavity → create explicit shared-ferrule node.
       // Ensure the mounting cavity node exists for pin-sequence occupancy tracking.
       if (!nodeMap.has(id)) {
         nodeMap.set(id, {
           id,
-          component:          endpoint.component!.trim(),
-          canonicalComponent: identity.canonicalComponent,
+          component:          rawComponent,
+          displayName,
+          canonicalComponent: canonicalId,
+          canonicalId,
           cavity:             endpoint.cavity?.trim() ?? null,
           terminationType:    'CONNECTOR_PIN',
           wireIds:            [],
@@ -411,8 +423,10 @@ export function analyzeHarnessTopology(args: {
       if (!nodeMap.has(ferruleNodeId)) {
         nodeMap.set(ferruleNodeId, {
           id:                 ferruleNodeId,
-          component:          endpoint.component!.trim(),
-          canonicalComponent: identity.canonicalComponent,
+          component:          rawComponent,
+          displayName,
+          canonicalComponent: canonicalId,
+          canonicalId,
           cavity:             endpoint.cavity?.trim() ?? null,
           terminationType:    'FERRULE',
           wireIds:            [],
@@ -430,8 +444,10 @@ export function analyzeHarnessTopology(args: {
     if (!nodeMap.has(id)) {
       nodeMap.set(id, {
         id,
-        component:          endpoint.component!.trim(),
-        canonicalComponent: identity.canonicalComponent,
+        component:          rawComponent,
+        displayName,
+        canonicalComponent: canonicalId,
+        canonicalId,
         cavity:             endpoint.cavity?.trim() ?? null,
         terminationType:    resolveTerminationType(endpoint),
         wireIds:            [],
