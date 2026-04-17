@@ -190,17 +190,11 @@ export function buildEffectiveHarnessState(args: {
     }
 
     effectiveConnectivity.wires.forEach(wire => {
-      console.log('[T23.6.7 EFFECTIVE CHECK]', {
-        wireId: wire.wireId,
-        from: {
-          component: wire.from?.component ?? null,
-          cavity:    wire.from?.cavity ?? null,
-        },
-        to: {
-          component: wire.to?.component ?? null,
-          cavity:    wire.to?.cavity ?? null,
-        },
-      });
+      console.log(
+        `[T23.6.7 EFFECTIVE] wire=${wire.wireId} ` +
+        `FROM=${wire.from?.component}:${wire.from?.cavity} ` +
+        `TO=${wire.to?.component}:${wire.to?.cavity}`,
+      );
     });
   }
 

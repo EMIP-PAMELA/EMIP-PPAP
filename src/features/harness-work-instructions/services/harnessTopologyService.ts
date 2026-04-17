@@ -393,19 +393,11 @@ export function analyzeHarnessTopology(args: {
   const { wires } = args.connectivity;
 
   wires.forEach(wire => {
-    console.log('[T23.6.7 TOPOLOGY INPUT]', {
-      wireId: wire.wireId,
-      from: {
-        component: wire.from?.component ?? null,
-        cavity:    wire.from?.cavity ?? null,
-        type:      wire.from?.terminationType ?? null,
-      },
-      to: {
-        component: wire.to?.component ?? null,
-        cavity:    wire.to?.cavity ?? null,
-        type:      wire.to?.terminationType ?? null,
-      },
-    });
+    console.log(
+      `[T23.6.7 TOPOLOGY] wire=${wire.wireId} ` +
+      `FROM=${wire.from?.component}:${wire.from?.cavity} (${wire.from?.terminationType}) ` +
+      `TO=${wire.to?.component}:${wire.to?.cavity} (${wire.to?.terminationType})`,
+    );
 
     if (
       wire.from?.component &&
@@ -414,11 +406,11 @@ export function analyzeHarnessTopology(args: {
       wire.to?.terminationType === 'CONNECTOR_PIN' &&
       !wire.to?.cavity
     ) {
-      console.error('[T23.6.7 CRITICAL]', {
-        wireId: wire.wireId,
-        message: 'Same-component wire missing TO cavity before topology',
-        wire,
-      });
+      console.error(
+        `[T23.6.7 CRITICAL] wire=${wire.wireId} SAME COMPONENT missing TO cavity → ` +
+        `FROM=${wire.from?.component}:${wire.from?.cavity} ` +
+        `TO=${wire.to?.component}:${wire.to?.cavity}`,
+      );
     }
   });
 

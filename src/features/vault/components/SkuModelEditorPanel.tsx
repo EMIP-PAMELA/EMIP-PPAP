@@ -550,17 +550,12 @@ function WireEditorForm({
       fromEndpoint:   operatorWire.from,
       topology:       operatorWire.topology,
     });
-    console.log('[T23.6.7 SAVE CHECK]', {
-      wireId: (operatorWire as any)?.internalWireId || operatorWire.id,
-      finalForm: {
-        toComponent: form.toComponent,
-        toCavity:    form.toCavity,
-      },
-      persistedModel: {
-        toComponent: operatorWire.to?.component ?? null,
-        toCavity:    operatorWire.to?.cavity ?? null,
-      },
-    });
+    const saveWireId = (operatorWire as any)?.internalWireId || operatorWire.id;
+    console.log(
+      `[T23.6.7 SAVE] wire=${saveWireId} ` +
+      `FROM=${operatorWire.from?.component}:${operatorWire.from?.cavity} ` +
+      `TO=${operatorWire.to?.component}:${operatorWire.to?.cavity}`,
+    );
     console.log('[T23.6.4.3 VERIFY]', {
       finalFormToCavity: form.to.cavity,
       modelToCavity: operatorWire.to?.cavity ?? null,
