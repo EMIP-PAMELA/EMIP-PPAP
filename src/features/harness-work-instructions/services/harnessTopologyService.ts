@@ -46,6 +46,10 @@ export interface TopologyNode {
   terminationType: EndpointTerminationType | null;
   /** IDs of all wires whose FROM or TO endpoint maps to this node. */
   wireIds: string[];
+  // T23.6.4: explicit shared-ferrule node metadata
+  isSharedFerrule?: boolean;
+  ferrulePartNumber?: string | null;
+  mountedAtNodeId?: string | null;
 }
 
 export interface TopologyEdge {
@@ -167,6 +171,18 @@ function resolveNodeIdentity(endpoint: WireEndpoint): NodeIdentity {
   const nodeKey = cavity ? `${canonicalComponent}:${cavity}` : canonicalComponent;
   console.log('[T23.6.3 NODE KEY]', { nodeKey });
   return { nodeKey, canonicalComponent };
+}
+
+/**
+ * T23.6.4: Build the deterministic node key for an explicit shared ferrule node.
+ * Returns null for non-FERRULE endpoints or FERRULE endpoints without component+cavity.
+ */
+function resolveFerruleNodeId(endpoint: WireEndpoint, canonicalComponent: string): string | null {
+  if (endpoint.terminationType !== 'FERRULE') return null;
+  const cavity = endpoint.cavity?.trim()?.toLowerCase();
+  if (!cavity) return null;
+  const pn = endpoint.partNumber?.trim().replace(/[\s/-]/g, '') ?? null;
+  return `${canonicalComponent}:${cavity}:ferrule${pn ? `:${pn}` : ''}`;
 }
 
 /**
@@ -377,6 +393,40 @@ export function analyzeHarnessTopology(args: {
     const identity = resolveNodeIdentity(endpoint);
     const id = identity.nodeKey;
     if (!id || !identity.canonicalComponent) return null;
+
+    const ferruleNodeId = resolveFerruleNodeId(endpoint, identity.canonicalComponent);
+    if (ferruleNodeId) {
+      // T23.6.4: FERRULE endpoint with component+cavity → create explicit shared-ferrule node.
+      // Ensure the mounting cavity node exists for pin-sequence occupancy tracking.
+      if (!nodeMap.has(id)) {
+        nodeMap.set(id, {
+          id,
+          component:          endpoint.component!.trim(),
+          canonicalComponent: identity.canonicalComponent,
+          cavity:             endpoint.cavity?.trim() ?? null,
+          terminationType:    'CONNECTOR_PIN',
+          wireIds:            [],
+        });
+      }
+      if (!nodeMap.has(ferruleNodeId)) {
+        nodeMap.set(ferruleNodeId, {
+          id:                 ferruleNodeId,
+          component:          endpoint.component!.trim(),
+          canonicalComponent: identity.canonicalComponent,
+          cavity:             endpoint.cavity?.trim() ?? null,
+          terminationType:    'FERRULE',
+          wireIds:            [],
+          isSharedFerrule:    true,
+          ferrulePartNumber:  endpoint.partNumber?.trim() ?? null,
+          mountedAtNodeId:    id,
+        });
+      }
+      const ferruleNode = nodeMap.get(ferruleNodeId)!;
+      if (!ferruleNode.wireIds.includes(wireId)) ferruleNode.wireIds.push(wireId);
+      connectivityUF.union(ferruleNodeId, id);
+      return ferruleNodeId;
+    }
+
     if (!nodeMap.has(id)) {
       nodeMap.set(id, {
         id,
@@ -415,6 +465,16 @@ export function analyzeHarnessTopology(args: {
       });
     }
 
+    // T23.6.4: Log wire attachment to explicit shared-ferrule node.
+    const fromNode = fromNodeId ? nodeMap.get(fromNodeId) : null;
+    if (fromNode?.isSharedFerrule) {
+      console.log('[T23.6.4 SHARED STRUCTURE]', {
+        wireId:            wire.wireId,
+        remoteEndpoint:    toNodeId ?? 'null',
+        sharedFerruleNode: fromNodeId,
+      });
+    }
+
     return {
       wireId:          wire.wireId,
       fromNodeId,
@@ -436,13 +496,31 @@ export function analyzeHarnessTopology(args: {
     const ft = branchWire.from.terminationType;
     if (ft !== 'FERRULE' && ft !== 'TERMINAL') continue;
     const anchorNode = nodeMap.get(edge.fromNodeId);
-    if (!anchorNode) continue;
+    // T23.6.4: skip explicit shared-ferrule nodes — their mounted cavity node
+    // already carries CONNECTOR_PIN type and handles pin-sequence occupancy.
+    if (!anchorNode || anchorNode.isSharedFerrule) continue;
     if (anchorNode.terminationType !== 'FERRULE' && anchorNode.terminationType !== 'TERMINAL') continue;
     anchorNode.terminationType = 'CONNECTOR_PIN';
     console.log('[T23.6.1 NODE MERGE]', {
       anchorNodeKey:     anchorNode.id,
       attachedWires:     anchorNode.wireIds,
       connectionMethods: [ft],
+    });
+  }
+
+  // T23.6.4: Log all explicit shared-ferrule nodes for validation.
+  for (const [, node] of nodeMap) {
+    if (!node.isSharedFerrule) continue;
+    console.log('[T23.6.4 FERRULE NODE]', {
+      ferruleNodeKey:    node.id,
+      ferrulePartNumber: node.ferrulePartNumber,
+      mountedAt:         node.mountedAtNodeId,
+      attachedWires:     node.wireIds,
+    });
+    console.log('[T23.6.4 PIN OCCUPANCY]', {
+      component:  node.canonicalComponent,
+      cavity:     node.cavity,
+      occupiedBy: node.id,
     });
   }
 
@@ -520,18 +598,15 @@ export function analyzeHarnessTopology(args: {
   });
 
   // ── C. Isolated subgraph detection (union-find) ────────────────────────
-  const uf = new UnionFind();
-  for (const edge of edges) {
-    if (edge.fromNodeId && edge.toNodeId) {
-      uf.union(edge.fromNodeId, edge.toNodeId);
-    }
-  }
+  // T23.6.4: reuse connectivityUF (built during node/edge construction) so that
+  // ferrule-cavity mounted-at unions are included. A separate pass would miss
+  // those unions and falsely report ferrule-sharing structures as isolated.
 
   const sgMap = new Map<string, { nodeIds: Set<string>; wireIds: Set<string> }>();
   for (const edge of edges) {
     const rep =
-      edge.fromNodeId ? uf.find(edge.fromNodeId) :
-      edge.toNodeId   ? uf.find(edge.toNodeId)   : null;
+      edge.fromNodeId ? connectivityUF.find(edge.fromNodeId) :
+      edge.toNodeId   ? connectivityUF.find(edge.toNodeId)   : null;
     if (!rep) continue;
     if (!sgMap.has(rep)) sgMap.set(rep, { nodeIds: new Set(), wireIds: new Set() });
     const sg = sgMap.get(rep)!;

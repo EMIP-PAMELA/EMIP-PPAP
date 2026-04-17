@@ -13,8 +13,9 @@ function makeEndpoint(
   cavity: string | null = null,
   terminationType: EndpointTerminationType | null = null,
   treatment: string | null = null,
+  partNumber: string | null = null,
 ): WireEndpoint {
-  return { component, cavity, treatment, terminationType };
+  return { component, cavity, treatment, terminationType, partNumber };
 }
 
 function makeWire(
@@ -191,9 +192,15 @@ describe('analyzeHarnessTopology', () => {
     const branchWarnings = result.warnings.filter(w => w.code === 'UNDECLARED_BRANCH');
     assert.strictEqual(branchWarnings.length, 0, 'FERRULE shared node must not trigger UNDECLARED_BRANCH');
 
-    const sharedNode = result.nodes.find(n => n.id === 'phoenix:1700443:5');
-    assert.ok(sharedNode, 'Shared FERRULE node must exist');
-    assert.strictEqual(sharedNode!.wireIds.length, 2, 'Both wires must reference the shared node');
+    // T23.6.4: FERRULE endpoint creates a distinct ferrule node; cavity node also exists.
+    const ferruleNode = result.nodes.find(n => n.id === 'phoenix:1700443:5:ferrule');
+    assert.ok(ferruleNode, 'T23.6.4: explicit ferrule node must exist at phoenix:1700443:5:ferrule');
+    assert.ok(ferruleNode!.isSharedFerrule, 'Ferrule node must be flagged as shared ferrule');
+    assert.strictEqual(ferruleNode!.wireIds.length, 2, 'Both wires must reference the shared ferrule node');
+
+    const cavityNode = result.nodes.find(n => n.id === 'phoenix:1700443:5');
+    assert.ok(cavityNode, 'Mounting cavity node must also exist at phoenix:1700443:5');
+    assert.strictEqual(cavityNode!.terminationType, 'CONNECTOR_PIN', 'Cavity node must be CONNECTOR_PIN type');
   });
 
   // H. T23.5: Mixed extracted wire + operator BRANCH_DOUBLE_CRIMP wire at the same CONNECTOR_PIN.
@@ -244,11 +251,16 @@ describe('analyzeHarnessTopology', () => {
       'FERRULE anchor at Phoenix cavity 2 must NOT be reported as MISSING_WIRE',
     );
 
-    const pin2Node = result.nodes.find(n => n.id === 'phoenix:2');
-    assert.ok(pin2Node, 'Phoenix cavity 2 node must exist in the topology graph');
-    assert.strictEqual(pin2Node!.terminationType, 'CONNECTOR_PIN',
-      'T23.6.1: declared FERRULE anchor must be normalized to CONNECTOR_PIN at construction time');
-    assert.ok(pin2Node!.wireIds.includes('op-branch'), 'Branch wire is attached to the anchor node');
+    // T23.6.4: FERRULE endpoint produces distinct ferrule node; cavity node carries CONNECTOR_PIN.
+    const cavityNode = result.nodes.find(n => n.id === 'phoenix:2');
+    assert.ok(cavityNode, 'Phoenix cavity 2 node must exist in the topology graph');
+    assert.strictEqual(cavityNode!.terminationType, 'CONNECTOR_PIN',
+      'T23.6.4: mounting cavity node must have CONNECTOR_PIN type');
+
+    const ferruleNode = result.nodes.find(n => n.id === 'phoenix:2:ferrule');
+    assert.ok(ferruleNode, 'T23.6.4: explicit ferrule node must exist at phoenix:2:ferrule');
+    assert.ok(ferruleNode!.isSharedFerrule, 'Ferrule node must be flagged as shared ferrule');
+    assert.ok(ferruleNode!.wireIds.includes('op-branch'), 'Branch wire is attached to the ferrule node');
   });
 
   // K. T23.6: An intra-connector branch wire (Phoenix:2 FERRULE → Phoenix:5) that is connected
@@ -312,12 +324,17 @@ describe('analyzeHarnessTopology', () => {
 
     const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
 
-    const anchor = result.nodes.find(n => n.id === 'phoenix:2');
-    assert.ok(anchor, 'Anchor node must be present in the graph');
-    assert.strictEqual(anchor!.terminationType, 'CONNECTOR_PIN',
-      'T23.6.1: FERRULE anchor on a declared branch wire must be normalized to CONNECTOR_PIN');
-    assert.ok(anchor!.wireIds.includes('op-branch'),
-      'Branch wire must be registered at the anchor node');
+    // T23.6.4: FERRULE endpoint creates an explicit ferrule node; cavity node carries CONNECTOR_PIN.
+    const cavityNode = result.nodes.find(n => n.id === 'phoenix:2');
+    assert.ok(cavityNode, 'Cavity node must be present in the graph');
+    assert.strictEqual(cavityNode!.terminationType, 'CONNECTOR_PIN',
+      'T23.6.4: mounting cavity node must have CONNECTOR_PIN type');
+
+    const ferruleNode = result.nodes.find(n => n.id === 'phoenix:2:ferrule');
+    assert.ok(ferruleNode, 'T23.6.4: FERRULE endpoint must produce an explicit ferrule node');
+    assert.ok(ferruleNode!.isSharedFerrule, 'Ferrule node must be flagged as shared ferrule');
+    assert.ok(ferruleNode!.wireIds.includes('op-branch'),
+      'Branch wire must be registered at the ferrule node');
   });
 
   // N. T23.6.1: The 9" wire and the 3" branch wire must both converge at one canonical
@@ -335,20 +352,90 @@ describe('analyzeHarnessTopology', () => {
 
     const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
 
-    const anchor = result.nodes.find(n => n.id === 'phoenix:2');
-    assert.ok(anchor, 'Canonical anchor node must exist at phoenix:2');
-    assert.ok(anchor!.wireIds.includes('W-9in'),
-      '9" wire must attach to the shared anchor node');
-    assert.ok(anchor!.wireIds.includes('op-3in'),
-      '3" branch wire must attach to the same anchor node');
-    assert.strictEqual(anchor!.wireIds.length, 2,
-      'Both wires must converge at one node \u2014 not split across phantom nodes');
-    assert.strictEqual(anchor!.terminationType, 'CONNECTOR_PIN',
-      'Anchor node must have CONNECTOR_PIN type after construction-time normalization');
+    // T23.6.4: 9" wire attaches to cavity node; 3" branch attaches to ferrule node.
+    // Both nodes are unioned — one connected component.
+    const cavityNode = result.nodes.find(n => n.id === 'phoenix:2');
+    assert.ok(cavityNode, 'Cavity node must exist at phoenix:2');
+    assert.ok(cavityNode!.wireIds.includes('W-9in'),
+      '9" wire must attach to the cavity node');
+    assert.ok(!cavityNode!.wireIds.includes('op-3in'),
+      '3" branch wire must NOT be on the cavity node (it is on the ferrule node)');
+    assert.strictEqual(cavityNode!.terminationType, 'CONNECTOR_PIN',
+      'Cavity node must have CONNECTOR_PIN type');
+
+    const ferruleNode = result.nodes.find(n => n.id === 'phoenix:2:ferrule');
+    assert.ok(ferruleNode, 'T23.6.4: ferrule node must exist at phoenix:2:ferrule');
+    assert.ok(ferruleNode!.isSharedFerrule, 'Ferrule node must be flagged as shared ferrule');
+    assert.ok(ferruleNode!.wireIds.includes('op-3in'),
+      '3" branch wire must attach to the ferrule node');
 
     const isoWarnings = result.warnings.filter(w => w.code === 'ISOLATED_SUBGRAPH');
     assert.strictEqual(isoWarnings.length, 0,
-      'No isolated subgraph when branch wire is merged into a node already connected to main harness');
+      'No isolated subgraph when ferrule node is unioned with cavity node connected to main harness');
+  });
+
+  // O. T23.6.4: known brown-wire case — ferrule 1381010 at Phoenix 1700443 pin 2 is the shared
+  // crimp node for W1A (9 in) and W1B (3 in). W1A remote end is terminal 61944-1; W1B remote
+  // end returns to Phoenix 1700443 pin 5. Pin 2 and pin 5 must not be reported missing.
+  it('O: T23.6.4 — ferrule shared node with partNumber satisfies pin 2 and pin 5 occupancy', () => {
+    const ferruleAt2 = makeEndpoint('PHOENIX_1700443', '2', 'FERRULE', null, '1381010');
+    const wires = [
+      makeWire('W-9in',  makeEndpoint('J1', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX_1700443', '2', 'CONNECTOR_PIN')),
+      makeWire('W1A',    ferruleAt2,                                makeEndpoint('61944-1', null, 'TERMINAL')),
+      makeWire('W1B',    ferruleAt2,                                makeEndpoint('PHOENIX_1700443', '5', 'CONNECTOR_PIN')),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    const ferruleNode = result.nodes.find(n => n.id === 'phoenix:1700443:2:ferrule:1381010');
+    assert.ok(ferruleNode, 'Ferrule node must exist at phoenix:1700443:2:ferrule:1381010');
+    assert.ok(ferruleNode!.isSharedFerrule, 'Node must be flagged as shared ferrule');
+    assert.strictEqual(ferruleNode!.ferrulePartNumber, '1381010', 'Ferrule PN must be stored on node');
+    assert.ok(ferruleNode!.wireIds.includes('W1A'), 'W1A must attach to ferrule node');
+    assert.ok(ferruleNode!.wireIds.includes('W1B'), 'W1B must attach to ferrule node');
+    assert.strictEqual(ferruleNode!.wireIds.length, 2, 'Exactly two wires share the ferrule node');
+
+    const cavityNode = result.nodes.find(n => n.id === 'phoenix:1700443:2');
+    assert.ok(cavityNode, 'Mounting cavity node must exist at phoenix:1700443:2');
+    assert.strictEqual(cavityNode!.terminationType, 'CONNECTOR_PIN', 'Cavity node is CONNECTOR_PIN');
+    assert.ok(cavityNode!.wireIds.includes('W-9in'), 'W-9in attaches to cavity node');
+
+    const missingWarnings = result.warnings.filter(w => w.code === 'MISSING_WIRE');
+    const pin2Missing = missingWarnings.some(w => w.affectedNodeIds.some(id => id.endsWith(':2')));
+    const pin5Missing = missingWarnings.some(w => w.affectedNodeIds.some(id => id.endsWith(':5')));
+    assert.ok(!pin2Missing, 'Pin 2 must NOT be flagged missing — occupied by ferrule node');
+    assert.ok(!pin5Missing, 'Pin 5 must NOT be flagged missing — occupied by W1B TO endpoint');
+
+    assert.strictEqual(
+      result.warnings.filter(w => w.code === 'UNDECLARED_BRANCH').length, 0,
+      'No UNDECLARED_BRANCH: ferrule node carries the shared crimp, not the raw connector pin',
+    );
+
+    const isoWarnings = result.warnings.filter(w => w.code === 'ISOLATED_SUBGRAPH');
+    assert.strictEqual(isoWarnings.length, 0,
+      'No isolated subgraph: ferrule node unioned with cavity node connects all wires',
+    );
+  });
+
+  // P. T23.6.4: ferrule without explicit partNumber uses generic :ferrule suffix.
+  it('P: T23.6.4 — FERRULE endpoint without partNumber gets generic ferrule node key', () => {
+    const ferruleAt2 = makeEndpoint('PHOENIX', '2', 'FERRULE');
+    const wires = [
+      makeWire('Wa', ferruleAt2, makeEndpoint('T1', null, 'TERMINAL'), '[OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP]'),
+      makeWire('Wb', ferruleAt2, makeEndpoint('T2', null, 'TERMINAL'), '[OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP]'),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    const ferruleNode = result.nodes.find(n => n.id === 'phoenix:2:ferrule');
+    assert.ok(ferruleNode, 'Generic ferrule node must exist at phoenix:2:ferrule');
+    assert.ok(ferruleNode!.isSharedFerrule, 'Node must be flagged as shared ferrule');
+    assert.strictEqual(ferruleNode!.ferrulePartNumber, null, 'No ferrule PN stored when none supplied');
+    assert.ok(ferruleNode!.wireIds.includes('Wa'), 'Wa attaches to ferrule node');
+    assert.ok(ferruleNode!.wireIds.includes('Wb'), 'Wb attaches to ferrule node');
+
+    const branchWarnings = result.warnings.filter(w => w.code === 'UNDECLARED_BRANCH');
+    assert.strictEqual(branchWarnings.length, 0, 'No UNDECLARED_BRANCH for ferrule-shared wires');
   });
 
   // I. T23.5: ISOLATED_SUBGRAPH warning message must use node IDs (component:cavity),
