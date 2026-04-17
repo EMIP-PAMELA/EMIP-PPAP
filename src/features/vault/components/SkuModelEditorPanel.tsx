@@ -17,7 +17,7 @@
  *   - No direct writes to extraction pipeline.
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type {
   HarnessConnectivityResult,
   WireConnectivity,
@@ -179,6 +179,17 @@ interface WireFormState {
   reason: string;
 }
 
+type WireFormView = WireFormState & {
+  to: {
+    component: string;
+    cavity: string;
+    treatment: string;
+    termination: EndpointTerminationType | '';
+    partNumber: string;
+    stripLength: string;
+  };
+};
+
 function emptyForm(): WireFormState {
   return {
     wireId: '', length: '', gauge: '', color: '',
@@ -260,6 +271,13 @@ function formToOperatorWire(
     : '';
   const toTreatment   = (form.toTreatment ?? '').trim();
 
+  if (toComponent && !toCavity) {
+    console.error('[T23.6.4.4 ERROR] Missing TO cavity for connector endpoint', {
+      toComponent,
+      form,
+    });
+  }
+
   return {
     id:          existingId ?? `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     wireId:      sanitizedWireId,
@@ -324,12 +342,24 @@ function WireEditorForm({
   onCancel,
   wizardContext,
 }: WireEditorProps) {
-  const [form, setForm] = useState<WireFormState>(initialForm);
+  const [formState, setForm] = useState<WireFormState>(initialForm);
   const [errors, setErrors] = useState<Partial<Record<keyof WireFormState | 'fromTermination' | 'toTermination', string>>>({});
   const userEditedToRef = useRef({
     component: Boolean(initialForm.toComponent?.trim()),
     cavity:    Boolean(initialForm.toCavity?.trim()),
   });
+
+  const form = useMemo<WireFormView>(() => ({
+    ...formState,
+    to: {
+      component: formState.toComponent,
+      cavity: formState.toCavity,
+      treatment: formState.toTreatment,
+      termination: formState.toTermination,
+      partNumber: formState.toPartNumber,
+      stripLength: formState.toStripLength,
+    },
+  }), [formState]);
 
   const set = (key: keyof WireFormState) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -429,7 +459,16 @@ function WireEditorForm({
 
   const handleSave = () => {
     if (!validate()) return;
-    const trimmedToCavity = (form.toCavity ?? '').trim();
+    const trimmedToComponent = form.to.component?.trim() ?? '';
+    const trimmedToCavity = form.to.cavity?.trim() ?? '';
+    const lowerComponent = trimmedToComponent.toLowerCase();
+    if (trimmedToComponent && lowerComponent.includes('phoenix') && !trimmedToCavity) {
+      console.error('[T23.6.4.4 VALIDATION] Missing TO cavity for Phoenix connector', form);
+      if (typeof window !== 'undefined') {
+        window.alert('Connector pin (TO cavity) is required for this Phoenix connector.');
+      }
+      return;
+    }
     if (!trimmedToCavity) {
       console.error('[T23.6.4.3 VALIDATION] Missing TO cavity', form);
       if (typeof window !== 'undefined') {
@@ -440,16 +479,16 @@ function WireEditorForm({
     console.log('[T23.6.4.1 SAVE]', {
       mode,
       wireId:         form.wireId,
-      toComponent:    form.toComponent,
-      toCavity:       form.toCavity,
+      toComponent:    form.to.component,
+      toCavity:       form.to.cavity,
       fromComponent:  form.fromComponent,
       fromCavity:     form.fromCavity,
       topology:       form.topology,
       branchSecCav:   form.branchSecCav,
     });
     console.log('[T23.6.4.2 FINAL FORM]', {
-      toComponent: form.toComponent,
-      toCavity:    form.toCavity,
+      toComponent: form.to.component,
+      toCavity:    form.to.cavity,
       wizardKind,
       userEditedTo: userEditedToRef.current,
     });
@@ -462,7 +501,7 @@ function WireEditorForm({
       topology:       operatorWire.topology,
     });
     console.log('[T23.6.4.3 VERIFY]', {
-      finalFormToCavity: form.toCavity,
+      finalFormToCavity: form.to.cavity,
       modelToCavity: operatorWire.to?.cavity ?? null,
     });
     onSave(operatorWire);
@@ -615,7 +654,7 @@ function WireEditorForm({
               step={1}
               inputMode="numeric"
               pattern="[0-9]*"
-              value={form.toCavity}
+              value={form.to.cavity}
               onChange={set('toCavity')}
               className={inputCls()}
               placeholder=""
@@ -747,8 +786,14 @@ function WireEditorForm({
           className="px-3 py-1 text-[12px] rounded border border-[color:var(--panel-border)] text-[color:var(--text-secondary)] hover:bg-[color:var(--surface-elevated)]">
           Cancel
         </button>
-        <button type="button" onClick={handleSave}
-          className="px-3 py-1 text-[12px] rounded bg-blue-600 text-white hover:bg-blue-700 font-semibold">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!form.to.cavity?.trim()}
+          className={`px-3 py-1 text-[12px] rounded font-semibold text-white ${!form.to.cavity?.trim()
+            ? 'bg-blue-300 cursor-not-allowed'
+            : 'bg-blue-600 hover:bg-blue-700'
+          }`}>
           {mode === 'add' ? 'Add Wire' : 'Save Changes'}
         </button>
       </div>
