@@ -133,6 +133,22 @@ const VALID_OPEN_END_TYPES = new Set<EndpointTerminationType>([
  */
 const DECLARED_BRANCH_RE = /\[OPERATOR_MODEL:(BRANCH_DOUBLE_CRIMP|SPLICE)\]/;
 
+/**
+ * T23.6.11: terminationType values that represent valid physical occupancy of a
+ * connector cavity — used by missing-pin detection to determine which cavities
+ * are genuinely wired, regardless of connection method.
+ *
+ * DOUBLE_CRIMP is NOT included here — it is a rawText topology tag
+ * ([OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP]), not an EndpointTerminationType value.
+ */
+const VALID_OCCUPANCY_TYPES = new Set<EndpointTerminationType>([
+  'CONNECTOR_PIN',
+  'FERRULE',
+  'TERMINAL',
+  'STRIP_ONLY',
+  'SPLICE',
+]);
+
 /** Pattern in rawText for explicitly declared floating wire. */
 const DECLARED_FLOATING_RE = /\[OPERATOR_MODEL:FLOATING\]/;
 
@@ -324,14 +340,15 @@ function detectMissingWires(
     // to CONNECTOR_PIN during graph construction. The FERRULE/TERMINAL clauses here
     // cover residual edge cases: non-declared branch wires whose FROM endpoint
     // carries FERRULE/TERMINAL type and was not normalized by the post-processing step.
+    // T23.6.11: STRIP_ONLY and SPLICE endpoints with a connector cavity also physically
+    // occupy that pin and must suppress false missing-pin candidates.
     const displayComponent = nodes[0]?.component ?? canonicalComponent;
     const pinNodes = nodes.filter(
       n => n.cavity !== null &&
-           (n.terminationType === 'CONNECTOR_PIN' ||
-            n.terminationType === 'FERRULE'        ||
-            n.terminationType === 'TERMINAL'       ||
-            n.terminationType === null),
+           (n.terminationType === null || VALID_OCCUPANCY_TYPES.has(n.terminationType)),
     );
+
+    console.log('[T23.6.11 OCCUPANCY]', canonicalComponent, pinNodes.map(n => n.cavity));
 
     const numeric = pinNodes
       .map(n => ({ num: parseInt(n.cavity!, 10) }))
