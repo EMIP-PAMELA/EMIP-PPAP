@@ -106,15 +106,21 @@ function suppressOverriddenOcrWires(
 
   const opFromKeySet = new Set(
     operatorAddedWires
-      .filter(w => w.from.component?.trim() && w.from.cavity?.trim())
-      .map(w =>
-        `${canonicalComponentKey(w.from.component!)}:${w.from.cavity!.trim().toLowerCase()}`,
-      ),
+      .map(w => {
+        const canonical = canonicalComponentKey(w.from.component);
+        const cavity = w.from.cavity?.trim()?.toLowerCase();
+        if (!canonical || !cavity) return null;
+        return `${canonical}:${cavity}`;
+      })
+      .filter((key): key is string => Boolean(key)),
   );
 
   const opFromComponentSet = new Set(
     operatorAddedWires
-      .map(w => w.from.component?.trim() ? canonicalComponentKey(w.from.component!) : null)
+      .map(w => {
+        const canonical = canonicalComponentKey(w.from.component);
+        return canonical || null;
+      })
       .filter((c): c is string => Boolean(c)),
   );
 
@@ -124,39 +130,70 @@ function suppressOverriddenOcrWires(
     if (wire.rawText.includes('[OPERATOR')) return true;
 
     const ocrLabel = wire.wireId.trim().toLowerCase();
+    const ocrFromCanonical = canonicalComponentKey(wire.from.component);
+    const ocrFromCavity = wire.from.cavity?.trim()?.toLowerCase();
 
     // Rule 1: same wireId label
     if (opLabelSet.has(ocrLabel)) {
       const op = operatorAddedWires.find(w => w.wireId?.trim().toLowerCase() === ocrLabel);
+      if (op) {
+        const opCanonical = canonicalComponentKey(op.from.component);
+        console.log('[T23.6.13 CHECK]', {
+          reason: 'label',
+          ocrId: wire.wireId,
+          opId: op.id,
+          ocrRaw: wire.from.component ?? null,
+          opRaw: op.from.component ?? null,
+          ocrCanonical: ocrFromCanonical,
+          opCanonical,
+        });
+      }
       toSuppress.push({ ocrId: wire.wireId, opId: op?.id ?? 'unknown', reason: 'label' });
       return false;
     }
 
     // Rule 2: same canonical FROM component + cavity
-    const fromKey =
-      wire.from.component?.trim() && wire.from.cavity?.trim()
-        ? `${canonicalComponentKey(wire.from.component)}:${wire.from.cavity.trim().toLowerCase()}`
-        : null;
+    const fromKey = ocrFromCanonical && ocrFromCavity ? `${ocrFromCanonical}:${ocrFromCavity}` : null;
     if (fromKey && opFromKeySet.has(fromKey)) {
       const op = operatorAddedWires.find(
         w =>
-          w.from.component?.trim() &&
-          w.from.cavity?.trim() &&
-          `${canonicalComponentKey(w.from.component!)}:${w.from.cavity!.trim().toLowerCase()}` === fromKey,
+          canonicalComponentKey(w.from.component) === ocrFromCanonical &&
+          w.from.cavity?.trim()?.toLowerCase() === ocrFromCavity,
       );
+      if (op) {
+        const opCanonical = canonicalComponentKey(op.from.component);
+        console.log('[T23.6.13 CHECK]', {
+          reason: 'component+cavity',
+          ocrId: wire.wireId,
+          opId: op.id,
+          ocrRaw: wire.from.component ?? null,
+          opRaw: op.from.component ?? null,
+          ocrCanonical: ocrFromCanonical,
+          opCanonical,
+        });
+      }
       toSuppress.push({ ocrId: wire.wireId, opId: op?.id ?? 'unknown', reason: 'component+cavity' });
       return false;
     }
 
     // Rule 3: unresolved wire with no FROM cavity, same canonical FROM component
-    if (wire.unresolved && wire.from.component?.trim() && !wire.from.cavity?.trim()) {
-      const wireFromCanonical = canonicalComponentKey(wire.from.component);
-      if (opFromComponentSet.has(wireFromCanonical)) {
+    if (wire.unresolved && ocrFromCanonical && !wire.from.cavity?.trim()) {
+      if (opFromComponentSet.has(ocrFromCanonical)) {
         const op = operatorAddedWires.find(
-          w =>
-            w.from.component?.trim() &&
-            canonicalComponentKey(w.from.component!) === wireFromCanonical,
+          w => canonicalComponentKey(w.from.component) === ocrFromCanonical,
         );
+        if (op) {
+          const opCanonical = canonicalComponentKey(op.from.component);
+          console.log('[T23.6.13 CHECK]', {
+            reason: 'unresolved+component',
+            ocrId: wire.wireId,
+            opId: op.id,
+            ocrRaw: wire.from.component ?? null,
+            opRaw: op.from.component ?? null,
+            ocrCanonical: ocrFromCanonical,
+            opCanonical,
+          });
+        }
         toSuppress.push({ ocrId: wire.wireId, opId: op?.id ?? 'unknown', reason: 'unresolved+component' });
         return false;
       }
