@@ -247,14 +247,20 @@ function formToOperatorWire(
   const now = new Date().toISOString();
   const topology = (form.topology || null) as WireTopology | null;
   const needsBranch = topology === 'BRANCH_DOUBLE_CRIMP' || topology === 'SPLICE';
+  const trimmedBranchSrcComp   = form.branchSrcComp.trim();
+  const trimmedBranchSrcCav    = form.branchSrcCav.trim();
+  const trimmedBranchSecCav    = form.branchSecCav.trim();
+  const trimmedBranchFerrulePN = form.branchFerrulePN.trim();
+  const trimmedBranchTerminal  = form.branchTerminalPN.trim();
+  const trimmedBranchAci       = form.branchAci.trim();
   const branch: OperatorWireBranch | null = needsBranch
     ? {
-        sharedSourceComponent:  form.branchSrcComp   || null,
-        sharedSourceCavity:     form.branchSrcCav    || null,
-        secondaryCavity:        form.branchSecCav    || null,
-        ferrulePartNumber:      form.branchFerrulePN || null,
-        terminalPartNumber:     form.branchTerminalPN || null,
-        sharedAci:              form.branchAci       || null,
+        sharedSourceComponent:  trimmedBranchSrcComp   || null,
+        sharedSourceCavity:     trimmedBranchSrcCav    || null,
+        secondaryCavity:        trimmedBranchSecCav    || null,
+        ferrulePartNumber:      trimmedBranchFerrulePN || null,
+        terminalPartNumber:     trimmedBranchTerminal  || null,
+        sharedAci:              trimmedBranchAci       || null,
       }
     : null;
   const trimmedWireId = form.wireId.trim();
@@ -266,10 +272,23 @@ function formToOperatorWire(
   const fromTreatment = (form.fromTreatment ?? '').trim();
   const toComponent   = (form.toComponent ?? '').trim();
   const rawToCavity   = form.toCavity;
-  const toCavity      = rawToCavity !== undefined && rawToCavity !== null
+  let toCavity        = rawToCavity !== undefined && rawToCavity !== null
     ? String(rawToCavity).trim()
     : '';
   const toTreatment   = (form.toTreatment ?? '').trim();
+  const sameComponent = Boolean(
+    fromComponent &&
+    toComponent &&
+    fromComponent.toLowerCase() === toComponent.toLowerCase(),
+  );
+
+  if (sameComponent && !toCavity && trimmedBranchSecCav) {
+    toCavity = trimmedBranchSecCav;
+    console.log('[T23.6.6 SAME COMPONENT CAVITY PROMOTION]', {
+      wireId: sanitizedWireId,
+      branchSecondaryCavity: trimmedBranchSecCav,
+    });
+  }
 
   if (toComponent && !toCavity) {
     console.error('[T23.6.4.4 ERROR] Missing TO cavity for connector endpoint', {
@@ -278,7 +297,7 @@ function formToOperatorWire(
     });
   }
 
-  return {
+  const operatorWire: OperatorWireModel = {
     id:          existingId ?? `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     wireId:      sanitizedWireId,
     targetWireId: targetWireId ?? sanitizedWireId,
@@ -312,6 +331,16 @@ function formToOperatorWire(
     createdAt:   existingCreatedAt ?? now,
     updatedAt:   now,
   };
+
+  if (sameComponent) {
+    console.log('[T23.6.6 SAME COMPONENT WIRE]', {
+      wireId: operatorWire.wireId ?? operatorWire.id,
+      from: operatorWire.from,
+      to: operatorWire.to,
+    });
+  }
+
+  return operatorWire;
 }
 
 // ---------------------------------------------------------------------------
@@ -459,9 +488,30 @@ function WireEditorForm({
 
   const handleSave = () => {
     if (!validate()) return;
+    const trimmedFromComponent = form.fromComponent.trim();
+    const trimmedFromCavity = form.fromCavity.trim();
     const trimmedToComponent = form.to.component?.trim() ?? '';
     const trimmedToCavity = form.to.cavity?.trim() ?? '';
     const lowerComponent = trimmedToComponent.toLowerCase();
+    const sameComponent = Boolean(
+      trimmedFromComponent &&
+      trimmedToComponent &&
+      trimmedFromComponent.toLowerCase() === trimmedToComponent.toLowerCase(),
+    );
+
+    if (sameComponent && !trimmedToCavity) {
+      console.error('[T23.6.6 INVALID SAME COMPONENT WIRE]', {
+        wireId: form.wireId || null,
+        from: {
+          component: trimmedFromComponent || null,
+          cavity: trimmedFromCavity || null,
+        },
+        to: {
+          component: trimmedToComponent || null,
+          cavity: trimmedToCavity || null,
+        },
+      });
+    }
     if (trimmedToComponent && lowerComponent.includes('phoenix') && !trimmedToCavity) {
       console.error('[T23.6.4.4 VALIDATION] Missing TO cavity for Phoenix connector', form);
       if (typeof window !== 'undefined') {

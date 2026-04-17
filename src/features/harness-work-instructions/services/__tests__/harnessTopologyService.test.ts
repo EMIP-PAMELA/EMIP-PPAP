@@ -438,6 +438,55 @@ describe('analyzeHarnessTopology', () => {
     assert.strictEqual(branchWarnings.length, 0, 'No UNDECLARED_BRANCH for ferrule-shared wires');
   });
 
+  // Q. T23.6.6: Intra-component wire (same connector, different cavities) must preserve both nodes.
+  it('Q: same connector cavities build distinct nodes and edges', () => {
+    const wires = [
+      makeWire('W-pin1', makeEndpoint('J1', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX 1700443', '1', 'CONNECTOR_PIN')),
+      makeWire('W-pin3', makeEndpoint('J2', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX 1700443', '3', 'CONNECTOR_PIN')),
+      makeWire('W-pin4', makeEndpoint('J3', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX 1700443', '4', 'CONNECTOR_PIN')),
+      makeWire('W-same',
+        makeEndpoint('PHOENIX 1700443', '2', 'CONNECTOR_PIN'),
+        makeEndpoint('PHOENIX 1700443', '5', 'CONNECTOR_PIN'),
+      ),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    assert.ok(result.nodes.some(n => n.id === 'phoenix:1700443:2'), 'Pin 2 node must exist');
+    assert.ok(result.nodes.some(n => n.id === 'phoenix:1700443:5'), 'Pin 5 node must exist');
+
+    const sameEdge = result.edges.find(e => e.wireId === 'W-same');
+    assert.ok(sameEdge, 'Edge for intra-component wire must exist');
+    assert.equal(sameEdge!.fromNodeId, 'phoenix:1700443:2', 'FROM node must stay at cavity 2');
+    assert.equal(sameEdge!.toNodeId, 'phoenix:1700443:5', 'TO node must stay at cavity 5');
+
+    assert.equal(result.missingWireCandidates.length, 0, 'No missing-pin candidates expected for occupied pins');
+    const missingPin5 = result.warnings
+      .filter(w => w.code === 'MISSING_WIRE')
+      .some(w => w.affectedNodeIds.some(id => id.endsWith(':5')));
+    assert.equal(missingPin5, false, 'Pin 5 must not be flagged missing');
+  });
+
+  // R. T23.6.6: Degenerate same-component/same-cavity wire collapses safely without duplicate nodes.
+  it('R: same connector and cavity does not create duplicate nodes', () => {
+    const loopWire = makeWire(
+      'W-loop',
+      makeEndpoint('PHOENIX 1700443', '2', 'CONNECTOR_PIN'),
+      makeEndpoint('PHOENIX 1700443', '2', 'CONNECTOR_PIN'),
+    );
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity([loopWire]) });
+
+    const node = result.nodes.find(n => n.id === 'phoenix:1700443:2');
+    assert.ok(node, 'Cavity node must exist even for degenerate wires');
+    assert.ok(node!.wireIds.includes('W-loop'), 'Wire must attach to the cavity node');
+
+    const edge = result.edges.find(e => e.wireId === 'W-loop');
+    assert.ok(edge, 'Edge must be present for degenerate wire');
+    assert.equal(edge!.fromNodeId, 'phoenix:1700443:2');
+    assert.equal(edge!.toNodeId, 'phoenix:1700443:2');
+  });
+
   // I. T23.5: ISOLATED_SUBGRAPH warning message must use node IDs (component:cavity),
   // not customer wire labels, so the report is label-agnostic.
   it('I: ISOLATED_SUBGRAPH warning message uses node IDs not wire labels', () => {
