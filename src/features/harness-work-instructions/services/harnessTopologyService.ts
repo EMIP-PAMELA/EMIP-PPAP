@@ -214,6 +214,17 @@ function resolveFerruleNodeId(endpoint: WireEndpoint, canonicalComponent: string
 }
 
 /**
+ * T23.6.16: Normalize node identity down to the physical connector cavity.
+ * Returns null for nodes that are not true connector pins (e.g. ferrules, terminals).
+ */
+function getPhysicalCavityKey(node: TopologyNode): string | null {
+  if (!node.canonicalComponent || !node.cavity) return null;
+  const type = node.terminationType;
+  if (type && type !== 'CONNECTOR_PIN') return null;
+  return `${node.canonicalComponent}:${node.cavity.toLowerCase()}`;
+}
+
+/**
  * Resolve effective terminationType for an endpoint.
  * Infers CONNECTOR_PIN when component + cavity are both present but type is unset.
  */
@@ -347,15 +358,25 @@ function detectMissingWires(
     // T23.6.11: STRIP_ONLY and SPLICE endpoints with a connector cavity also physically
     // occupy that pin and must suppress false missing-pin candidates.
     const displayComponent = nodes[0]?.component ?? canonicalComponent;
-    const pinNodes = nodes.filter(
-      n => n.cavity !== null &&
-           (n.terminationType === null || VALID_OCCUPANCY_TYPES.has(n.terminationType)),
-    );
 
-    console.log('[T23.6.11 OCCUPANCY]', canonicalComponent, pinNodes.map(n => n.cavity));
+    const seenPhysical = new Set<string>();
+    const physicalPins: string[] = [];
+    for (const node of nodes) {
+      const key = getPhysicalCavityKey(node);
+      if (!key || seenPhysical.has(key)) continue;
+      seenPhysical.add(key);
+      physicalPins.push(node.cavity!);
+    }
 
-    const numeric = pinNodes
-      .map(n => ({ num: parseInt(n.cavity!, 10) }))
+    console.log('[T23.6.16 OCCUPANCY NORMALIZED]', {
+      component: canonicalComponent,
+      physicalPins,
+      nodeCount: nodes.length,
+      physicalCount: physicalPins.length,
+    });
+
+    const numeric = physicalPins
+      .map(cav => ({ num: parseInt(cav, 10) }))
       .filter(x => !isNaN(x.num));
 
     if (numeric.length < 2) continue;
