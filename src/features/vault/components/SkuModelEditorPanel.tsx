@@ -323,10 +323,19 @@ function WireEditorForm({
 }: WireEditorProps) {
   const [form, setForm] = useState<WireFormState>(initialForm);
   const [errors, setErrors] = useState<Partial<Record<keyof WireFormState | 'fromTermination' | 'toTermination', string>>>({});
+  const userEditedToRef = useRef({
+    component: Boolean(initialForm.toComponent?.trim()),
+    cavity:    Boolean(initialForm.toCavity?.trim()),
+  });
 
   const set = (key: keyof WireFormState) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
-  ) => setForm(prev => ({ ...prev, [key]: e.target.value }));
+  ) => {
+    const value = e.target.value;
+    if (key === 'toComponent') userEditedToRef.current.component = true;
+    if (key === 'toCavity')    userEditedToRef.current.cavity    = true;
+    setForm(prev => ({ ...prev, [key]: value }));
+  };
 
   const wizardKind = wizardContext?.addedWireKind;
   const sharedNode = wizardContext?.sharedNode;
@@ -377,6 +386,10 @@ function WireEditorForm({
           updates.branchTerminalPN = lockedSharedPartNumber;
         }
       }
+      // T23.6.4.2: never let wizard/shared-node automation clobber operator-entered TO fields.
+      if ('toComponent' in updates && userEditedToRef.current.component) delete updates.toComponent;
+      if ('toCavity' in updates && userEditedToRef.current.cavity)       delete updates.toCavity;
+
       if (Object.keys(updates).length === 0) return prev;
       return { ...prev, ...updates };
     });
@@ -422,6 +435,12 @@ function WireEditorForm({
       fromCavity:     form.fromCavity,
       topology:       form.topology,
       branchSecCav:   form.branchSecCav,
+    });
+    console.log('[T23.6.4.2 FINAL FORM]', {
+      toComponent: form.toComponent,
+      toCavity:    form.toCavity,
+      wizardKind,
+      userEditedTo: userEditedToRef.current,
     });
     const operatorWire = formToOperatorWire(form, existingId, existingCreatedAt, targetWireId ?? null);
     console.log('[T23.6.4.1 MODEL]', {
