@@ -290,11 +290,9 @@ function formToOperatorWire(
     ? String(rawToCavity).trim()
     : '';
   const toTreatment   = (form.toTreatment ?? '').trim();
-  const sameComponent = Boolean(
-    fromComponent &&
-    toComponent &&
-    fromComponent.toLowerCase() === toComponent.toLowerCase(),
-  );
+  const fromCanonical = fromComponent ? canonicalComponentKey(fromComponent) : '';
+  const toCanonical   = toComponent   ? canonicalComponentKey(toComponent)   : '';
+  const sameComponent = Boolean(fromCanonical && toCanonical && fromCanonical === toCanonical);
 
   if (sameComponent && !toCavity && trimmedBranchSecCav) {
     toCavity = trimmedBranchSecCav;
@@ -345,6 +343,17 @@ function formToOperatorWire(
     createdAt:   existingCreatedAt ?? now,
     updatedAt:   now,
   };
+
+  if (sameComponent && operatorWire.to.cavity && operatorWire.to.terminationType !== 'CONNECTOR_PIN') {
+    const previousType = operatorWire.to.terminationType ?? 'UNKNOWN';
+    operatorWire.to.terminationType = 'CONNECTOR_PIN';
+    console.log('[T23.6.19.1 SAME-COMPONENT PIN OVERRIDE]', {
+      wireId: operatorWire.wireId ?? operatorWire.id,
+      canonicalComponent: fromCanonical,
+      previousType,
+      enforcedType: 'CONNECTOR_PIN',
+    });
+  }
 
   if (sameComponent) {
     console.log('[T23.6.6 SAME COMPONENT WIRE]', {
@@ -637,11 +646,9 @@ function WireEditorForm({
     const trimmedToComponent = form.to.component?.trim() ?? '';
     const trimmedToCavity = form.to.cavity?.trim() ?? '';
     const lowerComponent = trimmedToComponent.toLowerCase();
-    const sameComponent = Boolean(
-      trimmedFromComponent &&
-      trimmedToComponent &&
-      trimmedFromComponent.toLowerCase() === trimmedToComponent.toLowerCase(),
-    );
+    const fromCanonical = trimmedFromComponent ? canonicalComponentKey(trimmedFromComponent) : '';
+    const toCanonical = trimmedToComponent ? canonicalComponentKey(trimmedToComponent) : '';
+    const sameComponent = Boolean(fromCanonical && toCanonical && fromCanonical === toCanonical);
 
     const hasAuthorityOptions = componentOptions.length > 0;
     if (hasAuthorityOptions && form.fromComponent.trim() &&

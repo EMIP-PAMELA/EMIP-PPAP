@@ -441,6 +441,23 @@ export function analyzeHarnessTopology(args: {
   const { wires } = args.connectivity;
 
   wires.forEach(wire => {
+    const fromCanonical = wire.from?.component ? canonicalComponentKey(wire.from.component) : '';
+    const toCanonical   = wire.to?.component   ? canonicalComponentKey(wire.to.component)   : '';
+    const sameComponent = Boolean(fromCanonical && toCanonical && fromCanonical === toCanonical);
+
+    if (
+      sameComponent &&
+      wire.to?.cavity &&
+      wire.to?.terminationType === 'STRIP_ONLY'
+    ) {
+      console.log('[T23.6.19.1 CORRECTION] overriding STRIP_ONLY → CONNECTOR_PIN', {
+        wireId: wire.wireId,
+        component: fromCanonical,
+        cavity: wire.to.cavity,
+      });
+      wire.to.terminationType = 'CONNECTOR_PIN';
+    }
+
     console.log(
       `[T23.6.7 TOPOLOGY] wire=${wire.wireId} ` +
       `FROM=${wire.from?.component}:${wire.from?.cavity} (${wire.from?.terminationType}) ` +
