@@ -128,7 +128,11 @@ function describeTermination(endpoint: AnyEndpoint): string | null {
 }
 
 function endpointDisplay(endpoint: AnyEndpoint): string {
-  if (endpoint.component && endpoint.component.trim()) return endpoint.component.trim();
+  const component = endpoint.component?.trim() ?? '';
+  const cavity    = endpoint.cavity?.trim() ?? '';
+  if (component && cavity) return `${component}:${cavity}`;
+  if (component) return component;
+  if (cavity) return `:${cavity}`;
   return describeTermination(endpoint) ?? dash;
 }
 
@@ -246,6 +250,12 @@ function formToOperatorWire(
   const sanitizedWireId = trimmedWireId.length > 0 ? trimmedWireId : null;
   const fromTermination = (form.fromTermination || null) as EndpointTerminationType | null;
   const toTermination = (form.toTermination || null) as EndpointTerminationType | null;
+  const fromComponent = form.fromComponent.trim();
+  const fromCavity    = form.fromCavity.trim();
+  const toComponent   = form.toComponent.trim();
+  const toCavity      = form.toCavity.trim();
+  const fromTreatment = form.fromTreatment.trim();
+  const toTreatment   = form.toTreatment.trim();
 
   return {
     id:          existingId ?? `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -256,18 +266,18 @@ function formToOperatorWire(
     gauge:       form.gauge.trim() || null,
     color:       form.color.trim() || null,
     from: {
-      component:       form.fromComponent.trim()  || null,
-      cavity:          form.fromCavity.trim()     || null,
-      treatment:       form.fromTreatment.trim()  || null,
+      component:       fromComponent || null,
+      cavity:          fromCavity || null,
+      treatment:       fromTreatment || null,
       terminationType: fromTermination,
       partNumber:      form.fromPartNumber.trim()  || null,
       stripLength:     form.fromStripLength.trim() || null,
       processSource:   (form.fromPartNumber.trim() || form.fromStripLength.trim()) ? 'OPERATOR' : undefined,
     },
     to: {
-      component:       form.toComponent.trim()    || null,
-      cavity:          form.toCavity.trim()       || null,
-      treatment:       form.toTreatment.trim()    || null,
+      component:       toComponent || null,
+      cavity:          toCavity || null,
+      treatment:       toTreatment || null,
       terminationType: toTermination,
       partNumber:      form.toPartNumber.trim()    || null,
       stripLength:     form.toStripLength.trim()   || null,
@@ -403,7 +413,25 @@ function WireEditorForm({
 
   const handleSave = () => {
     if (!validate()) return;
-    onSave(formToOperatorWire(form, existingId, existingCreatedAt, targetWireId ?? null));
+    console.log('[T23.6.4.1 SAVE]', {
+      mode,
+      wireId:         form.wireId,
+      toComponent:    form.toComponent,
+      toCavity:       form.toCavity,
+      fromComponent:  form.fromComponent,
+      fromCavity:     form.fromCavity,
+      topology:       form.topology,
+      branchSecCav:   form.branchSecCav,
+    });
+    const operatorWire = formToOperatorWire(form, existingId, existingCreatedAt, targetWireId ?? null);
+    console.log('[T23.6.4.1 MODEL]', {
+      operatorId:     operatorWire.id,
+      targetWireId:   operatorWire.targetWireId,
+      toEndpoint:     operatorWire.to,
+      fromEndpoint:   operatorWire.from,
+      topology:       operatorWire.topology,
+    });
+    onSave(operatorWire);
   };
 
   const labelCls = 'text-[11px] font-semibold text-gray-500 uppercase tracking-wide';
