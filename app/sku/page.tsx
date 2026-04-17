@@ -1,11 +1,9 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import EMIPLayout from '../layout/EMIPLayout';
 import type { SKURecord } from '@/src/features/harness-work-instructions/services/skuService';
-import RevisionStatusBadge from '@/src/features/revision/components/RevisionStatusBadge';
-import { useRevisionValidationMap } from '@/src/features/revision/hooks/useRevisionValidationMap';
 
 const SOURCE_LABEL: Record<string, string> = {
   CUSTOMER_DRAWING: 'Customer Drawing',
@@ -19,23 +17,35 @@ export default function SKUModelsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        setLoading(true);
-        const res = await fetch('/api/sku/list');
-        const json = await res.json();
-        if (!json.ok) throw new Error(json.error ?? 'Failed to load SKUs');
-        setSkus(json.skus);
-      } catch (err) {
+    let cancelled = false;
+    setLoading(true);
+    fetch('/api/sku')
+      .then(res => res.json())
+      .then(json => {
+        if (cancelled) return;
+        if (json?.ok === false) {
+          throw new Error(json.error ?? 'Failed to load SKUs');
+        }
+        setSkus(Array.isArray(json?.skus) ? json.skus : []);
+        setError(null);
+      })
+      .catch(err => {
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoading(false);
-      }
-    })();
+        setSkus([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const partNumbers = useMemo(() => skus.map(sku => sku.part_number?.trim().toUpperCase() ?? '').filter(Boolean), [skus]);
-  const { validationMap, pending } = useRevisionValidationMap(partNumbers);
+  console.log('[T23.7 SKU VAULT RENDER]', { skuCount: skus.length, loading });
 
   return (
     <EMIPLayout>
@@ -82,42 +92,40 @@ export default function SKUModelsPage() {
                 No SKUs yet. Upload a BOM or drawing to begin.
               </div>
             )}
-            {!loading && skus.map((sku) => (
-              <div
-                key={sku.id}
-                className="px-6 py-4 flex flex-col gap-1 md:flex-row md:items-center md:justify-between"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-base font-semibold text-gray-900">{sku.part_number}</p>
-                    {sku.part_number && (
-                      <RevisionStatusBadge
-                        status={validationMap[sku.part_number.trim().toUpperCase()]?.status ?? undefined}
-                        showLabel={false}
-                        loading={pending.has(sku.part_number.trim().toUpperCase())}
-                      />
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-500">{sku.description ?? 'No description'}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    {sku.created_from && (
-                      <span className="text-xs rounded-full bg-gray-100 text-gray-600 px-2 py-0.5">
-                        {SOURCE_LABEL[sku.created_from] ?? sku.created_from}
-                      </span>
-                    )}
-                    <span className="text-xs text-gray-400">
-                      Updated {new Date(sku.updated_at).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-                <Link
-                  href={`/sku/${encodeURIComponent(sku.part_number)}`}
-                  className="inline-flex items-center justify-center rounded-xl border border-gray-300 px-4 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+            {!loading && skus.map((sku) => {
+              const normalizedType = sku.created_from ?? 'UNKNOWN';
+              const typeLabel = SOURCE_LABEL[normalizedType] ?? 'Unknown Source';
+              const statusLabel = sku.created_from
+                ? `Document source: ${typeLabel}`
+                : 'Awaiting authoritative document';
+              const updatedLabel = new Date(sku.updated_at).toLocaleString();
+
+              return (
+                <div
+                  key={sku.id}
+                  className="px-6 py-4 flex flex-col gap-1 md:flex-row md:items-center md:justify-between"
                 >
-                  Open
-                </Link>
-              </div>
-            ))}
+                  <div>
+                    <p className="text-base font-semibold text-gray-900">{sku.part_number}</p>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="text-xs rounded-full bg-gray-100 text-gray-600 px-2 py-0.5">
+                        {typeLabel}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        Last updated {updatedLabel}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{statusLabel}</p>
+                  </div>
+                  <Link
+                    href={`/sku/${encodeURIComponent(sku.part_number)}`}
+                    className="inline-flex items-center justify-center rounded-xl border border-gray-300 px-4 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+                  >
+                    Open
+                  </Link>
+                </div>
+              );
+            })}
           </div>
         </section>
       </div>
