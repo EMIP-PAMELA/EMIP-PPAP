@@ -487,6 +487,28 @@ describe('analyzeHarnessTopology', () => {
     assert.equal(edge!.toNodeId, 'phoenix:1700443:2');
   });
 
+  // S. T23.6.8: Canonicalization must collapse spelling variants into the same connector identity.
+  it('S: canonical component variants merge into one connector family', () => {
+    const wires = [
+      makeWire('W-authoritative',
+        makeEndpoint('PHOENIX 1700443', '2', 'CONNECTOR_PIN'),
+        makeEndpoint('J1', '1', 'CONNECTOR_PIN'),
+      ),
+      makeWire('W-variant',
+        makeEndpoint('PHOENIX #: 1700443', '5', 'CONNECTOR_PIN'),
+        makeEndpoint('J2', '1', 'CONNECTOR_PIN'),
+      ),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+    const phoenixNodes = result.nodes.filter(n => n.canonicalComponent === 'phoenix:1700443');
+    assert.ok(phoenixNodes.some(n => n.cavity === '2'), 'Canonical node must include cavity 2');
+    assert.ok(phoenixNodes.some(n => n.cavity === '5'), 'Canonical node must include cavity 5');
+    assert.equal(result.missingWireCandidates.length, 0, 'No missing pins after canonical merge');
+    const edgeVariant = result.edges.find(e => e.wireId === 'W-variant');
+    assert.equal(edgeVariant?.fromNodeId, 'phoenix:1700443:5');
+  });
+
   // I. T23.5: ISOLATED_SUBGRAPH warning message must use node IDs (component:cavity),
   // not customer wire labels, so the report is label-agnostic.
   it('I: ISOLATED_SUBGRAPH warning message uses node IDs not wire labels', () => {

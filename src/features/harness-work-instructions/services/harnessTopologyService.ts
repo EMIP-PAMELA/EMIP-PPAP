@@ -141,7 +141,7 @@ const DECLARED_FLOATING_RE = /\[OPERATOR_MODEL:FLOATING\]/;
 // ---------------------------------------------------------------------------
 
 /** Build manufacturer:part canonical key eliminating duplicates from OCR variance. */
-function canonicalComponentKey(raw?: string | null): string {
+export function canonicalComponentKey(raw?: string | null): string {
   if (!raw) return '';
   return raw
     .toLowerCase()

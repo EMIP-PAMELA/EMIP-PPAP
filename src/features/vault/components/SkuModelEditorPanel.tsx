@@ -37,6 +37,13 @@ import {
 } from '@/src/features/harness-work-instructions/services/skuModelEditService';
 import type { HarnessDecisionResult } from '@/src/features/harness-work-instructions/services/harnessDecisionService';
 import type { WireIdentityResult } from '@/src/features/harness-work-instructions/services/wireIdentityService';
+import {
+  buildComponentAuthorityOptions,
+  mergeComponentAuthorityOptions,
+  type ComponentAuthorityOption,
+  isComponentAuthoritySelectionValid,
+} from '@/src/features/harness-work-instructions/services/componentAuthorityService';
+import { canonicalComponentKey } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -158,12 +165,14 @@ interface WireFormState {
   gauge: string;
   color: string;
   fromComponent: string;
+  fromComponentCanonicalId: string;
   fromCavity: string;
   fromTreatment: string;
   fromTermination: EndpointTerminationType | '';
   fromPartNumber: string;
   fromStripLength: string;
   toComponent: string;
+  toComponentCanonicalId: string;
   toCavity: string;
   toTreatment: string;
   toTermination: EndpointTerminationType | '';
@@ -193,9 +202,9 @@ type WireFormView = WireFormState & {
 function emptyForm(): WireFormState {
   return {
     wireId: '', length: '', gauge: '', color: '',
-    fromComponent: '', fromCavity: '', fromTreatment: '', fromTermination: '',
+    fromComponent: '', fromComponentCanonicalId: '', fromCavity: '', fromTreatment: '', fromTermination: '',
     fromPartNumber: '', fromStripLength: '',
-    toComponent: '', toCavity: '', toTreatment: '', toTermination: '',
+    toComponent: '', toComponentCanonicalId: '', toCavity: '', toTreatment: '', toTermination: '',
     toPartNumber: '', toStripLength: '',
     topology: '', branchSrcComp: '', branchSrcCav: '', branchSecCav: '',
     branchFerrulePN: '', branchTerminalPN: '', branchAci: '', reason: '',
@@ -209,6 +218,8 @@ function wireToForm(wire: WireConnectivity | OperatorWireModel): WireFormState {
   const opWire = isOp ? (wire as OperatorWireModel) : null;
 
   const branch: OperatorWireBranch | null = opWire?.branch ?? null;
+  const fromCanonical = from.component ? canonicalComponentKey(from.component) : '';
+  const toCanonical   = to.component   ? canonicalComponentKey(to.component)   : '';
 
   return {
     wireId:         wire.wireId ?? '',
@@ -216,12 +227,14 @@ function wireToForm(wire: WireConnectivity | OperatorWireModel): WireFormState {
     gauge:          wire.gauge ?? '',
     color:          wire.color ?? '',
     fromComponent:  from.component ?? '',
+    fromComponentCanonicalId: fromCanonical,
     fromCavity:     from.cavity    ?? '',
     fromTreatment:  from.treatment ?? '',
     fromTermination: defaultTerminationValue(from),
-    fromPartNumber:  from.partNumber  ?? '',
+    fromPartNumber: from.partNumber ?? '',
     fromStripLength: from.stripLength ?? '',
     toComponent:    to.component   ?? '',
+    toComponentCanonicalId: toCanonical,
     toCavity:       to.cavity      ?? '',
     toTreatment:    to.treatment   ?? '',
     toTermination:  defaultTerminationValue(to),
@@ -359,6 +372,7 @@ interface WireEditorProps {
     addedWireKind: AddedWireKind;
     sharedNode?: SharedNodeInput;
   };
+  componentOptions: ComponentAuthorityOption[];
 }
 
 function WireEditorForm({
@@ -370,6 +384,7 @@ function WireEditorForm({
   onSave,
   onCancel,
   wizardContext,
+  componentOptions,
 }: WireEditorProps) {
   const [formState, setForm] = useState<WireFormState>(initialForm);
   const [errors, setErrors] = useState<Partial<Record<keyof WireFormState | 'fromTermination' | 'toTermination', string>>>({});
@@ -377,6 +392,27 @@ function WireEditorForm({
     component: Boolean(initialForm.toComponent?.trim()),
     cavity:    Boolean(initialForm.toCavity?.trim()),
   });
+  const componentOptionsRef = useRef(componentOptions);
+  useEffect(() => {
+    componentOptionsRef.current = componentOptions;
+  }, [componentOptions]);
+  const [fromCustomMode, setFromCustomMode] = useState(
+    () => !isComponentAuthoritySelectionValid(initialForm.fromComponentCanonicalId, componentOptions),
+  );
+  const [toCustomMode, setToCustomMode] = useState(
+    () => !isComponentAuthoritySelectionValid(initialForm.toComponentCanonicalId, componentOptions),
+  );
+
+  useEffect(() => {
+    setForm(initialForm);
+    userEditedToRef.current = {
+      component: Boolean(initialForm.toComponent?.trim()),
+      cavity:    Boolean(initialForm.toCavity?.trim()),
+    };
+    const latestOptions = componentOptionsRef.current;
+    setFromCustomMode(!isComponentAuthoritySelectionValid(initialForm.fromComponentCanonicalId, latestOptions));
+    setToCustomMode(!isComponentAuthoritySelectionValid(initialForm.toComponentCanonicalId, latestOptions));
+  }, [initialForm]);
 
   const form = useMemo<WireFormView>(() => ({
     ...formState,
@@ -396,7 +432,16 @@ function WireEditorForm({
     const value = e.target.value;
     if (key === 'toComponent') userEditedToRef.current.component = true;
     if (key === 'toCavity')    userEditedToRef.current.cavity    = true;
-    setForm(prev => ({ ...prev, [key]: value }));
+    setForm(prev => {
+      const next: WireFormState = { ...prev, [key]: value };
+      if (key === 'fromComponent') {
+        next.fromComponentCanonicalId = '';
+      }
+      if (key === 'toComponent') {
+        next.toComponentCanonicalId = '';
+      }
+      return next;
+    });
   };
 
   const wizardKind = wizardContext?.addedWireKind;
@@ -420,13 +465,26 @@ function WireEditorForm({
     ? KIND_SHARED_NODE_LABEL[wizardKind]
     : null;
   const lockedSharedPartNumber = sharedNode?.sharedPartNumber?.trim() ?? '';
+  const fromSelectedOption = useMemo(
+    () => componentOptions.find(opt => opt.canonicalId === formState.fromComponentCanonicalId) ?? null,
+    [componentOptions, formState.fromComponentCanonicalId],
+  );
+  const toSelectedOption = useMemo(
+    () => componentOptions.find(opt => opt.canonicalId === formState.toComponentCanonicalId) ?? null,
+    [componentOptions, formState.toComponentCanonicalId],
+  );
+  const fromCavityOptions = !fromCustomMode ? (fromSelectedOption?.cavities ?? []) : [];
+  const toCavityOptions = !toCustomMode ? (toSelectedOption?.cavities ?? []) : [];
+  const linkButtonCls = 'text-[10px] text-blue-600 underline-offset-2 hover:underline';
 
   useEffect(() => {
     if (!isWizardAddFlow || !wizardKind) return;
     setForm(prev => {
       const updates: Partial<WireFormState> = {};
       if (sharedNode?.sharedComponent && prev.fromComponent !== sharedNode.sharedComponent) {
-        updates.fromComponent = sharedNode.sharedComponent;
+        const resolved = componentOptions.find(opt => opt.displayName === sharedNode.sharedComponent || opt.canonicalId === canonicalComponentKey(sharedNode.sharedComponent));
+        updates.fromComponent = resolved?.displayName ?? sharedNode.sharedComponent;
+        updates.fromComponentCanonicalId = resolved?.canonicalId ?? canonicalComponentKey(sharedNode.sharedComponent);
       }
       if (sharedNode?.sharedCavity && prev.fromCavity !== sharedNode.sharedCavity) {
         updates.fromCavity = sharedNode.sharedCavity;
@@ -455,7 +513,66 @@ function WireEditorForm({
       if (Object.keys(updates).length === 0) return prev;
       return { ...prev, ...updates };
     });
-  }, [isWizardAddFlow, wizardKind, sharedNode, lockedTopology, lockedFromTermination, isFerruleKind, isTerminalDoubleCrimp, lockedSharedPartNumber]);
+  }, [isWizardAddFlow, wizardKind, sharedNode, lockedTopology, lockedFromTermination, isFerruleKind, isTerminalDoubleCrimp, lockedSharedPartNumber, componentOptions]);
+
+  useEffect(() => {
+    if (
+      form.topology === 'BRANCH_DOUBLE_CRIMP' &&
+      formState.fromComponentCanonicalId &&
+      !formState.toComponentCanonicalId &&
+      !userEditedToRef.current.component
+    ) {
+      setForm(prev => ({
+        ...prev,
+        toComponent: prev.fromComponent,
+        toComponentCanonicalId: prev.fromComponentCanonicalId,
+      }));
+      setToCustomMode(false);
+    }
+  }, [form.topology, formState.fromComponentCanonicalId, formState.fromComponent, formState.toComponentCanonicalId]);
+
+  useEffect(() => {
+    if (form.branchSecCav && !form.to.cavity && !userEditedToRef.current.cavity) {
+      setForm(prev => ({ ...prev, toCavity: prev.branchSecCav }));
+    }
+  }, [form.branchSecCav, form.to.cavity]);
+
+  const handleComponentSelect = useCallback((endpoint: 'from' | 'to') => (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const canonicalId = e.target.value;
+    const option = componentOptions.find(opt => opt.canonicalId === canonicalId) ?? null;
+    setForm(prev => {
+      const next = { ...prev };
+      if (endpoint === 'from') {
+        next.fromComponent = option?.displayName ?? '';
+        next.fromComponentCanonicalId = option?.canonicalId ?? '';
+      } else {
+        next.toComponent = option?.displayName ?? '';
+        next.toComponentCanonicalId = option?.canonicalId ?? '';
+      }
+      return next;
+    });
+    if (endpoint === 'to') userEditedToRef.current.component = true;
+    if (endpoint === 'from') setFromCustomMode(false);
+    else setToCustomMode(false);
+  }, [componentOptions]);
+
+  const handleCustomToggle = useCallback((endpoint: 'from' | 'to', custom: boolean) => {
+    if (!custom && componentOptions.length === 0) return;
+    if (endpoint === 'from') {
+      setFromCustomMode(custom);
+      if (!custom) {
+        setForm(prev => ({ ...prev, fromComponent: '', fromComponentCanonicalId: '' }));
+      }
+    } else {
+      setToCustomMode(custom);
+      if (!custom) {
+        setForm(prev => ({ ...prev, toComponent: '', toComponentCanonicalId: '' }));
+        userEditedToRef.current.component = true;
+      }
+    }
+  }, [componentOptions.length]);
 
   const validate = (): boolean => {
     const errs: typeof errors = {};
@@ -498,6 +615,32 @@ function WireEditorForm({
       trimmedToComponent &&
       trimmedFromComponent.toLowerCase() === trimmedToComponent.toLowerCase(),
     );
+
+    const hasAuthorityOptions = componentOptions.length > 0;
+    if (hasAuthorityOptions && form.fromComponent.trim() &&
+      !isComponentAuthoritySelectionValid(formState.fromComponentCanonicalId, componentOptions)) {
+      console.error('[T23.6.8 AUTHORITY VIOLATION]', {
+        endpoint: 'FROM',
+        fromComponent: form.fromComponent,
+        allowed: componentOptions.map(c => c.displayName),
+      });
+      if (typeof window !== 'undefined') {
+        window.alert('Selected FROM component is not part of this harness. Choose an existing component.');
+      }
+      return;
+    }
+    if (hasAuthorityOptions && form.to.component?.trim() &&
+      !isComponentAuthoritySelectionValid(formState.toComponentCanonicalId, componentOptions)) {
+      console.error('[T23.6.8 AUTHORITY VIOLATION]', {
+        endpoint: 'TO',
+        toComponent: form.to.component,
+        allowed: componentOptions.map(c => c.displayName),
+      });
+      if (typeof window !== 'undefined') {
+        window.alert('Selected TO component is not part of this harness. Choose an existing component.');
+      }
+      return;
+    }
 
     if (sameComponent && !trimmedToCavity) {
       console.error('[T23.6.6 INVALID SAME COMPONENT WIRE]', {
@@ -560,6 +703,13 @@ function WireEditorForm({
       finalFormToCavity: form.to.cavity,
       modelToCavity: operatorWire.to?.cavity ?? null,
     });
+    const fromAuthorityId = operatorWire.from.component ? canonicalComponentKey(operatorWire.from.component) : '';
+    const toAuthorityId = operatorWire.to.component ? canonicalComponentKey(operatorWire.to.component) : '';
+    console.log(
+      `[T23.6.8 AUTHORITY] wire=${saveWireId} ` +
+      `FROM=${fromAuthorityId}:${operatorWire.from?.cavity ?? ''} ` +
+      `TO=${toAuthorityId}:${operatorWire.to?.cavity ?? ''}`,
+    );
     onSave(operatorWire);
   };
 
@@ -656,12 +806,42 @@ function WireEditorForm({
           <div className="grid grid-cols-3 gap-1.5">
             <div>
               <label className={labelCls}>Component *</label>
-              <input value={form.fromComponent} onChange={set('fromComponent')} className={inputCls(errors.fromComponent)} placeholder="J1" />
+              {(fromCustomMode || componentOptions.length === 0) ? (
+                <div className="space-y-1">
+                  <input value={form.fromComponent} onChange={set('fromComponent')} className={inputCls(errors.fromComponent)} placeholder="Select existing component" />
+                  {componentOptions.length > 0 && (
+                    <button type="button" className={linkButtonCls} onClick={() => handleCustomToggle('from', false)}>
+                      Use existing component
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <select value={formState.fromComponentCanonicalId} onChange={handleComponentSelect('from')} className={inputCls(errors.fromComponent)}>
+                    <option value="">— Select component —</option>
+                    {componentOptions.map(opt => (
+                      <option key={opt.canonicalId} value={opt.canonicalId}>{opt.displayName}</option>
+                    ))}
+                  </select>
+                  <button type="button" className={linkButtonCls} onClick={() => handleCustomToggle('from', true)}>
+                    Custom component
+                  </button>
+                </div>
+              )}
               {errors.fromComponent && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromComponent}</p>}
             </div>
             <div>
               <label className={labelCls}>Cavity / Pin *</label>
-              <input value={form.fromCavity} onChange={set('fromCavity')} className={inputCls(errors.fromCavity)} placeholder="1" />
+              {fromCavityOptions.length > 0 ? (
+                <select value={form.fromCavity} onChange={set('fromCavity')} className={inputCls(errors.fromCavity)}>
+                  <option value="">— Select cavity —</option>
+                  {fromCavityOptions.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              ) : (
+                <input value={form.fromCavity} onChange={set('fromCavity')} className={inputCls(errors.fromCavity)} placeholder="1" />
+              )}
               {errors.fromCavity && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromCavity}</p>}
             </div>
             <div>
@@ -699,22 +879,52 @@ function WireEditorForm({
         <div className="grid grid-cols-3 gap-1.5">
           <div>
             <label className={labelCls}>Component / Terminal PN</label>
-            <input value={form.toComponent} onChange={set('toComponent')} className={inputCls(errors.toComponent)} placeholder="929504-1" />
+            {(toCustomMode || componentOptions.length === 0) ? (
+              <div className="space-y-1">
+                <input value={form.to.component} onChange={set('toComponent')} className={inputCls(errors.toComponent)} placeholder="Select existing component" />
+                {componentOptions.length > 0 && (
+                  <button type="button" className={linkButtonCls} onClick={() => handleCustomToggle('to', false)}>
+                    Use existing component
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <select value={formState.toComponentCanonicalId} onChange={handleComponentSelect('to')} className={inputCls(errors.toComponent)}>
+                  <option value="">— Select component —</option>
+                  {componentOptions.map(opt => (
+                    <option key={opt.canonicalId} value={opt.canonicalId}>{opt.displayName}</option>
+                  ))}
+                </select>
+                <button type="button" className={linkButtonCls} onClick={() => handleCustomToggle('to', true)}>
+                  Custom component
+                </button>
+              </div>
+            )}
             {errors.toComponent && <p className="text-[10px] text-red-600 mt-0.5">{errors.toComponent}</p>}
           </div>
           <div>
             <label className={labelCls}>Cavity</label>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={form.to.cavity}
-              onChange={set('toCavity')}
-              className={inputCls()}
-              placeholder=""
-            />
+            {toCavityOptions.length > 0 ? (
+              <select value={form.to.cavity} onChange={set('toCavity')} className={inputCls()}>
+                <option value="">— Select cavity —</option>
+                {toCavityOptions.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="number"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={form.to.cavity}
+                onChange={set('toCavity')}
+                className={inputCls()}
+                placeholder=""
+              />
+            )}
           </div>
           <div>
             <label className={labelCls}>Connection Method</label>
@@ -1038,6 +1248,34 @@ export default function SkuModelEditorPanel({
   const effectiveWires = effectiveConnectivity?.wires ?? extractedConnectivity?.wires ?? [];
   const overallDecision = effectiveDecision?.overallDecision ?? null;
 
+  const effectiveAuthorityOptions = useMemo(
+    () => buildComponentAuthorityOptions(effectiveConnectivity),
+    [effectiveConnectivity],
+  );
+  const extractedAuthorityOptions = useMemo(
+    () => buildComponentAuthorityOptions(extractedConnectivity),
+    [extractedConnectivity],
+  );
+  const componentOptions = useMemo(
+    () => mergeComponentAuthorityOptions(effectiveAuthorityOptions, extractedAuthorityOptions),
+    [effectiveAuthorityOptions, extractedAuthorityOptions],
+  );
+
+  useEffect(() => {
+    console.log('[T23.6.8 COMPONENT OPTIONS]', componentOptions);
+  }, [componentOptions]);
+
+  const resolveAuthoritySelection = useCallback((componentName?: string | null) => {
+    if (!componentName?.trim()) return { displayName: '', canonicalId: '' };
+    const canonicalId = canonicalComponentKey(componentName);
+    if (!canonicalId) return { displayName: componentName.trim(), canonicalId: '' };
+    const option = componentOptions.find(opt => opt.canonicalId === canonicalId);
+    if (option) {
+      return { displayName: option.displayName, canonicalId: option.canonicalId };
+    }
+    return { displayName: componentName.trim(), canonicalId };
+  }, [componentOptions]);
+
   // Stable refs so the external-request useEffect never goes stale
   const effectiveWiresRef = useRef(effectiveWires);
   effectiveWiresRef.current = effectiveWires;
@@ -1100,17 +1338,24 @@ export default function SkuModelEditorPanel({
     if (!editorState || editorState.mode !== 'add' || editorState.step !== 'kind') return;
     const gp = editorState.graphPrefill;
     if (kind === 'STANDALONE') {
+      const resolved = resolveAuthoritySelection(gp?.fromComponent ?? '');
       setEditorState({
         mode: 'add',
         step: 'wire-form',
         addedWireKind: 'STANDALONE',
         sharedNode: undefined,
-        form: { ...emptyForm(), fromComponent: gp?.fromComponent ?? '', fromCavity: gp?.fromCavity ?? '', topology: 'LINEAR' },
+        form: {
+          ...emptyForm(),
+          fromComponent: resolved.displayName || gp?.fromComponent || '',
+          fromComponentCanonicalId: resolved.canonicalId,
+          fromCavity: gp?.fromCavity ?? '',
+          topology: 'LINEAR',
+        },
       });
     } else {
       setEditorState({ mode: 'add', step: 'shared-node', kind, graphPrefill: gp });
     }
-  }, [editorState]);
+  }, [editorState, resolveAuthoritySelection]);
 
   const handleSharedNodeContinue = useCallback((data: SharedNodeStepData) => {
     if (!editorState || editorState.mode !== 'add' || editorState.step !== 'shared-node') return;
@@ -1124,6 +1369,7 @@ export default function SkuModelEditorPanel({
       sharedPartNumber: data.hardwarePN || null,
       sharedAci:         data.hardwareAci || null,
     };
+    const resolved = resolveAuthoritySelection(data.sharedComp);
     setEditorState({
       mode: 'add',
       step: 'wire-form',
@@ -1131,18 +1377,19 @@ export default function SkuModelEditorPanel({
       sharedNode: sharedNodeInput,
       form: {
         ...emptyForm(),
-        fromComponent:   data.sharedComp,
+        fromComponent:   resolved.displayName || data.sharedComp,
+        fromComponentCanonicalId: resolved.canonicalId,
         fromCavity:      data.sharedCav,
         fromTermination: isFerruleKind ? 'FERRULE' : kind === 'DOUBLE_CRIMP_TERMINAL' ? 'TERMINAL' : 'CONNECTOR_PIN',
         topology,
-        branchSrcComp:   data.sharedComp,
+        branchSrcComp:   resolved.displayName || data.sharedComp,
         branchSrcCav:    data.sharedCav,
         branchFerrulePN:  isFerruleKind ? data.hardwarePN : '',
         branchTerminalPN: isFerruleKind ? '' : data.hardwarePN,
         branchAci:        data.hardwareAci,
       },
     });
-  }, [editorState]);
+  }, [editorState, resolveAuthoritySelection]);
 
   const handleSharedNodeBack = useCallback(() => {
     if (!editorState || editorState.mode !== 'add' || editorState.step !== 'shared-node') return;
@@ -1252,6 +1499,7 @@ export default function SkuModelEditorPanel({
               mode="add"
               onSave={handleSave}
               onCancel={() => setEditorState(null)}
+              componentOptions={componentOptions}
             />
           )}
           {editorState.mode === 'edit' && (
@@ -1263,6 +1511,7 @@ export default function SkuModelEditorPanel({
               mode="edit"
               onSave={handleSave}
               onCancel={() => setEditorState(null)}
+              componentOptions={componentOptions}
             />
           )}
         </div>
