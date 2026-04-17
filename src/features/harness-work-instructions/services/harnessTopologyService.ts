@@ -177,6 +177,46 @@ function isDeclaredFloating(wire: WireConnectivity): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// T23.6.1: Shared-node anchor resolution
+// ---------------------------------------------------------------------------
+
+/** Resolution result for the shared-node anchor on a declared branch wire. */
+interface SharedAnchorResolution {
+  anchorNodeKey: string | null;
+  remoteNodeKey: string | null;
+  reason:        string | null;
+  fromIsAnchor:  boolean;
+}
+
+/**
+ * T23.6.1: Resolve the shared-node anchor for a declared branch wire.
+ *
+ * For FERRULE/TERMINAL endpoints the FROM side is always the anchor —
+ * the operator wizard enforces this by locking FROM to the shared-crimp point.
+ * Returns null keys for non-branch wires.
+ */
+function resolveSharedAnchor(wire: WireConnectivity): SharedAnchorResolution {
+  if (!isDeclaredBranch(wire)) {
+    return { anchorNodeKey: null, remoteNodeKey: null, reason: null, fromIsAnchor: false };
+  }
+  const ft = wire.from.terminationType;
+  if (ft === 'FERRULE' || ft === 'TERMINAL') {
+    return {
+      anchorNodeKey: makeNodeId(wire.from),
+      remoteNodeKey: makeNodeId(wire.to),
+      reason:        `FROM endpoint is ${ft} shared-node anchor`,
+      fromIsAnchor:  true,
+    };
+  }
+  return {
+    anchorNodeKey: makeNodeId(wire.from),
+    remoteNodeKey: makeNodeId(wire.to),
+    reason:        'declared branch topology',
+    fromIsAnchor:  true,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Union-Find (path-compressed) for connected component detection
 // ---------------------------------------------------------------------------
 
@@ -225,9 +265,10 @@ function detectMissingWires(
   const candidates: MissingWireCandidate[] = [];
 
   for (const [component, nodes] of nodesByComponent) {
-    // T23.6: FERRULE and TERMINAL endpoints represent physical connections at
-    // a cavity (shared-node anchors). They must count as occupied pins in the
-    // sequence analysis so the anchor cavity is not falsely reported as missing.
+    // T23.6 fallback: After T23.6.1, declared branch anchors are already promoted
+    // to CONNECTOR_PIN during graph construction. The FERRULE/TERMINAL clauses here
+    // cover residual edge cases: non-declared branch wires whose FROM endpoint
+    // carries FERRULE/TERMINAL type and was not normalized by the post-processing step.
     const pinNodes = nodes.filter(
       n => n.cavity !== null &&
            (n.terminationType === 'CONNECTOR_PIN' ||
@@ -251,6 +292,14 @@ function detectMissingWires(
     const present       = new Set(sorted.map(x => x.num));
     const knownCavities = sorted.map(x => String(x.num));
     const gapCount      = max - min + 1 - present.size;
+
+    console.log('[T23.6.1 MISSING PIN CHECK]', {
+      component,
+      occupiedCavities: sorted.map(x => String(x.num)),
+      expectedCavities: Array.from({ length: max - min + 1 }, (_, i) => String(min + i)),
+      missingCavities:  Array.from({ length: max - min + 1 }, (_, i) => min + i)
+        .filter(n => !present.has(n)).map(String),
+    });
 
     for (let pin = min; pin <= max; pin++) {
       if (!present.has(pin)) {
@@ -308,22 +357,16 @@ export function analyzeHarnessTopology(args: {
     const toNodeId    = getOrCreateNode(wire.to,   wire.wireId);
     const decBranch   = isDeclaredBranch(wire);
 
-    // T23.6: Log shared-node merge decisions for declared branch wires.
-    // The FERRULE/TERMINAL endpoint is the shared-node anchor; the other end is remote.
+    // T23.6.1: Resolve and log the shared-node anchor for this branch wire.
+    // Normalization from FERRULE/TERMINAL → CONNECTOR_PIN happens in the
+    // post-processing step below, after all edges are built.
     if (decBranch) {
-      const ft           = wire.from.terminationType;
-      const isFromAnchor = ft === 'FERRULE' || ft === 'TERMINAL';
-      const sameComp     = !!wire.from.component && !!wire.to.component &&
-                           wire.from.component.toLowerCase() === wire.to.component.toLowerCase();
-      console.log('[T23.6 SHARED NODE MERGE]', {
+      const anchor = resolveSharedAnchor(wire);
+      console.log('[T23.6.1 ANCHOR RESOLVE]', {
         wireId:       wire.wireId,
-        anchorNodeKey: (isFromAnchor ? fromNodeId : toNodeId) ?? 'unknown',
-        remoteNodeKey: (isFromAnchor ? toNodeId   : fromNodeId) ?? 'unknown',
-        reason: isFromAnchor
-          ? `FROM endpoint is ${ft} anchor`
-          : sameComp
-          ? 'intra-connector branch: both endpoints on same component'
-          : 'declared branch topology',
+        anchorNodeKey: anchor.anchorNodeKey ?? 'unknown',
+        remoteNodeKey: anchor.remoteNodeKey ?? 'unknown',
+        reason:       anchor.reason ?? 'declared branch',
       });
     }
 
@@ -334,6 +377,29 @@ export function analyzeHarnessTopology(args: {
       isDeclaredBranch: decBranch,
     };
   });
+
+  // T23.6.1: Normalize declared branch anchor nodes.
+  // When a wire's FROM endpoint is FERRULE or TERMINAL and the wire carries declared
+  // branch topology, that endpoint IS a physical connector-pin occupancy point —
+  // the FERRULE/TERMINAL is the connection method, not a separate node family.
+  // Promoting terminationType to CONNECTOR_PIN makes missing-pin detection derive
+  // correctness from the merged graph rather than from a termination-type exception.
+  for (const edge of edges) {
+    if (!edge.isDeclaredBranch || !edge.fromNodeId) continue;
+    const branchWire = wires.find(w => w.wireId === edge.wireId);
+    if (!branchWire) continue;
+    const ft = branchWire.from.terminationType;
+    if (ft !== 'FERRULE' && ft !== 'TERMINAL') continue;
+    const anchorNode = nodeMap.get(edge.fromNodeId);
+    if (!anchorNode) continue;
+    if (anchorNode.terminationType !== 'FERRULE' && anchorNode.terminationType !== 'TERMINAL') continue;
+    anchorNode.terminationType = 'CONNECTOR_PIN';
+    console.log('[T23.6.1 NODE MERGE]', {
+      anchorNodeKey:     anchorNode.id,
+      attachedWires:     anchorNode.wireIds,
+      connectionMethods: [ft],
+    });
+  }
 
   const nodes = [...nodeMap.values()];
 

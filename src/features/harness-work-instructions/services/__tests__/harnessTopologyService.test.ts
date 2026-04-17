@@ -174,9 +174,10 @@ describe('analyzeHarnessTopology', () => {
     assert.strictEqual(result.danglingEndpoints.length, 0);
   });
 
-  // G. T23.5: Two operator-added FERRULE wires sharing a FROM endpoint — no UNDECLARED_BRANCH
-  // FERRULE nodes have terminationType !== CONNECTOR_PIN so they are excluded from
-  // multiWireEndpoints. This test confirms existing correct behaviour is preserved.
+  // G. T23.5 / T23.6.1: Two operator-added FERRULE wires sharing a FROM endpoint — no UNDECLARED_BRANCH.
+  // T23.6.1: FERRULE anchor is normalized to CONNECTOR_PIN at graph construction time,
+  // so the shared node IS in multiWireEndpoints. anyDeclared suppresses UNDECLARED_BRANCH
+  // because both wires carry [OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP].
   it('G: operator FERRULE double-crimp wires share a physical node without UNDECLARED_BRANCH', () => {
     const ferruleEndpoint = makeEndpoint('PHOENIX_1700443', '5', 'FERRULE');
 
@@ -245,7 +246,8 @@ describe('analyzeHarnessTopology', () => {
 
     const pin2Node = result.nodes.find(n => n.id === 'phoenix:2');
     assert.ok(pin2Node, 'Phoenix cavity 2 node must exist in the topology graph');
-    assert.strictEqual(pin2Node!.terminationType, 'FERRULE', 'Node retains FERRULE terminationType');
+    assert.strictEqual(pin2Node!.terminationType, 'CONNECTOR_PIN',
+      'T23.6.1: declared FERRULE anchor must be normalized to CONNECTOR_PIN at construction time');
     assert.ok(pin2Node!.wireIds.includes('op-branch'), 'Branch wire is attached to the anchor node');
   });
 
@@ -293,6 +295,60 @@ describe('analyzeHarnessTopology', () => {
     assert.strictEqual(result.isolatedSubgraphs.filter(sg => sg.isIsolated).length, 0,
       'All simple wires share a terminal node — one connected component',
     );
+  });
+
+  // M. T23.6.1: A declared branch wire with a FERRULE anchor must produce a CONNECTOR_PIN
+  // node at graph construction time, not a FERRULE pseudo-node. This is the core
+  // construction fix: validation derives pin occupancy from the merged graph itself.
+  it('M: declared FERRULE anchor is promoted to CONNECTOR_PIN at graph construction time', () => {
+    const wires = [
+      makeWire(
+        'op-branch',
+        makeEndpoint('PHOENIX', '2', 'FERRULE'),
+        makeEndpoint('PHOENIX', '5', 'CONNECTOR_PIN'),
+        '[OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP]',
+      ),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    const anchor = result.nodes.find(n => n.id === 'phoenix:2');
+    assert.ok(anchor, 'Anchor node must be present in the graph');
+    assert.strictEqual(anchor!.terminationType, 'CONNECTOR_PIN',
+      'T23.6.1: FERRULE anchor on a declared branch wire must be normalized to CONNECTOR_PIN');
+    assert.ok(anchor!.wireIds.includes('op-branch'),
+      'Branch wire must be registered at the anchor node');
+  });
+
+  // N. T23.6.1: The 9" wire and the 3" branch wire must both converge at one canonical
+  // anchor node (phoenix:2). This proves shared-node merge is built into the graph
+  // rather than compensated for in validation.
+  it('N: 9" and 3" branch wires converge at the canonical shared anchor node', () => {
+    const wires = [
+      makeWire('W-9in', makeEndpoint('J1', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX', '2', 'CONNECTOR_PIN')),
+      makeWire('op-3in',
+        makeEndpoint('PHOENIX', '2', 'FERRULE'),
+        makeEndpoint('PHOENIX', '5', 'CONNECTOR_PIN'),
+        '[OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP]',
+      ),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    const anchor = result.nodes.find(n => n.id === 'phoenix:2');
+    assert.ok(anchor, 'Canonical anchor node must exist at phoenix:2');
+    assert.ok(anchor!.wireIds.includes('W-9in'),
+      '9" wire must attach to the shared anchor node');
+    assert.ok(anchor!.wireIds.includes('op-3in'),
+      '3" branch wire must attach to the same anchor node');
+    assert.strictEqual(anchor!.wireIds.length, 2,
+      'Both wires must converge at one node \u2014 not split across phantom nodes');
+    assert.strictEqual(anchor!.terminationType, 'CONNECTOR_PIN',
+      'Anchor node must have CONNECTOR_PIN type after construction-time normalization');
+
+    const isoWarnings = result.warnings.filter(w => w.code === 'ISOLATED_SUBGRAPH');
+    assert.strictEqual(isoWarnings.length, 0,
+      'No isolated subgraph when branch wire is merged into a node already connected to main harness');
   });
 
   // I. T23.5: ISOLATED_SUBGRAPH warning message must use node IDs (component:cavity),
