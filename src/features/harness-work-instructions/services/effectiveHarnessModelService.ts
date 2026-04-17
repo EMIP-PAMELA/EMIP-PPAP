@@ -188,6 +188,20 @@ export function buildEffectiveHarnessState(args: {
         unresolvedPartNumbers: enrichSummary.unresolvedPartNumbers,
       });
     }
+
+    effectiveConnectivity.wires.forEach(wire => {
+      console.log('[T23.6.7 EFFECTIVE CHECK]', {
+        wireId: wire.wireId,
+        from: {
+          component: wire.from?.component ?? null,
+          cavity:    wire.from?.cavity ?? null,
+        },
+        to: {
+          component: wire.to?.component ?? null,
+          cavity:    wire.to?.cavity ?? null,
+        },
+      });
+    });
   }
 
   // ── T13. Topology: graph analysis on effective connectivity ────────────

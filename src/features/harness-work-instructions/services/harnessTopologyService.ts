@@ -392,6 +392,36 @@ export function analyzeHarnessTopology(args: {
 }): HarnessTopologyResult {
   const { wires } = args.connectivity;
 
+  wires.forEach(wire => {
+    console.log('[T23.6.7 TOPOLOGY INPUT]', {
+      wireId: wire.wireId,
+      from: {
+        component: wire.from?.component ?? null,
+        cavity:    wire.from?.cavity ?? null,
+        type:      wire.from?.terminationType ?? null,
+      },
+      to: {
+        component: wire.to?.component ?? null,
+        cavity:    wire.to?.cavity ?? null,
+        type:      wire.to?.terminationType ?? null,
+      },
+    });
+
+    if (
+      wire.from?.component &&
+      wire.to?.component &&
+      wire.from.component === wire.to.component &&
+      wire.to?.terminationType === 'CONNECTOR_PIN' &&
+      !wire.to?.cavity
+    ) {
+      console.error('[T23.6.7 CRITICAL]', {
+        wireId: wire.wireId,
+        message: 'Same-component wire missing TO cavity before topology',
+        wire,
+      });
+    }
+  });
+
   // ── Build node map ─────────────────────────────────────────────────────
   const nodeMap = new Map<string, TopologyNode>();
   const connectivityUF = new UnionFind();
