@@ -29,7 +29,7 @@ import type { HarnessDecisionResult } from './harnessDecisionService';
 import type { OperatorWireModel } from './skuModelEditService';
 import { revalidateWithOverrides } from './wireOperatorResolutionService';
 import { buildEffectiveSkuHarnessModel } from './skuModelEditService';
-import { analyzeHarnessTopology, type HarnessTopologyResult } from './harnessTopologyService';
+import { analyzeHarnessTopology, canonicalComponentKey, type HarnessTopologyResult } from './harnessTopologyService';
 import { assignWireIdentities, type WireIdentityResult } from './wireIdentityService';
 import { enrichConnectivity } from './endpointEnrichmentService';
 
@@ -75,6 +75,119 @@ export interface EffectiveHarnessState {
    * presence of confirmedDocumentType, confirmedPartNumber, etc.
    */
   readyToCommit: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// T23.6.13: OCR override suppression
+// ---------------------------------------------------------------------------
+
+/**
+ * T23.6.13: Remove OCR-extracted wires that are resolved by operator-added wires.
+ *
+ * Matching rules (any match suppresses the OCR wire):
+ *   1. Same wireId label (case-insensitive) — e.g. operator adds wire "COM"
+ *   2. Same canonical FROM component + cavity — exact endpoint overlap
+ *   3. Unresolved wire with no FROM cavity, same canonical FROM component
+ *      — covers the common "COM" label case where OCR could not determine pin
+ *
+ * Never suppresses wires whose rawText carries an [OPERATOR tag (already operator-sourced).
+ */
+function suppressOverriddenOcrWires(
+  connectivity: HarnessConnectivityResult,
+  operatorAddedWires: OperatorWireModel[],
+): HarnessConnectivityResult {
+  if (operatorAddedWires.length === 0) return connectivity;
+
+  const opLabelSet = new Set(
+    operatorAddedWires
+      .map(w => w.wireId?.trim().toLowerCase())
+      .filter((l): l is string => Boolean(l)),
+  );
+
+  const opFromKeySet = new Set(
+    operatorAddedWires
+      .filter(w => w.from.component?.trim() && w.from.cavity?.trim())
+      .map(w =>
+        `${canonicalComponentKey(w.from.component!)}:${w.from.cavity!.trim().toLowerCase()}`,
+      ),
+  );
+
+  const opFromComponentSet = new Set(
+    operatorAddedWires
+      .map(w => w.from.component?.trim() ? canonicalComponentKey(w.from.component!) : null)
+      .filter((c): c is string => Boolean(c)),
+  );
+
+  const toSuppress: Array<{ ocrId: string; opId: string; reason: string }> = [];
+
+  const filteredWires = connectivity.wires.filter(wire => {
+    if (wire.rawText.includes('[OPERATOR')) return true;
+
+    const ocrLabel = wire.wireId.trim().toLowerCase();
+
+    // Rule 1: same wireId label
+    if (opLabelSet.has(ocrLabel)) {
+      const op = operatorAddedWires.find(w => w.wireId?.trim().toLowerCase() === ocrLabel);
+      toSuppress.push({ ocrId: wire.wireId, opId: op?.id ?? 'unknown', reason: 'label' });
+      return false;
+    }
+
+    // Rule 2: same canonical FROM component + cavity
+    const fromKey =
+      wire.from.component?.trim() && wire.from.cavity?.trim()
+        ? `${canonicalComponentKey(wire.from.component)}:${wire.from.cavity.trim().toLowerCase()}`
+        : null;
+    if (fromKey && opFromKeySet.has(fromKey)) {
+      const op = operatorAddedWires.find(
+        w =>
+          w.from.component?.trim() &&
+          w.from.cavity?.trim() &&
+          `${canonicalComponentKey(w.from.component!)}:${w.from.cavity!.trim().toLowerCase()}` === fromKey,
+      );
+      toSuppress.push({ ocrId: wire.wireId, opId: op?.id ?? 'unknown', reason: 'component+cavity' });
+      return false;
+    }
+
+    // Rule 3: unresolved wire with no FROM cavity, same canonical FROM component
+    if (wire.unresolved && wire.from.component?.trim() && !wire.from.cavity?.trim()) {
+      const wireFromCanonical = canonicalComponentKey(wire.from.component);
+      if (opFromComponentSet.has(wireFromCanonical)) {
+        const op = operatorAddedWires.find(
+          w =>
+            w.from.component?.trim() &&
+            canonicalComponentKey(w.from.component!) === wireFromCanonical,
+        );
+        toSuppress.push({ ocrId: wire.wireId, opId: op?.id ?? 'unknown', reason: 'unresolved+component' });
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  for (const { ocrId, opId, reason } of toSuppress) {
+    console.log(`[T23.6.13 SUPPRESS] wire=${ocrId} replacedBy=${opId} (${reason})`);
+  }
+
+  if (toSuppress.length === 0) return connectivity;
+
+  const wires = filteredWires;
+  const unresolvedWires = wires.filter(w => w.unresolved).map(w => w.wireId);
+  let resolved = 0, partial = 0, unresolved = 0;
+  for (const w of wires) {
+    if (w.unresolved) { unresolved++; continue; }
+    const fromOk = Boolean(w.from.component?.trim() && w.from.terminationType && w.from.terminationType !== 'UNKNOWN');
+    const toOk   = Boolean(w.to.component?.trim()   && w.to.terminationType   && w.to.terminationType   !== 'UNKNOWN');
+    if (fromOk && toOk) resolved++;
+    else partial++;
+  }
+
+  return {
+    ...connectivity,
+    wires,
+    unresolvedWires,
+    confidenceSummary: { total: wires.length, resolved, partial, unresolved },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +289,11 @@ export function buildEffectiveHarnessState(args: {
     effectiveValidation   = t12.validation;
     effectiveConfidence   = t12.confidence;
     effectiveDecision     = t12.decision;
+  }
+
+  // ── T23.6.13: Suppress OCR wires replaced by operator-added wires ──────────
+  if (effectiveConnectivity && skuAddedWires.length > 0) {
+    effectiveConnectivity = suppressOverriddenOcrWires(effectiveConnectivity, skuAddedWires);
   }
 
   // ── T18.5. Endpoint enrichment: ACI-derived partNumber / stripLength ──────
