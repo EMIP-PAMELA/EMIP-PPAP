@@ -136,7 +136,7 @@ describe('analyzeHarnessTopology', () => {
     assert.strictEqual(branchWarnings.length, 1, 'One UNDECLARED_BRANCH warning expected');
     assert.strictEqual(branchWarnings[0].confidence, 'HIGH');
     assert.strictEqual(branchWarnings[0].blocksCommit, true);
-    assert.ok(branchWarnings[0].affectedNodeIds.some(id => id.includes('j1:1')), 'Affected node is j1:1');
+    assert.ok(branchWarnings[0].affectedNodeIds.includes('j:1:1'), 'Affected node uses canonical ID j:1:1');
   });
 
   // E. Two isolated wire groups with no shared component → ISOLATED_SUBGRAPH
@@ -191,7 +191,7 @@ describe('analyzeHarnessTopology', () => {
     const branchWarnings = result.warnings.filter(w => w.code === 'UNDECLARED_BRANCH');
     assert.strictEqual(branchWarnings.length, 0, 'FERRULE shared node must not trigger UNDECLARED_BRANCH');
 
-    const sharedNode = result.nodes.find(n => n.id === 'phoenix_1700443:5');
+    const sharedNode = result.nodes.find(n => n.id === 'phoenix:1700443:5');
     assert.ok(sharedNode, 'Shared FERRULE node must exist');
     assert.strictEqual(sharedNode!.wireIds.length, 2, 'Both wires must reference the shared node');
   });
@@ -214,7 +214,7 @@ describe('analyzeHarnessTopology', () => {
       branchWarnings.length, 0,
       'Extracted wire at operator-declared branch node must NOT trigger UNDECLARED_BRANCH',
     );
-    assert.strictEqual(result.multiWireEndpoints.length, 1, 'j1:5 is still a multi-wire endpoint');
+    assert.strictEqual(result.multiWireEndpoints.length, 1, 'Canonical J connector pin 5 remains multi-wire');
   });
 
   // J. T23.6: FERRULE-anchor branch wire satisfies the anchor cavity in missing-pin detection.

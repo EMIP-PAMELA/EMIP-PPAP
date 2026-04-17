@@ -41,6 +41,7 @@ export interface TopologyNode {
   /** Stable node identity: "component:cavity" or "component" (normalized lowercase). */
   id: string;
   component: string;
+  canonicalComponent: string;
   cavity: string | null;
   terminationType: EndpointTerminationType | null;
   /** IDs of all wires whose FROM or TO endpoint maps to this node. */
@@ -65,6 +66,7 @@ export interface TopologySubgraph {
 
 export interface MissingWireCandidate {
   component: string;
+  canonicalComponent: string;
   missingCavity: string;
   /** Numeric cavities observed on the same connector. */
   knownCavities: string[];
@@ -128,16 +130,43 @@ const DECLARED_FLOATING_RE = /\[OPERATOR_MODEL:FLOATING\]/;
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/** Normalize the component identifier (case, OCR noise). */
+function normalizeComponentId(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/pheonix/g, 'phoenix')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Build manufacturer:part canonical key from the normalized identifier. */
+function buildCanonicalComponentKey(raw: string): string {
+  const normalized = normalizeComponentId(raw);
+  const match = normalized.match(/([a-z]+)\s*(\d+)/);
+  if (!match) return normalized;
+  const [, manufacturer, part] = match;
+  return `${manufacturer}:${part}`;
+}
+
+interface NodeIdentity {
+  nodeKey: string | null;
+  canonicalComponent: string | null;
+}
+
 /**
  * Build a stable node ID for an endpoint.
  * Returns null when the endpoint has no trackable component (bare wire, no PN).
  */
-function makeNodeId(endpoint: WireEndpoint): string | null {
+function resolveNodeIdentity(endpoint: WireEndpoint): NodeIdentity {
   const comp = endpoint.component?.trim();
-  if (!comp) return null;
-  const cav = endpoint.cavity?.trim();
-  if (cav) return `${comp.toLowerCase()}:${cav.toLowerCase()}`;
-  return comp.toLowerCase();
+  if (!comp) return { nodeKey: null, canonicalComponent: null };
+  const canonicalComponent = buildCanonicalComponentKey(comp);
+  console.log('[T23.6.3 CANONICALIZATION]', { raw: comp, canonicalComponent });
+  const cavity = endpoint.cavity?.trim()?.toLowerCase() ?? null;
+  const nodeKey = cavity ? `${canonicalComponent}:${cavity}` : canonicalComponent;
+  console.log('[T23.6.3 NODE KEY]', { nodeKey });
+  return { nodeKey, canonicalComponent };
 }
 
 /**
@@ -202,15 +231,15 @@ function resolveSharedAnchor(wire: WireConnectivity): SharedAnchorResolution {
   const ft = wire.from.terminationType;
   if (ft === 'FERRULE' || ft === 'TERMINAL') {
     return {
-      anchorNodeKey: makeNodeId(wire.from),
-      remoteNodeKey: makeNodeId(wire.to),
+      anchorNodeKey: resolveNodeIdentity(wire.from).nodeKey,
+      remoteNodeKey: resolveNodeIdentity(wire.to).nodeKey,
       reason:        `FROM endpoint is ${ft} shared-node anchor`,
       fromIsAnchor:  true,
     };
   }
   return {
-    anchorNodeKey: makeNodeId(wire.from),
-    remoteNodeKey: makeNodeId(wire.to),
+    anchorNodeKey: resolveNodeIdentity(wire.from).nodeKey,
+    remoteNodeKey: resolveNodeIdentity(wire.to).nodeKey,
     reason:        'declared branch topology',
     fromIsAnchor:  true,
   };
@@ -264,11 +293,12 @@ function detectMissingWires(
 ): MissingWireCandidate[] {
   const candidates: MissingWireCandidate[] = [];
 
-  for (const [component, nodes] of nodesByComponent) {
+  for (const [canonicalComponent, nodes] of nodesByComponent) {
     // T23.6 fallback: After T23.6.1, declared branch anchors are already promoted
     // to CONNECTOR_PIN during graph construction. The FERRULE/TERMINAL clauses here
     // cover residual edge cases: non-declared branch wires whose FROM endpoint
     // carries FERRULE/TERMINAL type and was not normalized by the post-processing step.
+    const displayComponent = nodes[0]?.component ?? canonicalComponent;
     const pinNodes = nodes.filter(
       n => n.cavity !== null &&
            (n.terminationType === 'CONNECTOR_PIN' ||
@@ -294,7 +324,7 @@ function detectMissingWires(
     const gapCount      = max - min + 1 - present.size;
 
     console.log('[T23.6.1 MISSING PIN CHECK]', {
-      component,
+      component: canonicalComponent,
       occupiedCavities: sorted.map(x => String(x.num)),
       expectedCavities: Array.from({ length: max - min + 1 }, (_, i) => String(min + i)),
       missingCavities:  Array.from({ length: max - min + 1 }, (_, i) => min + i)
@@ -304,11 +334,12 @@ function detectMissingWires(
     for (let pin = min; pin <= max; pin++) {
       if (!present.has(pin)) {
         candidates.push({
-          component,
+          component: displayComponent,
+          canonicalComponent,
           missingCavity: String(pin),
           knownCavities,
           confidence: gapCount <= 2 ? 'HIGH' : 'MEDIUM',
-          reason: `Connector ${component} has wires on pins ${knownCavities.join(', ')} but pin ${pin} is not connected`,
+          reason: `Connector ${displayComponent} has wires on pins ${knownCavities.join(', ')} but pin ${pin} is not connected`,
         });
       }
     }
@@ -335,15 +366,17 @@ export function analyzeHarnessTopology(args: {
   const nodeMap = new Map<string, TopologyNode>();
 
   function getOrCreateNode(endpoint: WireEndpoint, wireId: string): string | null {
-    const id = makeNodeId(endpoint);
-    if (!id) return null;
+    const identity = resolveNodeIdentity(endpoint);
+    const id = identity.nodeKey;
+    if (!id || !identity.canonicalComponent) return null;
     if (!nodeMap.has(id)) {
       nodeMap.set(id, {
         id,
-        component:       endpoint.component!.trim(),
-        cavity:          endpoint.cavity?.trim() ?? null,
-        terminationType: resolveTerminationType(endpoint),
-        wireIds:         [],
+        component:          endpoint.component!.trim(),
+        canonicalComponent: identity.canonicalComponent,
+        cavity:             endpoint.cavity?.trim() ?? null,
+        terminationType:    resolveTerminationType(endpoint),
+        wireIds:            [],
       });
     }
     const node = nodeMap.get(id)!;
@@ -414,7 +447,7 @@ export function analyzeHarnessTopology(args: {
   // ── Group nodes by component ───────────────────────────────────────────
   const nodesByComponent = new Map<string, TopologyNode[]>();
   for (const node of nodes) {
-    const key = node.component.toLowerCase();
+    const key = node.canonicalComponent;
     if (!nodesByComponent.has(key)) nodesByComponent.set(key, []);
     nodesByComponent.get(key)!.push(node);
   }
@@ -514,7 +547,7 @@ export function analyzeHarnessTopology(args: {
       code:            'MISSING_WIRE',
       confidence:      c.confidence,
       blocksCommit:    c.confidence === 'HIGH',
-      affectedNodeIds: [`${c.component.toLowerCase()}:${c.missingCavity.toLowerCase()}`],
+      affectedNodeIds: [`${c.canonicalComponent}:${c.missingCavity.toLowerCase()}`],
       affectedWireIds: [],
       message:         `Missing wire: ${c.component} pin ${c.missingCavity}`,
       reason:          c.reason,
