@@ -199,6 +199,28 @@ function suppressOverriddenOcrWires(
       }
     }
 
+    // Rule 4 (T23.6.14): operator dominance on source pin
+    if (ocrFromCanonical && ocrFromCavity) {
+      const op = operatorAddedWires.find(
+        w =>
+          canonicalComponentKey(w.from.component) === ocrFromCanonical &&
+          w.from.cavity?.trim()?.toLowerCase() === ocrFromCavity,
+      );
+      if (op) {
+        const opFromKey = `${ocrFromCanonical}:${ocrFromCavity}`;
+        const opWireLabel = op.wireId?.trim() || op.id;
+        console.log(
+          '[T23.6.14 SUPPRESS]',
+          `wire=${wire.wireId}`,
+          'reason=source-pin-overridden',
+          `by=${opWireLabel}`,
+          `key=${opFromKey}`,
+        );
+        toSuppress.push({ ocrId: wire.wireId, opId: op.id, reason: 'source-pin-overridden' });
+        return false;
+      }
+    }
+
     return true;
   });
 
