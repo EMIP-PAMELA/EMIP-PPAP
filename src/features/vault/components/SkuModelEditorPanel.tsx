@@ -252,10 +252,13 @@ function formToOperatorWire(
   const toTermination = (form.toTermination || null) as EndpointTerminationType | null;
   const fromComponent = form.fromComponent.trim();
   const fromCavity    = form.fromCavity.trim();
-  const toComponent   = form.toComponent.trim();
-  const toCavity      = form.toCavity.trim();
-  const fromTreatment = form.fromTreatment.trim();
-  const toTreatment   = form.toTreatment.trim();
+  const fromTreatment = (form.fromTreatment ?? '').trim();
+  const toComponent   = (form.toComponent ?? '').trim();
+  const rawToCavity   = form.toCavity;
+  const toCavity      = rawToCavity !== undefined && rawToCavity !== null
+    ? String(rawToCavity).trim()
+    : '';
+  const toTreatment   = (form.toTreatment ?? '').trim();
 
   return {
     id:          existingId ?? `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -276,7 +279,7 @@ function formToOperatorWire(
     },
     to: {
       component:       toComponent || null,
-      cavity:          toCavity || null,
+      cavity:          toCavity !== '' ? toCavity : null,
       treatment:       toTreatment || null,
       terminationType: toTermination,
       partNumber:      form.toPartNumber.trim()    || null,
@@ -426,6 +429,14 @@ function WireEditorForm({
 
   const handleSave = () => {
     if (!validate()) return;
+    const trimmedToCavity = (form.toCavity ?? '').trim();
+    if (!trimmedToCavity) {
+      console.error('[T23.6.4.3 VALIDATION] Missing TO cavity', form);
+      if (typeof window !== 'undefined') {
+        window.alert('TO pin (cavity) is required for this wire.');
+      }
+      return;
+    }
     console.log('[T23.6.4.1 SAVE]', {
       mode,
       wireId:         form.wireId,
@@ -449,6 +460,10 @@ function WireEditorForm({
       toEndpoint:     operatorWire.to,
       fromEndpoint:   operatorWire.from,
       topology:       operatorWire.topology,
+    });
+    console.log('[T23.6.4.3 VERIFY]', {
+      finalFormToCavity: form.toCavity,
+      modelToCavity: operatorWire.to?.cavity ?? null,
     });
     onSave(operatorWire);
   };
@@ -594,7 +609,17 @@ function WireEditorForm({
           </div>
           <div>
             <label className={labelCls}>Cavity</label>
-            <input value={form.toCavity} onChange={set('toCavity')} className={inputCls()} placeholder="" />
+            <input
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={form.toCavity}
+              onChange={set('toCavity')}
+              className={inputCls()}
+              placeholder=""
+            />
           </div>
           <div>
             <label className={labelCls}>Connection Method</label>
