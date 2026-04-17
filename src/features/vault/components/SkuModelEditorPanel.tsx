@@ -40,6 +40,7 @@ import type { WireIdentityResult } from '@/src/features/harness-work-instruction
 import {
   buildComponentAuthorityOptions,
   mergeComponentAuthorityOptions,
+  getCavityAuthority,
   type ComponentAuthorityOption,
   isComponentAuthoritySelectionValid,
 } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
@@ -473,8 +474,26 @@ function WireEditorForm({
     () => componentOptions.find(opt => opt.canonicalId === formState.toComponentCanonicalId) ?? null,
     [componentOptions, formState.toComponentCanonicalId],
   );
-  const fromCavityOptions = !fromCustomMode ? (fromSelectedOption?.cavities ?? []) : [];
-  const toCavityOptions = !toCustomMode ? (toSelectedOption?.cavities ?? []) : [];
+  const fromCavityAuthority = useMemo(() => {
+    if (fromCustomMode || !fromSelectedOption) return null;
+    const auth = getCavityAuthority(fromSelectedOption.canonicalId, fromSelectedOption.cavities);
+    console.log(
+      `[T23.6.10 CAVITY OPTIONS] component=${auth.canonicalId} source=${auth.source} cavities=${auth.cavities.join(',')}`,
+    );
+    return auth;
+  }, [fromCustomMode, fromSelectedOption]);
+  const toCavityAuthority = useMemo(() => {
+    if (toCustomMode || !toSelectedOption) return null;
+    const auth = getCavityAuthority(toSelectedOption.canonicalId, toSelectedOption.cavities);
+    console.log(
+      `[T23.6.10 CAVITY OPTIONS] component=${auth.canonicalId} source=${auth.source} cavities=${auth.cavities.join(',')}`,
+    );
+    return auth;
+  }, [toCustomMode, toSelectedOption]);
+  const fromCavityOptions = fromCavityAuthority?.cavities ?? [];
+  const toCavityOptions = toCavityAuthority?.cavities ?? [];
+  const fromCavityDropdownEnabled = !fromCustomMode && fromCavityOptions.length > 0;
+  const toCavityDropdownEnabled = !toCustomMode && toCavityOptions.length > 0;
   const linkButtonCls = 'text-[10px] text-blue-600 underline-offset-2 hover:underline';
 
   useEffect(() => {
@@ -832,7 +851,7 @@ function WireEditorForm({
             </div>
             <div>
               <label className={labelCls}>Cavity / Pin *</label>
-              {fromCavityOptions.length > 0 ? (
+              {fromCavityDropdownEnabled ? (
                 <select value={form.fromCavity} onChange={set('fromCavity')} className={inputCls(errors.fromCavity)}>
                   <option value="">— Select cavity —</option>
                   {fromCavityOptions.map(c => (
@@ -840,7 +859,12 @@ function WireEditorForm({
                   ))}
                 </select>
               ) : (
-                <input value={form.fromCavity} onChange={set('fromCavity')} className={inputCls(errors.fromCavity)} placeholder="1" />
+                <>
+                  <input value={form.fromCavity} onChange={set('fromCavity')} className={inputCls(errors.fromCavity)} placeholder="1" />
+                  {fromSelectedOption && fromCavityAuthority?.source === 'OBSERVED_ONLY' && fromCavityOptions.length === 0 && (
+                    <p className={helperCls}>Valid cavity list unavailable; manual cavity entry enabled.</p>
+                  )}
+                </>
               )}
               {errors.fromCavity && <p className="text-[10px] text-red-600 mt-0.5">{errors.fromCavity}</p>}
             </div>
@@ -905,7 +929,7 @@ function WireEditorForm({
           </div>
           <div>
             <label className={labelCls}>Cavity</label>
-            {toCavityOptions.length > 0 ? (
+            {toCavityDropdownEnabled ? (
               <select value={form.to.cavity} onChange={set('toCavity')} className={inputCls()}>
                 <option value="">— Select cavity —</option>
                 {toCavityOptions.map(c => (
@@ -913,17 +937,22 @@ function WireEditorForm({
                 ))}
               </select>
             ) : (
-              <input
-                type="number"
-                min={1}
-                step={1}
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={form.to.cavity}
-                onChange={set('toCavity')}
-                className={inputCls()}
-                placeholder=""
-              />
+              <>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={form.to.cavity}
+                  onChange={set('toCavity')}
+                  className={inputCls()}
+                  placeholder=""
+                />
+                {toSelectedOption && toCavityAuthority?.source === 'OBSERVED_ONLY' && toCavityOptions.length === 0 && (
+                  <p className={helperCls}>Valid cavity list unavailable; manual cavity entry enabled.</p>
+                )}
+              </>
             )}
           </div>
           <div>

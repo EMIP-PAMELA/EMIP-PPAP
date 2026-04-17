@@ -133,3 +133,59 @@ export function isComponentAuthoritySelectionValid(
   if (!canonicalId) return false;
   return options.some(opt => opt.canonicalId === canonicalId);
 }
+
+// ---------------------------------------------------------------------------
+// T23.6.10: Cavity authority — full valid cavity set, not just observed pins
+// ---------------------------------------------------------------------------
+
+export type CavityAuthoritySource =
+  /** Cavity list from a known connector-specific fallback table. */
+  | 'FALLBACK_RULE'
+  /** Cavity list derived solely from currently observed wire endpoints. */
+  | 'OBSERVED_ONLY';
+
+export interface CavityAuthority {
+  canonicalId: string;
+  cavities: string[];
+  source: CavityAuthoritySource;
+}
+
+/**
+ * Deterministic fallback cavity capacity for connectors used in this project
+ * where upstream structured metadata is not yet available.
+ *
+ * Keyed by canonical component ID (output of canonicalComponentKey).
+ * Only add entries that are verified — do NOT invent capacity.
+ */
+const CONNECTOR_CAVITY_FALLBACKS: Record<string, string[]> = {
+  'phoenix:1700443': ['1', '2', '3', '4', '5', '6'],
+};
+
+/**
+ * Returns the full valid cavity list for a connector, combining the fallback
+ * capacity table (preferred) with the observed occupancy (always included).
+ *
+ * The returned list is the union of:
+ *   - all cavities in CONNECTOR_CAVITY_FALLBACKS[canonicalId]  (if present)
+ *   - all observed cavities from current wires
+ *
+ * Source is 'FALLBACK_RULE' when a known capacity entry exists;
+ * 'OBSERVED_ONLY' when no fallback is available (dropdown will degrade to
+ * free-text input — caller must handle that case).
+ */
+export function getCavityAuthority(canonicalId: string, observedCavities: string[]): CavityAuthority {
+  const fallback = CONNECTOR_CAVITY_FALLBACKS[canonicalId];
+  if (fallback) {
+    const merged = new Set([...fallback, ...observedCavities]);
+    return {
+      canonicalId,
+      cavities: sortCavities(merged),
+      source: 'FALLBACK_RULE',
+    };
+  }
+  return {
+    canonicalId,
+    cavities: sortCavities(new Set(observedCavities)),
+    source: 'OBSERVED_ONLY',
+  };
+}
