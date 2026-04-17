@@ -47,6 +47,7 @@ import type {
 import type { HarnessValidationResult, WireValidation } from './harnessValidationService';
 import { RULE_SEVERITIES } from './harnessValidationService';
 import type { HarnessConfidenceResult, WireConfidence } from './harnessConfidenceService';
+import { isOperatorWire, logOperatorAuthority } from './operatorAuthority';
 
 // ---------------------------------------------------------------------------
 // Data Model
@@ -114,6 +115,7 @@ function decideWire(
 ): WireDecision {
   const issues     = validation?.issues ?? [];
   const overallConf = wireConf?.overallConfidence ?? 0;
+  const operatorWire = isOperatorWire(wire);
 
   // ── T7 flags ─────────────────────────────────────────────────────────────
   const hasError   = issues.some(i => (RULE_SEVERITIES[i.code] ?? 'INFO') === 'ERROR');
@@ -198,6 +200,17 @@ function decideWire(
     decision = 'SAFE';
   }
 
+  if (operatorWire && decision === 'BLOCKED') {
+    decision = (hasWarning || overallConf < REVIEW_CONF_THRESHOLD || hasAmbiguous || hasNoneMatch)
+      ? 'REVIEW'
+      : 'SAFE';
+    logOperatorAuthority(wire, 'DECISION', {
+      overriddenFrom: 'BLOCKED',
+      finalDecision:  decision,
+      reasonCodes:    reasons.map(r => r.code),
+    });
+  }
+
   return { wireId: wire.wireId, decision, reasons };
 }
 
@@ -279,6 +292,8 @@ export function evaluateHarnessDecision(args: {
 }): HarnessDecisionResult {
   const { connectivity, reconciliation, endpointClassification, validation, confidence } = args;
 
+  const wireById = new Map(connectivity.wires.map(w => [w.wireId, w]));
+
   // Build O(1) lookup indexes
   const validByWireId = new Map<string, WireValidation>();
   for (const wv of validation?.wires ?? []) {
@@ -313,8 +328,14 @@ export function evaluateHarnessDecision(args: {
   const reviewRequired = wireDecisions.filter(w => w.decision === 'REVIEW').map(w => w.wireId);
   const safe           = wireDecisions.filter(w => w.decision === 'SAFE').length;
 
+  const hasNonOperatorBlockers = blockedWires.some(wid => {
+    const wire = wireById.get(wid);
+    return !isOperatorWire(wire);
+  });
+  const operatorBlockingOnly = blockedWires.length > 0 && !hasNonOperatorBlockers;
+
   const overallDecision: OverallDecision =
-    blockedWires.length > 0   ? 'BLOCKED' :
+    blockedWires.length > 0 && !operatorBlockingOnly ? 'BLOCKED' :
     reviewRequired.length > 0 ? 'REVIEW_REQUIRED' :
     'SAFE';
 

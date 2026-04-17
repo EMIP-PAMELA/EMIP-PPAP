@@ -30,7 +30,7 @@
  *   UNTRUSTED  < 0.30
  */
 
-import type { HarnessConnectivityResult } from './harnessConnectivityService';
+import type { HarnessConnectivityResult, WireConnectivity } from './harnessConnectivityService';
 import type { HarnessReconciliationResult, ReconciledEndpoint, ReconciledWire } from './harnessReconciliationService';
 import type {
   HarnessEndpointClassificationResult,
@@ -38,6 +38,7 @@ import type {
 } from './endpointClassifier';
 import type { HarnessValidationResult, ValidationIssue, WireValidation } from './harnessValidationService';
 import { RULE_SEVERITIES } from './harnessValidationService';
+import { isOperatorWire, logOperatorAuthority } from './operatorAuthority';
 
 // ---------------------------------------------------------------------------
 // Data Model
@@ -315,6 +316,7 @@ export function adjustHarnessConfidence(args: {
     const classified = classMap.get(wire.wireId);
     const reconciled = reconByWireId.get(wire.wireId);
     const validated  = validationByWireId.get(wire.wireId);
+    const operatorWire = isOperatorWire(wire);
 
     const wireIssues = validated?.issues ?? [];
     const wireHasValidationFail =
@@ -323,8 +325,30 @@ export function adjustHarnessConfidence(args: {
     const fromBase = selectBase(classified?.from, reconciled?.from);
     const toBase   = selectBase(classified?.to,   reconciled?.to);
 
-    const from = adjustEndpoint('FROM', fromBase, classified?.from, reconciled?.from, wireIssues, wireHasValidationFail);
-    const to   = adjustEndpoint('TO',   toBase,   classified?.to,   reconciled?.to,   wireIssues, wireHasValidationFail);
+    let from = adjustEndpoint('FROM', fromBase, classified?.from, reconciled?.from, wireIssues, wireHasValidationFail);
+    let to   = adjustEndpoint('TO',   toBase,   classified?.to,   reconciled?.to,   wireIssues, wireHasValidationFail);
+
+    if (operatorWire) {
+      const authoritativeFromBase = fromBase > 0 ? fromBase : 1;
+      const authoritativeToBase   = toBase   > 0 ? toBase   : 1;
+      from = {
+        baseConfidence:     authoritativeFromBase,
+        adjustedConfidence: 1,
+        penalties:          [],
+        finalState:         computeFinalState(1),
+      };
+      to = {
+        baseConfidence:     authoritativeToBase,
+        adjustedConfidence: 1,
+        penalties:          [],
+        finalState:         computeFinalState(1),
+      };
+      logOperatorAuthority(wire, 'CONFIDENCE', {
+        fromBase: authoritativeFromBase,
+        toBase:   authoritativeToBase,
+        adjustedConfidence: 1,
+      });
+    }
 
     return {
       wireId:             wire.wireId,

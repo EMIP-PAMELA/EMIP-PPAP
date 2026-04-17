@@ -39,6 +39,7 @@
 
 import type { HarnessConnectivityResult, WireConnectivity, WireEndpoint } from './harnessConnectivityService';
 import { endpointHasAuthoritativeTermination, inferTerminationType } from './harnessConnectivityService';
+import { isOperatorWire, logOperatorAuthority } from './operatorAuthority';
 import type { HarnessReconciliationResult, ReconciledWire } from './harnessReconciliationService';
 import type {
   HarnessEndpointClassificationResult,
@@ -167,6 +168,7 @@ interface WireRuleContext {
 function applyWireRules(ctx: WireRuleContext): ValidationIssue[] {
   const { wire, classified, reconciled, fromShare, toShare } = ctx;
   const issues: ValidationIssue[] = [];
+  const operatorWire = isOperatorWire(wire);
 
   const fromType = classified?.from.type;
   const toType   = classified?.to.type;
@@ -241,14 +243,14 @@ function applyWireRules(ctx: WireRuleContext): ValidationIssue[] {
   }
 
   // R6 — AMBIGUOUS ENDPOINT (T6 tie, requires human review)
-  if (fromType === 'AMBIGUOUS') {
+  if (!operatorWire && fromType === 'AMBIGUOUS') {
     issues.push({
       code:    'R6_AMBIGUOUS_ENDPOINT',
       message: 'FROM endpoint classification is AMBIGUOUS — requires review',
       details: wire.from.component ?? undefined,
     });
   }
-  if (toType === 'AMBIGUOUS') {
+  if (!operatorWire && toType === 'AMBIGUOUS') {
     issues.push({
       code:    'R6_AMBIGUOUS_ENDPOINT',
       message: 'TO endpoint classification is AMBIGUOUS — requires review',
@@ -287,7 +289,7 @@ function applyWireRules(ctx: WireRuleContext): ValidationIssue[] {
   }
 
   // R8 — MISSING TERMINATION (ERROR — checked from T2 data directly)
-  if (isMissingTermination(wire.from, wire.rawText)) {
+  if (!operatorWire && isMissingTermination(wire.from, wire.rawText)) {
     console.log('[T12.3 TERMINATION]', {
       wireId: wire.wireId,
       endpoint: 'FROM',
@@ -300,7 +302,7 @@ function applyWireRules(ctx: WireRuleContext): ValidationIssue[] {
       details: `wire: ${wire.wireId}`,
     });
   }
-  if (isMissingTermination(wire.to, wire.rawText)) {
+  if (!operatorWire && isMissingTermination(wire.to, wire.rawText)) {
     console.log('[T12.3 TERMINATION]', {
       wireId: wire.wireId,
       endpoint: 'TO',
@@ -311,6 +313,12 @@ function applyWireRules(ctx: WireRuleContext): ValidationIssue[] {
       code:    'R8_MISSING_TERMINATION',
       message: 'TO endpoint has no component, treatment, or strip callout — bare dangling end',
       details: `wire: ${wire.wireId}`,
+    });
+  }
+
+  if (operatorWire) {
+    logOperatorAuthority(wire, 'VALIDATION', {
+      skippedRules: ['R6_AMBIGUOUS_ENDPOINT', 'R8_MISSING_TERMINATION'],
     });
   }
 
