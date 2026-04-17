@@ -224,6 +224,11 @@ function getPhysicalCavityKey(node: TopologyNode): string | null {
   return `${node.canonicalComponent}:${node.cavity.toLowerCase()}`;
 }
 
+/** T23.6.17: Only connector-pin nodes participate in commit-blocking validation. */
+function isValidatableNode(node: TopologyNode): boolean {
+  return node.terminationType === 'CONNECTOR_PIN' && node.cavity !== null;
+}
+
 /**
  * Resolve effective terminationType for an endpoint.
  * Infers CONNECTOR_PIN when component + cavity are both present but type is unset.
@@ -713,9 +718,17 @@ export function analyzeHarnessTopology(args: {
     n => n.wireIds.length > 1 && n.terminationType === 'CONNECTOR_PIN',
   );
 
-  const unconnectedNodeIds = nodes
+  const rawUnconnectedNodeIds = nodes
     .filter(n => (n.connectedEdgeCount ?? 0) === 0)
     .map(n => n.id);
+  const unconnectedNodeIds = nodes
+    .filter(n => isValidatableNode(n) && (n.connectedEdgeCount ?? 0) === 0)
+    .map(n => n.id);
+
+  console.log('[T23.6.17 VALIDATION FILTER]', {
+    before: rawUnconnectedNodeIds.length,
+    after:  unconnectedNodeIds.length,
+  });
 
   console.log('[T23.5 VALIDATION]', {
     multiWireEndpointCount: multiWireEndpoints.length,
