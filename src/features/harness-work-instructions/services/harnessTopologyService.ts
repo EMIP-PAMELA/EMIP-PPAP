@@ -54,6 +54,8 @@ export interface TopologyNode {
   wireIds: string[];
   /** T23.6.12: UnionFind root after connector-body unification pass. */
   groupRoot?: string;
+  /** T23.6.15: count of fully-resolved edges touching this node. */
+  connectedEdgeCount?: number;
   // T23.6.4: explicit shared-ferrule node metadata
   isSharedFerrule?: boolean;
   ferrulePartNumber?: string | null;
@@ -608,6 +610,24 @@ export function analyzeHarnessTopology(args: {
     node.groupRoot = connectivityUF.find(node.id);
   }
 
+  // T23.6.15: Track actual edge participation per node. Only edges with two resolved
+  // endpoints count as connected — bare/dangling wires continue to surface as issues.
+  const nodeEdgeCounts = new Map<string, number>();
+  for (const edge of edges) {
+    if (!edge.fromNodeId || !edge.toNodeId) continue;
+    nodeEdgeCounts.set(edge.fromNodeId, (nodeEdgeCounts.get(edge.fromNodeId) ?? 0) + 1);
+    if (edge.toNodeId !== edge.fromNodeId) {
+      nodeEdgeCounts.set(edge.toNodeId, (nodeEdgeCounts.get(edge.toNodeId) ?? 0) + 1);
+    }
+  }
+  for (const node of nodes) {
+    const connectedEdges = nodeEdgeCounts.get(node.id) ?? 0;
+    node.connectedEdgeCount = connectedEdges;
+    if (connectedEdges > 0) {
+      console.log('[T23.6.15 CONNECTIVITY]', node.id, 'edges=', connectedEdges, 'status=connected');
+    }
+  }
+
   console.log('[T23.5 NODE BUILD]', {
     totalNodes:      nodes.length,
     nodeKeys:        nodes.slice(0, 20).map(n => n.id),
@@ -672,11 +692,17 @@ export function analyzeHarnessTopology(args: {
     n => n.wireIds.length > 1 && n.terminationType === 'CONNECTOR_PIN',
   );
 
+  const unconnectedNodeIds = nodes
+    .filter(n => (n.connectedEdgeCount ?? 0) === 0)
+    .map(n => n.id);
+
   console.log('[T23.5 VALIDATION]', {
     multiWireEndpointCount: multiWireEndpoints.length,
     multiWireEndpoints:     multiWireEndpoints.map(n => `${n.id}(${n.wireIds.length}w)`),
     declaredBranchEdges:    edges.filter(e => e.isDeclaredBranch).length,
     unlabeledWireCount:     wires.filter(w => !w.wireId || w.wireId.startsWith('op-')).length,
+    unconnectedNodeCount:   unconnectedNodeIds.length,
+    unconnectedNodes:       unconnectedNodeIds.slice(0, 10),
   });
 
   // ── C. Isolated subgraph detection (union-find) ────────────────────────
@@ -727,7 +753,9 @@ export function analyzeHarnessTopology(args: {
     }
   }
 
-  const danglingEndpoints = [...danglingSet.values()];
+  const danglingEndpoints = [...danglingSet.values()].filter(
+    node => (node.connectedEdgeCount ?? 0) === 0,
+  );
 
   // ── E. Assemble warnings ───────────────────────────────────────────────
   const warnings: TopologyWarning[] = [];
