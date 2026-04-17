@@ -225,9 +225,15 @@ function detectMissingWires(
   const candidates: MissingWireCandidate[] = [];
 
   for (const [component, nodes] of nodesByComponent) {
+    // T23.6: FERRULE and TERMINAL endpoints represent physical connections at
+    // a cavity (shared-node anchors). They must count as occupied pins in the
+    // sequence analysis so the anchor cavity is not falsely reported as missing.
     const pinNodes = nodes.filter(
       n => n.cavity !== null &&
-           (n.terminationType === 'CONNECTOR_PIN' || n.terminationType === null),
+           (n.terminationType === 'CONNECTOR_PIN' ||
+            n.terminationType === 'FERRULE'        ||
+            n.terminationType === 'TERMINAL'       ||
+            n.terminationType === null),
     );
 
     const numeric = pinNodes
@@ -296,13 +302,38 @@ export function analyzeHarnessTopology(args: {
     return id;
   }
 
-  // ── Build edge list ────────────────────────────────────────────────────
-  const edges: TopologyEdge[] = wires.map(wire => ({
-    wireId:          wire.wireId,
-    fromNodeId:      getOrCreateNode(wire.from, wire.wireId),
-    toNodeId:        getOrCreateNode(wire.to,   wire.wireId),
-    isDeclaredBranch: isDeclaredBranch(wire),
-  }));
+  // ── Build edge list ─────────────────────────────────────────────────────
+  const edges: TopologyEdge[] = wires.map(wire => {
+    const fromNodeId  = getOrCreateNode(wire.from, wire.wireId);
+    const toNodeId    = getOrCreateNode(wire.to,   wire.wireId);
+    const decBranch   = isDeclaredBranch(wire);
+
+    // T23.6: Log shared-node merge decisions for declared branch wires.
+    // The FERRULE/TERMINAL endpoint is the shared-node anchor; the other end is remote.
+    if (decBranch) {
+      const ft           = wire.from.terminationType;
+      const isFromAnchor = ft === 'FERRULE' || ft === 'TERMINAL';
+      const sameComp     = !!wire.from.component && !!wire.to.component &&
+                           wire.from.component.toLowerCase() === wire.to.component.toLowerCase();
+      console.log('[T23.6 SHARED NODE MERGE]', {
+        wireId:       wire.wireId,
+        anchorNodeKey: (isFromAnchor ? fromNodeId : toNodeId) ?? 'unknown',
+        remoteNodeKey: (isFromAnchor ? toNodeId   : fromNodeId) ?? 'unknown',
+        reason: isFromAnchor
+          ? `FROM endpoint is ${ft} anchor`
+          : sameComp
+          ? 'intra-connector branch: both endpoints on same component'
+          : 'declared branch topology',
+      });
+    }
+
+    return {
+      wireId:          wire.wireId,
+      fromNodeId,
+      toNodeId,
+      isDeclaredBranch: decBranch,
+    };
+  });
 
   const nodes = [...nodeMap.values()];
 
@@ -324,6 +355,22 @@ export function analyzeHarnessTopology(args: {
 
   // ── A. Missing wire detection ──────────────────────────────────────────
   const missingWireCandidates = detectMissingWires(nodesByComponent);
+
+  // T23.6: Log pin occupancy for connectors that have FERRULE/TERMINAL shared-node anchors.
+  // These cavities now count as occupied (fix) and suppress otherwise-false MISSING_WIRE gaps.
+  for (const [comp, compNodes] of nodesByComponent) {
+    const anchors = compNodes.filter(
+      n => (n.terminationType === 'FERRULE' || n.terminationType === 'TERMINAL') && n.cavity !== null,
+    );
+    if (anchors.length > 0) {
+      console.log('[T23.6 NODE OCCUPANCY]', {
+        component:            comp,
+        cavity:               anchors.map(n => n.cavity),
+        attachedWires:        anchors.flatMap(n => n.wireIds),
+        satisfiedBySharedNode: true,
+      });
+    }
+  }
 
   // ── B. Multi-wire / undeclared branch endpoints ───────────────────────
   // Only meaningful for CONNECTOR_PIN type: same connector pin on >1 wire.

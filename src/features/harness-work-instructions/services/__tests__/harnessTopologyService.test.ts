@@ -216,6 +216,85 @@ describe('analyzeHarnessTopology', () => {
     assert.strictEqual(result.multiWireEndpoints.length, 1, 'j1:5 is still a multi-wire endpoint');
   });
 
+  // J. T23.6: FERRULE-anchor branch wire satisfies the anchor cavity in missing-pin detection.
+  // Before fix: FERRULE node excluded from pin-sequence analysis → cavity 2 shown as MISSING.
+  // After fix:  FERRULE counts as occupied → no MISSING_WIRE for cavity 2.
+  it('J: FERRULE anchor at cavity 2 suppresses MISSING_WIRE for that cavity', () => {
+    // Phoenix has cavities 1, 3, 4 wired directly; cavity 2 only via the FERRULE branch wire.
+    const wires = [
+      makeWire('W1', makeEndpoint('J1', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX', '1', 'CONNECTOR_PIN')),
+      makeWire('W2', makeEndpoint('J2', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX', '3', 'CONNECTOR_PIN')),
+      makeWire('W3', makeEndpoint('J3', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX', '4', 'CONNECTOR_PIN')),
+      makeWire(
+        'op-branch',
+        makeEndpoint('PHOENIX', '2', 'FERRULE'),
+        makeEndpoint('PHOENIX', '5', 'CONNECTOR_PIN'),
+        '[OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP]',
+      ),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    const missingWarnings = result.warnings.filter(w => w.code === 'MISSING_WIRE');
+    const cavity2Missing  = missingWarnings.some(w =>
+      w.affectedNodeIds.some(id => id.toLowerCase().includes(':2')),
+    );
+    assert.ok(!cavity2Missing,
+      'FERRULE anchor at Phoenix cavity 2 must NOT be reported as MISSING_WIRE',
+    );
+
+    const pin2Node = result.nodes.find(n => n.id === 'phoenix:2');
+    assert.ok(pin2Node, 'Phoenix cavity 2 node must exist in the topology graph');
+    assert.strictEqual(pin2Node!.terminationType, 'FERRULE', 'Node retains FERRULE terminationType');
+    assert.ok(pin2Node!.wireIds.includes('op-branch'), 'Branch wire is attached to the anchor node');
+  });
+
+  // K. T23.6: An intra-connector branch wire (Phoenix:2 FERRULE → Phoenix:5) that is connected
+  // to the main harness via another wire must NOT produce an ISOLATED_SUBGRAPH warning.
+  it('K: intra-connector branch wire connected to main harness — no ISOLATED_SUBGRAPH', () => {
+    const wires = [
+      makeWire('W-9in',  makeEndpoint('J1', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX', '2', 'CONNECTOR_PIN')),
+      makeWire('op-3in',
+        makeEndpoint('PHOENIX', '2', 'FERRULE'),
+        makeEndpoint('PHOENIX', '5', 'CONNECTOR_PIN'),
+        '[OPERATOR_MODEL:BRANCH_DOUBLE_CRIMP]',
+      ),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    const isoWarnings = result.warnings.filter(w => w.code === 'ISOLATED_SUBGRAPH');
+    assert.strictEqual(isoWarnings.length, 0,
+      'Branch wire that merges into main harness must not produce ISOLATED_SUBGRAPH',
+    );
+    assert.strictEqual(result.isolatedSubgraphs.filter(sg => sg.isIsolated).length, 0,
+      'No isolated subgraphs expected when all wires are transitively connected',
+    );
+  });
+
+  // L. T23.6: Simple non-branch wires must be unaffected by shared-node merge logic.
+  it('L: simple A→B wires are unaffected by shared-node merge logic', () => {
+    const terminal = makeEndpoint('929504-1', null, 'TERMINAL');
+    const wires = [
+      makeWire('W1', makeEndpoint('J1', '1', 'CONNECTOR_PIN'), terminal),
+      makeWire('W2', makeEndpoint('J1', '2', 'CONNECTOR_PIN'), terminal),
+      makeWire('W3', makeEndpoint('J1', '3', 'CONNECTOR_PIN'), terminal),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    assert.strictEqual(result.warnings.filter(w => w.blocksCommit).length, 0,
+      'Simple wires must have no blocking warnings',
+    );
+    assert.strictEqual(result.missingWireCandidates.length, 0,
+      'Complete connector (pins 1-3) must have no missing-wire candidates',
+    );
+    assert.strictEqual(result.edges.length, 3, 'Three edges for three wires');
+    assert.strictEqual(result.isolatedSubgraphs.filter(sg => sg.isIsolated).length, 0,
+      'All simple wires share a terminal node — one connected component',
+    );
+  });
+
   // I. T23.5: ISOLATED_SUBGRAPH warning message must use node IDs (component:cavity),
   // not customer wire labels, so the report is label-agnostic.
   it('I: ISOLATED_SUBGRAPH warning message uses node IDs not wire labels', () => {
