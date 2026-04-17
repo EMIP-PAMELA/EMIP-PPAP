@@ -289,11 +289,13 @@ class UnionFind {
  *   MEDIUM when > 2 gaps (unusual but still reported)
  */
 function detectMissingWires(
-  nodesByComponent: Map<string, TopologyNode[]>,
+  componentGroups: Map<string, Map<string, TopologyNode[]>>,
 ): MissingWireCandidate[] {
   const candidates: MissingWireCandidate[] = [];
 
-  for (const [canonicalComponent, nodes] of nodesByComponent) {
+  for (const [canonicalComponent, groupMap] of componentGroups) {
+    const nodes = [...groupMap.values()].flat();
+
     // T23.6 fallback: After T23.6.1, declared branch anchors are already promoted
     // to CONNECTOR_PIN during graph construction. The FERRULE/TERMINAL clauses here
     // cover residual edge cases: non-declared branch wires whose FROM endpoint
@@ -331,6 +333,11 @@ function detectMissingWires(
         .filter(n => !present.has(n)).map(String),
     });
 
+    console.log('[T23.6.3.5 OCCUPANCY]', {
+      component: canonicalComponent,
+      occupiedPins: knownCavities,
+    });
+
     for (let pin = min; pin <= max; pin++) {
       if (!present.has(pin)) {
         candidates.push({
@@ -364,6 +371,7 @@ export function analyzeHarnessTopology(args: {
 
   // ── Build node map ─────────────────────────────────────────────────────
   const nodeMap = new Map<string, TopologyNode>();
+  const connectivityUF = new UnionFind();
 
   function getOrCreateNode(endpoint: WireEndpoint, wireId: string): string | null {
     const identity = resolveNodeIdentity(endpoint);
@@ -389,6 +397,10 @@ export function analyzeHarnessTopology(args: {
     const fromNodeId  = getOrCreateNode(wire.from, wire.wireId);
     const toNodeId    = getOrCreateNode(wire.to,   wire.wireId);
     const decBranch   = isDeclaredBranch(wire);
+
+    if (fromNodeId && toNodeId) {
+      connectivityUF.union(fromNodeId, toNodeId);
+    }
 
     // T23.6.1: Resolve and log the shared-node anchor for this branch wire.
     // Normalization from FERRULE/TERMINAL → CONNECTOR_PIN happens in the
@@ -446,14 +458,35 @@ export function analyzeHarnessTopology(args: {
 
   // ── Group nodes by component ───────────────────────────────────────────
   const nodesByComponent = new Map<string, TopologyNode[]>();
+  const componentGroups = new Map<string, Map<string, TopologyNode[]>>();
   for (const node of nodes) {
     const key = node.canonicalComponent;
     if (!nodesByComponent.has(key)) nodesByComponent.set(key, []);
     nodesByComponent.get(key)!.push(node);
+
+    const root = connectivityUF.find(node.id);
+    if (!componentGroups.has(key)) {
+      componentGroups.set(key, new Map());
+    }
+    const groupMap = componentGroups.get(key)!;
+    if (!groupMap.has(root)) {
+      groupMap.set(root, []);
+    }
+    groupMap.get(root)!.push(node);
+  }
+
+  for (const [component, groupMap] of componentGroups) {
+    for (const [root, groupNodes] of groupMap) {
+      console.log('[T23.6.3.5 GROUP]', {
+        component,
+        root,
+        nodes: groupNodes.map(n => n.id),
+      });
+    }
   }
 
   // ── A. Missing wire detection ──────────────────────────────────────────
-  const missingWireCandidates = detectMissingWires(nodesByComponent);
+  const missingWireCandidates = detectMissingWires(componentGroups);
 
   // T23.6: Log pin occupancy for connectors that have FERRULE/TERMINAL shared-node anchors.
   // These cavities now count as occupied (fix) and suppress otherwise-false MISSING_WIRE gaps.
