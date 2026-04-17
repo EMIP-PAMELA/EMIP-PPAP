@@ -1182,7 +1182,17 @@ export default function SkuModelEditorPanel({
             </strong></span>
           )}
           {effectiveDecision && effectiveDecision.blockedWires.length > 0 && (
-            <span className="text-red-600 font-semibold">Blocked wires: {effectiveDecision.blockedWires.join(', ')}</span>
+            <span className="text-red-600 font-semibold">
+              Blocked wires: {effectiveDecision.blockedWires.map(wid => {
+                const ident = wireIdentities?.byOriginalId.get(wid);
+                if (ident?.internalWireId && ident.internalWireId !== wid) return ident.internalWireId;
+                const w = effectiveConnectivity?.wires.find(x => x.wireId === wid);
+                if (!w) return wid;
+                const f = `${w.from.component ?? '?'}${w.from.cavity ? ':' + w.from.cavity : ''}`;
+                const t = `${w.to.component ?? '?'}${w.to.cavity ? ':' + w.to.cavity : ''}`;
+                return `${f}\u2009\u2192\u2009${t}`;
+              }).join(', ')}
+            </span>
           )}
         </div>
       )}

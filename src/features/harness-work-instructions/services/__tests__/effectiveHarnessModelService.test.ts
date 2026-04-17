@@ -376,3 +376,89 @@ describe('F: commit readiness', () => {
     assert.strictEqual(state.readyToCommit, true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// G. T23.6.2: Topology-decision synchronization
+// ---------------------------------------------------------------------------
+
+describe('G: T23.6.2 topology-decision sync', () => {
+  it('overallDecision becomes BLOCKED when topology has HIGH blocking warnings', () => {
+    // J1 pins 1 and 3 but not 2 → MISSING_WIRE (HIGH, blocksCommit)
+    const wires: HarnessConnectivityResult['wires'] = [
+      {
+        wireId: 'W1', length: 5, lengthUnit: 'in', lengthInches: 5,
+        gauge: '18', color: 'RED', sourceRowIndex: 0, rawText: 'W1', confidence: 0.9, unresolved: false,
+        from: { component: 'J1', cavity: '1', treatment: null, terminationType: 'CONNECTOR_PIN' },
+        to:   { component: 'T1', cavity: null, treatment: null, terminationType: 'TERMINAL' },
+      },
+      {
+        wireId: 'W2', length: 5, lengthUnit: 'in', lengthInches: 5,
+        gauge: '18', color: 'BLK', sourceRowIndex: 1, rawText: 'W2', confidence: 0.9, unresolved: false,
+        from: { component: 'J1', cavity: '3', treatment: null, terminationType: 'CONNECTOR_PIN' },
+        to:   { component: 'T2', cavity: null, treatment: null, terminationType: 'TERMINAL' },
+      },
+    ];
+
+    const analysis = makeAnalysis({
+      connectivity: makeConnectivity(wires),
+      decision: makeDecision('SAFE'),
+      unresolvedQuestions: [],
+    });
+
+    const state = buildEffectiveHarnessState({ analysis });
+
+    // Topology should detect missing pin 2 at J1
+    assert.ok(state.effectiveTopology, 'Topology must be computed');
+    const missingPin2 = state.effectiveTopology!.missingWireCandidates.some(
+      c => c.component.toLowerCase() === 'j1' && c.missingCavity === '2',
+    );
+    assert.ok(missingPin2, 'J1 pin 2 must be detected as missing');
+
+    // T23.6.2 sync: decision must reflect topology blocking
+    assert.strictEqual(state.effectiveDecision?.overallDecision, 'BLOCKED',
+      'overallDecision must be BLOCKED when topology has HIGH blocking warnings');
+    assert.ok((state.effectiveDecision?.readinessScore ?? 100) < 100,
+      'readinessScore must be reduced by topology deduction');
+    assert.strictEqual(state.readyToCommit, false,
+      'readyToCommit must be false when topology blocks');
+  });
+
+  it('overallDecision is unchanged when topology has no blocking warnings', () => {
+    // J1 pins 1, 2, 3 — complete sequence, no gap
+    const wires: HarnessConnectivityResult['wires'] = [
+      {
+        wireId: 'W1', length: 5, lengthUnit: 'in', lengthInches: 5,
+        gauge: '18', color: 'RED', sourceRowIndex: 0, rawText: 'W1', confidence: 0.9, unresolved: false,
+        from: { component: 'J1', cavity: '1', treatment: null, terminationType: 'CONNECTOR_PIN' },
+        to:   { component: 'T1', cavity: null, treatment: null, terminationType: 'TERMINAL' },
+      },
+      {
+        wireId: 'W2', length: 5, lengthUnit: 'in', lengthInches: 5,
+        gauge: '18', color: 'BLK', sourceRowIndex: 1, rawText: 'W2', confidence: 0.9, unresolved: false,
+        from: { component: 'J1', cavity: '2', treatment: null, terminationType: 'CONNECTOR_PIN' },
+        to:   { component: 'T2', cavity: null, treatment: null, terminationType: 'TERMINAL' },
+      },
+      {
+        wireId: 'W3', length: 5, lengthUnit: 'in', lengthInches: 5,
+        gauge: '18', color: 'WHT', sourceRowIndex: 2, rawText: 'W3', confidence: 0.9, unresolved: false,
+        from: { component: 'J1', cavity: '3', treatment: null, terminationType: 'CONNECTOR_PIN' },
+        to:   { component: 'T3', cavity: null, treatment: null, terminationType: 'TERMINAL' },
+      },
+    ];
+
+    const analysis = makeAnalysis({
+      connectivity: makeConnectivity(wires),
+      decision: makeDecision('SAFE'),
+      unresolvedQuestions: [],
+    });
+
+    const state = buildEffectiveHarnessState({ analysis });
+
+    assert.strictEqual(state.effectiveTopology!.missingWireCandidates.length, 0,
+      'No missing pins in complete sequence');
+    assert.strictEqual(state.effectiveDecision?.overallDecision, 'SAFE',
+      'overallDecision remains SAFE when no topology blocks');
+    assert.strictEqual(state.readyToCommit, true,
+      'readyToCommit is true with no blocking questions and no topology issues');
+  });
+});

@@ -207,6 +207,22 @@ export function buildEffectiveHarnessState(args: {
   const readyToCommit =
     unresolvedQuestions.every(q => !q.blocksCommit) && !hasBlockingTopology;
 
+  // T23.6.2: Synchronize effective decision with topology blocking state.
+  // The T9 decision (from T12) runs before topology analysis (T13) and cannot
+  // account for graph-level blocking warnings.  When HIGH-confidence blocking
+  // topology issues exist, the overall decision and readiness must reflect
+  // that so the decision badge, readiness %, and blocked summary all agree
+  // with the topology graph and cut sheet.
+  if (effectiveDecision && hasBlockingTopology) {
+    const blockingTopoCount = effectiveTopology!.warnings
+      .filter(w => w.blocksCommit && w.confidence === 'HIGH').length;
+    effectiveDecision = {
+      ...effectiveDecision,
+      overallDecision: 'BLOCKED',
+      readinessScore:  Math.max(0, effectiveDecision.readinessScore - blockingTopoCount * 10),
+    };
+  }
+
   console.log('[T12.4 EFFECTIVE MODEL]', {
     usingEffectiveConnectivity: hasT11 || hasT12,
     usingEffectiveDecision:     hasT11 || hasT12,
@@ -220,6 +236,23 @@ export function buildEffectiveHarnessState(args: {
     blockingCount:              unresolvedQuestions.filter(q => q.blocksCommit).length,
     topologyWarningCount:       effectiveTopology?.warnings.length ?? 0,
     topologyBlockingCount:      effectiveTopology?.warnings.filter(w => w.blocksCommit).length ?? 0,
+    readyToCommit,
+  });
+
+  console.log('[T23.6.2 TOPOLOGY SOURCE]', {
+    graphSource:     'effectiveTopology (post-merge T13)',
+    blockedSource:   'effectiveDecision.blockedWires (T7/T8 on effective connectivity)',
+    readinessSource: 'readyToCommit (questions + topology) + readinessScore (T7/T8 + T13 deduction)',
+    cutSheetSource:  'effectiveConnectivity + effectiveWireIdentities',
+  });
+
+  console.log('[T23.6.2 CONSISTENCY]', {
+    mergedNodeCount:  effectiveTopology?.nodes.length ?? 0,
+    graphMissingPins: effectiveTopology?.missingWireCandidates.length ?? 0,
+    blockedWireCount: effectiveDecision?.blockedWires.length ?? 0,
+    readinessScore:   effectiveDecision?.readinessScore ?? null,
+    topologyWarnings: effectiveTopology?.warnings.length ?? 0,
+    topologyBlocking: effectiveTopology?.warnings.filter(w => w.blocksCommit && w.confidence === 'HIGH').length ?? 0,
     readyToCommit,
   });
 
