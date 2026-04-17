@@ -176,6 +176,7 @@ const CONNECTOR_CAVITY_FALLBACKS: Record<string, string[]> = {
 export function getCavityAuthority(canonicalId: string, observedCavities: string[]): CavityAuthority {
   const fallback = CONNECTOR_CAVITY_FALLBACKS[canonicalId];
   if (fallback) {
+    console.log('[T23.6.10.2 FALLBACK HIT]', canonicalId);
     const merged = new Set([...fallback, ...observedCavities]);
     return {
       canonicalId,

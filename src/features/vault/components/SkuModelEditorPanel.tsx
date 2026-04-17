@@ -476,7 +476,11 @@ function WireEditorForm({
   );
   const fromCavityAuthority = useMemo(() => {
     if (fromCustomMode || !fromSelectedOption) return null;
-    const auth = getCavityAuthority(fromSelectedOption.canonicalId, fromSelectedOption.cavities);
+    const effectiveCanonicalId = canonicalComponentKey(fromSelectedOption.displayName);
+    console.log(
+      `[T23.6.10.2 CANONICAL CHECK] raw=${fromSelectedOption.displayName} canonical=${effectiveCanonicalId}`,
+    );
+    const auth = getCavityAuthority(effectiveCanonicalId, fromSelectedOption.cavities);
     console.log(
       `[T23.6.10 CAVITY OPTIONS] component=${auth.canonicalId} source=${auth.source} cavities=${auth.cavities.join(',')}`,
     );
@@ -484,7 +488,11 @@ function WireEditorForm({
   }, [fromCustomMode, fromSelectedOption]);
   const toCavityAuthority = useMemo(() => {
     if (toCustomMode || !toSelectedOption) return null;
-    const auth = getCavityAuthority(toSelectedOption.canonicalId, toSelectedOption.cavities);
+    const effectiveCanonicalId = canonicalComponentKey(toSelectedOption.displayName);
+    console.log(
+      `[T23.6.10.2 CANONICAL CHECK] raw=${toSelectedOption.displayName} canonical=${effectiveCanonicalId}`,
+    );
+    const auth = getCavityAuthority(effectiveCanonicalId, toSelectedOption.cavities);
     console.log(
       `[T23.6.10 CAVITY OPTIONS] component=${auth.canonicalId} source=${auth.source} cavities=${auth.cavities.join(',')}`,
     );

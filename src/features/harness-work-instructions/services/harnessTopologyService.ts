@@ -149,6 +149,7 @@ export function canonicalComponentKey(raw?: string | null): string {
     .replace(/[^a-z0-9]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+    .replace(/\bpheonix\b/g, 'phoenix')
     .replace(/^phoenix\s+/, 'phoenix:')
     .replace(/\s+/g, '');
 }

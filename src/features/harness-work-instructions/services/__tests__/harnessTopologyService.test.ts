@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'assert/strict';
 
-import { analyzeHarnessTopology } from '../harnessTopologyService';
+import { analyzeHarnessTopology, canonicalComponentKey } from '../harnessTopologyService';
 import type { HarnessConnectivityResult, WireConnectivity, WireEndpoint, EndpointTerminationType } from '../harnessConnectivityService';
 
 // ---------------------------------------------------------------------------
@@ -56,6 +56,18 @@ function makeConnectivity(wires: WireConnectivity[]): HarnessConnectivityResult 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe('canonicalComponentKey — T23.6.10.2 OCR misspelling corrections', () => {
+  it('pheonix OCR misspelling canonicalizes to phoenix:PN', () => {
+    assert.equal(canonicalComponentKey('PHEONIX 1700443'), 'phoenix:1700443');
+    assert.equal(canonicalComponentKey('PHEONIX #: 1700443'), 'phoenix:1700443');
+  });
+
+  it('correct phoenix spelling is unaffected', () => {
+    assert.equal(canonicalComponentKey('PHOENIX 1700443'), 'phoenix:1700443');
+    assert.equal(canonicalComponentKey('PHOENIX #: 1700443'), 'phoenix:1700443');
+  });
+});
 
 describe('analyzeHarnessTopology', () => {
 
