@@ -52,6 +52,8 @@ export interface TopologyNode {
   terminationType: EndpointTerminationType | null;
   /** IDs of all wires whose FROM or TO endpoint maps to this node. */
   wireIds: string[];
+  /** T23.6.12: UnionFind root after connector-body unification pass. */
+  groupRoot?: string;
   // T23.6.4: explicit shared-ferrule node metadata
   isSharedFerrule?: boolean;
   ferrulePartNumber?: string | null;
@@ -581,6 +583,30 @@ export function analyzeHarnessTopology(args: {
   }
 
   const nodes = [...nodeMap.values()];
+
+  // T23.6.12: Connector-body unification.
+  // All cavity nodes for the same canonical connector are part of a single physical device.
+  // Union them so multi-wire connectors never create false ISOLATED_SUBGRAPH warnings.
+  {
+    const byCanonical = new Map<string, string[]>();
+    for (const node of nodes) {
+      const key = node.canonicalComponent;
+      if (!byCanonical.has(key)) byCanonical.set(key, []);
+      byCanonical.get(key)!.push(node.id);
+    }
+    for (const [canonicalId, nodeIds] of byCanonical) {
+      if (nodeIds.length < 2) continue;
+      const pivot = nodeIds[0];
+      for (let i = 1; i < nodeIds.length; i++) {
+        connectivityUF.union(pivot, nodeIds[i]);
+      }
+      console.log('[T23.6.12 GROUP]', canonicalId, nodeIds);
+    }
+  }
+  // T23.6.12: Assign groupRoot to each node after full unification.
+  for (const node of nodes) {
+    node.groupRoot = connectivityUF.find(node.id);
+  }
 
   console.log('[T23.5 NODE BUILD]', {
     totalNodes:      nodes.length,
