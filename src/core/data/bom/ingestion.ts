@@ -450,6 +450,15 @@ async function ingestBOMPipeline(
       canonical: canonicalizePartNumber(masterPartNumber),
     });
 
+    console.log('[T23.6.37 TRACE]', {
+      stage: 'INGESTION',
+      function: 'ingestBOMPipeline',
+      rawPart: masterPartNumber,
+      canonicalPart: canonicalizePartNumber(masterPartNumber),
+      outgoingValue: masterPartNumber,
+      note: 'Locked BOM master part number, forwarding to downstream ingestion',
+    });
+
     // V6.0.7: CONSISTENCY ASSERTION - Ensure metadata and canonical match
     if (masterPartNumber !== metadata.partNumber && metadata.partNumber) {
       console.warn('⚠️ V6.0.7 PART NUMBER MISMATCH DETECTED', {

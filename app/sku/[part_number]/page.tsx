@@ -40,6 +40,7 @@ import type { ActionIntent } from '@/src/features/revision/hooks/useRecommendedF
 import CorrectiveContextBanner from '@/src/components/CorrectiveContextBanner';
 import { deriveIssueKind, parseActionIntentParam } from '@/src/features/revision/utils/correctiveIntent';
 import { recordSkuVisit } from '@/src/features/dashboard/userContext';
+import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 import {
   deriveDocumentPresence,
   type DocByTypeMap,
@@ -184,6 +185,14 @@ export default function SKUDashboardPage() {
     if (!partNumberParam) return;
     try {
       setLoading(true);
+      console.log('[T23.6.37 TRACE]', {
+        stage: 'API',
+        function: 'sku/[part_number]:loadSKU',
+        rawPart: partNumberParam,
+        canonicalPart: canonicalizePartNumber(partNumberParam),
+        outgoingValue: `/api/sku/get?partNumber=${partNumberParam}`,
+        note: 'SKU page initial fetch',
+      });
       const res = await fetch(`/api/sku/get?partNumber=${encodeURIComponent(partNumberParam)}`);
       const json = await res.json();
       if (!json.ok) {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
+import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 
 interface UseRevisionValidationMapResult {
   validationMap: Record<string, CrossSourceValidationResult | null | undefined>;
@@ -38,6 +39,25 @@ export function useRevisionValidationMap(partNumbers: (string | null | undefined
       for (const pn of missing) {
         if (cancelled) break;
         try {
+          if (!pn || pn === 'undefined') {
+            console.log('[T23.6.38 ROOT CAUSE]', {
+              stage: 'API',
+              file: 'src/features/revision/hooks/useRevisionValidationMap.ts',
+              function: 'useRevisionValidationMap',
+              issue: 'partNumber is empty or "undefined" before fetch',
+              valueState: pn,
+            });
+            updates[pn] = null;
+            continue;
+          }
+          console.log('[T23.6.37 TRACE]', {
+            stage: 'API',
+            function: 'useRevisionValidationMap',
+            rawPart: pn,
+            canonicalPart: canonicalizePartNumber(pn),
+            outgoingValue: `/api/sku/get?partNumber=${pn}`,
+            note: 'Fetching revision validation context',
+          });
           const res = await fetch(`/api/sku/get?partNumber=${encodeURIComponent(pn)}`);
           const json = await res.json();
           if (res.ok && json.ok !== false) {

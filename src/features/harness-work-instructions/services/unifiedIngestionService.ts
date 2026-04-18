@@ -408,6 +408,15 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
            canonicalizePartNumber(rawPartNumberForLog) === canonicalizePartNumber(drawingNumber),
   });
 
+  console.log('[T23.6.37 TRACE]', {
+    stage: 'DOCUMENT',
+    function: 'ingestAndProcessDocument',
+    rawPart: analysis.proposedPartNumber ?? null,
+    canonicalPart: canonicalizePartNumber(analysis.proposedPartNumber),
+    outgoingValue: partNumber,
+    note: 'Document analysis vs finalized part number (post-canonicalization)',
+  });
+
   const ingestResult = await ingestDocumentFirstFlow(
     {
       part_number: partNumber,

@@ -19,6 +19,7 @@ import {
 } from '@/src/features/revision/utils/resolveCanonicalDocuments';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 import type { DocumentExtractionEvidence } from '@/src/features/harness-work-instructions/types/extractionEvidence';
+import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 
 const readinessBadgeTone: Record<ReadinessStatus, string> = {
   READY:                'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
@@ -239,7 +240,16 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
       return;
     }
     const controller = new AbortController();
-    fetch(`/api/sku/get?partNumber=${encodeURIComponent(filters.sku)}`, { signal: controller.signal })
+    const partParam = filters.sku ?? '';
+    console.log('[T23.6.37 TRACE]', {
+      stage: 'API',
+      function: 'VaultDocumentTable:fetchSku',
+      rawPart: partParam,
+      canonicalPart: canonicalizePartNumber(partParam),
+      outgoingValue: `/api/sku/get?partNumber=${partParam}`,
+      note: 'Triggering SKU fetch from Vault table',
+    });
+    fetch(`/api/sku/get?partNumber=${encodeURIComponent(partParam)}`, { signal: controller.signal })
       .then(res => (res.ok ? res.json() : null))
       .then(json => {
         if (!json?.ok || controller.signal.aborted) return;

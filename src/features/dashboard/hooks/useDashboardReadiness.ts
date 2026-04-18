@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReadinessTier, ReadinessIssue, SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
+import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 
 export interface SKUReadinessSummary {
   part_number: string;
@@ -74,6 +75,24 @@ export function useDashboardReadiness(partNumbers: string[]): {
         await Promise.allSettled(
           batch.map(async pn => {
             try {
+              if (!pn || pn === 'undefined') {
+                console.log('[T23.6.38 ROOT CAUSE]', {
+                  stage: 'API',
+                  file: 'src/features/dashboard/hooks/useDashboardReadiness.ts',
+                  function: 'useDashboardReadiness',
+                  issue: 'partNumber is empty or "undefined" before fetch',
+                  valueState: pn,
+                });
+                return;
+              }
+              console.log('[T23.6.37 TRACE]', {
+                stage: 'API',
+                function: 'useDashboardReadiness',
+                rawPart: pn,
+                canonicalPart: canonicalizePartNumber(pn),
+                outgoingValue: `/api/sku/get?partNumber=${pn}`,
+                note: 'Dashboard batch readiness fetch',
+              });
               const res = await fetch(`/api/sku/get?partNumber=${encodeURIComponent(pn)}`);
               const json = await res.json();
               if (cancelled.current) return;

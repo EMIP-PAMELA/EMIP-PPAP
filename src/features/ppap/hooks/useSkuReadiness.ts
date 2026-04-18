@@ -3,6 +3,7 @@ import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 import type { ExpectedDrawingSummary } from '@/src/features/harness-work-instructions/services/skuService';
 import type { RevisionRiskSummary } from '@/src/utils/revisionRiskAnalyzer';
+import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 
 interface UseSkuReadinessResult {
   readiness: SKUReadinessResult | null;
@@ -40,6 +41,14 @@ export function useSkuReadiness(partNumber?: string | null): UseSkuReadinessResu
 
     (async () => {
       try {
+        console.log('[T23.6.37 TRACE]', {
+          stage: 'API',
+          function: 'useSkuReadiness',
+          rawPart: normalizedPart,
+          canonicalPart: canonicalizePartNumber(normalizedPart),
+          outgoingValue: `/api/sku/get?partNumber=${normalizedPart}`,
+          note: 'Fetching SKU readiness context',
+        });
         const res = await fetch(`/api/sku/get?partNumber=${encodeURIComponent(normalizedPart)}`, {
           signal: controller.signal,
         });

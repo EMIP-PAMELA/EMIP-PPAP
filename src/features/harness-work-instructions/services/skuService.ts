@@ -249,6 +249,15 @@ export async function getSKU(partNumber: string): Promise<{
   const normalized = partNumber.trim().toUpperCase();
   const canonical  = canonicalizePartNumber(partNumber);
 
+  console.log('[T23.6.37 TRACE]', {
+    stage: 'SKU',
+    function: 'getSKU',
+    rawPart: partNumber,
+    canonicalPart: canonical,
+    outgoingValue: normalized,
+    note: 'Fetching SKU via API/service layer',
+  });
+
   // T23.6.35: Try canonical form first; fall back to normalized for pre-canonicalization records
   let { data, error } = canonical && canonical !== normalized
     ? await supabase
@@ -271,6 +280,15 @@ export async function getSKU(partNumber: string): Promise<{
     data  = fallback.data;
     error = fallback.error;
   }
+
+  console.log('[T23.6.37 TRACE]', {
+    stage: 'SKU',
+    function: 'getSKU',
+    rawPart: partNumber,
+    canonicalPart: canonical,
+    outgoingValue: data?.part_number ?? null,
+    note: data ? 'SKU record resolved' : 'SKU not found',
+  });
 
   if (error) {
     console.error('[HWI SKU FETCH] Failed', { part_number: normalized, error: error.message });
@@ -825,6 +843,15 @@ export async function getOrCreateSKUFromDocument(
     context: 'getOrCreateSKUFromDocument',
   });
 
+  console.log('[T23.6.37 TRACE]', {
+    stage: 'SKU',
+    function: 'getOrCreateSKUFromDocument',
+    rawPart: rawPN,
+    canonicalPart: normalizedPN,
+    outgoingValue: normalizedPN,
+    note: 'Attempting SKU lookup before creation',
+  });
+
   const existing = await getSKU(normalizedPN);
   if (existing) {
     console.log('[HWI SKU MATCHED]', {
@@ -844,6 +871,14 @@ export async function getOrCreateSKUFromDocument(
     sku_id: sku.id,
     sourceType: meta.sourceType,
     revision: meta.revision ?? null,
+  });
+  console.log('[T23.6.37 TRACE]', {
+    stage: 'SKU',
+    function: 'getOrCreateSKUFromDocument',
+    rawPart: rawPN,
+    canonicalPart: normalizedPN,
+    outgoingValue: sku.id,
+    note: 'SKU created because no existing record matched',
   });
   return { sku, created: true };
 }

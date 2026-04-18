@@ -147,6 +147,15 @@ async function computeSignals(
   const bomCanonical     = canonicalizePartNumber(effectiveTargetPart);
   const drawingCanonical = canonicalizePartNumber(effectiveCandidatePart);
 
+  console.log('[T23.6.37 TRACE]', {
+    stage: 'LINKING',
+    function: 'computeSignals',
+    rawPart: effectiveTargetPart,
+    canonicalPart: bomCanonical,
+    outgoingValue: effectiveCandidatePart,
+    note: 'Evaluating BOM vs candidate inferred part numbers',
+  });
+
   if (effectiveTargetPart && effectiveCandidatePart) {
     if (bomCanonical !== null && drawingCanonical !== null && bomCanonical === drawingCanonical) {
       score += 3;
@@ -195,6 +204,14 @@ async function computeSignals(
         bomCanonical:    targetDwgCanonical,
         drawingCanonical: candidateDwgCanonical,
         match: true,
+      });
+      console.log('[T23.6.37 TRACE]', {
+        stage: 'LINKING',
+        function: 'computeSignals',
+        rawPart: target.drawing_number,
+        canonicalPart: targetDwgCanonical,
+        outgoingValue: candidate.drawing_number,
+        note: 'Drawing number canonical comparison match',
       });
       if (bomCanonical && drawingCanonical && bomCanonical !== drawingCanonical) {
         linkType = 'CONFLICT';
@@ -258,6 +275,15 @@ async function ensureSku(
   confidenceScore: number,
 ): Promise<string | null> {
   const canonical = canonicalizePartNumber(partNumber) ?? partNumber.trim().toUpperCase();
+
+  console.log('[T23.6.37 TRACE]', {
+    stage: 'SKU',
+    function: 'ensureSku',
+    rawPart: partNumber,
+    canonicalPart: canonical,
+    outgoingValue: confidenceScore,
+    note: 'Linking workflow ensuring SKU exists before attachment',
+  });
   try {
     const existing = await getSKU(canonical);
     if (existing?.sku?.id) {
