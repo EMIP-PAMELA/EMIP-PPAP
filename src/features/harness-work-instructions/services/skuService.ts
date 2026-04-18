@@ -649,14 +649,36 @@ export async function uploadDocument(
     .single();
 
   if (error) {
-    console.error('[HWI DOCUMENT PERSIST] Failed', { error: error.message, payload });
+    console.error('[HWI DOCUMENT INSERT FAILED]', {
+      sku_id: skuId,
+      document_type: documentType,
+      error: error.message,
+    });
     throw new Error(error.message);
   }
 
-  await supabase
+  console.log('[T23.6.34A SKU MATCH AUDIT]', {
+    file: 'src/features/harness-work-instructions/services/skuService.ts',
+    function: 'uploadDocument',
+    comparisonType: 'storage',
+    bomValueExample: documentType === 'BOM' ? skuId : null,
+    drawingValueExample: payload.drawing_number ?? null,
+    code: 'supabase.from("sku_documents").insert(payload)',
+  });
+
+  await recomputeRevisionStates(skuId, documentType);
+  const { data: skuData, error: skuError } = await supabase
     .from('sku')
     .update({ updated_at: new Date().toISOString() })
     .eq('id', skuId);
+
+  if (skuError) {
+    console.error('[HWI SKU UPDATE FAILED]', {
+      sku_id: skuId,
+      error: skuError.message,
+    });
+    throw new Error(skuError.message);
+  }
 
   if (phantomRev) {
     console.warn('[HWI PHANTOM REV DETECTED]', {
@@ -790,6 +812,14 @@ export async function getOrCreateSKUFromDocument(
     sku_id: sku.id,
     sourceType: meta.sourceType,
     revision: meta.revision ?? null,
+  });
+  console.log('[T23.6.34A SKU MATCH AUDIT]', {
+    file: 'src/features/harness-work-instructions/services/skuService.ts',
+    function: 'getOrCreateSKUFromDocument',
+    comparisonType: 'storage',
+    bomValueExample: normalizedPN,
+    drawingValueExample: meta.sourceType,
+    code: 'createSKU(normalizedPN, meta.description ?? undefined, meta.sourceType)',
   });
   return { sku, created: true };
 }

@@ -443,13 +443,21 @@ async function ingestBOMPipeline(
       format: 'validated',
       source: metadata.partNumber ? 'metadata' : 'parser'
     });
-    
+
     // V6.0.7: CONSISTENCY ASSERTION - Ensure metadata and canonical match
     if (masterPartNumber !== metadata.partNumber && metadata.partNumber) {
       console.warn('⚠️ V6.0.7 PART NUMBER MISMATCH DETECTED', {
         canonical: masterPartNumber,
         metadata: metadata.partNumber,
         source: 'canonicalization_fallback_to_parser'
+      });
+      console.log('[T23.6.34A SKU MATCH AUDIT]', {
+        file: 'src/core/data/bom/ingestion.ts',
+        function: 'ingestBOMPipeline',
+        comparisonType: 'strict inequality',
+        bomValueExample: masterPartNumber,
+        drawingValueExample: metadata.partNumber,
+        code: 'masterPartNumber !== metadata.partNumber',
       });
     }
     

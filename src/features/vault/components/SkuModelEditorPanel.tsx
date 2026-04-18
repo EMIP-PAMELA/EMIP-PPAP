@@ -299,6 +299,16 @@ function formToOperatorWire(
   const fromCanonical = fromComponent ? canonicalComponentKey(fromComponent) : '';
   const toCanonical   = toComponent   ? canonicalComponentKey(toComponent)   : '';
   const sameComponent = Boolean(fromCanonical && toCanonical && fromCanonical === toCanonical);
+  if (fromCanonical && toCanonical) {
+    console.log('[T23.6.34A SKU MATCH AUDIT]', {
+      file: 'src/features/vault/components/SkuModelEditorPanel.tsx',
+      function: 'formToOperatorWire',
+      comparisonType: 'strict equality',
+      bomValueExample: fromCanonical,
+      drawingValueExample: toCanonical,
+      code: 'fromCanonical === toCanonical',
+    });
+  }
 
   if (sameComponent && !toCavity && trimmedBranchSecCav) {
     toCavity = trimmedBranchSecCav;
@@ -480,6 +490,16 @@ function WireEditorForm({
   const fromCanonicalId = formState.fromComponentCanonicalId || canonicalComponentKey(formState.fromComponent);
   const toCanonicalId   = formState.toComponentCanonicalId   || canonicalComponentKey(formState.toComponent);
   const isSameComponent = Boolean(fromCanonicalId && toCanonicalId && fromCanonicalId === toCanonicalId);
+  if (fromCanonicalId && toCanonicalId) {
+    console.log('[T23.6.34A SKU MATCH AUDIT]', {
+      file: 'src/features/vault/components/SkuModelEditorPanel.tsx',
+      function: 'SkuModelEditorPanel',
+      comparisonType: 'strict equality',
+      bomValueExample: fromCanonicalId,
+      drawingValueExample: toCanonicalId,
+      code: 'fromCanonicalId === toCanonicalId',
+    });
+  }
 
   const wizardKind = wizardContext?.addedWireKind;
   const sharedNode = wizardContext?.sharedNode;
@@ -676,6 +696,16 @@ function WireEditorForm({
     const fromCanonical = trimmedFromComponent ? canonicalComponentKey(trimmedFromComponent) : '';
     const toCanonical = trimmedToComponent ? canonicalComponentKey(trimmedToComponent) : '';
     const sameComponent = Boolean(fromCanonical && toCanonical && fromCanonical === toCanonical);
+    if (fromCanonical && toCanonical) {
+      console.log('[T23.6.34A SKU MATCH AUDIT]', {
+        file: 'src/features/vault/components/SkuModelEditorPanel.tsx',
+        function: 'handleSave',
+        comparisonType: 'strict equality',
+        bomValueExample: fromCanonical,
+        drawingValueExample: toCanonical,
+        code: 'fromCanonical === toCanonical (handleSave)',
+      });
+    }
 
     const hasAuthorityOptions = componentOptions.length > 0;
     if (hasAuthorityOptions && form.fromComponent.trim() &&

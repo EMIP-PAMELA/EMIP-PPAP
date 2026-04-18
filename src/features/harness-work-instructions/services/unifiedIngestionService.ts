@@ -318,6 +318,9 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     })),
   };
 
+  const partParity    = analysis.proposedPartNumber === partNumber;
+  const drawingParity = analysis.proposedDrawingNumber === drawingNumber;
+
   console.log('[ANALYZE vs COMMIT]', {
     file: file.name,
     analyze_part_number: analysis.proposedPartNumber,
@@ -326,9 +329,27 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     commit_part_number: partNumber,
     commit_revision: revision,
     commit_drawing_number: drawingNumber,
-    parity: analysis.proposedPartNumber === partNumber &&
+    parity: partParity &&
             analysis.proposedRevision === revision &&
-            analysis.proposedDrawingNumber === drawingNumber,
+            drawingParity,
+  });
+
+  console.log('[T23.6.34A SKU MATCH AUDIT]', {
+    file: 'src/features/harness-work-instructions/services/unifiedIngestionService.ts',
+    function: 'ingestAndProcessDocument',
+    comparisonType: 'strict equality',
+    bomValueExample: partNumber ?? null,
+    drawingValueExample: analysis.proposedPartNumber ?? null,
+    code: 'analysis.proposedPartNumber === partNumber',
+  });
+
+  console.log('[T23.6.34A SKU MATCH AUDIT]', {
+    file: 'src/features/harness-work-instructions/services/unifiedIngestionService.ts',
+    function: 'ingestAndProcessDocument',
+    comparisonType: 'strict equality',
+    bomValueExample: drawingNumber ?? null,
+    drawingValueExample: analysis.proposedDrawingNumber ?? null,
+    code: 'analysis.proposedDrawingNumber === drawingNumber',
   });
 
   if (!partNumber && drawingNumber) {

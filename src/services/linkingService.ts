@@ -146,6 +146,14 @@ async function computeSignals(
     if (effectiveTargetPart === effectiveCandidatePart) {
       score += 3;
       signals.push(`part_number_match:${effectiveTargetPart}`);
+      console.log('[T23.6.34A SKU MATCH AUDIT]', {
+        file: 'src/services/linkingService.ts',
+        function: 'computeSignals',
+        comparisonType: 'strict equality',
+        bomValueExample: effectiveTargetPart,
+        drawingValueExample: effectiveCandidatePart,
+        code: 'effectiveTargetPart === effectiveCandidatePart',
+      });
     } else {
       linkType = 'CONFLICT';
       signals.push('part_number_conflict');
@@ -166,6 +174,14 @@ async function computeSignals(
     if (target.drawing_number === candidate.drawing_number) {
       score += 2;
       signals.push('drawing_number_match');
+      console.log('[T23.6.34A SKU MATCH AUDIT]', {
+        file: 'src/services/linkingService.ts',
+        function: 'computeSignals',
+        comparisonType: 'strict equality',
+        bomValueExample: target.drawing_number,
+        drawingValueExample: candidate.drawing_number,
+        code: 'target.drawing_number === candidate.drawing_number',
+      });
       if (
         effectiveTargetPart &&
         effectiveCandidatePart &&
@@ -202,6 +218,14 @@ async function computeSignals(
   if (target.sku_id && candidate.sku_id && target.sku_id !== candidate.sku_id) {
     linkType = 'CONFLICT';
     signals.push('sku_mismatch');
+    console.log('[T23.6.34A SKU MATCH AUDIT]', {
+      file: 'src/services/linkingService.ts',
+      function: 'computeSignals',
+      comparisonType: 'strict inequality',
+      bomValueExample: target.sku_id,
+      drawingValueExample: candidate.sku_id,
+      code: 'target.sku_id !== candidate.sku_id',
+    });
   }
 
   if (target.phantom_rev_flag || candidate.phantom_rev_flag) {
