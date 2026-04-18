@@ -171,6 +171,11 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
  */
 function extractWires(records: BOMRecord[]): WireProjection[] {
   const wires: WireProjection[] = [];
+
+  console.log('[T23.6.49C RAW BOM INPUT]', {
+    totalRecords: records?.length ?? 0,
+    sample: records?.slice(0, 5) ?? [],
+  });
   
   // Phase 3H.18: Debug validation - count canonical WIRE records
   const wireCategoryCount = records.filter(r => r.category === 'WIRE').length;
@@ -179,6 +184,17 @@ function extractWires(records: BOMRecord[]): WireProjection[] {
     categoryWIRECount: wireCategoryCount,
     samplePartNumbers: records.slice(0, 3).map(r => r.component_part_number)
   });
+
+  const categoryCheck = records.map(record => {
+    const detectedAsWire = record.category === 'WIRE';
+    return {
+      partNumber: record.component_part_number ?? (record as any).partNumber ?? null,
+      description: record.description,
+      category: record.category ?? null,
+      detectedAsWire,
+    };
+  });
+  console.log('[T23.6.49C CATEGORY CHECK]', categoryCheck);
 
   for (const record of records) {
     // Phase 3H.18: Use canonical category === 'WIRE' for wire detection
@@ -219,6 +235,18 @@ function extractWires(records: BOMRecord[]): WireProjection[] {
       lengthUnit,
       quantity: record.quantity,
       description: record.description
+    });
+  }
+
+  console.log('[T23.6.49C WIRE FILTER RESULT]', {
+    detectedWireCount: wires.length,
+    rejectedCount: records.length - wires.length,
+  });
+
+  if (wires.length === 0) {
+    console.warn('[T23.6.49C ZERO WIRE ROOT CAUSE]', {
+      reason: 'No records matched wire classification',
+      hint: 'Check category mapping, naming patterns, or missing attributes',
     });
   }
 
