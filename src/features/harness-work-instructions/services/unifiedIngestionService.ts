@@ -30,6 +30,7 @@ import { resolveWiresFromDrawing, mergeDrawingWiresIntoJob, isRheemDrawingModel,
 import { computeExtractionCoverage, type ExtractionCoverage } from './extractionCoverageService';
 import { interpretRheemDrawingModel, type DrawingInterpretationResult } from './drawingInterpretationService';
 import { runAdaptiveDrawingPipeline, type AdaptiveDrawingAnalysis } from './adaptiveDrawingPipelineService';
+import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -391,6 +392,21 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
       provisional_part_number: partNumber,
     });
   }
+
+  // T23.6.35: Apply canonical normalization before SKU lookup/creation
+  const rawPartNumberForLog = partNumber;
+  if (!usedFallback && partNumber) {
+    partNumber = canonicalizePartNumber(partNumber) ?? partNumber;
+  }
+
+  console.log('[T23.6.35 CANONICAL COMPARE]', {
+    bomRaw:         rawPartNumberForLog,
+    drawingRaw:     drawingNumber ?? null,
+    bomCanonical:   canonicalizePartNumber(rawPartNumberForLog),
+    drawingCanonical: canonicalizePartNumber(drawingNumber),
+    match: canonicalizePartNumber(rawPartNumberForLog) !== null &&
+           canonicalizePartNumber(rawPartNumberForLog) === canonicalizePartNumber(drawingNumber),
+  });
 
   const ingestResult = await ingestDocumentFirstFlow(
     {

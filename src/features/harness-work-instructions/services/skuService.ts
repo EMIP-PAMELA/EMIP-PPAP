@@ -22,6 +22,7 @@ import {
 } from '@/src/utils/revisionRiskAnalyzer';
 import { resolveDrawingForPart } from '@/src/features/harness-work-instructions/services/drawingLookupService';
 import { selectCanonicalRevision } from '@/src/utils/revisionCanonical';
+import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 
 export type DocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING' | 'UNKNOWN';
 
@@ -246,11 +247,30 @@ export async function getSKU(partNumber: string): Promise<{
 } | null> {
   const supabase = createSupabaseAdmin();
   const normalized = partNumber.trim().toUpperCase();
-  const { data, error } = await supabase
-    .from('sku')
-    .select('id, part_number, description, created_from, created_at, updated_at, sku_documents(*)')
-    .eq('part_number', normalized)
-    .maybeSingle();
+  const canonical  = canonicalizePartNumber(partNumber);
+
+  // T23.6.35: Try canonical form first; fall back to normalized for pre-canonicalization records
+  let { data, error } = canonical && canonical !== normalized
+    ? await supabase
+        .from('sku')
+        .select('id, part_number, description, created_from, created_at, updated_at, sku_documents(*)')
+        .eq('part_number', canonical)
+        .maybeSingle()
+    : await supabase
+        .from('sku')
+        .select('id, part_number, description, created_from, created_at, updated_at, sku_documents(*)')
+        .eq('part_number', normalized)
+        .maybeSingle();
+
+  if (!data && canonical && canonical !== normalized) {
+    const fallback = await supabase
+      .from('sku')
+      .select('id, part_number, description, created_from, created_at, updated_at, sku_documents(*)')
+      .eq('part_number', normalized)
+      .maybeSingle();
+    data  = fallback.data;
+    error = fallback.error;
+  }
 
   if (error) {
     console.error('[HWI SKU FETCH] Failed', { part_number: normalized, error: error.message });
@@ -793,12 +813,23 @@ export async function setCurrentDocument(documentId: string): Promise<SKUDocumen
 export async function getOrCreateSKUFromDocument(
   meta: DocumentMetadata,
 ): Promise<{ sku: SKURecord; created: boolean }> {
-  const normalizedPN = meta.part_number.trim().toUpperCase();
+  const rawPN       = meta.part_number;
+  const normalizedPN = canonicalizePartNumber(rawPN) ?? rawPN.trim().toUpperCase();
+
+  console.log('[T23.6.35 CANONICAL COMPARE]', {
+    bomRaw:       rawPN,
+    drawingRaw:   null,
+    bomCanonical: normalizedPN,
+    drawingCanonical: null,
+    match: null,
+    context: 'getOrCreateSKUFromDocument',
+  });
 
   const existing = await getSKU(normalizedPN);
   if (existing) {
     console.log('[HWI SKU MATCHED]', {
-      part_number: normalizedPN,
+      raw_part_number: rawPN,
+      canonical_part_number: normalizedPN,
       sku_id: existing.sku.id,
       sourceType: meta.sourceType,
       revision: meta.revision ?? null,
@@ -808,18 +839,11 @@ export async function getOrCreateSKUFromDocument(
 
   const sku = await createSKU(normalizedPN, meta.description ?? undefined, meta.sourceType);
   console.log('[HWI SKU AUTO-CREATED]', {
-    part_number: normalizedPN,
+    raw_part_number: rawPN,
+    canonical_part_number: normalizedPN,
     sku_id: sku.id,
     sourceType: meta.sourceType,
     revision: meta.revision ?? null,
-  });
-  console.log('[T23.6.34A SKU MATCH AUDIT]', {
-    file: 'src/features/harness-work-instructions/services/skuService.ts',
-    function: 'getOrCreateSKUFromDocument',
-    comparisonType: 'storage',
-    bomValueExample: normalizedPN,
-    drawingValueExample: meta.sourceType,
-    code: 'createSKU(normalizedPN, meta.description ?? undefined, meta.sourceType)',
   });
   return { sku, created: true };
 }

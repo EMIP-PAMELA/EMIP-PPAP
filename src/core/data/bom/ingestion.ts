@@ -32,6 +32,7 @@ import { normalizePartNumber } from '@/src/core/utils/normalizePartNumber';
 import { isValidPartNumberCandidate } from '@/src/core/utils/isValidPartNumberCandidate';
 import { PARSER_VERSION } from '@/src/core/parser/parserService';
 import { normalizeWireColor } from '@/src/core/projections/normalizers';
+import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 
 // ============================================================
 // INGESTION SOURCE TYPES
@@ -442,6 +443,11 @@ async function ingestBOMPipeline(
       length: masterPartNumber.length,
       format: 'validated',
       source: metadata.partNumber ? 'metadata' : 'parser'
+    });
+
+    console.log('[T23.6.35 CANONICAL BOM]', {
+      raw:       masterPartNumber,
+      canonical: canonicalizePartNumber(masterPartNumber),
     });
 
     // V6.0.7: CONSISTENCY ASSERTION - Ensure metadata and canonical match

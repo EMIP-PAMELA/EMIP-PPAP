@@ -45,6 +45,7 @@ import {
   isComponentAuthoritySelectionValid,
 } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
 import { canonicalComponentKey } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
+import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -300,13 +301,13 @@ function formToOperatorWire(
   const toCanonical   = toComponent   ? canonicalComponentKey(toComponent)   : '';
   const sameComponent = Boolean(fromCanonical && toCanonical && fromCanonical === toCanonical);
   if (fromCanonical && toCanonical) {
-    console.log('[T23.6.34A SKU MATCH AUDIT]', {
-      file: 'src/features/vault/components/SkuModelEditorPanel.tsx',
-      function: 'formToOperatorWire',
-      comparisonType: 'strict equality',
-      bomValueExample: fromCanonical,
-      drawingValueExample: toCanonical,
-      code: 'fromCanonical === toCanonical',
+    console.log('[T23.6.35 CANONICAL COMPARE]', {
+      bomRaw:          fromComponent,
+      drawingRaw:      toComponent,
+      bomCanonical:    fromCanonical,
+      drawingCanonical: toCanonical,
+      match: sameComponent,
+      context: 'formToOperatorWire:sameComponent',
     });
   }
 
@@ -491,13 +492,13 @@ function WireEditorForm({
   const toCanonicalId   = formState.toComponentCanonicalId   || canonicalComponentKey(formState.toComponent);
   const isSameComponent = Boolean(fromCanonicalId && toCanonicalId && fromCanonicalId === toCanonicalId);
   if (fromCanonicalId && toCanonicalId) {
-    console.log('[T23.6.34A SKU MATCH AUDIT]', {
-      file: 'src/features/vault/components/SkuModelEditorPanel.tsx',
-      function: 'SkuModelEditorPanel',
-      comparisonType: 'strict equality',
-      bomValueExample: fromCanonicalId,
-      drawingValueExample: toCanonicalId,
-      code: 'fromCanonicalId === toCanonicalId',
+    console.log('[T23.6.35 CANONICAL COMPARE]', {
+      bomRaw:          formState.fromComponent,
+      drawingRaw:      formState.toComponent,
+      bomCanonical:    fromCanonicalId,
+      drawingCanonical: toCanonicalId,
+      match: isSameComponent,
+      context: 'SkuModelEditorPanel:isSameComponent',
     });
   }
 
@@ -697,13 +698,13 @@ function WireEditorForm({
     const toCanonical = trimmedToComponent ? canonicalComponentKey(trimmedToComponent) : '';
     const sameComponent = Boolean(fromCanonical && toCanonical && fromCanonical === toCanonical);
     if (fromCanonical && toCanonical) {
-      console.log('[T23.6.34A SKU MATCH AUDIT]', {
-        file: 'src/features/vault/components/SkuModelEditorPanel.tsx',
-        function: 'handleSave',
-        comparisonType: 'strict equality',
-        bomValueExample: fromCanonical,
-        drawingValueExample: toCanonical,
-        code: 'fromCanonical === toCanonical (handleSave)',
+      console.log('[T23.6.35 CANONICAL COMPARE]', {
+        bomRaw:          trimmedFromComponent,
+        drawingRaw:      trimmedToComponent,
+        bomCanonical:    fromCanonical,
+        drawingCanonical: toCanonical,
+        match: sameComponent,
+        context: 'handleSave:sameComponent',
       });
     }
 

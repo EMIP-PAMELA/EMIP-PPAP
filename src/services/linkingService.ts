@@ -5,6 +5,7 @@ import {
   type DocumentType,
 } from '@/src/features/harness-work-instructions/services/skuService';
 import { resolveAliasFromDB } from '@/src/features/harness-work-instructions/services/aliasService';
+import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 
 const MAX_CANDIDATES = 50;
 const SAME_SKU_THRESHOLD = 5;
@@ -142,21 +143,31 @@ async function computeSignals(
   const effectiveTargetPart = target.inferred_part_number ?? targetAlias;
   const effectiveCandidatePart = candidate.inferred_part_number ?? candidateAlias;
 
+  // T23.6.35: Canonical comparison — resolves NH-prefix / dash-format mismatches
+  const bomCanonical     = canonicalizePartNumber(effectiveTargetPart);
+  const drawingCanonical = canonicalizePartNumber(effectiveCandidatePart);
+
   if (effectiveTargetPart && effectiveCandidatePart) {
-    if (effectiveTargetPart === effectiveCandidatePart) {
+    if (bomCanonical !== null && drawingCanonical !== null && bomCanonical === drawingCanonical) {
       score += 3;
-      signals.push(`part_number_match:${effectiveTargetPart}`);
-      console.log('[T23.6.34A SKU MATCH AUDIT]', {
-        file: 'src/services/linkingService.ts',
-        function: 'computeSignals',
-        comparisonType: 'strict equality',
-        bomValueExample: effectiveTargetPart,
-        drawingValueExample: effectiveCandidatePart,
-        code: 'effectiveTargetPart === effectiveCandidatePart',
+      signals.push(`part_number_match:${bomCanonical}`);
+      console.log('[T23.6.35 CANONICAL COMPARE]', {
+        bomRaw: effectiveTargetPart,
+        drawingRaw: effectiveCandidatePart,
+        bomCanonical,
+        drawingCanonical,
+        match: true,
       });
     } else {
       linkType = 'CONFLICT';
       signals.push('part_number_conflict');
+      console.log('[T23.6.35 CANONICAL COMPARE]', {
+        bomRaw: effectiveTargetPart,
+        drawingRaw: effectiveCandidatePart,
+        bomCanonical,
+        drawingCanonical,
+        match: false,
+      });
     }
   }
 
@@ -170,23 +181,22 @@ async function computeSignals(
     signals.push(`alias_bridge:${candidate.drawing_number}->${effectiveTargetPart}`);
   }
 
+  // T23.6.35: Canonical comparison for drawing numbers
+  const targetDwgCanonical    = canonicalizePartNumber(target.drawing_number);
+  const candidateDwgCanonical = canonicalizePartNumber(candidate.drawing_number);
+
   if (target.drawing_number && candidate.drawing_number) {
-    if (target.drawing_number === candidate.drawing_number) {
+    if (targetDwgCanonical !== null && candidateDwgCanonical !== null && targetDwgCanonical === candidateDwgCanonical) {
       score += 2;
       signals.push('drawing_number_match');
-      console.log('[T23.6.34A SKU MATCH AUDIT]', {
-        file: 'src/services/linkingService.ts',
-        function: 'computeSignals',
-        comparisonType: 'strict equality',
-        bomValueExample: target.drawing_number,
-        drawingValueExample: candidate.drawing_number,
-        code: 'target.drawing_number === candidate.drawing_number',
+      console.log('[T23.6.35 CANONICAL COMPARE]', {
+        bomRaw:          target.drawing_number,
+        drawingRaw:      candidate.drawing_number,
+        bomCanonical:    targetDwgCanonical,
+        drawingCanonical: candidateDwgCanonical,
+        match: true,
       });
-      if (
-        effectiveTargetPart &&
-        effectiveCandidatePart &&
-        effectiveTargetPart !== effectiveCandidatePart
-      ) {
+      if (bomCanonical && drawingCanonical && bomCanonical !== drawingCanonical) {
         linkType = 'CONFLICT';
         signals.push('drawing_number_conflict');
       }
@@ -218,14 +228,6 @@ async function computeSignals(
   if (target.sku_id && candidate.sku_id && target.sku_id !== candidate.sku_id) {
     linkType = 'CONFLICT';
     signals.push('sku_mismatch');
-    console.log('[T23.6.34A SKU MATCH AUDIT]', {
-      file: 'src/services/linkingService.ts',
-      function: 'computeSignals',
-      comparisonType: 'strict inequality',
-      bomValueExample: target.sku_id,
-      drawingValueExample: candidate.sku_id,
-      code: 'target.sku_id !== candidate.sku_id',
-    });
   }
 
   if (target.phantom_rev_flag || candidate.phantom_rev_flag) {
@@ -255,9 +257,9 @@ async function ensureSku(
   sourceType: DocumentType,
   confidenceScore: number,
 ): Promise<string | null> {
-  const normalized = partNumber.trim().toUpperCase();
+  const canonical = canonicalizePartNumber(partNumber) ?? partNumber.trim().toUpperCase();
   try {
-    const existing = await getSKU(normalized);
+    const existing = await getSKU(canonical);
     if (existing?.sku?.id) {
       return existing.sku.id;
     }
@@ -267,19 +269,19 @@ async function ensureSku(
 
   if (confidenceScore < SKU_CREATION_CONFIDENCE_THRESHOLD) {
     console.warn('[LINKING] SKU CREATION SKIPPED — LOW CONFIDENCE', {
-      part_number: normalized,
+      part_number: canonical,
       confidenceScore,
     });
     return null;
   }
 
   try {
-    const sku = await createSKU(normalized, undefined, sourceType);
+    const sku = await createSKU(canonical, undefined, sourceType);
     return sku.id;
   } catch (err) {
     console.warn('[LINKING] createSKU failed', err);
     try {
-      const fallback = await getSKU(normalized);
+      const fallback = await getSKU(canonical);
       return fallback?.sku?.id ?? null;
     } catch (inner) {
       console.warn('[LINKING] fallback getSKU failed', inner);
