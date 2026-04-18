@@ -248,6 +248,7 @@ export async function getSKU(partNumber: string): Promise<{
   const supabase = createSupabaseAdmin();
   const normalized = partNumber.trim().toUpperCase();
   const canonical  = canonicalizePartNumber(partNumber);
+  const legacyCanonical = canonical ? canonical.replace(/[^A-Z0-9]/g, '') : null;
 
   console.log('[T23.6.37 TRACE]', {
     stage: 'SKU',
@@ -258,27 +259,31 @@ export async function getSKU(partNumber: string): Promise<{
     note: 'Fetching SKU via API/service layer',
   });
 
-  // T23.6.35: Try canonical form first; fall back to normalized for pre-canonicalization records
-  let { data, error } = canonical && canonical !== normalized
-    ? await supabase
-        .from('sku')
-        .select('id, part_number, description, created_from, created_at, updated_at, sku_documents(*)')
-        .eq('part_number', canonical)
-        .maybeSingle()
-    : await supabase
-        .from('sku')
-        .select('id, part_number, description, created_from, created_at, updated_at, sku_documents(*)')
-        .eq('part_number', normalized)
-        .maybeSingle();
-
-  if (!data && canonical && canonical !== normalized) {
-    const fallback = await supabase
+  const fetchByPartNumber = async (value: string) =>
+    supabase
       .from('sku')
       .select('id, part_number, description, created_from, created_at, updated_at, sku_documents(*)')
-      .eq('part_number', normalized)
+      .eq('part_number', value)
       .maybeSingle();
-    data  = fallback.data;
-    error = fallback.error;
+
+  let { data, error } = canonical
+    ? await fetchByPartNumber(canonical)
+    : await fetchByPartNumber(normalized);
+
+  if (!data && canonical && legacyCanonical && legacyCanonical !== canonical) {
+    console.log('[T23.6.40 LEGACY BRIDGE]', {
+      attempted: canonical,
+      fallback: legacyCanonical,
+    });
+    const legacyResult = await fetchByPartNumber(legacyCanonical);
+    data = legacyResult.data;
+    error = legacyResult.error;
+  }
+
+  if (!data && canonical && canonical !== normalized) {
+    const normalizedResult = await fetchByPartNumber(normalized);
+    data = normalizedResult.data;
+    error = normalizedResult.error;
   }
 
   console.log('[T23.6.37 TRACE]', {

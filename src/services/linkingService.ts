@@ -178,6 +178,14 @@ async function computeSignals(
         match: false,
       });
     }
+
+    console.log('[T23.6.40 LINK RESULT]', {
+      bomRaw: effectiveTargetPart,
+      skuRaw: effectiveCandidatePart,
+      bomCanonical,
+      skuCanonical: drawingCanonical,
+      linked: Boolean(bomCanonical && drawingCanonical && bomCanonical === drawingCanonical),
+    });
   }
 
   if (!target.inferred_part_number && target.drawing_number && effectiveCandidatePart) {

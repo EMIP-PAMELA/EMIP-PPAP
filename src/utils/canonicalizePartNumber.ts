@@ -8,21 +8,36 @@
  *   1. Uppercase
  *   2. Strip whitespace
  *   3. Strip leading "NH" prefix (customer-level prefix absent on raw drawings)
- *   4. Remove all non-alphanumeric characters (hyphens, dots, spaces)
+ *   4. Preserve punctuation (dashes) for human readability
  *
  * Examples:
- *   "NH45-110858-10"  → "4511085810"
- *   "45-110858-10"    → "4511085810"
- *   "45110858-10"     → "4511085810"
- *   "nh 45 110858 10" → "4511085810"
+ *   "NH45-110858-10"  → "45-110858-10"
+ *   "45-110858-10"    → "45-110858-10"
+ *   "45110858-10"     → "45110858-10"
+ *   "nh 45 110858 10" → "45-11085810"
  *   null / undefined  → null
  */
-export function canonicalizePartNumber(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const result = raw
-    .toUpperCase()
-    .replace(/\s+/g, '')
-    .replace(/^NH/, '')
-    .replace(/[^A-Z0-9]/g, '');
-  return result.length > 0 ? result : null;
+export function canonicalizePartNumber(input: string | null | undefined): string | null {
+  if (!input) {
+    console.log('[T23.6.40 CANONICAL FIX]', {
+      input: null,
+      output: '',
+    });
+    return null;
+  }
+
+  let sku = input.trim().toUpperCase();
+
+  if (sku.startsWith('NH')) {
+    sku = sku.substring(2);
+  }
+
+  sku = sku.replace(/\s+/g, '');
+
+  console.log('[T23.6.40 CANONICAL FIX]', {
+    input,
+    output: sku,
+  });
+
+  return sku.length > 0 ? sku : null;
 }

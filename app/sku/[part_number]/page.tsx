@@ -142,6 +142,7 @@ export default function SKUDashboardPage() {
   const [highlightSection,         setHighlightSection]         = useState<'truth' | 'visualization' | null>(null);
 
   const partNumber = sku?.part_number ?? partNumberParam?.toUpperCase() ?? '';
+  const displayPartNumber = (partNumberParam || partNumber || '').toUpperCase();
   console.log('[T23.6.39 PARAM TRACE]', {
     stage: 'PAGE_PROP',
     file: 'app/sku/[part_number]/page.tsx',
@@ -548,7 +549,7 @@ export default function SKUDashboardPage() {
       <div className="space-y-10">
         <header className="space-y-2">
           <p className="text-sm uppercase tracking-[0.4em] text-blue-500">SKU MODEL</p>
-          <h1 className="text-3xl font-bold text-[color:var(--text-primary)]">{partNumber || 'SKU Not Found'}</h1>
+          <h1 className="text-3xl font-bold text-[color:var(--text-primary)]">{displayPartNumber || 'SKU Not Found'}</h1>
           <p className="text-gray-600 max-w-3xl">
             Persist BOMs and drawings for this SKU, track revisions, and execute the Harness Work Instruction pipeline
             directly from the vault.
@@ -577,7 +578,7 @@ export default function SKUDashboardPage() {
         {actionIntent && (
           <CorrectiveContextBanner
             intent={actionIntent}
-            partNumber={partNumber}
+            partNumber={displayPartNumber}
             expectedRevision={expectedRevisionHint}
             canonicalSource={canonicalSourceHint}
             issueType={correctiveIssueKind}
