@@ -498,8 +498,24 @@ export default function HarnessTopologyVisualizer({
             const stroke  = wireStroke(wire?.color);
             const isIso   = isolatedWires.has(edge.wireId);
 
-            const effectiveFromId = resolveVisualId(edge.fromNodeId, nodeIndex);
-            const effectiveToId   = resolveVisualId(edge.toNodeId,   nodeIndex);
+            const resolvedFromId  = resolveVisualId(edge.fromNodeId, nodeIndex);
+            const candidateToId   = resolveVisualId(edge.toNodeId,   nodeIndex);
+            // T23.6.32: Guard against self-loop collapse — if TO resolves to the same
+            // visual node as FROM (ferrule over-resolution), fall back to the raw toNodeId
+            // so the edge renders as a stub to the terminal instead of an invisible hairpin.
+            const effectiveToId   = candidateToId === resolvedFromId
+              ? edge.toNodeId
+              : candidateToId;
+            if (candidateToId === resolvedFromId) {
+              console.log('[T23.6.32 SELF-LOOP PREVENTED]', {
+                wireId: edge.wireId,
+                from: edge.fromNodeId,
+                to: edge.toNodeId,
+                resolvedFromId,
+                candidateToId,
+              });
+            }
+            const effectiveFromId = resolvedFromId;
             const fromPos = effectiveFromId ? nodePos.get(effectiveFromId) : null;
             const toPos   = effectiveToId   ? nodePos.get(effectiveToId)   : null;
 
