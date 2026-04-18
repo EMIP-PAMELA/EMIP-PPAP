@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
 import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 
@@ -8,15 +8,6 @@ interface UseRevisionValidationMapResult {
 }
 
 export function useRevisionValidationMap(partNumbers: (string | null | undefined)[]): UseRevisionValidationMapResult {
-  console.log('[T23.6.39 PARAM TRACE]', {
-    stage: 'HOOK_INPUT',
-    file: 'src/features/revision/hooks/useRevisionValidationMap.ts',
-    function: 'useRevisionValidationMap',
-    routeParam: null,
-    partNumber: partNumbers,
-    canonicalPartNumber: partNumbers.map(pn => (pn ? canonicalizePartNumber(pn) : null)),
-    note: 'Revision validation hook inputs prior to normalization',
-  });
   const normalizedKey = useMemo(() => partNumbers.map(pn => pn?.trim().toUpperCase() ?? '').join('|'), [partNumbers]);
   const normalizedParts = useMemo(() => {
     const unique = new Set<string>();
@@ -30,12 +21,35 @@ export function useRevisionValidationMap(partNumbers: (string | null | undefined
 
   const [validationMap, setValidationMap] = useState<Record<string, CrossSourceValidationResult | null | undefined>>({});
   const [pending, setPending] = useState<Set<string>>(new Set());
+  const fetchedRef = useRef<Set<string>>(new Set());
+  const inflightRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    console.log('[T23.6.39 PARAM TRACE]', {
+      stage: 'HOOK_INPUT',
+      file: 'src/features/revision/hooks/useRevisionValidationMap.ts',
+      function: 'useRevisionValidationMap',
+      routeParam: null,
+      partNumber: normalizedParts,
+      canonicalPartNumber: normalizedParts.map(pn => (pn ? canonicalizePartNumber(pn) : null)),
+      note: 'Revision validation hook inputs prior to normalization',
+    });
+  }, [normalizedKey]);
 
   useEffect(() => {
     if (normalizedParts.length === 0) return;
-    const missing = normalizedParts.filter(pn => !pending.has(pn) && validationMap[pn] === undefined);
+    const missing = normalizedParts.filter(pn => !inflightRef.current.has(pn) && !fetchedRef.current.has(pn));
     if (missing.length === 0) return;
 
+    console.log('[T23.6.47 LOOP TRACE]', {
+      hook: 'useRevisionValidationMap',
+      trigger: 'normalizedKey changed',
+      missing,
+      alreadyFetched: Array.from(fetchedRef.current),
+      alreadyInflight: Array.from(inflightRef.current),
+    });
+
+    missing.forEach(pn => inflightRef.current.add(pn));
     let cancelled = false;
     setPending(prev => {
       const next = new Set(prev);
@@ -48,7 +62,8 @@ export function useRevisionValidationMap(partNumbers: (string | null | undefined
       for (const pn of missing) {
         if (cancelled) break;
         try {
-          if (!pn || pn === 'undefined') {
+          if (!pn || pn.toLowerCase() === 'undefined') {
+            console.warn('[T23.6.47 BLOCKED INVALID FETCH]', { hook: 'useRevisionValidationMap', pn, reason: 'empty or literal undefined part number' });
             console.log('[T23.6.39 ROOT CAUSE]', {
               file: 'src/features/revision/hooks/useRevisionValidationMap.ts',
               function: 'useRevisionValidationMap',
@@ -105,6 +120,7 @@ export function useRevisionValidationMap(partNumbers: (string | null | undefined
         console.error('[REVISION STATUS FETCH ERROR]', err);
       })
       .finally(() => {
+        missing.forEach(pn => { inflightRef.current.delete(pn); fetchedRef.current.add(pn); });
         setPending(prev => {
           const next = new Set(prev);
           missing.forEach(pn => next.delete(pn));
@@ -115,7 +131,7 @@ export function useRevisionValidationMap(partNumbers: (string | null | undefined
     return () => {
       cancelled = true;
     };
-  }, [normalizedParts.join('|'), validationMap, pending]);
+  }, [normalizedKey]);
 
   return { validationMap, pending };
 }

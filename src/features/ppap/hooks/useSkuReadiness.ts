@@ -17,19 +17,10 @@ interface UseSkuReadinessResult {
 export function useSkuReadiness(partNumber?: string | null): UseSkuReadinessResult {
   const normalizedPart = useMemo(() => {
     if (!partNumber) return null;
-    const trimmed = partNumber.trim().toUpperCase();
-    return trimmed.length > 0 ? trimmed : null;
+    const trimmed = partNumber.trim();
+    if (trimmed.toLowerCase() === 'undefined') return null;
+    return trimmed.length > 0 ? trimmed.toUpperCase() : null;
   }, [partNumber]);
-
-  console.log('[T23.6.39 PARAM TRACE]', {
-    stage: 'HOOK_INPUT',
-    file: 'src/features/ppap/hooks/useSkuReadiness.ts',
-    function: 'useSkuReadiness',
-    routeParam: null,
-    partNumber: partNumber ?? null,
-    canonicalPartNumber: canonicalizePartNumber(partNumber ?? null),
-    note: 'useSkuReadiness received part number prop',
-  });
 
   const [state, setState] = useState<UseSkuReadinessResult>({
     readiness: null,
@@ -39,6 +30,24 @@ export function useSkuReadiness(partNumber?: string | null): UseSkuReadinessResu
     loading: Boolean(normalizedPart),
     error: null,
   });
+
+  useEffect(() => {
+    console.log('[T23.6.39 PARAM TRACE]', {
+      stage: 'HOOK_INPUT',
+      file: 'src/features/ppap/hooks/useSkuReadiness.ts',
+      function: 'useSkuReadiness',
+      routeParam: null,
+      partNumber: partNumber ?? null,
+      canonicalPartNumber: canonicalizePartNumber(partNumber ?? null),
+      note: 'useSkuReadiness received part number prop',
+    });
+    console.log('[T23.6.47 LOOP TRACE]', {
+      hook: 'useSkuReadiness',
+      trigger: 'normalizedPart changed',
+      normalizedPart,
+      partNumber: partNumber ?? null,
+    });
+  }, [normalizedPart]);
 
   useEffect(() => {
     if (!normalizedPart) {
@@ -51,7 +60,7 @@ export function useSkuReadiness(partNumber?: string | null): UseSkuReadinessResu
 
     (async () => {
       try {
-        if (!normalizedPart || normalizedPart === 'undefined') {
+        if (!normalizedPart || normalizedPart.toLowerCase() === 'undefined') {
           console.log('[T23.6.39 ROOT CAUSE]', {
             file: 'src/features/ppap/hooks/useSkuReadiness.ts',
             function: 'useSkuReadiness',

@@ -1,10 +1,12 @@
 import {
   ingestDocumentFirstFlow,
   type DocumentType,
+  type DocumentMetadata,
   type SKUDocumentRecord,
   type SKURecord,
   getCurrentDocuments,
   loadExtractedText,
+  getBomWireCount,
 } from './skuService';
 import type { RevisionValidationAuditMetadata } from '@/src/types/revisionValidation';
 import type { CrossSourceValidationResult } from '@/src/utils/revisionCrossValidator';
@@ -48,6 +50,15 @@ interface IngestAndProcessParams {
   confirmedAt?: string;
   analysisSnapshot?: Partial<IngestionAnalysisResult> | null;
   drawingNumberOverride?: string;
+}
+
+function getWireCountFromWireTableResult(
+  result: IngestionAnalysisResult['wireTableResult'] | null | undefined,
+): number | null {
+  if (!result) return null;
+  if (Array.isArray(result.rows)) return result.rows.length;
+  if (typeof result.rowCount === 'number') return result.rowCount;
+  return null;
 }
 
 interface PipelineResult {
@@ -267,6 +278,18 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     drawingNumberHint: operatorConfirmedDrawing,
     forcedDocumentType: normalizedType !== 'UNKNOWN' ? normalizedType : null,
   });
+  const ingestionWireCount = getWireCountFromWireTableResult(analysis.wireTableResult);
+  const canonicalAnalysisPart = analysis.proposedPartNumber
+    ? canonicalizePartNumber(analysis.proposedPartNumber)
+    : null;
+  console.log('[T23.6.46 PERSIST WRITE]', {
+    partNumberCandidate: analysis.proposedPartNumber ?? null,
+    canonicalPartNumber: canonicalAnalysisPart,
+    wireCount: ingestionWireCount,
+    hasStructuredData: Boolean(analysis.structuredData),
+    pipelineMode: analysis.proposedDocumentType,
+    documentType: normalizedType,
+  });
 
   let partNumber = analysis.proposedPartNumber;
   let revision = analysis.proposedRevision;
@@ -417,17 +440,20 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
     note: 'Document analysis vs finalized part number (post-canonicalization)',
   });
 
+  const documentMeta: DocumentMetadata = {
+    part_number: partNumber,
+    revision,
+    description,
+    sourceType: normalizedType,
+    drawing_number: drawingNumber ?? null,
+    revisionSource: revisionSource ?? undefined,
+    revisionValidation: validationContext,
+    extractionEvidence,
+    ingestedWireCount: ingestionWireCount,
+  };
+
   const ingestResult = await ingestDocumentFirstFlow(
-    {
-      part_number: partNumber,
-      revision,
-      description,
-      sourceType: normalizedType,
-      drawing_number: drawingNumber ?? null,
-      revisionSource: revisionSource ?? undefined,
-      revisionValidation: validationContext,
-      extractionEvidence,
-    },
+    documentMeta,
     file,
     normalizedText ?? undefined,
   );
@@ -467,6 +493,41 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   }
 
   const { documents, revision_validation, readiness } = await getCurrentDocuments(ingestResult.sku.id);
+  const retrievedBomDoc = documents.find(d => d.document_type === 'BOM') ?? null;
+  const retrievedWireCount = getBomWireCount(retrievedBomDoc);
+  const integrityMatch =
+    ingestionWireCount != null && retrievedWireCount != null
+      ? ingestionWireCount === retrievedWireCount
+      : null;
+  console.log('[T23.6.46 INTEGRITY CHECK]', {
+    ingestedWireCount: ingestionWireCount,
+    retrievedWireCount,
+    match: integrityMatch,
+    skuId: ingestResult.sku.id,
+    documentId: ingestResult.uploadResult.document.id,
+  });
+  let integrityStatus: 'PERSIST_OK' | 'PERSIST_FAIL' | 'RETRIEVE_FAIL' | 'MISMATCH' = 'PERSIST_OK';
+  let integrityNote = 'Counts unavailable';
+  if (ingestionWireCount == null && retrievedWireCount == null) {
+    integrityNote = 'No wire data captured during ingestion or retrieval';
+  } else if (ingestionWireCount != null && retrievedWireCount == null) {
+    integrityStatus = 'RETRIEVE_FAIL';
+    integrityNote = 'Wire rows captured at ingestion but missing from SKU documents';
+  } else if (ingestionWireCount == null && retrievedWireCount != null) {
+    integrityStatus = 'PERSIST_FAIL';
+    integrityNote = 'Wire rows missing at ingestion but present at retrieval';
+  } else if (ingestionWireCount !== retrievedWireCount) {
+    integrityStatus = 'MISMATCH';
+    integrityNote = 'Wire row count differs between ingestion and retrieval';
+  } else {
+    integrityNote = 'Wire row counts match';
+  }
+  console.log('[T23.6.46 RESULT]', {
+    status: integrityStatus,
+    note: integrityNote,
+    ingestedWireCount: ingestionWireCount,
+    retrievedWireCount,
+  });
 
   // Phase 3H.44 C3: Pre-build wire authority injection.
   // Merge Rheem drawing wires into the BOM job BEFORE pipeline construction so that

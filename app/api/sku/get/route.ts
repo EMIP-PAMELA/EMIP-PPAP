@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSKU } from '@/src/features/harness-work-instructions/services/skuService';
+import { getSKU, getBomWireCount } from '@/src/features/harness-work-instructions/services/skuService';
 import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 
 export async function GET(request: NextRequest) {
@@ -58,6 +58,14 @@ export async function GET(request: NextRequest) {
     if (!record) {
       return NextResponse.json({ ok: false, error: 'SKU not found' }, { status: 404 });
     }
+
+    const bomDoc = record.documents.find(doc => doc.document_type === 'BOM') ?? null;
+    console.log('[T23.6.46 API RESPONSE]', {
+      partNumber,
+      hasData: true,
+      wireCount: getBomWireCount(bomDoc),
+      skuId: record.sku.id,
+    });
 
     return NextResponse.json({ ok: true, ...record });
   } catch (err) {

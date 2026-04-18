@@ -320,10 +320,11 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
   const handleDocumentClick = (row: VaultDocumentRow) => {
     let destination = `/vault/document/${row.id}`;
     if (row.sku_id) {
-      if (!row.sku) {
-        console.error('[ROUTING ERROR] sku_id without part_number', {
+      if (!row.sku || row.sku.toLowerCase() === 'undefined') {
+        console.error('[ROUTING ERROR] sku_id without valid part_number', {
           documentId: row.id,
           sku_id: row.sku_id,
+          sku: row.sku ?? null,
         });
         return;
       }
@@ -480,13 +481,19 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
               </p>
             )}
             {isDevelopment && debugPayload && (
-              <details className="rounded-lg bg-gray-900/80 p-2 text-[11px] text-emerald-200">
+              <details
+                className="rounded-lg bg-gray-900/80 p-2 text-[11px] text-emerald-200"
+                onClick={(e) => { e.stopPropagation(); console.log('[T23.6.47 DEBUG CLICK]', { control: 'Extraction Debug', docId: doc.id, toggled: true, navigated: false }); }}
+              >
                 <summary className="cursor-pointer font-semibold">Extraction Debug</summary>
                 <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(debugPayload, null, 2)}</pre>
               </details>
             )}
             {isDevelopment && doc.extraction_evidence && (
-              <details className="rounded-lg bg-gray-900/80 p-2 text-[11px] text-sky-200">
+              <details
+                className="rounded-lg bg-gray-900/80 p-2 text-[11px] text-sky-200"
+                onClick={(e) => { e.stopPropagation(); console.log('[T23.6.47 DEBUG CLICK]', { control: 'Evidence Chain', docId: doc.id, toggled: true, navigated: false }); }}
+              >
                 <summary className="cursor-pointer font-semibold">Evidence Chain</summary>
                 <div className="mt-2 space-y-1">
                   <div className="text-sky-400 font-semibold">Document class: {doc.extraction_evidence.document_structure?.document_class_hint ?? '—'}</div>

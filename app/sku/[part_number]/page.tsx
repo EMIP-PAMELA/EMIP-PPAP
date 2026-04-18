@@ -31,6 +31,9 @@ import AdaptivePipelineDebugPanel from '@/src/features/sku/components/AdaptivePi
 import type { ExtractionCoverage } from '@/src/features/harness-work-instructions/services/extractionCoverageService';
 import type { DrawingInterpretationResult } from '@/src/features/harness-work-instructions/services/drawingInterpretationService';
 import type { AdaptiveDrawingAnalysis } from '@/src/features/harness-work-instructions/services/adaptiveDrawingPipelineService';
+import { useDashboardReadiness } from '@/src/features/dashboard/hooks/useDashboardReadiness';
+import { useRevisionValidationMap } from '@/src/features/revision/hooks/useRevisionValidationMap';
+import { useSkuReadiness } from '@/src/features/ppap/hooks/useSkuReadiness';
 import {
   applyWireOverrides,
   loadOverrides,
@@ -96,19 +99,26 @@ interface PipelineSummary {
   generatedAt: string;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getRecord(value: Record<string, unknown> | null | undefined, key: string): Record<string, unknown> | null {
+  if (!value) return null;
+  const candidate = (value as Record<string, unknown>)[key];
+  return isRecord(candidate) ? candidate : null;
+}
+
+function getArray<T = unknown>(value: Record<string, unknown> | null | undefined, key: string): T[] | null {
+  if (!value) return null;
+  const candidate = value[key];
+  return Array.isArray(candidate) ? (candidate as T[]) : null;
+}
+
 export default function SKUDashboardPage() {
   const params = useParams<{ part_number: string }>();
   const searchParams = useSearchParams();
   const partNumberParam = params?.part_number ? decodeURIComponent(params.part_number) : '';
-  console.log('[T23.6.39 PARAM TRACE]', {
-    stage: 'ROUTE_PARAM',
-    file: 'app/sku/[part_number]/page.tsx',
-    function: 'SKUDashboardPage',
-    routeParam: params?.part_number ?? null,
-    partNumber: partNumberParam || null,
-    canonicalPartNumber: canonicalizePartNumber(partNumberParam),
-    note: 'Decoded route param inside SKUDashboardPage',
-  });
   const tabParam = searchParams?.get('tab') ?? null;
   const focusParam = searchParams?.get('focus');
   const highlightParam = searchParams?.get('highlight');
@@ -143,15 +153,61 @@ export default function SKUDashboardPage() {
 
   const partNumber = sku?.part_number ?? partNumberParam?.toUpperCase() ?? '';
   const displayPartNumber = (partNumberParam || partNumber || '').toUpperCase();
-  console.log('[T23.6.39 PARAM TRACE]', {
-    stage: 'PAGE_PROP',
-    file: 'app/sku/[part_number]/page.tsx',
-    function: 'SKUDashboardPage',
-    routeParam: params?.part_number ?? null,
-    partNumber: partNumber || null,
-    canonicalPartNumber: canonicalizePartNumber(partNumber),
-    note: 'Resolved page-level partNumber used for downstream hooks',
-  });
+  const hookPartNumber = useMemo(() => {
+    const p = partNumberParam?.trim();
+    if (!p || p.toLowerCase() === 'undefined') return null;
+    return p.toUpperCase();
+  }, [partNumberParam]);
+  const hookPartArray = useMemo(() => (hookPartNumber ? [hookPartNumber] : []), [hookPartNumber]);
+  const {
+    summaries: dashboardHookSummaries,
+    isLoadingAny: dashboardHookLoading,
+  } = useDashboardReadiness(hookPartArray);
+  const dashboardHookSummary = hookPartNumber ? dashboardHookSummaries[hookPartNumber] : null;
+  const { validationMap: hookRevisionValidationMap, pending: hookRevisionPending } = useRevisionValidationMap(hookPartArray);
+  const hookRevisionValidation = hookPartNumber ? hookRevisionValidationMap[hookPartNumber] : null;
+  const {
+    readiness: hookSkuReadiness,
+    revisionValidation: hookSkuRevisionValidation,
+    loading: hookSkuReadinessLoading,
+    error: hookSkuReadinessError,
+  } = useSkuReadiness(hookPartNumber);
+  useEffect(() => {
+    console.log('[T23.6.39 PARAM TRACE]', {
+      stage: 'ROUTE_PARAM',
+      file: 'app/sku/[part_number]/page.tsx',
+      function: 'SKUDashboardPage',
+      routeParam: params?.part_number ?? null,
+      partNumber: partNumberParam || null,
+      canonicalPartNumber: canonicalizePartNumber(partNumberParam),
+      note: 'Decoded route param inside SKUDashboardPage',
+    });
+    console.log('[T23.6.39 PARAM TRACE]', {
+      stage: 'PAGE_PROP',
+      file: 'app/sku/[part_number]/page.tsx',
+      function: 'SKUDashboardPage',
+      routeParam: params?.part_number ?? null,
+      partNumber: partNumber || null,
+      canonicalPartNumber: canonicalizePartNumber(partNumber),
+      note: 'Resolved page-level partNumber used for downstream hooks',
+    });
+    console.log('[T23.6.47 INPUT STABILIZED]', {
+      source: 'partNumberParam (stable route param only, not sku state)',
+      partNumberParam,
+      hookPartNumber,
+      partNumber,
+      note: 'hookPartNumber decoupled from sku?.part_number to stop re-fetch on sku load',
+    });
+  }, [partNumberParam, partNumber, hookPartNumber]);
+
+  useEffect(() => {
+    console.log('[T23.6.45 BINDING CHECK]', {
+      routeParam: params?.part_number ?? null,
+      pagePartNumber: partNumber || null,
+      hookInputPartNumber: hookPartNumber,
+      canonicalRouteParam: partNumberParam ? canonicalizePartNumber(partNumberParam) : null,
+    });
+  }, [params?.part_number, partNumber, hookPartNumber, partNumberParam]);
   const vaultLink = sku ? `/vault?sku=${encodeURIComponent(sku.part_number)}` : '/vault';
   const revisionValidation = sku?.revision_validation ?? null;
   const expectedDrawings = sku?.expected_drawings ?? null;
@@ -214,7 +270,15 @@ export default function SKUDashboardPage() {
       blocked: !partNumberParam,
       note: 'SKU page initial fetch trigger',
     });
-    if (!partNumberParam) return;
+    if (!partNumberParam || partNumberParam.toLowerCase() === 'undefined') {
+      console.warn('[T23.6.45 BLOCKED FETCH]', {
+        partNumber: partNumberParam ?? null,
+        reason: !partNumberParam ? 'missing route param' : 'string literal "undefined" detected',
+      });
+      console.warn('[T23.6.47 BLOCKED INVALID FETCH]', { context: 'loadSKU', partNumberParam, reason: 'missing or undefined route param — hard block' });
+      return;
+    }
+    console.log('[T23.6.47 STABLE FETCH]', { partNumberParam, hookPartNumber, note: 'proceeding with valid stable route param' });
     try {
       setLoading(true);
       console.log('[T23.6.37 TRACE]', {
@@ -307,6 +371,19 @@ export default function SKUDashboardPage() {
   const isDevelopment = process.env.NODE_ENV === 'development';
 
   const documentPresence = useMemo<DocumentPresence>(() => deriveDocumentPresence(docByType), [docByType]);
+  const bomDocument = docByType.BOM;
+  const bomEvidence = (bomDocument?.extraction_evidence as Record<string, unknown> | null) ?? null;
+  const bomStructuredData = getRecord(bomEvidence, 'structured_data');
+  const bomDocumentStructure = getRecord(bomEvidence, 'document_structure');
+  const bomWireTableResult = isRecord(bomStructuredData) ? getRecord(bomStructuredData, 'wireTableResult') : null;
+  const bomParsedRows = isRecord(bomStructuredData) ? getArray<Record<string, unknown>>(bomStructuredData, 'parsedRows') : null;
+  useEffect(() => {
+    console.log('[T23.6.45 BOM VIEW]', {
+      parsedRows: bomParsedRows?.slice(0, 5) ?? null,
+      wireTableResultCount: bomWireTableResult ? (Array.isArray(bomWireTableResult.rows) ? bomWireTableResult.rows.length : bomWireTableResult.rowCount ?? null) : null,
+      structuredDataKeys: bomStructuredData ? Object.keys(bomStructuredData) : null,
+    });
+  }, [bomParsedRows, bomWireTableResult, bomStructuredData]);
 
   if (isDevelopment) {
     if (documentPresence.hasBOM && !docByType.BOM) {
@@ -413,6 +490,7 @@ export default function SKUDashboardPage() {
   }
 
   useEffect(() => {
+    console.log('[T23.6.47 LOOP TRACE]', { effect: 'auto-pipeline', loading, skuId: sku?.id ?? null, hasBOM: documentPresence.hasBOM, hasDrawing: documentPresence.hasAnyDrawing, signature: autoRunSignature.current });
     if (loading) return;
     if (!sku || !documentPresence.hasBOM || !documentPresence.hasAnyDrawing) {
       setPipelineStatus('PARTIAL');
@@ -513,6 +591,22 @@ export default function SKUDashboardPage() {
       pinMapCount,
     });
   }, [wireCount, terminalCount, connectorCount, pinMapCount]);
+
+  useEffect(() => {
+    console.log('[T23.6.47 ROOT CAUSE SUMMARY]', {
+      phase: 'T23.6.47',
+      partNumberParam,
+      hookPartNumber,
+      fixes: [
+        'hookPartNumber derived from partNumberParam only (stable route param, not sku state)',
+        'useRevisionValidationMap: removed validationMap/pending from deps, using refs for in-flight guards',
+        'VaultDocumentTable details debug tabs: stopPropagation to prevent navigation on toggle',
+        'undefined check: case-insensitive (toLowerCase) in all hooks and loadSKU',
+        'render-level param trace logs moved into useEffect hooks',
+      ],
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const canonicalContext = useMemo<CanonicalDocumentContext | null>(() => {
     if (!revisionValidation?.canonical_revision) return null;
@@ -622,6 +716,141 @@ export default function SKUDashboardPage() {
             complete the record.
           </div>
         )}
+
+
+
+        <section className="rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-5 space-y-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-xs uppercase tracking-[0.4em] text-blue-500">BOM Extraction Visibility</p>
+            <h2 className="text-2xl font-semibold text-[color:var(--text-primary)]">T23.6.45 Inspection Panel</h2>
+            <p className="text-sm text-gray-500">
+              Surface raw parsed rows, structured model output, and wire table traces captured during ingestion.
+            </p>
+            <div className="text-xs text-gray-500">
+              <span className="font-semibold">Hook Readiness Sync:</span>{' '}
+              {hookSkuReadinessLoading || dashboardHookLoading || hookRevisionPending.size > 0 ? 'Loading…' : 'Ready'} ·{' '}
+              <span className="font-semibold">Readiness Snapshot:</span>{' '}
+              {dashboardHookSummary?.readiness_tier ?? hookSkuReadiness?.overall_status ?? '—'} ·{' '}
+              <span className="font-semibold">Revision Validation:</span>{' '}
+              {hookSkuRevisionValidation?.status ?? hookRevisionValidation?.status ?? '—'}
+              {hookSkuReadinessError && (
+                <span className="ml-2 text-red-600">{hookSkuReadinessError}</span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="rounded-xl border border-dashed border-blue-200 bg-white/70 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Parsed Rows Sample</p>
+              {bomParsedRows && bomParsedRows.length > 0 ? (
+                <pre className="mt-2 max-h-60 overflow-auto rounded-lg bg-slate-900/90 p-3 text-[11px] text-emerald-200">
+                  {JSON.stringify(bomParsedRows.slice(0, 10), null, 2)}
+                </pre>
+              ) : (
+                <p className="mt-2 text-xs text-gray-500">No parsedRows captured on BOM document.</p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-dashed border-amber-200 bg-white/70 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">Wire Table Result</p>
+              {bomWireTableResult ? (
+                <pre className="mt-2 max-h-60 overflow-auto rounded-lg bg-slate-900/90 p-3 text-[11px] text-amber-100">
+                  {JSON.stringify(bomWireTableResult, null, 2)}
+                </pre>
+              ) : (
+                <p className="mt-2 text-xs text-gray-500">wireTableResult missing — confirm ingestion logs.</p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-dashed border-emerald-200 bg-white/70 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Structured Data Model</p>
+              {bomStructuredData ? (
+                <pre className="mt-2 max-h-60 overflow-auto rounded-lg bg-slate-900/90 p-3 text-[11px] text-emerald-100">
+                  {JSON.stringify(bomStructuredData, null, 2)}
+                </pre>
+              ) : (
+                <p className="mt-2 text-xs text-gray-500">Structured model output unavailable for this BOM.</p>
+              )}
+            </div>
+          </div>
+
+          {bomDocumentStructure && (
+            <details className="rounded-xl border border-[color:var(--panel-border)] bg-white/70 p-4 text-sm text-gray-700">
+              <summary className="cursor-pointer font-semibold text-gray-900">Document Structure Detection</summary>
+              <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-slate-900/90 p-3 text-[11px] text-sky-100">
+                {JSON.stringify(bomDocumentStructure, null, 2)}
+              </pre>
+            </details>
+          )}
+
+          <div className="rounded-xl border border-dashed border-gray-300 bg-white/40 p-4 text-xs text-gray-600">
+            <p className="font-semibold text-gray-800">Console Tap</p>
+            <p className="mt-1">
+              Inspect <code className="font-mono">[T23.6.45 BOM VIEW]</code> and <code className="font-mono">[T23.6.45 BINDING CHECK]</code> logs to verify
+              data propagation and parser fidelity before acting on readiness.
+            </p>
+          </div>
+        </section>
+
+
+
+        <section className="rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] p-5 space-y-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-xs uppercase tracking-[0.4em] text-purple-500">Document Linkage Audit</p>
+            <h2 className="text-2xl font-semibold text-[color:var(--text-primary)]">Canonical vs Raw Inventory</h2>
+            <p className="text-sm text-gray-500">
+              Compare canonical SKU binding to inferred document part numbers and highlight missing assets before pipeline execution.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-dashed border-purple-200 bg-white/60 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-purple-600">Linked Documents</p>
+              <ul className="mt-2 space-y-1 text-sm text-gray-700">
+                {documents.length > 0 ? (
+                  documents.map(doc => (
+                    <li key={doc.id} className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-gray-500">{doc.document_type}</span>
+                      <span className="font-semibold text-gray-900">{doc.file_name}</span>
+                      <span className="text-xs text-gray-500">rev {doc.canonical_revision ?? doc.revision ?? '—'}</span>
+                      {doc.inferred_part_number && (
+                        <span className="text-xs text-blue-600">
+                          inferred PN: <span className="font-mono">{doc.inferred_part_number}</span>
+                        </span>
+                      )}
+                    </li>
+                  ))
+                ) : (
+                  <li className="text-xs text-gray-500">No documents attached yet.</li>
+                )}
+              </ul>
+            </div>
+
+            <div className="rounded-xl border border-dashed border-rose-200 bg-white/60 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-rose-600">Missing Coverage</p>
+              <ul className="mt-2 space-y-1 text-sm text-gray-700">
+                {!documentPresence.hasBOM && <li>Missing BOM upload</li>}
+                {!documentPresence.hasCustomerDrawing && <li>Missing customer drawing</li>}
+                {!documentPresence.hasInternalDrawing && <li>Missing internal drawing</li>}
+                {documentPresence.hasBOM && documentPresence.hasCustomerDrawing && documentPresence.hasInternalDrawing && (
+                  <li className="text-xs text-gray-500">All key document types present.</li>
+                )}
+              </ul>
+              <div className="mt-3 rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
+                <p className="font-semibold">Canonical vs Raw</p>
+                <p>
+                  Canonical: <span className="font-mono">{canonicalizePartNumber(partNumber)}</span>
+                </p>
+                <p>
+                  Route Param: <span className="font-mono">{partNumberParam || '—'}</span>
+                </p>
+                <p>
+                  Hook Input: <span className="font-mono">{hookPartNumber ?? 'null'}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
 
 
 

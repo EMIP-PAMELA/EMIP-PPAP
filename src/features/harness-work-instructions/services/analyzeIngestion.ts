@@ -1230,6 +1230,55 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
           recommendation: status === 'MATCH' ? 'safe' : 'needs_unification',
         });
 
+        console.log('[T23.6.44 SOURCE SNAPSHOT]', {
+          sampleLines: bomLinesRaw.slice(0, 10),
+        });
+
+        console.log('[T23.6.44 PARSED SNAPSHOT]', {
+          parsedRows: parsed.rows.slice(0, 10),
+        });
+
+        const rowValidation = parsed.rows.slice(0, 15).map(row => ({
+          rawText: row.rawText,
+          foundInSource: row.rawText ? normalizedText.includes(row.rawText.trim()) : false,
+        }));
+
+        console.log('[T23.6.44 ROW VALIDATION]', rowValidation);
+
+        const expectedWireLines = bomLinesRaw.filter(line => {
+          const trimmed = line.trim();
+          if (!trimmed) return false;
+          if (/\bWIRE\b/i.test(trimmed)) return true;
+          if (/^-{3,}\s*[A-Z0-9]/.test(trimmed)) return true;
+          return false;
+        });
+
+        const coverageRatio = expectedWireLines.length > 0
+          ? Number((parsed.rows.length / expectedWireLines.length).toFixed(2))
+          : null;
+        const missingRows = expectedWireLines.length > parsed.rows.length
+          ? expectedWireLines.length - parsed.rows.length
+          : 0;
+
+        console.log('[T23.6.44 COVERAGE CHECK]', {
+          expectedWireCount: expectedWireLines.length,
+          parsedRowCount: parsed.rows.length,
+          coverageRatio,
+        });
+
+        const accuracyStatus = (() => {
+          if (coverageRatio == null) return 'UNKNOWN';
+          if (coverageRatio >= 0.9) return 'HIGH_CONFIDENCE';
+          if (coverageRatio >= 0.6) return 'PARTIAL';
+          return 'LOW';
+        })();
+
+        console.log('[T23.6.44 ACCURACY RESULT]', {
+          status: accuracyStatus,
+          missingRows,
+          notes: coverageRatio == null ? 'No expected wire lines detected' : undefined,
+        });
+
         wireTableResult = {
           region: null,
           confidence: 0.65,

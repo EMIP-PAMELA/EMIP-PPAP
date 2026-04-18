@@ -63,6 +63,8 @@ export interface DocumentMetadata {
   revisionValidation?: RevisionValidationAuditMetadata;
   /** Structured extraction evidence captured during ingestion (Phase 3H.29). */
   extractionEvidence?: DocumentExtractionEvidence | null;
+  /** Phase T23.6.46: Wire count captured at ingestion time for persistence auditing. */
+  ingestedWireCount?: number | null;
 }
 
 export interface DocumentFirstIngestResult {
@@ -176,6 +178,41 @@ export interface SKUDocumentRecord {
   revision_validated_at?: string | null;
   /** Structured extraction evidence (fragments, signals, structure, resolved values). */
   extraction_evidence?: DocumentExtractionEvidence | null;
+}
+
+function extractWireCountFromStructuredData(structuredData: Record<string, unknown> | null | undefined): number | null {
+  if (!structuredData) return null;
+  const wireTable = structuredData.wireTableResult as Record<string, unknown> | undefined;
+  if (wireTable) {
+    if (Array.isArray(wireTable.rows)) return wireTable.rows.length;
+    if (typeof wireTable.rowCount === 'number') return wireTable.rowCount as number;
+  }
+  const parsedRows = structuredData.parsedRows;
+  if (Array.isArray(parsedRows)) return parsedRows.length;
+  const wireInstances = structuredData.wire_instances;
+  if (Array.isArray(wireInstances)) return wireInstances.length;
+  return null;
+}
+
+export function getWireCountFromExtractionEvidence(
+  evidence: DocumentExtractionEvidence | null | undefined,
+): number | null {
+  if (!evidence) return null;
+  if ('wireTableResult' in evidence && evidence.wireTableResult) {
+    const raw = evidence.wireTableResult as Record<string, unknown>;
+    if (Array.isArray(raw.rows)) return raw.rows.length;
+    if (typeof raw.rowCount === 'number') return raw.rowCount as number;
+  }
+  return extractWireCountFromStructuredData(evidence.structured_data as Record<string, unknown> | null | undefined);
+}
+
+export function getBomWireCount(doc?: SKUDocumentRecord | null): number | null {
+  if (!doc) return null;
+  if (doc.extraction_evidence) {
+    const evidenceCount = getWireCountFromExtractionEvidence(doc.extraction_evidence);
+    if (evidenceCount !== null) return evidenceCount;
+  }
+  return null;
 }
 
 const SKU_BUCKET = 'sku-documents';
@@ -312,6 +349,16 @@ export async function getSKU(partNumber: string): Promise<{
     revisionRiskSignals: revision_risk.signals,
   });
   const expected_drawings = await buildExpectedDrawingSummary(normalized, documents);
+
+  const bomDoc = documents.find(doc => doc.document_type === 'BOM') ?? null;
+  const retrievedWireCount = getBomWireCount(bomDoc);
+  console.log('[T23.6.46 SKU FETCH]', {
+    inputPartNumber: partNumber,
+    canonicalPartNumber: canonical,
+    resultFound: Boolean(data),
+    wireCount: retrievedWireCount,
+    skuId: data?.id ?? null,
+  });
 
   const skuWithValidation: SKURecord = {
     ...rest,
@@ -501,6 +548,9 @@ export async function uploadDocument(
     drawingNumber?: string | null;
     revisionSource?: RevisionSource;
     extractionEvidence?: DocumentExtractionEvidence | null;
+    ingestedWireCount?: number | null;
+    ingestionPartNumber?: string | null;
+    ingestionCanonicalPartNumber?: string | null;
   },
   revisionAudit?: RevisionValidationAuditMetadata,
 ): Promise<UploadDocumentResult> {
@@ -684,6 +734,18 @@ export async function uploadDocument(
     revision_validated_at: revisionAudit?.revision_validated_at ?? null,
     extraction_evidence: identifiers?.extractionEvidence ?? null,
   };
+
+  const ingestionCanonicalPartNumber = identifiers?.ingestionCanonicalPartNumber
+    ?? (identifiers?.ingestionPartNumber ? canonicalizePartNumber(identifiers.ingestionPartNumber) : null);
+  const extractionWireCount = getWireCountFromExtractionEvidence(identifiers?.extractionEvidence ?? null);
+  console.log('[T23.6.46 DB INSERT]', {
+    skuId,
+    documentType,
+    storedPartNumber: identifiers?.ingestionPartNumber ?? null,
+    storedCanonical: ingestionCanonicalPartNumber,
+    storedWireCount: extractionWireCount,
+    ingestedWireCount: identifiers?.ingestedWireCount ?? null,
+  });
 
   const { data, error } = await supabase
     .from('sku_documents')
@@ -954,6 +1016,9 @@ export async function ingestDocumentFirstFlow(
       drawingNumber:     meta.drawing_number ?? null,
       revisionSource:    meta.revisionSource ?? undefined,
       extractionEvidence: meta.extractionEvidence ?? null,
+      ingestedWireCount: meta.ingestedWireCount ?? null,
+      ingestionPartNumber: meta.part_number ?? null,
+      ingestionCanonicalPartNumber: meta.part_number ? canonicalizePartNumber(meta.part_number) : null,
     },
     meta.revisionValidation,
   );

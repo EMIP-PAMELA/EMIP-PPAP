@@ -28,21 +28,30 @@ export function useDashboardReadiness(partNumbers: string[]): {
   isLoadingAny: boolean;
   loaded: SKUReadinessSummary[];
 } {
-  console.log('[T23.6.39 PARAM TRACE]', {
-    stage: 'HOOK_INPUT',
-    file: 'src/features/dashboard/hooks/useDashboardReadiness.ts',
-    function: 'useDashboardReadiness',
-    routeParam: null,
-    partNumber: partNumbers,
-    canonicalPartNumber: partNumbers.map(p => canonicalizePartNumber(p)),
-    note: 'Incoming dashboard SKU list before processing',
-  });
   const [summaries, setSummaries] = useState<Record<string, SKUReadinessSummary>>({});
   const [pendingCount, setPendingCount] = useState(0);
   const inflight = useRef(new Set<string>());
   const cancelled = useRef(false);
 
   const key = partNumbers.slice(0, MAX_SKUS).join('|');
+
+  useEffect(() => {
+    console.log('[T23.6.39 PARAM TRACE]', {
+      stage: 'HOOK_INPUT',
+      file: 'src/features/dashboard/hooks/useDashboardReadiness.ts',
+      function: 'useDashboardReadiness',
+      routeParam: null,
+      partNumber: key.split('|').filter(Boolean),
+      canonicalPartNumber: key.split('|').filter(Boolean).map(p => canonicalizePartNumber(p)),
+      note: 'Incoming dashboard SKU list before processing',
+    });
+    console.log('[T23.6.47 LOOP TRACE]', {
+      hook: 'useDashboardReadiness',
+      trigger: 'key changed',
+      key,
+      inflightSize: inflight.current.size,
+    });
+  }, [key]);
 
   useEffect(() => {
     cancelled.current = false;
@@ -84,7 +93,7 @@ export function useDashboardReadiness(partNumbers: string[]): {
         await Promise.allSettled(
           batch.map(async pn => {
             try {
-              if (!pn || pn === 'undefined') {
+              if (!pn || pn.toLowerCase() === 'undefined') {
                 console.log('[T23.6.39 ROOT CAUSE]', {
                   file: 'src/features/dashboard/hooks/useDashboardReadiness.ts',
                   function: 'useDashboardReadiness',
