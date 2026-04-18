@@ -151,9 +151,15 @@ function defaultTerminationValue(endpoint?: AnyEndpoint | null): EndpointTermina
   return '';
 }
 
-function formatWireLabel(label?: string | null): string {
-  if (!label || !label.trim()) return 'Wire (no ID)';
-  return label.trim();
+function formatWireLabel(wireId?: string | null): string {
+  if (!wireId) return dash;
+  return wireId.startsWith('op-') ? wireId : wireId.toUpperCase();
+}
+
+function getBlockingReasons(decision: HarnessDecisionResult | null | undefined): string[] | null {
+  if (!decision) return null;
+  const maybe = (decision as HarnessDecisionResult & { blockingReasons?: unknown }).blockingReasons;
+  return Array.isArray(maybe) ? maybe as string[] : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1509,6 +1515,19 @@ export default function SkuModelEditorPanel({
     overallDecision === 'REVIEW_REQUIRED' ? 'text-amber-700 bg-amber-50 border-amber-200' :
     'text-[color:var(--text-secondary)] bg-[color:var(--panel-bg)] border-[color:var(--panel-border)]';
 
+  const blockingReasons = getBlockingReasons(effectiveDecision);
+  const fallbackBlockedList = (effectiveDecision?.blockedWires ?? []).map(wid => {
+    const ident = wireIdentities?.byOriginalId.get(wid);
+    if (ident?.internalWireId && ident.internalWireId !== wid) return ident.internalWireId;
+    const w = effectiveConnectivity?.wires.find(x => x.wireId === wid);
+    if (!w) return wid;
+    const f = `${w.from.component ?? '?'}${w.from.cavity ? ':' + w.from.cavity : ''}`;
+    const t = `${w.to.component ?? '?'}${w.to.cavity ? ':' + w.to.cavity : ''}`;
+    return `${f}\u2009\u2192\u2009${t}`;
+  }).filter(Boolean);
+  const blockedItems = (blockingReasons && blockingReasons.length > 0) ? blockingReasons : fallbackBlockedList;
+  const isBlocked = effectiveDecision?.overallDecision === 'BLOCKED';
+
   return (
     <div className="rounded-2xl border border-[color:var(--panel-border)] bg-[color:var(--surface-elevated)] shadow-sm overflow-hidden text-[12px]">
       {/* Header */}
@@ -1678,17 +1697,9 @@ export default function SkuModelEditorPanel({
               {effectiveConnectivity.unresolvedWires.length}
             </strong></span>
           )}
-          {effectiveDecision && effectiveDecision.blockedWires.length > 0 && (
+          {isBlocked && blockedItems.length > 0 && (
             <span className="text-red-600 font-semibold">
-              Blocked wires: {effectiveDecision.blockedWires.map(wid => {
-                const ident = wireIdentities?.byOriginalId.get(wid);
-                if (ident?.internalWireId && ident.internalWireId !== wid) return ident.internalWireId;
-                const w = effectiveConnectivity?.wires.find(x => x.wireId === wid);
-                if (!w) return wid;
-                const f = `${w.from.component ?? '?'}${w.from.cavity ? ':' + w.from.cavity : ''}`;
-                const t = `${w.to.component ?? '?'}${w.to.cavity ? ':' + w.to.cavity : ''}`;
-                return `${f}\u2009\u2192\u2009${t}`;
-              }).join(', ')}
+              Blocked wires: {blockedItems.join(', ')}
             </span>
           )}
         </div>

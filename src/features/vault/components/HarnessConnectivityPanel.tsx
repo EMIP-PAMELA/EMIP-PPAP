@@ -52,6 +52,12 @@ function classifyWire(w: WireConnectivity): WireStatus {
   return 'PARTIAL';
 }
 
+function getBlockingReasons(decision: HarnessDecisionResult | null | undefined): string[] | null {
+  if (!decision) return null;
+  const maybe = (decision as HarnessDecisionResult & { blockingReasons?: unknown }).blockingReasons;
+  return Array.isArray(maybe) ? maybe as string[] : null;
+}
+
 const STATUS_STYLES: Record<WireStatus, { label: string; className: string }> = {
   RESOLVED:   { label: 'Resolved',   className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' },
   PARTIAL:    { label: 'Partial',    className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
@@ -632,6 +638,15 @@ export default function HarnessConnectivityPanel({
     return null;
   }
 
+  useEffect(() => {
+    if (!resolvedDecision) return;
+    console.log('[T23.6.25 UI SOURCE]', {
+      decision: resolvedDecision.overallDecision,
+      readiness: resolvedDecision.readinessScore,
+      blocking: getBlockingReasons(resolvedDecision) ?? resolvedDecision.blockedWires ?? [],
+    });
+  }, [resolvedDecision]);
+
   const { wires, unresolvedWires, confidenceSummary } = model;
 
   if (wires.length === 0) {
@@ -693,19 +708,28 @@ export default function HarnessConnectivityPanel({
               : 'bg-red-100 text-red-700'
             }`}>{resolvedDecision.overallDecision}</span>
             <span>Readiness: {resolvedDecision.readinessScore.toFixed(0)}%</span>
-            {resolvedDecision.blockedWires.length > 0 && (
-              <span className="text-red-600">
-                Still blocked: {resolvedDecision.blockedWires.map(wid => {
-                  const ident = wireIdentities?.byOriginalId.get(wid);
-                  if (ident?.internalWireId && ident.internalWireId !== wid) return ident.internalWireId;
-                  const w = model?.wires.find(x => x.wireId === wid);
-                  if (!w) return wid;
-                  const f = `${w.from.component ?? '?'}${w.from.cavity ? ':' + w.from.cavity : ''}`;
-                  const t = `${w.to.component ?? '?'}${w.to.cavity ? ':' + w.to.cavity : ''}`;
-                  return `${f}\u2009\u2192\u2009${t}`;
-                }).join(', ')}
-              </span>
-            )}
+            {(() => {
+              const blockingReasons = getBlockingReasons(resolvedDecision);
+              const fallbackIds = resolvedDecision.blockedWires ?? [];
+              const blockedList = (blockingReasons && blockingReasons.length > 0)
+                ? blockingReasons
+                : fallbackIds.map(wid => {
+                    const ident = wireIdentities?.byOriginalId.get(wid);
+                    if (ident?.internalWireId && ident.internalWireId !== wid) return ident.internalWireId;
+                    const w = model?.wires.find(x => x.wireId === wid);
+                    if (!w) return wid;
+                    const from = `${w.from.component ?? '?'}${w.from.cavity ? ':' + w.from.cavity : ''}`;
+                    const to   = `${w.to.component   ?? '?'}${w.to.cavity   ? ':' + w.to.cavity : ''}`;
+                    return `${from}\u2009\u2192\u2009${to}`;
+                  }).filter(Boolean);
+              const isBlocked = resolvedDecision.overallDecision === 'BLOCKED';
+              if (!isBlocked || blockedList.length === 0) return null;
+              return (
+                <span className="text-red-600">
+                  Still blocked: {blockedList.join(', ')}
+                </span>
+              );
+            })()}
           </div>
         )}
 
