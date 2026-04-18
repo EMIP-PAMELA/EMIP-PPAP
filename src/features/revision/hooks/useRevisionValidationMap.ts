@@ -8,6 +8,15 @@ interface UseRevisionValidationMapResult {
 }
 
 export function useRevisionValidationMap(partNumbers: (string | null | undefined)[]): UseRevisionValidationMapResult {
+  console.log('[T23.6.39 PARAM TRACE]', {
+    stage: 'HOOK_INPUT',
+    file: 'src/features/revision/hooks/useRevisionValidationMap.ts',
+    function: 'useRevisionValidationMap',
+    routeParam: null,
+    partNumber: partNumbers,
+    canonicalPartNumber: partNumbers.map(pn => (pn ? canonicalizePartNumber(pn) : null)),
+    note: 'Revision validation hook inputs prior to normalization',
+  });
   const normalizedKey = useMemo(() => partNumbers.map(pn => pn?.trim().toUpperCase() ?? '').join('|'), [partNumbers]);
   const normalizedParts = useMemo(() => {
     const unique = new Set<string>();
@@ -40,16 +49,28 @@ export function useRevisionValidationMap(partNumbers: (string | null | undefined
         if (cancelled) break;
         try {
           if (!pn || pn === 'undefined') {
-            console.log('[T23.6.38 ROOT CAUSE]', {
-              stage: 'API',
+            console.log('[T23.6.39 ROOT CAUSE]', {
               file: 'src/features/revision/hooks/useRevisionValidationMap.ts',
               function: 'useRevisionValidationMap',
               issue: 'partNumber is empty or "undefined" before fetch',
-              valueState: pn,
+              validUpstreamValue: normalizedParts,
+              brokenValue: pn,
+              why: 'Document table requested validation for missing SKU identifier',
             });
             updates[pn] = null;
             continue;
           }
+          console.log('[T23.6.39 FETCH TRACE]', {
+            stage: 'FETCH_CALL',
+            file: 'src/features/revision/hooks/useRevisionValidationMap.ts',
+            function: 'useRevisionValidationMap',
+            routeParam: null,
+            partNumber: pn,
+            canonicalPartNumber: canonicalizePartNumber(pn),
+            url: `/api/sku/get?partNumber=${encodeURIComponent(pn)}`,
+            blocked: false,
+            note: 'Revision validation fetch',
+          });
           console.log('[T23.6.37 TRACE]', {
             stage: 'API',
             function: 'useRevisionValidationMap',

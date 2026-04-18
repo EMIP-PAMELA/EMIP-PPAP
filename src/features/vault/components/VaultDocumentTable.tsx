@@ -240,6 +240,15 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
       return;
     }
     const controller = new AbortController();
+    console.log('[T23.6.39 PARAM TRACE]', {
+      stage: 'HOOK_INPUT',
+      file: 'src/features/vault/components/VaultDocumentTable.tsx',
+      function: 'VaultDocumentTable:fetchSku',
+      routeParam: null,
+      partNumber: filters.sku,
+      canonicalPartNumber: canonicalizePartNumber(filters.sku),
+      note: 'Vault filter provided SKU for context fetch',
+    });
     const partParam = filters.sku ?? '';
     console.log('[T23.6.37 TRACE]', {
       stage: 'API',
@@ -248,6 +257,17 @@ export default function VaultDocumentTable({ filters, issueContext, prefillConte
       canonicalPart: canonicalizePartNumber(partParam),
       outgoingValue: `/api/sku/get?partNumber=${partParam}`,
       note: 'Triggering SKU fetch from Vault table',
+    });
+    console.log('[T23.6.39 FETCH TRACE]', {
+      stage: 'FETCH_CALL',
+      file: 'src/features/vault/components/VaultDocumentTable.tsx',
+      function: 'VaultDocumentTable:fetchSku',
+      routeParam: null,
+      partNumber: partParam,
+      canonicalPartNumber: canonicalizePartNumber(partParam),
+      url: `/api/sku/get?partNumber=${encodeURIComponent(partParam)}`,
+      blocked: !partParam,
+      note: 'Vault document table fetch',
     });
     fetch(`/api/sku/get?partNumber=${encodeURIComponent(partParam)}`, { signal: controller.signal })
       .then(res => (res.ok ? res.json() : null))

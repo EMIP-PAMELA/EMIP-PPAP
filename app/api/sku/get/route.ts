@@ -22,6 +22,16 @@ export async function GET(request: NextRequest) {
         : `partNumber OK: raw="${partNumber}" canonical="${canonicalizePartNumber(partNumber)}"`,
   });
 
+  console.log('[T23.6.39 PARAM TRACE]', {
+    stage: 'API_BOUNDARY',
+    file: 'app/api/sku/get/route.ts',
+    function: 'GET /api/sku/get',
+    routeParam: partNumber,
+    partNumber: partNumber,
+    canonicalPartNumber: partNumber ? canonicalizePartNumber(partNumber) : null,
+    note: 'API boundary received partNumber query param',
+  });
+
   if (!partNumber) {
     console.log('[T23.6.37 TRACE]', {
       stage: 'API',

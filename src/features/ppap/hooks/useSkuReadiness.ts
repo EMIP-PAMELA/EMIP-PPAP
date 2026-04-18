@@ -21,6 +21,16 @@ export function useSkuReadiness(partNumber?: string | null): UseSkuReadinessResu
     return trimmed.length > 0 ? trimmed : null;
   }, [partNumber]);
 
+  console.log('[T23.6.39 PARAM TRACE]', {
+    stage: 'HOOK_INPUT',
+    file: 'src/features/ppap/hooks/useSkuReadiness.ts',
+    function: 'useSkuReadiness',
+    routeParam: null,
+    partNumber: partNumber ?? null,
+    canonicalPartNumber: canonicalizePartNumber(partNumber ?? null),
+    note: 'useSkuReadiness received part number prop',
+  });
+
   const [state, setState] = useState<UseSkuReadinessResult>({
     readiness: null,
     revisionValidation: null,
@@ -41,6 +51,29 @@ export function useSkuReadiness(partNumber?: string | null): UseSkuReadinessResu
 
     (async () => {
       try {
+        if (!normalizedPart || normalizedPart === 'undefined') {
+          console.log('[T23.6.39 ROOT CAUSE]', {
+            file: 'src/features/ppap/hooks/useSkuReadiness.ts',
+            function: 'useSkuReadiness',
+            issue: 'Normalized part number is empty/undefined before fetch',
+            validUpstreamValue: partNumber,
+            brokenValue: normalizedPart,
+            why: 'PPAP readiness hook invoked without explicit SKU context',
+          });
+          setState({ readiness: null, revisionValidation: null, expectedDrawings: null, revisionRisk: null, loading: false, error: 'Missing part number' });
+          return;
+        }
+        console.log('[T23.6.39 FETCH TRACE]', {
+          stage: 'FETCH_CALL',
+          file: 'src/features/ppap/hooks/useSkuReadiness.ts',
+          function: 'useSkuReadiness',
+          routeParam: null,
+          partNumber: normalizedPart,
+          canonicalPartNumber: canonicalizePartNumber(normalizedPart),
+          url: `/api/sku/get?partNumber=${encodeURIComponent(normalizedPart)}`,
+          blocked: false,
+          note: 'useSkuReadiness fetch',
+        });
         console.log('[T23.6.37 TRACE]', {
           stage: 'API',
           function: 'useSkuReadiness',

@@ -28,6 +28,15 @@ export function useDashboardReadiness(partNumbers: string[]): {
   isLoadingAny: boolean;
   loaded: SKUReadinessSummary[];
 } {
+  console.log('[T23.6.39 PARAM TRACE]', {
+    stage: 'HOOK_INPUT',
+    file: 'src/features/dashboard/hooks/useDashboardReadiness.ts',
+    function: 'useDashboardReadiness',
+    routeParam: null,
+    partNumber: partNumbers,
+    canonicalPartNumber: partNumbers.map(p => canonicalizePartNumber(p)),
+    note: 'Incoming dashboard SKU list before processing',
+  });
   const [summaries, setSummaries] = useState<Record<string, SKUReadinessSummary>>({});
   const [pendingCount, setPendingCount] = useState(0);
   const inflight = useRef(new Set<string>());
@@ -76,15 +85,27 @@ export function useDashboardReadiness(partNumbers: string[]): {
           batch.map(async pn => {
             try {
               if (!pn || pn === 'undefined') {
-                console.log('[T23.6.38 ROOT CAUSE]', {
-                  stage: 'API',
+                console.log('[T23.6.39 ROOT CAUSE]', {
                   file: 'src/features/dashboard/hooks/useDashboardReadiness.ts',
                   function: 'useDashboardReadiness',
                   issue: 'partNumber is empty or "undefined" before fetch',
-                  valueState: pn,
+                  validUpstreamValue: partNumbers,
+                  brokenValue: pn,
+                  why: 'Batch entry lacked a concrete SKU identifier, preventing API call',
                 });
                 return;
               }
+              console.log('[T23.6.39 FETCH TRACE]', {
+                stage: 'FETCH_CALL',
+                file: 'src/features/dashboard/hooks/useDashboardReadiness.ts',
+                function: 'useDashboardReadiness',
+                routeParam: null,
+                partNumber: pn,
+                canonicalPartNumber: canonicalizePartNumber(pn),
+                url: `/api/sku/get?partNumber=${encodeURIComponent(pn)}`,
+                blocked: false,
+                note: 'Dashboard readiness batch fetch',
+              });
               console.log('[T23.6.37 TRACE]', {
                 stage: 'API',
                 function: 'useDashboardReadiness',

@@ -100,6 +100,15 @@ export default function SKUDashboardPage() {
   const params = useParams<{ part_number: string }>();
   const searchParams = useSearchParams();
   const partNumberParam = params?.part_number ? decodeURIComponent(params.part_number) : '';
+  console.log('[T23.6.39 PARAM TRACE]', {
+    stage: 'ROUTE_PARAM',
+    file: 'app/sku/[part_number]/page.tsx',
+    function: 'SKUDashboardPage',
+    routeParam: params?.part_number ?? null,
+    partNumber: partNumberParam || null,
+    canonicalPartNumber: canonicalizePartNumber(partNumberParam),
+    note: 'Decoded route param inside SKUDashboardPage',
+  });
   const tabParam = searchParams?.get('tab') ?? null;
   const focusParam = searchParams?.get('focus');
   const highlightParam = searchParams?.get('highlight');
@@ -133,6 +142,15 @@ export default function SKUDashboardPage() {
   const [highlightSection,         setHighlightSection]         = useState<'truth' | 'visualization' | null>(null);
 
   const partNumber = sku?.part_number ?? partNumberParam?.toUpperCase() ?? '';
+  console.log('[T23.6.39 PARAM TRACE]', {
+    stage: 'PAGE_PROP',
+    file: 'app/sku/[part_number]/page.tsx',
+    function: 'SKUDashboardPage',
+    routeParam: params?.part_number ?? null,
+    partNumber: partNumber || null,
+    canonicalPartNumber: canonicalizePartNumber(partNumber),
+    note: 'Resolved page-level partNumber used for downstream hooks',
+  });
   const vaultLink = sku ? `/vault?sku=${encodeURIComponent(sku.part_number)}` : '/vault';
   const revisionValidation = sku?.revision_validation ?? null;
   const expectedDrawings = sku?.expected_drawings ?? null;
@@ -182,6 +200,19 @@ export default function SKUDashboardPage() {
   }, [readinessBlockers, readinessWarnings, readiness?.issues]);
 
   async function loadSKU() {
+    const canonicalParam = canonicalizePartNumber(partNumberParam);
+    const fetchUrl = partNumberParam ? `/api/sku/get?partNumber=${encodeURIComponent(partNumberParam)}` : null;
+    console.log('[T23.6.39 FETCH TRACE]', {
+      stage: 'FETCH_CALL',
+      file: 'app/sku/[part_number]/page.tsx',
+      function: 'loadSKU',
+      routeParam: params?.part_number ?? null,
+      partNumber: partNumberParam || null,
+      canonicalPartNumber: canonicalParam,
+      url: fetchUrl,
+      blocked: !partNumberParam,
+      note: 'SKU page initial fetch trigger',
+    });
     if (!partNumberParam) return;
     try {
       setLoading(true);
