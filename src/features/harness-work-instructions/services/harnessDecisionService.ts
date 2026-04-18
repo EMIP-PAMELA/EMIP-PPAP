@@ -45,7 +45,7 @@ import type {
   WireClassification,
 } from './endpointClassifier';
 import type { HarnessValidationResult, WireValidation } from './harnessValidationService';
-import type { HarnessTopologyResult } from './harnessTopologyService';
+import { canonicalComponentKey, type HarnessTopologyResult } from './harnessTopologyService';
 import { RULE_SEVERITIES } from './harnessValidationService';
 import type { HarnessConfidenceResult, WireConfidence } from './harnessConfidenceService';
 import { isOperatorWire, logOperatorAuthority } from './operatorAuthority';
@@ -67,6 +67,15 @@ export interface WireDecision {
   wireId:   string;
   decision: DecisionState;
   reasons:  DecisionReason[];
+}
+
+function getPhysicalKey(endpoint?: WireConnectivity['from'] | WireConnectivity['to'] | null): string | null {
+  if (!endpoint?.component || endpoint.cavity == null) return null;
+  const component = canonicalComponentKey(endpoint.component);
+  if (!component) return null;
+  const cavity = `${endpoint.cavity}`.trim().toLowerCase();
+  if (!cavity) return null;
+  return `${component}:${cavity}`;
 }
 
 export interface HarnessDecisionResult {
@@ -342,6 +351,37 @@ export function evaluateHarnessDecision(args: {
     ),
   );
 
+  if (topology && connectivity.wires.length > 0) {
+    const unconnected = new Set(topology.unconnectedNodeIds ?? []);
+    for (const wd of wireDecisions) {
+      if (wd.decision !== 'BLOCKED') continue;
+      const wire = wireById.get(wd.wireId);
+      if (!wire) continue;
+      const fromKey = getPhysicalKey(wire.from);
+      const toKey   = getPhysicalKey(wire.to);
+      const fromConnected = Boolean(fromKey && !unconnected.has(fromKey));
+      const toConnected   = Boolean(toKey && !unconnected.has(toKey));
+      if (fromConnected && toConnected) {
+        console.log('[T23.6.27 CLEAR BLOCK]', {
+          wireId: wire.wireId,
+          from: fromKey,
+          to: toKey,
+          reason: wd.reasons.map(r => r.code),
+          source: 'topology',
+        });
+        wd.decision = 'SAFE';
+        wd.reasons = wd.reasons.filter(r => !CONNECTIVITY_ISSUE_CODES.has(r.code));
+        if (wd.reasons.length === 0) {
+          wd.reasons.push({
+            code: 'TOPOLOGY_CONFIRMED',
+            severity: 'INFO',
+            message: 'Topology confirmed both endpoints physically connected; blocking cleared.',
+          });
+        }
+      }
+    }
+  }
+
   const validatableUnconnected = topology?.unconnectedNodeIds ?? [];
   const hasRealUnconnected = validatableUnconnected.length > 0;
 
@@ -359,6 +399,11 @@ export function evaluateHarnessDecision(args: {
   const blockedWires   = wireDecisions.filter(w => w.decision === 'BLOCKED').map(w => w.wireId);
   const reviewRequired = wireDecisions.filter(w => w.decision === 'REVIEW').map(w => w.wireId);
   const safe           = wireDecisions.filter(w => w.decision === 'SAFE').length;
+
+  console.log('[T23.6.27 DECISION ALIGNMENT]', {
+    totalWires: connectivity.wires.length,
+    blockedAfterTopology: blockedWires,
+  });
 
   const hasNonOperatorBlockers = blockedWires.some(wid => {
     const wire = wireById.get(wid);
