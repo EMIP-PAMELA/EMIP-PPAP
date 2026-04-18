@@ -344,6 +344,23 @@ function formToOperatorWire(
     updatedAt:   now,
   };
 
+  if (sameComponent && fromCavity && toCavity) {
+    operatorWire.topology = 'BRANCH_DOUBLE_CRIMP';
+    operatorWire.branch = {
+      sharedSourceComponent: fromComponent || null,
+      sharedSourceCavity:    fromCavity    || null,
+      secondaryCavity:       toCavity      || null,
+      ferrulePartNumber:     trimmedBranchFerrulePN || null,
+      terminalPartNumber:    trimmedBranchTerminal  || null,
+      sharedAci:             trimmedBranchAci       || null,
+    };
+    console.log('[T23.6.22 UI DERIVED TOPOLOGY]', {
+      from:     fromCavity,
+      to:       toCavity,
+      topology: 'BRANCH_DOUBLE_CRIMP',
+    });
+  }
+
   if (sameComponent && operatorWire.to.cavity && operatorWire.to.terminationType !== 'CONNECTOR_PIN') {
     const previousType = operatorWire.to.terminationType ?? 'UNKNOWN';
     operatorWire.to.terminationType = 'CONNECTOR_PIN';
@@ -453,6 +470,10 @@ function WireEditorForm({
       return next;
     });
   };
+
+  const fromCanonicalId = formState.fromComponentCanonicalId || canonicalComponentKey(formState.fromComponent);
+  const toCanonicalId   = formState.toComponentCanonicalId   || canonicalComponentKey(formState.toComponent);
+  const isSameComponent = Boolean(fromCanonicalId && toCanonicalId && fromCanonicalId === toCanonicalId);
 
   const wizardKind = wizardContext?.addedWireKind;
   const sharedNode = wizardContext?.sharedNode;
@@ -1005,25 +1026,35 @@ function WireEditorForm({
       </div>
 
       {/* Topology */}
-      <div>
-        <label className={labelCls}>Topology</label>
-        {isWizardAddFlow && lockedTopology ? (
-          <div className="rounded border border-dashed border-slate-200 bg-white px-2 py-1 text-[12px] text-[color:var(--text-primary)]">
-            {topologyLabel}
-            <p className={helperCls}>Wizard selections lock the topology. Use Step 1 to change the wire kind.</p>
-          </div>
-        ) : (
-          <select value={form.topology} onChange={set('topology')} className={inputCls()}>
-            <option value="">— Standard (unspecified) —</option>
-            {TOPOLOGY_OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        )}
-      </div>
+      {isSameComponent ? (
+        <div className="rounded border border-dashed border-emerald-200 bg-emerald-50/60 px-2 py-1.5">
+          <p className={labelCls}>Topology</p>
+          <p className="text-[12px] font-semibold text-emerald-700">
+            Derived: Double Crimp (Pin {form.fromCavity || '?'} ↔ Pin {form.toCavity || '?'})
+          </p>
+          <p className={helperCls}>Same-component wires auto-derive Double Crimp topology from FROM/TO pins.</p>
+        </div>
+      ) : (
+        <div>
+          <label className={labelCls}>Topology</label>
+          {isWizardAddFlow && lockedTopology ? (
+            <div className="rounded border border-dashed border-slate-200 bg-white px-2 py-1 text-[12px] text-[color:var(--text-primary)]">
+              {topologyLabel}
+              <p className={helperCls}>Wizard selections lock the topology. Use Step 1 to change the wire kind.</p>
+            </div>
+          ) : (
+            <select value={form.topology} onChange={set('topology')} className={inputCls()}>
+              <option value="">— Standard (unspecified) —</option>
+              {TOPOLOGY_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
 
-      {/* Branch / Double-Crimp / Splice shared-node fields */}
-      {(form.topology === 'BRANCH_DOUBLE_CRIMP' || form.topology === 'SPLICE') && (
+      {/* Branch / Double-Crimp / Splice shared-node fields — hidden for same-component wires */}
+      {!isSameComponent && (form.topology === 'BRANCH_DOUBLE_CRIMP' || form.topology === 'SPLICE') && (
         <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-2 space-y-2">
           <p className={`${labelCls} text-amber-700`}>
             {form.topology === 'SPLICE' ? 'Splice / Shared-node data' : 'Branch / Double-Crimp data'}

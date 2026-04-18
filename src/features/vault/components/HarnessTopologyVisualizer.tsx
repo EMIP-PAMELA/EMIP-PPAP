@@ -106,11 +106,16 @@ function buildLayout(topology: HarnessTopologyResult): {
   svgWidth: number;
   svgHeight: number;
 } {
-  // Group CONNECTOR_PIN (or cavity-bearing) nodes by component
+  // T23.6.22: Group only true CONNECTOR_PIN nodes (no shared-ferrule aliases) by canonical component.
+  // This eliminates duplicate internal nodes and ferrule entries from the visual layout.
   const byComp = new Map<string, typeof topology.nodes[number][]>();
   for (const node of topology.nodes) {
-    if (node.terminationType === 'CONNECTOR_PIN' || node.cavity !== null) {
-      const key = node.component.toLowerCase();
+    if (
+      node.terminationType === 'CONNECTOR_PIN' &&
+      node.cavity !== null &&
+      !node.isSharedFerrule
+    ) {
+      const key = node.canonicalComponent || node.component.toLowerCase();
       if (!byComp.has(key)) byComp.set(key, []);
       byComp.get(key)!.push(node);
     }
@@ -160,7 +165,7 @@ function buildLayout(topology: HarnessTopologyResult): {
     }
 
     const boxHeight = HEADER_H + slots.length * PIN_H;
-    columns.push({ component: compKey, displayName: nodes[0].component, x: colX, pins: slots, boxHeight });
+    columns.push({ component: compKey, displayName: nodes[0].displayName || nodes[0].component, x: colX, pins: slots, boxHeight });
     colX += COL_W + COL_GAP;
   }
 
@@ -462,7 +467,60 @@ export default function HarnessTopologyVisualizer({
             let fromTermType = wire?.from.terminationType;
             let toTermType   = wire?.to.terminationType;
 
-            if (fromPos && toPos) {
+            const fromCol = edge.fromNodeId ? columns.find(c => c.pins.some(p => p.nodeId === edge.fromNodeId)) : null;
+            const toCol   = edge.toNodeId   ? columns.find(c => c.pins.some(p => p.nodeId === edge.toNodeId))   : null;
+            const isSameColumn = Boolean(fromCol && toCol && fromCol.component === toCol.component);
+
+            if (fromPos && toPos && isSameColumn) {
+              // T23.6.22: same-component wire — draw looping arc on right side of connector box
+              const rx = fromCol!.x + COL_W + COL_PAD;
+              const bulge = Math.max(Math.abs(fromPos.y - toPos.y) * 0.6, 30);
+              x1 = rx; y1 = fromPos.y;
+              x2 = rx; y2 = toPos.y;
+              const path = `M ${x1} ${y1} C ${x1 + bulge} ${y1} ${x2 + bulge} ${y2} ${x2} ${y2}`;
+              const lx = x1 + bulge + 4;
+              const ly = (y1 + y2) / 2;
+              return (
+                <g key={edge.wireId}>
+                  <path d={path} fill="none" stroke="transparent" strokeWidth={10}
+                    style={{ cursor: onWireClick ? 'pointer' : 'default' }}
+                    onClick={() => onWireClick?.(edge.wireId)}
+                    onMouseEnter={ev => {
+                      setHoveredWireId(edge.wireId);
+                      const svgEl = (ev.target as SVGPathElement).ownerSVGElement!;
+                      const rect  = svgEl.getBoundingClientRect();
+                      setTooltip({
+                        wireId: edge.wireId, label,
+                        color: wire?.color ?? null,
+                        length: wire?.length ?? null,
+                        lengthUnit: wire?.lengthUnit ?? null,
+                        fromDesc: wire ? endpointDesc(wire.from) : '—',
+                        toDesc:   wire ? endpointDesc(wire.to)   : '—',
+                        svgX: ev.clientX - rect.left + 10,
+                        svgY: ev.clientY - rect.top  - 10,
+                      });
+                    }}
+                    onMouseLeave={() => { setHoveredWireId(null); setTooltip(null); }}
+                  />
+                  <path d={path} fill="none"
+                    stroke={stroke}
+                    strokeWidth={hoveredWireId === edge.wireId ? 3.5 : 1.8}
+                    opacity={hoveredWireId === edge.wireId ? 1 : 0.85}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  <text x={lx} y={ly} textAnchor="start"
+                    fontSize={8} fill="#059669" fontWeight="600"
+                    style={{ pointerEvents: 'none' }}>
+                    Double Crimp
+                  </text>
+                  <text x={lx} y={ly + 10} textAnchor="start"
+                    fontSize={7} fill="#64748b" fontWeight="400"
+                    style={{ pointerEvents: 'none' }}>
+                    {label}
+                  </text>
+                </g>
+              );
+            } else if (fromPos && toPos) {
               x1 = portX(edge.fromNodeId!, nodePos, columns, toPos);
               y1 = fromPos.y;
               x2 = portX(edge.toNodeId!, nodePos, columns, fromPos);
