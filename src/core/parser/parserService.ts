@@ -732,12 +732,36 @@ export async function parseBOMFile(file: File): Promise<RawBOMData> {
 export function parseBOMWithValidation(text: string): ParseResult {
   const errors: ParserError[] = [];
   const warnings: ParserError[] = [];
-  
+
+  console.log('[T23.6.41 PARSER ENTRY]', {
+    function: 'parseBOMWithValidation',
+    triggered: true,
+    pipelineMode: 'BOM',
+    textLength: text?.length ?? 0,
+  });
+
   try {
     const data = parseBOMText(text);
-    
-    // Calculate confidence scores
     const totalComponents = data.operations.reduce((sum, op) => sum + op.components.length, 0);
+    const sampleComponents: Array<{ part: string | null; qty: number | null; raw?: string | null }> = [];
+    outerLoop: for (const op of data.operations) {
+      for (const component of op.components) {
+        sampleComponents.push({
+          part: (component as any)?.detectedPartId ?? (component as any)?.partNumber ?? null,
+          qty: typeof component.detectedQty === 'number' ? component.detectedQty : null,
+          raw: component.rawLine ? component.rawLine.slice(0, 80) : null,
+        });
+        if (sampleComponents.length >= 3) break outerLoop;
+      }
+    }
+
+    console.log('[T23.6.41 PARSER OUTPUT]', {
+      rowCount: totalComponents,
+      sample: sampleComponents,
+      hasData: totalComponents > 0,
+    });
+
+    // Calculate confidence scores
     const componentsWithACI = data.operations.reduce(
       (sum, op) => sum + op.components.filter(c => c.detectedAci).length, 
       0

@@ -74,7 +74,7 @@ import type {
 function deriveRevisionFromBOM(text: string): string | null {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0 && l.length < 200);
   for (const line of lines.slice(0, 40)) {
-    const m = line.match(/\b(?:REV(?:ISION)?|REVISION\s*LEVEL|REV\.?\s*NO\.?)[:\s.]*([A-Z0-9]{1,4})\b/i);
+    const m = line.match(/\b(?:REV(?:ISION)?|REVISION\s*LEVEL|REV\.?.\s*NO\.?)[:\s.]*([A-Z0-9]{1,4})\b/i);
     if (!m) continue;
     const candidate = m[1].toUpperCase();
     if (/^\d+$/.test(candidate)) continue;
@@ -535,8 +535,7 @@ function extractCustomerDrawingSignals(text: string, fileName: string): DrawingE
     if (rheemRev.isRheemTitleBlock && rheemRev.revision && isStrictRevisionToken(rheemRev.revision)) {
       candidates.push({ field: 'REVISION', value: rheemRev.revision, source: 'TITLE_BLOCK_OCR', confidence: 0.97, regionLabel: 'REVISION' });
     }
-  }
-
+  } 
   // Drawing number extraction (always run)
   const drnFromText = extractDrawingNumberFromText(text);
   const drnFromFile = extractDrawingNumberFromFilename(fileName);
@@ -653,6 +652,13 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   // --- Pipeline mode ---
   const pipelineMode: PipelineMode = docType === 'BOM' ? 'BOM' : 'DRAWING';
   console.log('[PIPELINE MODE]', { file: fileName, documentType: docType, pipelineMode });
+  console.log('[T23.6.41 PIPELINE TRACE]', {
+    stage: 'PIPELINE_MODE_DETECTED',
+    pipelineMode,
+    hasWireTable: false,
+    hasStructured: false,
+    hasConnectivity: false,
+  });
 
   // --- Drawing subtype ---
   const drawingSubtype: DrawingSubtype = (() => {
@@ -1245,6 +1251,14 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     }
   }
 
+  console.log('[T23.6.41 PIPELINE TRACE]', {
+    stage: 'T1_WIRE_TABLE_COMPLETE',
+    pipelineMode,
+    hasWireTable: Boolean(wireTableResult && wireTableResult.rows.length > 0),
+    hasStructured: Boolean(rheemStructuredData),
+    hasConnectivity: false,
+  });
+
   // --- T4: Diagram component and callout extraction ---
   let diagramExtraction: DiagramExtractionResult | null = null;
   if (drawingSubtype === 'INTERNAL_DRAWING' && normalizedText) {
@@ -1288,6 +1302,14 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       console.warn('[T2 CONNECTIVITY] Non-fatal — continuing without HC-BOM.', err);
     }
   }
+
+  console.log('[T23.6.41 PIPELINE TRACE]', {
+    stage: 'T2_CONNECTIVITY_COMPLETE',
+    pipelineMode,
+    hasWireTable: Boolean(wireTableResult && wireTableResult.rows.length > 0),
+    hasStructured: Boolean(rheemStructuredData),
+    hasConnectivity: Boolean(harnessConnectivity && harnessConnectivity.wires.length > 0),
+  });
 
   // --- T5: HC-BOM ↔ diagram reconciliation ---
   let harnessReconciliation: HarnessReconciliationResult | null = null;
@@ -1730,6 +1752,66 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     return true;
   });
   const readyToCommit = unresolvedQuestions.every(q => !q.blocksCommit);
+
+  const hasWireTable = Boolean(wireTableResult && wireTableResult.rowCount > 0);
+  const hasStructured = Boolean(rheemStructuredData || visionParsedResult);
+  const hasConnectivity = Boolean(harnessConnectivity && harnessConnectivity.wires.length > 0);
+
+  console.log('[T23.6.41 INGESTION ASSIGN]', {
+    wireTableResult: hasWireTable
+      ? { rowCount: wireTableResult?.rowCount ?? 0, parseQuality: wireTableResult?.parseQuality ?? null }
+      : null,
+    structuredData: hasStructured ? { rheemModel: Boolean(rheemStructuredData), vision: Boolean(visionParsedResult) } : null,
+    harnessConnectivity: hasConnectivity
+      ? {
+          wireCount: harnessConnectivity?.wires.length ?? 0,
+          resolved: harnessConnectivity?.confidenceSummary.resolved ?? 0,
+        }
+      : null,
+    pipelineMode,
+  });
+
+  const rootCauseClassification = (() => {
+    if (pipelineMode === 'BOM') {
+      return {
+        type: 'PARSER_NOT_TRIGGERED' as const,
+        explanation: 'Wire table detection + harness connectivity only run for drawing pipeline; BOM documents skip T1/T2 entirely.',
+      };
+    }
+    if (!hasWireTable) {
+      return {
+        type: 'PARSER_RETURNS_EMPTY' as const,
+        explanation: 'Wire table detector did not produce rows; downstream structured outputs remained null.',
+      };
+    }
+    if (!hasConnectivity) {
+      return {
+        type: 'PARSER_OUTPUT_NOT_PROPAGATED' as const,
+        explanation: 'Wire rows parsed but harnessConnectivity contained zero wires.',
+      };
+    }
+    return null;
+  })();
+
+  if (rootCauseClassification) {
+    console.log('[T23.6.41 ROOT CAUSE]', {
+      ...rootCauseClassification,
+      file: 'src/features/harness-work-instructions/services/analyzeIngestion.ts',
+      function: 'analyzeFileIngestion',
+      hasWireTable,
+      hasStructured,
+      hasConnectivity,
+      pipelineMode,
+    });
+  }
+
+  console.log('[T23.6.41 PIPELINE TRACE]', {
+    stage: 'RETURN',
+    pipelineMode,
+    hasWireTable,
+    hasStructured,
+    hasConnectivity,
+  });
 
   return {
     fileName,
