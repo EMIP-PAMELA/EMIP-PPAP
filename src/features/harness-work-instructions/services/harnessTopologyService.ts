@@ -283,6 +283,29 @@ function resolveTerminationType(endpoint: WireEndpoint): EndpointTerminationType
   return t ?? null;
 }
 
+function endpointHasConnectorCavity(endpoint?: WireEndpoint | null): boolean {
+  if (!endpoint) return false;
+  return Boolean(endpoint.component?.trim() && endpoint.cavity?.trim());
+}
+
+function enforceConnectorPinTermination(
+  endpoint: WireEndpoint,
+  ctx: { wireId: string; endpointRole: 'FROM' | 'TO'; reason: string; canonicalComponent?: string | null },
+): void {
+  if (endpoint.terminationType === 'CONNECTOR_PIN') return;
+  const previousType = endpoint.terminationType ?? null;
+  endpoint.terminationType = 'CONNECTOR_PIN';
+  console.log('[T23.6.26 TERMINATION CORRECTION]', {
+    wireId: ctx.wireId,
+    endpoint: ctx.endpointRole,
+    reason: ctx.reason,
+    component: endpoint.component ?? null,
+    canonicalComponent: ctx.canonicalComponent ?? null,
+    cavity: endpoint.cavity ?? null,
+    previousType,
+  });
+}
+
 /** True when this endpoint type is a known valid termination (not a dangling bare wire). */
 function isValidOpenEnd(endpoint: WireEndpoint): boolean {
   const t = resolveTerminationType(endpoint);
@@ -487,6 +510,39 @@ export function analyzeHarnessTopology(args: {
     const fromCanonical = wire.from?.component ? canonicalComponentKey(wire.from.component) : '';
     const toCanonical   = wire.to?.component   ? canonicalComponentKey(wire.to.component)   : '';
     const sameComponent = Boolean(fromCanonical && toCanonical && fromCanonical === toCanonical);
+    const fromHasCavity = endpointHasConnectorCavity(wire.from);
+    const toHasCavity   = endpointHasConnectorCavity(wire.to);
+    const correctionEndpoints: Array<{ endpoint: WireEndpoint | null | undefined; role: 'FROM' | 'TO'; canonical: string }>
+      = [
+        { endpoint: wire.from, role: 'FROM', canonical: fromCanonical },
+        { endpoint: wire.to,   role: 'TO',   canonical: toCanonical },
+      ];
+
+    if (sameComponent && fromHasCavity && toHasCavity) {
+      const canonical = fromCanonical || toCanonical;
+      correctionEndpoints.forEach(({ endpoint, role }) => {
+        if (!endpoint) return;
+        enforceConnectorPinTermination(endpoint, {
+          wireId: wire.wireId,
+          endpointRole: role,
+          reason: 'same-component-double-crimp',
+          canonicalComponent: canonical,
+        });
+      });
+    }
+
+    correctionEndpoints.forEach(({ endpoint, role, canonical }) => {
+      if (!endpoint) return;
+      if (endpoint.terminationType !== 'UNKNOWN') return;
+      if (!endpointHasConnectorCavity(endpoint)) return;
+      if (!canonical) return;
+      enforceConnectorPinTermination(endpoint, {
+        wireId: wire.wireId,
+        endpointRole: role,
+        reason: 'connector-cavity-unknown',
+        canonicalComponent: canonical,
+      });
+    });
 
     if (
       sameComponent &&

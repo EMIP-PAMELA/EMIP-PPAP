@@ -479,6 +479,29 @@ describe('analyzeHarnessTopology', () => {
     assert.equal(missingPin5, false, 'Pin 5 must not be flagged missing');
   });
 
+  it('Q2: same-component wire coerces non-connector endpoints to CONNECTOR_PIN occupancy', () => {
+    const wires = [
+      makeWire('W-pin1', makeEndpoint('J1', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX 1700443', '1', 'CONNECTOR_PIN')),
+      makeWire('W-pin3', makeEndpoint('J2', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX 1700443', '3', 'CONNECTOR_PIN')),
+      makeWire('W-pin4', makeEndpoint('J3', '1', 'CONNECTOR_PIN'), makeEndpoint('PHOENIX 1700443', '4', 'CONNECTOR_PIN')),
+      makeWire(
+        'W-same',
+        makeEndpoint('PHOENIX 1700443', '2', 'TERMINAL'),
+        makeEndpoint('PHOENIX 1700443', '5', 'STRIP_ONLY'),
+      ),
+    ];
+
+    const result = analyzeHarnessTopology({ connectivity: makeConnectivity(wires) });
+
+    const pin2 = result.nodes.find(n => n.id === 'phoenix:1700443:2');
+    const pin5 = result.nodes.find(n => n.id === 'phoenix:1700443:5');
+    assert.ok(pin2, 'Pin 2 node must exist for same-component wires');
+    assert.ok(pin5, 'Pin 5 node must exist for same-component wires');
+    assert.equal(pin2!.terminationType, 'CONNECTOR_PIN', 'Pin 2 node coerced to CONNECTOR_PIN');
+    assert.equal(pin5!.terminationType, 'CONNECTOR_PIN', 'Pin 5 node coerced to CONNECTOR_PIN');
+    assert.equal(result.missingWireCandidates.length, 0, 'No missing-pin candidates after coercion');
+  });
+
   // R. T23.6.6: Degenerate same-component/same-cavity wire collapses safely without duplicate nodes.
   it('R: same connector and cavity does not create duplicate nodes', () => {
     const loopWire = makeWire(
