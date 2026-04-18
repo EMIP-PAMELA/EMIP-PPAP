@@ -103,6 +103,18 @@ const DEDUCTION_WARNING_WIRE = 2;
 /** Readiness deduction per AMBIGUOUS endpoint (from T6 summary). */
 const DEDUCTION_AMBIGUOUS_EP = 3;
 
+/** Legacy validation issue codes that previously acted as connectivity authority. */
+const CONNECTIVITY_ISSUE_CODES = new Set<string>([
+  'R1_CONNECTOR_NO_PIN',
+  'R2_OPEN_OPEN',
+  'R4_CONNECTOR_CONNECTOR',
+  'R5_SPLICE_SOLO',
+  'R7_UNMATCHED_RECONCILIATION',
+  'R9_CONNECTOR_SINGLE_WIRE',
+  'RECON_FROM_UNMATCHED',
+  'RECON_TO_UNMATCHED',
+]);
+
 // ---------------------------------------------------------------------------
 // Wire-level decision
 // ---------------------------------------------------------------------------
@@ -220,10 +232,11 @@ function decideWire(
 // ---------------------------------------------------------------------------
 
 function computeReadiness(
-  wireDecisions:  WireDecision[],
-  confidence:     HarnessConfidenceResult | null | undefined,
-  validation:     HarnessValidationResult | null | undefined,
-  classification: HarnessEndpointClassificationResult | null | undefined,
+  wireDecisions:        WireDecision[],
+  confidence:           HarnessConfidenceResult | null | undefined,
+  validation:           HarnessValidationResult | null | undefined,
+  classification:       HarnessEndpointClassificationResult | null | undefined,
+  ignoredIssueCodes?:   Set<string>,
 ): number {
   if (wireDecisions.length === 0) return 0;
 
@@ -236,9 +249,12 @@ function computeReadiness(
 
   let deductions = 0;
   for (const wd of wireDecisions) {
-    const issues    = validByWireId.get(wd.wireId)?.issues ?? [];
-    const hasError   = issues.some(i => (RULE_SEVERITIES[i.code] ?? 'INFO') === 'ERROR');
-    const hasWarning = issues.some(i => (RULE_SEVERITIES[i.code] ?? 'INFO') === 'WARNING');
+    const issues = validByWireId.get(wd.wireId)?.issues ?? [];
+    const relevantIssues = ignoredIssueCodes
+      ? issues.filter(issue => !ignoredIssueCodes.has(issue.code))
+      : issues;
+    const hasError   = relevantIssues.some(i => (RULE_SEVERITIES[i.code] ?? 'INFO') === 'ERROR');
+    const hasWarning = relevantIssues.some(i => (RULE_SEVERITIES[i.code] ?? 'INFO') === 'WARNING');
     if (hasError)        deductions += DEDUCTION_ERROR_WIRE;
     else if (hasWarning) deductions += DEDUCTION_WARNING_WIRE;
   }
@@ -326,6 +342,19 @@ export function evaluateHarnessDecision(args: {
     ),
   );
 
+  const validatableUnconnected = topology?.unconnectedNodeIds ?? [];
+  const hasRealUnconnected = validatableUnconnected.length > 0;
+
+  if (topology && !hasRealUnconnected) {
+    for (const wd of wireDecisions) {
+      if (wd.decision !== 'BLOCKED') continue;
+      const hasNonConnectivityReason = wd.reasons.some(r => !CONNECTIVITY_ISSUE_CODES.has(r.code));
+      if (!hasNonConnectivityReason) {
+        wd.decision = 'SAFE';
+      }
+    }
+  }
+
   // Aggregate
   const blockedWires   = wireDecisions.filter(w => w.decision === 'BLOCKED').map(w => w.wireId);
   const reviewRequired = wireDecisions.filter(w => w.decision === 'REVIEW').map(w => w.wireId);
@@ -342,8 +371,9 @@ export function evaluateHarnessDecision(args: {
     reviewRequired.length > 0 ? 'REVIEW_REQUIRED' :
     'SAFE';
 
+  const ignoredIssueCodes = topology && !hasRealUnconnected ? CONNECTIVITY_ISSUE_CODES : undefined;
   let readinessScore = computeReadiness(
-    wireDecisions, confidence, validation, endpointClassification,
+    wireDecisions, confidence, validation, endpointClassification, ignoredIssueCodes,
   );
   const topIssues = computeTopIssues(validation);
 
@@ -359,9 +389,20 @@ export function evaluateHarnessDecision(args: {
     readinessScore  = Math.max(0, readinessScore - blockingTopoWarnings.length * DEDUCTION_ERROR_WIRE);
   }
 
+  if (hasRealUnconnected) {
+    overallDecision = 'BLOCKED';
+    readinessScore  = Math.max(0, readinessScore - validatableUnconnected.length * DEDUCTION_ERROR_WIRE);
+  }
+
+  console.log('[T23.6.24 DECISION SOURCE]', {
+    usingTopology: Boolean(topology),
+    ignoredValidation: Boolean(topology),
+    validatableUnconnected: validatableUnconnected.length,
+  });
+
   console.log('[T23.6.23 DECISION INPUT]', {
     rawUnconnected:         topology?.rawUnconnectedNodeCount ?? 0,
-    validatableUnconnected: topology?.unconnectedNodeIds.length ?? 0,
+    validatableUnconnected: validatableUnconnected.length,
     blockingTopoWarnings:   blockingTopoWarnings.length,
   });
 
@@ -384,7 +425,7 @@ export function evaluateHarnessDecision(args: {
     topIssues,
   });
 
-  if (blockedWires.length > 0) {
+  if (hasRealUnconnected && blockedWires.length > 0) {
     console.log('[T23.5 VALIDATION] unconnected nodes:', blockedPhysical);
   }
 
