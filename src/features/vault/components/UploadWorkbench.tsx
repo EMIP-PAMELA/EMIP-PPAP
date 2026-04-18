@@ -1069,14 +1069,51 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     // The server-side strict regex gate (/^45-\d{6}-\d{2}$/) still rejects false positives.
     const STRICT_PN_45_RE_CLIENT = /\b45-\d{6}-\d{2}\b/;
     const partNumberFoundStrict  = extractedText != null && STRICT_PN_45_RE_CLIENT.test(extractedText);
-    const extractedLineCount     = extractedText
-      ? extractedText.split(/\r?\n/).filter(l => l.trim().length > 0).length
-      : 0;
+    const extractedLines = extractedText
+      ? extractedText.split(/\r?\n/)
+      : [];
+    const extractedLineCount = extractedLines.filter(l => l.trim().length > 0).length;
     const MIN_EXTRACTION_LINES   = 20;
     const isWeakExtraction       =
       extractedLineCount < MIN_EXTRACTION_LINES ||
       !partNumberFoundStrict;
-    const shouldRunC124Fallback  = isLikelyInternal || isWeakExtraction;
+    const hasStructuredWireRows = extractedLines.some(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return false;
+      if (/^W\d{1,4}/i.test(trimmed)) return true;
+      if (/\b(AWG|WIRE|HARNESS|CABLE)\b/i.test(trimmed)) return true;
+      if (/^-{3,}\s*[A-Z0-9]/.test(trimmed)) return true;
+      return false;
+    });
+
+    console.log('[T23.6.42 STRUCTURE DETECT]', {
+      hasStructuredWireRows,
+      sampleLines: extractedLines.slice(0, 10),
+    });
+
+    const pipelineMode = forcedType ?? 'AUTO';
+    let shouldRunC124Fallback  = isLikelyInternal || isWeakExtraction;
+
+    if (isWeakExtraction) {
+      shouldRunC124Fallback = !hasStructuredWireRows;
+    }
+
+    if (pipelineMode === 'BOM' && hasStructuredWireRows) {
+      console.log('[T23.6.42 FORCE PARSER]', {
+        reason: 'Structured BOM detected',
+        pipelineMode,
+        extractedLineCount,
+      });
+      shouldRunC124Fallback = false;
+    }
+
+    console.log('[T23.6.42 GATING DECISION]', {
+      isWeakExtraction,
+      shouldRunFallback: shouldRunC124Fallback,
+      pipelineMode,
+      hasWireIndicators: hasStructuredWireRows,
+      decision: shouldRunC124Fallback ? 'fallback' : 'parser',
+    });
 
     const c124TriggerDebug = {
       buildTag:              'C12.4-R16',

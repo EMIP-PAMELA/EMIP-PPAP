@@ -1169,6 +1169,63 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   // --- T1: Wire table region detection and structured row extraction ---
   let wireTableResult: IngestionAnalysisResult['wireTableResult'] = null;
   let wireTableHeaderIdx: number | null = null; // captured for T4 diagram region isolation
+
+  if (pipelineMode === 'BOM' && normalizedText) {
+    const bomLinesRaw = normalizedText.split(/\r?\n/);
+    const hasStructuredWireRows = bomLinesRaw.some(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return false;
+      if (/^W\d{1,4}/i.test(trimmed)) return true;
+      if (/\b(AWG|WIRE|HARNESS|CABLE)\b/i.test(trimmed)) return true;
+      if (/^-{3,}\s*[A-Z0-9]/.test(trimmed)) return true;
+      return false;
+    });
+
+    console.log('[T23.6.42 STRUCTURE DETECT]', {
+      pipelineMode,
+      hasStructuredWireRows,
+      sampleLines: bomLinesRaw.slice(0, 10),
+    });
+
+    if (hasStructuredWireRows) {
+      console.log('[T23.6.42 PARSER ENTRY]', {
+        triggered: true,
+        pipelineMode,
+        lineCount: bomLinesRaw.length,
+      });
+      try {
+        const parsed = parseWireTableRows(bomLinesRaw, {
+          extractedText: normalizedText,
+          isLikelyInternal: false,
+        });
+
+        wireTableResult = {
+          region: null,
+          confidence: 0.65,
+          rows: parsed.rows,
+          rowCount: parsed.rowCount,
+          parseQuality: parsed.parseQuality,
+          headerText: bomLinesRaw.slice(0, 5).join(' ').slice(0, 120),
+          inferredLengthUnit: parsed.inferredLengthUnit,
+          unitInferenceReason: parsed.unitInferenceReason,
+        };
+
+        console.log('[T23.6.42 PARSER OUTPUT]', {
+          pipelineMode,
+          rowCount: parsed.rowCount,
+          sample: parsed.rows.slice(0, 3),
+        });
+
+        console.log('[T23.6.42 ASSIGNMENT]', {
+          wireTableResultCount: parsed.rowCount,
+          pipelineMode,
+        });
+      } catch (err) {
+        console.warn('[T23.6.42 PARSER ERROR]', 'Failed to parse BOM lines — falling back to existing flow', err);
+      }
+    }
+  }
+
   if (drawingSubtype === 'INTERNAL_DRAWING' && normalizedText) {
     try {
       const detected  = detectWireTableRegion(ocrLines);
@@ -1772,10 +1829,10 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   });
 
   const rootCauseClassification = (() => {
-    if (pipelineMode === 'BOM') {
+    if (pipelineMode === 'BOM' && !hasWireTable) {
       return {
         type: 'PARSER_NOT_TRIGGERED' as const,
-        explanation: 'Wire table detection + harness connectivity only run for drawing pipeline; BOM documents skip T1/T2 entirely.',
+        explanation: 'Wire table detection did not yield rows in BOM mode; verify structure detection and parser activation.',
       };
     }
     if (!hasWireTable) {
