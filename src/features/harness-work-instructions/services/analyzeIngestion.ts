@@ -31,6 +31,7 @@ import { analyzeDocumentStructure } from './documentStructureAnalyzer';
 import { extractTitleBlockAndRevisionRegions, scanForApogeePN45, type TitleBlockExtractionResult } from './titleBlockRegionExtractor';
 import { detectWireTableRegion } from './wireTableRegionExtractor';
 import { parseWireTableRows } from './wireTableParser';
+import { parseBOMWithValidation } from '@/src/core/parser/parserService';
 import { buildHarnessConnectivity, type HarnessConnectivityResult } from './harnessConnectivityService';
 import { isolateDiagramLines, extractDiagramComponents, mergeWithVisionResult, type DiagramExtractionResult } from './diagramExtractor';
 import { reconcileHarnessConnectivity, type HarnessReconciliationResult } from './harnessReconciliationService';
@@ -1194,9 +1195,39 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
         lineCount: bomLinesRaw.length,
       });
       try {
+        const parserA = parseBOMWithValidation(normalizedText);
         const parsed = parseWireTableRows(bomLinesRaw, {
           extractedText: normalizedText,
           isLikelyInternal: false,
+        });
+
+        const parserRowsA = parserA?.data?.operations?.flatMap(op => op.components?.map(c => c.rawLine) ?? []) ?? [];
+
+        console.log('[T23.6.43 PARSER COMPARE]', {
+          rowCountA: parserRowsA.length,
+          rowCountB: parsed.rows.length,
+          matchRowCount: parserRowsA.length === parsed.rows.length,
+        });
+
+        console.log('[T23.6.43 SAMPLE COMPARE]', {
+          sampleA: parserRowsA.slice(0, 3),
+          sampleB: parsed.rows.slice(0, 3),
+        });
+
+        console.log('[T23.6.43 STRUCTURE COMPARE]', {
+          hasConnectivityA: parserA?.data?.operations?.some(op => op.components?.length) ?? false,
+          hasConnectivityB: parsed.rows.length > 0,
+        });
+
+        const status = parserRowsA.length === parsed.rows.length
+          ? 'MATCH'
+          : parserRowsA.length > 0 && parsed.rows.length > 0
+            ? 'PARTIAL_MATCH'
+            : 'MISMATCH';
+
+        console.log('[T23.6.43 RESULT]', {
+          status,
+          recommendation: status === 'MATCH' ? 'safe' : 'needs_unification',
         });
 
         wireTableResult = {
