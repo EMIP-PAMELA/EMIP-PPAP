@@ -392,6 +392,15 @@ export function buildEffectiveHarnessState(args: {
   const readyToCommit =
     unresolvedQuestions.every(q => !q.blocksCommit) && !hasBlockingTopology;
 
+  // T23.6.23: Log topology connectivity status for decision-layer alignment.
+  // rawUnconnected = all nodes with 0 edges; validatableUnconnected = those
+  // confirmed unconnected AFTER T23.6.21 physical-connectivity bypass.
+  console.log('[T23.6.23 DECISION INPUT]', {
+    rawUnconnected:         effectiveTopology?.rawUnconnectedNodeCount ?? 0,
+    validatableUnconnected: effectiveTopology?.unconnectedNodeIds.length ?? 0,
+    hasBlockingTopology,
+  });
+
   // T23.6.2: Synchronize effective decision with topology blocking state.
   // The T9 decision (from T12) runs before topology analysis (T13) and cannot
   // account for graph-level blocking warnings.  When HIGH-confidence blocking

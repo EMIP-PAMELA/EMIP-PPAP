@@ -110,6 +110,10 @@ export interface HarnessTopologyResult {
   isolatedSubgraphs: TopologySubgraph[];
   missingWireCandidates: MissingWireCandidate[];
   warnings: TopologyWarning[];
+  /** T23.6.23: Validatable unconnected node IDs after T23.6.21 physical connectivity bypass. */
+  unconnectedNodeIds: string[];
+  /** T23.6.23: Count of all nodes with connectedEdgeCount === 0 before T23.6.21 bypass. */
+  rawUnconnectedNodeCount: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -949,5 +953,7 @@ export function analyzeHarnessTopology(args: {
     isolatedSubgraphs,
     missingWireCandidates,
     warnings,
+    unconnectedNodeIds,
+    rawUnconnectedNodeCount: rawUnconnectedNodeIds.length,
   };
 }

@@ -45,6 +45,7 @@ import type {
   WireClassification,
 } from './endpointClassifier';
 import type { HarnessValidationResult, WireValidation } from './harnessValidationService';
+import type { HarnessTopologyResult } from './harnessTopologyService';
 import { RULE_SEVERITIES } from './harnessValidationService';
 import type { HarnessConfidenceResult, WireConfidence } from './harnessConfidenceService';
 import { isOperatorWire, logOperatorAuthority } from './operatorAuthority';
@@ -289,8 +290,10 @@ export function evaluateHarnessDecision(args: {
   endpointClassification?: HarnessEndpointClassificationResult | null;
   validation?:             HarnessValidationResult | null;
   confidence?:             HarnessConfidenceResult | null;
+  /** T23.6.23: Topology result — when provided, HIGH-confidence blocking warnings override the decision. */
+  topology?:               HarnessTopologyResult | null;
 }): HarnessDecisionResult {
-  const { connectivity, reconciliation, endpointClassification, validation, confidence } = args;
+  const { connectivity, reconciliation, endpointClassification, validation, confidence, topology } = args;
 
   const wireById = new Map(connectivity.wires.map(w => [w.wireId, w]));
 
@@ -334,15 +337,33 @@ export function evaluateHarnessDecision(args: {
   });
   const operatorBlockingOnly = blockedWires.length > 0 && !hasNonOperatorBlockers;
 
-  const overallDecision: OverallDecision =
+  let overallDecision: OverallDecision =
     blockedWires.length > 0 && !operatorBlockingOnly ? 'BLOCKED' :
     reviewRequired.length > 0 ? 'REVIEW_REQUIRED' :
     'SAFE';
 
-  const readinessScore = computeReadiness(
+  let readinessScore = computeReadiness(
     wireDecisions, confidence, validation, endpointClassification,
   );
   const topIssues = computeTopIssues(validation);
+
+  // T23.6.23: Apply topology-aware blocking. HIGH-confidence blocking topology
+  // warnings (MISSING_WIRE, DANGLING_ENDPOINT, UNDECLARED_BRANCH) override the
+  // wire-level decision and reduce readiness, mirroring the T23.6.2 adjustment
+  // that previously lived in effectiveHarnessModelService.
+  const blockingTopoWarnings = (topology?.warnings ?? []).filter(
+    w => w.blocksCommit && w.confidence === 'HIGH',
+  );
+  if (blockingTopoWarnings.length > 0) {
+    overallDecision = 'BLOCKED';
+    readinessScore  = Math.max(0, readinessScore - blockingTopoWarnings.length * DEDUCTION_ERROR_WIRE);
+  }
+
+  console.log('[T23.6.23 DECISION INPUT]', {
+    rawUnconnected:         topology?.rawUnconnectedNodeCount ?? 0,
+    validatableUnconnected: topology?.unconnectedNodeIds.length ?? 0,
+    blockingTopoWarnings:   blockingTopoWarnings.length,
+  });
 
   // T23.5: Log physical endpoint descriptions for blocked wires so the log
   // identifies unconnected nodes by component:cavity, not customer wire labels.
