@@ -229,6 +229,27 @@ function isValidatableNode(node: TopologyNode): boolean {
   return node.terminationType === 'CONNECTOR_PIN' && node.cavity !== null;
 }
 
+function buildPhysicalConnectivityMap(nodes: TopologyNode[]): Map<string, boolean> {
+  const connectivity = new Map<string, boolean>();
+  for (const node of nodes) {
+    const key = getPhysicalCavityKey(node);
+    if (!key) continue;
+    const isConnected = (node.connectedEdgeCount ?? 0) > 0;
+    if (isConnected) {
+      connectivity.set(key, true);
+    } else if (!connectivity.has(key)) {
+      connectivity.set(key, false);
+    }
+  }
+  return connectivity;
+}
+
+function isPhysicallyConnected(node: TopologyNode, connectivityMap: Map<string, boolean>): boolean {
+  const key = getPhysicalCavityKey(node);
+  if (!key) return false;
+  return connectivityMap.get(key) === true;
+}
+
 /**
  * Resolve effective terminationType for an endpoint.
  * Infers CONNECTOR_PIN when component + cavity are both present but type is unset.
@@ -735,11 +756,27 @@ export function analyzeHarnessTopology(args: {
     n => n.wireIds.length > 1 && n.terminationType === 'CONNECTOR_PIN',
   );
 
+  const physicalConnectivity = buildPhysicalConnectivityMap(nodes);
+
   const rawUnconnectedNodeIds = nodes
     .filter(n => (n.connectedEdgeCount ?? 0) === 0)
     .map(n => n.id);
   const unconnectedNodeIds = nodes
-    .filter(n => isValidatableNode(n) && (n.connectedEdgeCount ?? 0) === 0)
+    .filter(n => {
+      if (!isValidatableNode(n)) return false;
+      const connectedEdges = n.connectedEdgeCount ?? 0;
+      if (connectedEdges > 0) return false;
+      if (isPhysicallyConnected(n, physicalConnectivity)) {
+        console.log('[T23.6.20 VALIDATION BYPASS]', {
+          nodeId: n.id,
+          component: n.component,
+          cavity: n.cavity,
+          reason: 'Connectivity confirms connection',
+        });
+        return false;
+      }
+      return true;
+    })
     .map(n => n.id);
 
   console.log('[T23.6.17 VALIDATION FILTER]', {
