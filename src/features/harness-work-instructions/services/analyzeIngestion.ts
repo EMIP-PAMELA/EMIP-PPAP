@@ -1212,6 +1212,12 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       });
       try {
         const parserA = parseBOMWithValidation(normalizedText);
+        const coreResult = parserA?.data ?? null;
+        console.log('[T23.6.49 CORE RESULT]', {
+          hasResult: Boolean(coreResult),
+          componentCount: coreResult?.operations?.reduce((sum, op) => sum + (op.components?.length ?? 0), 0) ?? 0,
+          sample: coreResult?.operations?.flatMap(op => op.components ?? []).slice(0, 3) ?? null,
+        });
         const parserRowsA = parserA?.data?.operations?.flatMap(op => op.components?.map(c => c.rawLine) ?? []) ?? [];
 
         console.log('[T23.6.49 CORE FORCED]', {
