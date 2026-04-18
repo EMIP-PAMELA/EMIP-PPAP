@@ -224,30 +224,48 @@ function getPhysicalCavityKey(node: TopologyNode): string | null {
   return `${node.canonicalComponent}:${node.cavity.toLowerCase()}`;
 }
 
-/** T23.6.17: Only connector-pin nodes participate in commit-blocking validation. */
+/** T23.6.17/T23.6.21: Only true connector-pin nodes (no ferrule mounts, no shared-ferrule aliases) participate in commit-blocking validation. */
 function isValidatableNode(node: TopologyNode): boolean {
-  return node.terminationType === 'CONNECTOR_PIN' && node.cavity !== null;
+  return (
+    node.terminationType === 'CONNECTOR_PIN' &&
+    node.cavity !== null &&
+    !node.isSharedFerrule
+  );
 }
 
-function buildPhysicalConnectivityMap(nodes: TopologyNode[]): Map<string, boolean> {
-  const connectivity = new Map<string, boolean>();
-  for (const node of nodes) {
-    const key = getPhysicalCavityKey(node);
-    if (!key) continue;
-    const isConnected = (node.connectedEdgeCount ?? 0) > 0;
-    if (isConnected) {
-      connectivity.set(key, true);
-    } else if (!connectivity.has(key)) {
-      connectivity.set(key, false);
+/**
+ * T23.6.21: Build a Set of physical cavity keys that are confirmed connected via
+ * resolved graph edges.  Uses edges (not connectedEdgeCount) as the authoritative
+ * source so ferrule-bridged pins are correctly included:
+ *   connector_pin  ──edge──  ferrule_node (mountedAtNodeId → connector_pin)
+ * Both sides of a fully-resolved edge contribute their physical key.  FERRULE nodes
+ * contribute via their mountedAtNodeId back-reference.
+ */
+function buildPhysicalConnectivitySet(
+  edges: TopologyEdge[],
+  nodeMap: Map<string, TopologyNode>,
+): Set<string> {
+  const connected = new Set<string>();
+  for (const edge of edges) {
+    if (!edge.fromNodeId || !edge.toNodeId) continue;
+    for (const nodeId of [edge.fromNodeId, edge.toNodeId]) {
+      const node = nodeMap.get(nodeId);
+      if (!node) continue;
+      const key = getPhysicalCavityKey(node);
+      if (key) {
+        connected.add(key);
+        continue;
+      }
+      if (node.mountedAtNodeId) {
+        const mountNode = nodeMap.get(node.mountedAtNodeId);
+        if (mountNode) {
+          const mountKey = getPhysicalCavityKey(mountNode);
+          if (mountKey) connected.add(mountKey);
+        }
+      }
     }
   }
-  return connectivity;
-}
-
-function isPhysicallyConnected(node: TopologyNode, connectivityMap: Map<string, boolean>): boolean {
-  const key = getPhysicalCavityKey(node);
-  if (!key) return false;
-  return connectivityMap.get(key) === true;
+  return connected;
 }
 
 /**
@@ -756,7 +774,7 @@ export function analyzeHarnessTopology(args: {
     n => n.wireIds.length > 1 && n.terminationType === 'CONNECTOR_PIN',
   );
 
-  const physicalConnectivity = buildPhysicalConnectivityMap(nodes);
+  const physicalConnectivity = buildPhysicalConnectivitySet(edges, nodeMap);
 
   const rawUnconnectedNodeIds = nodes
     .filter(n => (n.connectedEdgeCount ?? 0) === 0)
@@ -764,15 +782,16 @@ export function analyzeHarnessTopology(args: {
   const unconnectedNodeIds = nodes
     .filter(n => {
       if (!isValidatableNode(n)) return false;
-      const connectedEdges = n.connectedEdgeCount ?? 0;
-      if (connectedEdges > 0) return false;
-      if (isPhysicallyConnected(n, physicalConnectivity)) {
-        console.log('[T23.6.20 VALIDATION BYPASS]', {
-          nodeId: n.id,
-          component: n.component,
-          cavity: n.cavity,
-          reason: 'Connectivity confirms connection',
-        });
+      const physicalKey = getPhysicalCavityKey(n);
+      const isConnected = physicalKey != null && physicalConnectivity.has(physicalKey);
+      console.log('[T23.6.21 VALIDATION CHECK]', {
+        nodeId:          n.id,
+        physicalKey,
+        isConnected,
+        terminationType: n.terminationType,
+      });
+      if (isConnected) {
+        console.log('[T23.6.21 VALIDATION BYPASS]', physicalKey);
         return false;
       }
       return true;
