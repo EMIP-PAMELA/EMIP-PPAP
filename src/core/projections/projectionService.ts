@@ -113,6 +113,11 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
   // STEP 3: Extract and normalize wires
   const wires = extractWires(bomRecords);
 
+  console.log('[T23.6.48A PROJECTION PARSER]', {
+    wireCount: wires.length,
+    sample: wires.slice(0, 2),
+  });
+
   // STEP 4: Extract and normalize connectors
   const connectors = extractConnectors(bomRecords);
 

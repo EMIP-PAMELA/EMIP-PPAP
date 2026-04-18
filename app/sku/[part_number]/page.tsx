@@ -527,6 +527,11 @@ export default function SKUDashboardPage() {
   const pinMapCount    = pipelineJob?.pin_map_rows?.length ?? 0;
   const hasStructureData = wireCount > 0;
 
+  console.log('[T23.6.48A UI DATA]', {
+    wireCount,
+    sample: effectiveWires.slice(0, 2),
+  });
+
   const hasWires         = effectiveWires.length > 0;
   const hasValidRevision = revisionValidation?.status === 'SYNCHRONIZED';
   const coverageScore    = pipelineCoverage?.coverageScore ?? 0;
