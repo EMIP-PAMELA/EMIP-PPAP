@@ -12,7 +12,7 @@
  *   - Does NOT modify T13 logic or any upstream service.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import type {
   HarnessConnectivityResult,
 } from '@/src/features/harness-work-instructions/services/harnessConnectivityService';
@@ -37,24 +37,64 @@ const PAD_X    = 28;   // canvas left/right padding
 const PAD_Y    = 22;   // canvas top/bottom padding
 const PIN_R    = 5;    // pin circle radius
 const STUB_LEN = 68;   // stub line for non-column endpoint
-const TERM_W   = 68;   // inline termination label box width
+const TERM_W   = 80;   // inline termination label box width
 const TERM_H   = 18;   // inline termination label box height
+const FANOUT_SPACING     = 16;  // px between wires sharing a source pin
+const PANEL_MIN_HEIGHT   = 420;
+const PANEL_MAX_HEIGHT   = 1100;
+const DEFAULT_PANEL_HEIGHT = 640;
 
 // ---------------------------------------------------------------------------
 // Wire color map (3-letter prefix → CSS hex)
 // ---------------------------------------------------------------------------
 
 const WIRE_COLORS: Record<string, string> = {
-  BRN: '#92400e', BLK: '#1f2937', RED: '#dc2626', WHT: '#9ca3af',
-  BLU: '#2563eb', GRN: '#16a34a', YEL: '#d97706', ORG: '#ea580c',
-  PNK: '#db2777', PUR: '#7c3aed', GRY: '#6b7280', TAN: '#b45309',
+  BRN: '#92400e', BLK: '#1f2937', RED: '#dc2626', WHT: '#e2e8f0',
+  BLU: '#2563eb', GRN: '#16a34a', YEL: '#eab308', ORG: '#f97316',
+  PNK: '#ec4899', PUR: '#7c3aed', GRY: '#94a3b8', TAN: '#d6a55b',
   VIO: '#7c3aed', LIM: '#65a30d', TEL: '#0d9488', SHD: '#94a3b8',
   SHI: '#94a3b8',
 };
 
-function wireStroke(color: string | null | undefined): string {
-  if (!color) return '#94a3b8';
-  return WIRE_COLORS[color.toUpperCase().slice(0, 3)] ?? '#94a3b8';
+const NAMED_WIRE_COLORS: Record<string, string> = {
+  white: '#e2e8f0',
+  black: '#1f2937',
+  blue: '#2563eb',
+  red: '#dc2626',
+  green: '#16a34a',
+  yellow: '#eab308',
+  orange: '#f97316',
+  brown: '#8b4513',
+  grey: '#94a3b8',
+  gray: '#94a3b8',
+  purple: '#7c3aed',
+  pink: '#ec4899',
+  tan: '#d6a55b',
+};
+
+interface WireColorStyle {
+  stroke: string;
+  dash?: string;
+}
+
+function canonicalColorHex(token: string | null | undefined): string {
+  if (!token) return '#999';
+  const normalized = token.trim().toLowerCase();
+  if (!normalized) return '#999';
+  if (NAMED_WIRE_COLORS[normalized]) return NAMED_WIRE_COLORS[normalized];
+  const prefix = normalized.slice(0, 3).toUpperCase();
+  return WIRE_COLORS[prefix] ?? '#94a3b8';
+}
+
+function mapWireColor(rawColor: string | null | undefined): WireColorStyle {
+  if (!rawColor) return { stroke: '#999' };
+  const normalized = rawColor.replace(/\s+stripe/gi, '').trim().toLowerCase();
+  const parts = normalized.split(/[/,\\+]/).map(p => p.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    const primary = parts.find(p => !p.includes('white')) ?? parts[0];
+    return { stroke: canonicalColorHex(primary), dash: '4 2' };
+  }
+  return { stroke: canonicalColorHex(parts[0]) };
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +280,29 @@ function buildWarningIndex(topology: HarnessTopologyResult) {
   return { danglingNodes, branchNodes, isolatedWires };
 }
 
+type FanoutIndex = Map<string, { total: number; order: Map<string, number> }>;
+
+function buildFanoutIndex(
+  edges: TopologyEdge[],
+  nodeIndex: Map<string, TopologyNode>,
+): FanoutIndex {
+  const buckets = new Map<string, string[]>();
+  for (const edge of edges) {
+    const key = resolveVisualId(edge.fromNodeId, nodeIndex) ?? edge.fromNodeId ?? `__null:${edge.wireId}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(edge.wireId);
+  }
+
+  const result: FanoutIndex = new Map();
+  buckets.forEach((wireIds, key) => {
+    const order = new Map<string, number>();
+    wireIds.forEach((wid, idx) => order.set(wid, idx));
+    result.set(key, { total: wireIds.length, order });
+  });
+
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Edge routing
 // ---------------------------------------------------------------------------
@@ -300,6 +363,51 @@ export default function HarnessTopologyVisualizer({
 }: HarnessTopologyVisualizerProps) {
   const [tooltip, setTooltip]         = useState<TooltipInfo | null>(null);
   const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
+  const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const dragState = useRef<{ startY: number; startHeight: number } | null>(null);
+
+  const handleMouseMove = useCallback((event: MouseEvent) => {
+    if (!dragState.current) return;
+    const delta = event.clientY - dragState.current.startY;
+    const next = Math.min(
+      PANEL_MAX_HEIGHT,
+      Math.max(PANEL_MIN_HEIGHT, dragState.current.startHeight + delta),
+    );
+    setPanelHeight(next);
+  }, []);
+
+  const stopDragging = useCallback(() => {
+    if (!dragState.current) return;
+    dragState.current = null;
+    document.body.style.removeProperty('user-select');
+    document.body.style.removeProperty('cursor');
+    window.removeEventListener('mousemove', handleMouseMove);
+    window.removeEventListener('mouseup', stopDragging);
+  }, [handleMouseMove]);
+
+  const handleResizeStart = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    dragState.current = { startY: event.clientY, startHeight: panelHeight };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ns-resize';
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', stopDragging);
+  }, [panelHeight, handleMouseMove, stopDragging]);
+
+  useEffect(() => () => {
+    window.removeEventListener('mousemove', handleMouseMove);
+    window.removeEventListener('mouseup', stopDragging);
+  }, [handleMouseMove, stopDragging]);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isFullscreen]);
 
   const { columns, nodePos, missingPos, svgWidth, svgHeight } = useMemo(
     () => buildLayout(topology), [topology],
@@ -319,6 +427,11 @@ export default function HarnessTopologyVisualizer({
   const wireMap = useMemo(
     () => new Map(connectivity.wires.map(w => [w.wireId, w])),
     [connectivity.wires],
+  );
+
+  const fanoutIndex = useMemo(
+    () => buildFanoutIndex(topology.edges, nodeIndex),
+    [topology.edges, nodeIndex],
   );
 
   console.log('[T14 VISUALIZER]', { nodes: topology.nodes.length, edges: topology.edges.length });
@@ -350,31 +463,13 @@ export default function HarnessTopologyVisualizer({
       return { x: mx - 22, y: my - 16, w: Mx - mx + 44, h: My - my + 32 };
     })
     .filter(Boolean) as { x: number; y: number; w: number; h: number }[];
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-[11px] font-semibold text-slate-600">Harness Graph</span>
-        {(onWireClick || onMissingPinClick || onBranchClick) && (
-          <span className="text-[9px] text-slate-400 italic">click to edit</span>
-        )}
-        <span className="text-[10px] text-slate-400">
-          {topology.nodes.length} nodes · {topology.edges.length} wires
-        </span>
-        {topology.missingWireCandidates.length > 0 && (
-          <span className="rounded-full bg-rose-100 text-rose-700 px-1.5 py-0.5 text-[9px] font-semibold">
-            {topology.missingWireCandidates.length} missing
-          </span>
-        )}
-      </div>
-
-      <div className="overflow-x-auto" style={{ position: 'relative' }}>
-        <svg
-          width={svgWidth}
-          height={svgHeight}
-          style={{ display: 'block', minHeight: 80 }}
-          onMouseLeave={() => { setTooltip(null); setHoveredWireId(null); }}
-        >
+  const renderSvg = () => (
+    <svg
+      width={svgWidth}
+      height={svgHeight}
+      style={{ display: 'block', minHeight: 120 }}
+      onMouseLeave={() => { setTooltip(null); setHoveredWireId(null); }}
+    >
           {/* ── Isolated subgraph borders ─────────────────────────── */}
           {isolatedRects.map((r, i) => (
             <g key={`iso-${i}`}>
@@ -495,7 +590,8 @@ export default function HarnessTopologyVisualizer({
             const idEntry      = wireIdentities?.byOriginalId.get(edge.wireId);
             const label        = idEntry?.internalWireId ?? wireLabels.get(edge.wireId) ?? edge.wireId;
             const customerLabel = idEntry?.customerWireId && idEntry.customerWireId !== label ? idEntry.customerWireId : undefined;
-            const stroke  = wireStroke(wire?.color);
+            const colorStyle = mapWireColor(wire?.color ?? null);
+            const stroke  = colorStyle.stroke;
             const isIso   = isolatedWires.has(edge.wireId);
 
             const resolvedFromId  = resolveVisualId(edge.fromNodeId, nodeIndex);
@@ -519,6 +615,15 @@ export default function HarnessTopologyVisualizer({
             const fromPos = effectiveFromId ? nodePos.get(effectiveFromId) : null;
             const toPos   = effectiveToId   ? nodePos.get(effectiveToId)   : null;
 
+            const fanoutKey = resolvedFromId ?? edge.fromNodeId ?? `__null:${edge.wireId}`;
+            const fanoutData = fanoutIndex.get(fanoutKey);
+            const fanIndex = fanoutData?.order.get(edge.wireId) ?? 0;
+            const fanTotal = fanoutData?.total ?? 1;
+            const fanOffset = fromPos && fanTotal > 1
+              ? (fanIndex - (fanTotal - 1) / 2) * FANOUT_SPACING
+              : 0;
+            const fanStartY = fromPos ? fromPos.y + fanOffset : null;
+
             // Both ends untracked — skip
             if (!fromPos && !toPos) return null;
 
@@ -535,12 +640,14 @@ export default function HarnessTopologyVisualizer({
             if (fromPos && toPos && isSameColumn) {
               // T23.6.22: same-component wire — draw looping arc on right side of connector box
               const rx = fromCol!.x + COL_W + COL_PAD;
-              const bulge = Math.max(Math.abs(fromPos.y - toPos.y) * 0.6, 30);
-              x1 = rx; y1 = fromPos.y;
+              const yStart = fanStartY ?? fromPos.y;
+              const bulge = Math.max(Math.abs(yStart - toPos.y) * 0.6, 30);
+              x1 = rx; y1 = yStart;
               x2 = rx; y2 = toPos.y;
               const path = `M ${x1} ${y1} C ${x1 + bulge} ${y1} ${x2 + bulge} ${y2} ${x2} ${y2}`;
               const lx = x1 + bulge + 4;
               const ly = (y1 + y2) / 2;
+              const loopDash = isIso ? '6 3' : colorStyle.dash;
               return (
                 <g key={edge.wireId}>
                   <path d={path} fill="none" stroke="transparent" strokeWidth={10}
@@ -565,8 +672,9 @@ export default function HarnessTopologyVisualizer({
                   />
                   <path d={path} fill="none"
                     stroke={stroke}
-                    strokeWidth={hoveredWireId === edge.wireId ? 3.5 : 1.8}
-                    opacity={hoveredWireId === edge.wireId ? 1 : 0.85}
+                    strokeWidth={hoveredWireId === edge.wireId ? 4.0 : 2.5}
+                    strokeDasharray={loopDash}
+                    opacity={hoveredWireId === edge.wireId ? 1 : 0.9}
                     style={{ pointerEvents: 'none' }}
                   />
                   <text x={lx} y={ly} textAnchor="start"
@@ -583,15 +691,15 @@ export default function HarnessTopologyVisualizer({
               );
             } else if (fromPos && toPos) {
               x1 = portX(effectiveFromId!, nodePos, columns, toPos);
-              y1 = fromPos.y;
+              y1 = fanStartY ?? fromPos.y;
               x2 = portX(effectiveToId!, nodePos, columns, fromPos);
-              y2 = toPos.y;
+              y2 = toPos.y + fanOffset;
             } else if (fromPos) {
               // TO end not in any column — stub to the right
               x1 = portX(effectiveFromId!, nodePos, columns, null);
-              y1 = fromPos.y;
+              y1 = fanStartY ?? fromPos.y;
               x2 = x1 + STUB_LEN;
-              y2 = y1;
+              y2 = y1 + fanOffset * 0.35;
               showToStub = true;
             } else {
               // FROM end not in any column — stub from the left
@@ -606,7 +714,8 @@ export default function HarnessTopologyVisualizer({
             const lx    = mx;
             const ly    = (y1 + y2) / 2 - 5;
             const path  = bezierPath(x1, y1, x2, y2);
-            const isoDash = isIso ? '6 3' : undefined;
+            const strokeDasharray = isIso ? '6 3' : colorStyle.dash;
+            console.log('[T23.6.33 FINAL EDGE]', { wireId: edge.wireId, y1, y2, offset: fanOffset, color: stroke });
 
             return (
               <g key={edge.wireId}>
@@ -634,8 +743,8 @@ export default function HarnessTopologyVisualizer({
                 {/* Visible wire path */}
                 <path d={path} fill="none"
                   stroke={stroke}
-                  strokeWidth={hoveredWireId === edge.wireId ? 3.5 : 1.8}
-                  strokeDasharray={isoDash}
+                  strokeWidth={hoveredWireId === edge.wireId ? 4.0 : 2.5}
+                  strokeDasharray={strokeDasharray}
                   opacity={hoveredWireId === edge.wireId ? 1 : 0.85}
                   style={{ pointerEvents: 'none' }}
                 />
@@ -660,7 +769,7 @@ export default function HarnessTopologyVisualizer({
                       rx={3} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={1} />
                     <text x={x1 - TERM_W / 2} y={y1 + 3.5}
                       textAnchor="middle" fontSize={8} fill="#475569">
-                      {fromTermType ?? 'TERM'}
+                      {wire?.from.component ?? fromTermType ?? 'TERM'}
                     </text>
                   </g>
                 )}
@@ -672,7 +781,7 @@ export default function HarnessTopologyVisualizer({
                       rx={3} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={1} />
                     <text x={x2 + TERM_W / 2} y={y2 + 3.5}
                       textAnchor="middle" fontSize={8} fill="#475569">
-                      {toTermType ?? 'TERM'}
+                      {wire?.to.component ?? toTermType ?? 'TERM'}
                     </text>
                   </g>
                 )}
@@ -707,8 +816,81 @@ export default function HarnessTopologyVisualizer({
               </div>
             </foreignObject>
           )}
-        </svg>
+    </svg>
+  );
+
+  const renderPanel = (fullscreen: boolean) => (
+    <div
+      className="relative rounded-xl border border-slate-200 bg-white shadow-inner"
+      style={{
+        height: fullscreen ? '100%' : panelHeight,
+        minHeight: fullscreen ? '100%' : PANEL_MIN_HEIGHT,
+        maxHeight: fullscreen ? undefined : PANEL_MAX_HEIGHT,
+      }}
+    >
+      <div className="overflow-x-auto overflow-y-auto h-full" style={{ position: 'relative' }}>
+        {renderSvg()}
       </div>
+      {!fullscreen && (
+        <button
+          type="button"
+          onMouseDown={handleResizeStart}
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white/90 px-3 py-0.5 text-[10px] font-medium text-slate-500 shadow-sm"
+        >
+          drag to resize
+        </button>
+      )}
     </div>
+  );
+
+  return (
+    <>
+      <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className="text-[11px] font-semibold text-slate-600">Harness Graph</span>
+          {(onWireClick || onMissingPinClick || onBranchClick) && (
+            <span className="text-[9px] text-slate-400 italic">click to edit</span>
+          )}
+          <span className="text-[10px] text-slate-400">
+            {topology.nodes.length} nodes · {topology.edges.length} wires
+          </span>
+          {topology.missingWireCandidates.length > 0 && (
+            <span className="rounded-full bg-rose-100 text-rose-700 px-1.5 py-0.5 text-[9px] font-semibold">
+              {topology.missingWireCandidates.length} missing
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(true)}
+              className="rounded border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              disabled={isFullscreen}
+            >
+              Expand View
+            </button>
+          </div>
+        </div>
+
+        {renderPanel(false)}
+      </div>
+
+      {isFullscreen && (
+        <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 px-6 py-3">
+            <span className="text-sm font-semibold text-slate-700">Harness Graph — Fullscreen</span>
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(false)}
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              Close
+            </button>
+          </div>
+          <div className="p-4" style={{ height: 'calc(100vh - 56px)' }}>
+            {renderPanel(true)}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
