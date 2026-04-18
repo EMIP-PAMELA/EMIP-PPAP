@@ -19,6 +19,7 @@ import type {
 import type {
   HarnessTopologyResult,
   TopologyEdge,
+  TopologyNode,
   MissingWireCandidate,
 } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
 import type { WireIdentityResult } from '@/src/features/harness-work-instructions/services/wireIdentityService';
@@ -180,12 +181,32 @@ function buildLayout(topology: HarnessTopologyResult): {
 // Wire auto-labels
 // ---------------------------------------------------------------------------
 
-function buildWireLabels(edges: TopologyEdge[]): Map<string, string> {
+/**
+ * T23.6.31: Resolve the visual node ID for an edge endpoint.
+ * Ferrule nodes store a mountedAtNodeId pointing to the cavity node that
+ * actually has a position in nodePos. Without this resolution, edges whose
+ * endpoints are ferrule nodes are skipped because nodePos has no entry for
+ * the ferrule node ID.
+ */
+function resolveVisualId(
+  nodeId: string | null,
+  nodeIndex: Map<string, TopologyNode>,
+): string | null {
+  if (!nodeId) return null;
+  const node = nodeIndex.get(nodeId);
+  return node?.mountedAtNodeId ?? nodeId;
+}
+
+function buildWireLabels(
+  edges: TopologyEdge[],
+  nodeIndex: Map<string, TopologyNode>,
+): Map<string, string> {
   const sourceCount = new Map<string, string[]>();
   for (const e of edges) {
-    if (e.fromNodeId) {
-      if (!sourceCount.has(e.fromNodeId)) sourceCount.set(e.fromNodeId, []);
-      sourceCount.get(e.fromNodeId)!.push(e.wireId);
+    const resolvedFrom = resolveVisualId(e.fromNodeId, nodeIndex);
+    if (resolvedFrom) {
+      if (!sourceCount.has(resolvedFrom)) sourceCount.set(resolvedFrom, []);
+      sourceCount.get(resolvedFrom)!.push(e.wireId);
     }
   }
 
@@ -195,7 +216,8 @@ function buildWireLabels(edges: TopologyEdge[]): Map<string, string> {
 
   for (const e of edges) {
     if (handled.has(e.wireId)) continue;
-    const siblings = e.fromNodeId ? (sourceCount.get(e.fromNodeId) ?? []) : [];
+    const resolvedFrom = resolveVisualId(e.fromNodeId, nodeIndex);
+    const siblings = resolvedFrom ? (sourceCount.get(resolvedFrom) ?? []) : [];
     if (siblings.length > 1) {
       const base = `W${seq++}`;
       siblings.forEach((wid, i) => { labels.set(wid, `${base}${String.fromCharCode(65 + i)}`); handled.add(wid); });
@@ -283,7 +305,15 @@ export default function HarnessTopologyVisualizer({
     () => buildLayout(topology), [topology],
   );
 
-  const wireLabels = useMemo(() => buildWireLabels(topology.edges), [topology.edges]);
+  const nodeIndex = useMemo<Map<string, TopologyNode>>(
+    () => new Map(topology.nodes.map(n => [n.id, n])),
+    [topology.nodes],
+  );
+
+  const wireLabels = useMemo(
+    () => buildWireLabels(topology.edges, nodeIndex),
+    [topology.edges, nodeIndex],
+  );
   const { danglingNodes, branchNodes, isolatedWires } = useMemo(() => buildWarningIndex(topology), [topology]);
 
   const wireMap = useMemo(
@@ -292,6 +322,19 @@ export default function HarnessTopologyVisualizer({
   );
 
   console.log('[T14 VISUALIZER]', { nodes: topology.nodes.length, edges: topology.edges.length });
+  {
+    const edgesByFrom = new Map<string, string[]>();
+    for (const e of topology.edges) {
+      const resolvedFrom = resolveVisualId(e.fromNodeId, nodeIndex);
+      if (resolvedFrom) {
+        if (!edgesByFrom.has(resolvedFrom)) edgesByFrom.set(resolvedFrom, []);
+        edgesByFrom.get(resolvedFrom)!.push(e.wireId);
+      }
+    }
+    edgesByFrom.forEach((targets, nodeId) => {
+      console.log('[T23.6.31 VISUALIZER INPUT]', { nodeId, edgeCount: targets.length, targets });
+    });
+  }
 
   if (columns.length === 0) return null;
 
@@ -455,8 +498,10 @@ export default function HarnessTopologyVisualizer({
             const stroke  = wireStroke(wire?.color);
             const isIso   = isolatedWires.has(edge.wireId);
 
-            const fromPos = edge.fromNodeId ? nodePos.get(edge.fromNodeId) : null;
-            const toPos   = edge.toNodeId   ? nodePos.get(edge.toNodeId)   : null;
+            const effectiveFromId = resolveVisualId(edge.fromNodeId, nodeIndex);
+            const effectiveToId   = resolveVisualId(edge.toNodeId,   nodeIndex);
+            const fromPos = effectiveFromId ? nodePos.get(effectiveFromId) : null;
+            const toPos   = effectiveToId   ? nodePos.get(effectiveToId)   : null;
 
             // Both ends untracked — skip
             if (!fromPos && !toPos) return null;
@@ -467,8 +512,8 @@ export default function HarnessTopologyVisualizer({
             let fromTermType = wire?.from.terminationType;
             let toTermType   = wire?.to.terminationType;
 
-            const fromCol = edge.fromNodeId ? columns.find(c => c.pins.some(p => p.nodeId === edge.fromNodeId)) : null;
-            const toCol   = edge.toNodeId   ? columns.find(c => c.pins.some(p => p.nodeId === edge.toNodeId))   : null;
+            const fromCol = effectiveFromId ? columns.find(c => c.pins.some(p => p.nodeId === effectiveFromId)) : null;
+            const toCol   = effectiveToId   ? columns.find(c => c.pins.some(p => p.nodeId === effectiveToId))   : null;
             const isSameColumn = Boolean(fromCol && toCol && fromCol.component === toCol.component);
 
             if (fromPos && toPos && isSameColumn) {
@@ -521,20 +566,20 @@ export default function HarnessTopologyVisualizer({
                 </g>
               );
             } else if (fromPos && toPos) {
-              x1 = portX(edge.fromNodeId!, nodePos, columns, toPos);
+              x1 = portX(effectiveFromId!, nodePos, columns, toPos);
               y1 = fromPos.y;
-              x2 = portX(edge.toNodeId!, nodePos, columns, fromPos);
+              x2 = portX(effectiveToId!, nodePos, columns, fromPos);
               y2 = toPos.y;
             } else if (fromPos) {
               // TO end not in any column — stub to the right
-              x1 = portX(edge.fromNodeId!, nodePos, columns, null);
+              x1 = portX(effectiveFromId!, nodePos, columns, null);
               y1 = fromPos.y;
               x2 = x1 + STUB_LEN;
               y2 = y1;
               showToStub = true;
             } else {
               // FROM end not in any column — stub from the left
-              x2 = portX(edge.toNodeId!, nodePos, columns, null);
+              x2 = portX(effectiveToId!, nodePos, columns, null);
               y2 = toPos!.y;
               x1 = x2 - STUB_LEN;
               y1 = y2;
