@@ -25,7 +25,7 @@ import type {
 import type { HarnessConnectivityResult } from './harnessConnectivityService';
 import type { HarnessValidationResult } from './harnessValidationService';
 import type { HarnessConfidenceResult } from './harnessConfidenceService';
-import type { HarnessDecisionResult } from './harnessDecisionService';
+import { evaluateHarnessDecision, type HarnessDecisionResult } from './harnessDecisionService';
 import type { OperatorWireModel } from './skuModelEditService';
 import { revalidateWithOverrides } from './wireOperatorResolutionService';
 import { buildEffectiveSkuHarnessModel } from './skuModelEditService';
@@ -401,20 +401,34 @@ export function buildEffectiveHarnessState(args: {
     hasBlockingTopology,
   });
 
-  // T23.6.2: Synchronize effective decision with topology blocking state.
-  // The T9 decision (from T12) runs before topology analysis (T13) and cannot
-  // account for graph-level blocking warnings.  When HIGH-confidence blocking
-  // topology issues exist, the overall decision and readiness must reflect
-  // that so the decision badge, readiness %, and blocked summary all agree
-  // with the topology graph and cut sheet.
-  if (effectiveDecision && hasBlockingTopology) {
-    const blockingTopoCount = effectiveTopology!.warnings
-      .filter(w => w.blocksCommit && w.confidence === 'HIGH').length;
-    effectiveDecision = {
-      ...effectiveDecision,
-      overallDecision: 'BLOCKED',
-      readinessScore:  Math.max(0, effectiveDecision.readinessScore - blockingTopoCount * 10),
-    };
+  // ── T23.6.29: Final decision — recomputed from final enriched wire set + topology ──
+  //
+  // AUTHORITY: T11/T12 decisions above are INTERIM — they were produced before
+  // OCR suppression (T23.6.13), endpoint enrichment (T18.5), and topology (T13).
+  // Passing topology activates two previously-dead code paths:
+  //   • T23.6.27 CLEAR BLOCK: clears BLOCKED for wires whose endpoints topology
+  //     confirms are physically connected (unconnectedNodeIds does not contain them).
+  //   • T23.6.23: forces BLOCKED + readiness deduction for HIGH-confidence topology
+  //     warnings (MISSING_WIRE, DANGLING_ENDPOINT, UNDECLARED_BRANCH).
+  // This single call supersedes the previous asymmetric T23.6.2 patch.
+  if (effectiveConnectivity) {
+    const interimBlocked = effectiveDecision?.blockedWires ?? [];
+    const finalDecision = evaluateHarnessDecision({
+      connectivity:   effectiveConnectivity,
+      validation:     effectiveValidation   ?? undefined,
+      confidence:     effectiveConfidence   ?? undefined,
+      topology:       effectiveTopology     ?? undefined,
+      reconciliation: analysis.harnessReconciliation ?? undefined,
+    });
+    console.log('[T23.6.29 FINAL FLOW]', {
+      hasEffectiveModel: true,
+      topologyNodes:     effectiveTopology?.nodes.length ?? 0,
+      interimDecision:   effectiveDecision?.overallDecision ?? null,
+      interimBlocked,
+      finalDecision:     finalDecision.overallDecision,
+      finalBlocked:      finalDecision.blockedWires,
+    });
+    effectiveDecision = finalDecision;
   }
 
   console.log('[T12.4 EFFECTIVE MODEL]', {
