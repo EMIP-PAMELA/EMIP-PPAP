@@ -78,6 +78,14 @@ function getPhysicalKey(endpoint?: WireConnectivity['from'] | WireConnectivity['
   return `${component}:${cavity}`;
 }
 
+function isEndpointSatisfied(
+  key: string | null,
+  unconnected: Set<string>,
+): boolean {
+  if (key === null) return true;
+  return !unconnected.has(key);
+}
+
 export interface HarnessDecisionResult {
   wires:           WireDecision[];
   overallDecision: OverallDecision;
@@ -359,15 +367,16 @@ export function evaluateHarnessDecision(args: {
       if (!wire) continue;
       const fromKey = getPhysicalKey(wire.from);
       const toKey   = getPhysicalKey(wire.to);
-      const fromConnected = Boolean(fromKey && !unconnected.has(fromKey));
-      const toConnected   = Boolean(toKey && !unconnected.has(toKey));
-      if (fromConnected && toConnected) {
+      const fromSatisfied = isEndpointSatisfied(fromKey, unconnected);
+      const toSatisfied   = isEndpointSatisfied(toKey, unconnected);
+      if (fromSatisfied && toSatisfied) {
         console.log('[T23.6.27 CLEAR BLOCK]', {
           wireId: wire.wireId,
-          from: fromKey,
-          to: toKey,
-          reason: wd.reasons.map(r => r.code),
-          source: 'topology',
+          fromKey,
+          toKey,
+          fromSatisfied,
+          toSatisfied,
+          reason: 'endpoint-satisfaction-rule',
         });
         wd.decision = 'SAFE';
         wd.reasons = wd.reasons.filter(r => !CONNECTIVITY_ISSUE_CODES.has(r.code));
