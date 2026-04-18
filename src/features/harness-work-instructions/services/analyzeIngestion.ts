@@ -1184,6 +1184,10 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   let wireTableHeaderIdx: number | null = null; // captured for T4 diagram region isolation
 
   if (pipelineMode === 'BOM' && normalizedText) {
+    console.log('[T23.6.49 ROUTE OVERRIDE]', {
+      originalMode: pipelineMode,
+      enforcedMode: 'CORE_PARSER',
+    });
     const bomLinesRaw = normalizedText.split(/\r?\n/);
     const hasStructuredWireRows = bomLinesRaw.some(line => {
       const trimmed = line.trim();
@@ -1208,6 +1212,17 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       });
       try {
         const parserA = parseBOMWithValidation(normalizedText);
+        const parserRowsA = parserA?.data?.operations?.flatMap(op => op.components?.map(c => c.rawLine) ?? []) ?? [];
+
+        console.log('[T23.6.49 CORE FORCED]', {
+          wireCount: parserRowsA.length,
+          sample: parserRowsA.slice(0, 3),
+        });
+
+        if (parserRowsA.length === 0) {
+          console.warn('[T23.6.49 CORE EMPTY]', 'No wires from core parser');
+        }
+
         const parsed = parseWireTableRows(bomLinesRaw, {
           extractedText: normalizedText,
           isLikelyInternal: false,
@@ -1218,8 +1233,6 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
           wireCount: parsed.rows.length,
           sample: parsed.rows.slice(0, 2),
         });
-
-        const parserRowsA = parserA?.data?.operations?.flatMap(op => op.components?.map(c => c.rawLine) ?? []) ?? [];
 
         console.log('[T23.6.43 PARSER COMPARE]', {
           rowCountA: parserRowsA.length,
@@ -1297,27 +1310,29 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
           notes: coverageRatio == null ? 'No expected wire lines detected' : undefined,
         });
 
-        wireTableResult = {
-          region: null,
-          confidence: 0.65,
-          rows: parsed.rows,
-          rowCount: parsed.rowCount,
-          parseQuality: parsed.parseQuality,
-          headerText: bomLinesRaw.slice(0, 5).join(' ').slice(0, 120),
-          inferredLengthUnit: parsed.inferredLengthUnit,
-          unitInferenceReason: parsed.unitInferenceReason,
-        };
+        if (pipelineMode !== 'BOM') {
+          wireTableResult = {
+            region: null,
+            confidence: 0.65,
+            rows: parsed.rows,
+            rowCount: parsed.rowCount,
+            parseQuality: parsed.parseQuality,
+            headerText: bomLinesRaw.slice(0, 5).join(' ').slice(0, 120),
+            inferredLengthUnit: parsed.inferredLengthUnit,
+            unitInferenceReason: parsed.unitInferenceReason,
+          };
 
-        console.log('[T23.6.42 PARSER OUTPUT]', {
-          pipelineMode,
-          rowCount: parsed.rowCount,
-          sample: parsed.rows.slice(0, 3),
-        });
+          console.log('[T23.6.42 PARSER OUTPUT]', {
+            pipelineMode,
+            rowCount: parsed.rowCount,
+            sample: parsed.rows.slice(0, 3),
+          });
 
-        console.log('[T23.6.42 ASSIGNMENT]', {
-          wireTableResultCount: parsed.rowCount,
-          pipelineMode,
-        });
+          console.log('[T23.6.42 ASSIGNMENT]', {
+            wireTableResultCount: parsed.rowCount,
+            pipelineMode,
+          });
+        }
       } catch (err) {
         console.warn('[T23.6.42 PARSER ERROR]', 'Failed to parse BOM lines — falling back to existing flow', err);
       }
