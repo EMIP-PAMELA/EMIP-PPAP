@@ -33,6 +33,7 @@ import { computeExtractionCoverage, type ExtractionCoverage } from './extraction
 import { interpretRheemDrawingModel, type DrawingInterpretationResult } from './drawingInterpretationService';
 import { runAdaptiveDrawingPipeline, type AdaptiveDrawingAnalysis } from './adaptiveDrawingPipelineService';
 import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
+import { reconcileDrawingAndBOMMaterials, type MaterialReconciliationResult } from './materialReconciliationService';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -76,6 +77,8 @@ interface PipelineResult {
   adaptiveAnalysis?: AdaptiveDrawingAnalysis;
   /** Phase 3H.48 C10: Structured data from adaptive pipeline (VectorStructuredModel or RheemDrawingModel). */
   adaptiveStructuredData?: unknown;
+  /** T23.6.53: Drawing vs BOM material reconciliation snapshot. */
+  materialReconciliation?: MaterialReconciliationResult | null;
 }
 
 export interface UnifiedIngestionResult {
@@ -219,6 +222,7 @@ async function buildPipelineFromDocuments(
   const hints = await loadFusionHints(drawing, job);
   const fused = fuseDrawingWithBOM(drawing, job, hints);
   const resolved = resolveEndpoints(fused, drawing, hints);
+  const materialReconciliation = reconcileDrawingAndBOMMaterials({ drawing, bomJob: job }) ?? null;
   const bundle = buildProcessInstructions(resolved, hints?.toolingOverrides, hints);
 
   await persistLearningUsageEvents(hints).catch(err => {
@@ -233,6 +237,14 @@ async function buildPipelineFromDocuments(
     docType:       drawingDoc.document_type,
   });
 
+  if (materialReconciliation) {
+    console.log('[T23.6.53 MATERIAL RECON]', {
+      skuId: sku.id,
+      drawingKeys: Object.keys(materialReconciliation.drawingAggregation),
+      bomKeys: Object.keys(materialReconciliation.bomAggregation),
+    });
+  }
+
   return {
     status: 'READY',
     job: resolved,
@@ -242,6 +254,7 @@ async function buildPipelineFromDocuments(
     ...(adaptiveResult.structuredData !== undefined  ? { adaptiveStructuredData: adaptiveResult.structuredData } : {}),
     ...(adaptiveResult.coverage       !== undefined  ? { coverage:               adaptiveResult.coverage }       : {}),
     ...(adaptiveResult.interpretation !== undefined  ? { interpretation:          adaptiveResult.interpretation } : {}),
+    ...(materialReconciliation ? { materialReconciliation } : {}),
   };
 }
 

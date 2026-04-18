@@ -31,6 +31,7 @@ import AdaptivePipelineDebugPanel from '@/src/features/sku/components/AdaptivePi
 import type { ExtractionCoverage } from '@/src/features/harness-work-instructions/services/extractionCoverageService';
 import type { DrawingInterpretationResult } from '@/src/features/harness-work-instructions/services/drawingInterpretationService';
 import type { AdaptiveDrawingAnalysis } from '@/src/features/harness-work-instructions/services/adaptiveDrawingPipelineService';
+import type { MaterialReconciliationResult } from '@/src/features/harness-work-instructions/services/materialReconciliationService';
 import { useDashboardReadiness } from '@/src/features/dashboard/hooks/useDashboardReadiness';
 import { useRevisionValidationMap } from '@/src/features/revision/hooks/useRevisionValidationMap';
 import { useSkuReadiness } from '@/src/features/ppap/hooks/useSkuReadiness';
@@ -143,6 +144,7 @@ export default function SKUDashboardPage() {
   const [pipelineHasStructuredData, setPipelineHasStructuredData] = useState(false);
   const [wireOverrides, setWireOverrides] = useState<Record<string, WireOverride>>({});
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'READY' | 'PARTIAL'>('idle');
+  const [materialReconciliation, setMaterialReconciliation] = useState<MaterialReconciliationResult | null>(null);
   const autoRunSignature = useRef<string | null>(null);
   const revisionSectionRef    = useRef<HTMLDivElement | null>(null);
   const truthRef               = useRef<HTMLDivElement | null>(null);
@@ -297,7 +299,9 @@ export default function SKUDashboardPage() {
       }
       setSku(json.sku as SKURecord);
       setDocuments(json.documents as SKUDocumentRecord[]);
-      setMessage(null);
+      console.log('[T23.6.53 SKU RECON VIEW]', {
+        reconciliation: json.material_reconciliation?.reconciliation,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setMessage(msg);
@@ -469,6 +473,13 @@ export default function SKUDashboardPage() {
         setPipelineInterpretation((json.interpretation as DrawingInterpretationResult | undefined) ?? undefined);
         setPipelineAdaptiveAnalysis((json.adaptive_analysis as AdaptiveDrawingAnalysis | undefined) ?? undefined);
         setPipelineHasStructuredData(Boolean(json.adaptive_has_structured_data));
+        const recon = (json.material_reconciliation ?? null) as MaterialReconciliationResult | null;
+        setMaterialReconciliation(recon);
+        if (recon) {
+          console.log('[T23.6.53 SKU RECON VIEW]', {
+            reconciliation: recon.reconciliation,
+          });
+        }
       } else {
         setSummary(null);
         setPipelineJob(null);
@@ -476,6 +487,7 @@ export default function SKUDashboardPage() {
         setPipelineInterpretation(undefined);
         setPipelineAdaptiveAnalysis(undefined);
         setPipelineHasStructuredData(false);
+        setMaterialReconciliation(null);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

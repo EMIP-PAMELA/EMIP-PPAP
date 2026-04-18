@@ -31,5 +31,6 @@ export async function GET(request: NextRequest) {
     interpretation:    pipeline.interpretation    ?? null,
     adaptive_analysis:          pipeline.adaptiveAnalysis  ?? null,
     adaptive_has_structured_data: Boolean(pipeline.adaptiveStructuredData),
+    material_reconciliation: pipeline.materialReconciliation ?? null,
   });
 }
