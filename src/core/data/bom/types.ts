@@ -241,15 +241,6 @@ export interface FlattenedBOM {
   totalLevels: number;
 }
 
-/**
- * Wire-specific BOM view
- */
-export interface WireBOM {
-  parentPartNumber: string;
-  wires: BOMRecord[];
-  totalWireLength?: number;
-}
-
 // ============================================================
 // PARSER CONFIDENCE & ERROR TYPES
 // ============================================================

@@ -360,12 +360,6 @@ export async function getSKU(partNumber: string): Promise<{
     skuId: data?.id ?? null,
   });
 
-  console.log('[T23.6.48A RETRIEVED]', {
-    wireCount: retrievedWireCount,
-    skuId: data?.id ?? null,
-    bomDocumentId: bomDoc?.id ?? null,
-  });
-
   const skuWithValidation: SKURecord = {
     ...rest,
     revision_validation,
@@ -751,12 +745,6 @@ export async function uploadDocument(
     storedCanonical: ingestionCanonicalPartNumber,
     storedWireCount: extractionWireCount,
     ingestedWireCount: identifiers?.ingestedWireCount ?? null,
-  });
-
-  console.log('[T23.6.48A STORAGE WRITE]', {
-    wireCount: extractionWireCount ?? identifiers?.ingestedWireCount ?? null,
-    ingestionWireCount: identifiers?.ingestedWireCount ?? null,
-    sourceDocumentType: documentType,
   });
 
   const { data, error } = await supabase

@@ -112,7 +112,7 @@ HWI.15.4.1 — System Stabilization
 
 3. **BOM Service** (`src/core/services/`)
    - **SINGLE ACCESS POINT** for all BOM data
-   - Methods: `getBOM()`, `getFlattenedBOM()`, `getWireLines()`, `getBOMBySource()`
+   - Methods: `getBOM()`, `getFlattenedBOM()`, `getBOMBySource()`
    - Abstract data source (in-memory cache V5.0, database V5.1)
    - Debug logging for all BOM access
 

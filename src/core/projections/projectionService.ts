@@ -20,17 +20,9 @@
  * - Pure computation layer (no storage)
  */
 
-import { getBOM } from '../services/bomService';
+import { getNormalizedBOMForPart } from '../services/bomService';
 import { getArtifactForPart } from '../services/artifactService';
-import {
-  normalizeWireGauge,
-  normalizeWireColor,
-  normalizeLengthToFeet,
-  parseLengthFromDescription,
-  isConnector
-  // Phase 3H.18: Removed isWire - now using canonical category === 'WIRE'
-} from './normalizers';
-import type { BOMRecord } from '../data/bom/types';
+import type { NormalizedComponent } from '@/src/features/documentEngine/types/bomTypes';
 
 // ============================================================
 // TYPES
@@ -93,65 +85,63 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
     timestamp: new Date().toISOString()
   });
 
-  // STEP 1: Load active BOM from canonical source
-  const bomRecords = await getBOM(partNumber);
-  
-  if (!bomRecords || bomRecords.length === 0) {
-    console.log('🧠 [Projection Service] No active BOM found for', partNumber);
+  const canonical = await getNormalizedBOMForPart(partNumber);
+  if (!canonical) {
+    console.warn('[T23.6.55 CANONICAL INPUT]', {
+      partNumber,
+      reason: 'NORMALIZED_BOM_NOT_AVAILABLE'
+    });
     return null;
   }
 
-  // Extract metadata from first record
-  const firstRecord = bomRecords[0];
-  const revision = firstRecord.revision || 'UNKNOWN';
-  const revisionOrder = firstRecord.revision_order || 0;
-  const ingestionBatchId = firstRecord.ingestion_batch_id || '';
+  const normalizedBOM = canonical.bom;
+  const components = normalizedBOM.operations.flatMap(operation => operation.components);
 
-  // STEP 2: Get artifact info
-  const artifact = await getArtifactForPart(partNumber);
+  if (!components || components.length === 0) {
+    throw new Error('[T23.6.55] Projection received invalid normalized components');
+  }
 
-  // STEP 3: Extract and normalize wires
-  const wires = extractWires(bomRecords);
+  const hasInvalidCategory = components.some(component => component.componentType === undefined || component.componentType === null);
+  if (hasInvalidCategory) {
+    throw new Error('[T23.6.55] Non-normalized component detected in pipeline');
+  }
 
-  console.log('[T23.6.48A PROJECTION PARSER]', {
-    wireCount: wires.length,
-    sample: wires.slice(0, 2),
+  const wireCount = components.filter(component => component.componentType === 'wire').length;
+  const categories = Array.from(new Set(components.map(component => component.componentType)));
+
+  console.log('[T23.6.55 CANONICAL INPUT]', {
+    partNumber,
+    totalComponents: components.length,
+    wireCount,
+    categories,
   });
 
-  // STEP 4: Extract and normalize connectors
-  const connectors = extractConnectors(bomRecords);
+  const artifact = await getArtifactForPart(partNumber);
+  const wires = extractWires(components);
+  const connectors = extractConnectors(components);
 
-  // STEP 5: Build summary
   const totalWireLength = wires.reduce((sum, wire) => sum + wire.length, 0);
-  const wireTypes = new Set(wires.map(w => `${w.gauge}-${w.color}`)).size;
-  const connectorCount = connectors.reduce((sum, conn) => sum + conn.quantity, 0);
+  const wireTypes = new Set(wires.map(wire => `${wire.partNumber}-${wire.gauge}-${wire.color}`)).size;
+  const connectorCount = connectors.reduce((sum, connector) => sum + connector.quantity, 0);
 
   const projection: SimplifiedBOM = {
     partNumber,
-    revision,
-    revisionOrder,
-    ingestionBatchId,
+    revision: canonical.revision,
+    revisionOrder: canonical.revisionOrder,
+    ingestionBatchId: canonical.ingestionBatchId,
     connectors,
     wires,
     summary: {
       totalWireLength,
       wireTypes,
       connectorCount,
-      totalComponents: bomRecords.length
+      totalComponents: normalizedBOM.summary?.totalComponents ?? components.length,
     },
     artifact: {
       url: artifact?.url || null,
       path: artifact?.path || null
     }
   };
-
-  console.log('🧠 V5.3 PROJECTION GENERATED', {
-    partNumber,
-    connectors: connectors.length,
-    wires: wires.length,
-    totalWireLength,
-    timestamp: new Date().toISOString()
-  });
 
   return projection;
 }
@@ -169,88 +159,37 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
  * @param records BOM records
  * @returns Wire projections
  */
-function extractWires(records: BOMRecord[]): WireProjection[] {
-  const wires: WireProjection[] = [];
+function extractWires(components: NormalizedComponent[]): WireProjection[] {
+  if (!components || components.length === 0) {
+    throw new Error('[T23.6.55] Projection received invalid normalized components');
+  }
 
-  console.log('[T23.6.49C RAW BOM INPUT]', {
-    totalRecords: records?.length ?? 0,
-    sample: records?.slice(0, 5) ?? [],
-  });
-  
-  // Phase 3H.18: Debug validation - count canonical WIRE records
-  const wireCategoryCount = records.filter(r => r.category === 'WIRE').length;
-  console.log('🧠 V5.3 [Projection] Wire extraction debug', {
-    totalRecords: records.length,
-    categoryWIRECount: wireCategoryCount,
-    samplePartNumbers: records.slice(0, 3).map(r => r.component_part_number)
-  });
+  const wires = components.filter(component => component.componentType === 'wire');
+  const projections: WireProjection[] = wires.map(component => {
+    const normalizedInches = typeof component.normalizedLengthInches === 'number'
+      ? component.normalizedLengthInches
+      : null;
+    const lengthFeet = normalizedInches !== null ? normalizedInches / 12 : 0;
+    const gauge = component.gauge !== undefined && component.gauge !== null
+      ? String(component.gauge)
+      : null;
 
-  const categoryCheck = records.map(record => {
-    const detectedAsWire = record.category === 'WIRE';
     return {
-      partNumber: record.component_part_number ?? (record as any).partNumber ?? null,
-      description: record.description,
-      category: record.category ?? null,
-      detectedAsWire,
+      partNumber: component.partId,
+      gauge,
+      color: component.color ?? null,
+      length: lengthFeet,
+      lengthUnit: 'ft',
+      quantity: component.quantity,
+      description: component.description,
     };
   });
-  console.log('[T23.6.49C CATEGORY CHECK]', categoryCheck);
 
-  for (const record of records) {
-    // Phase 3H.18: Use canonical category === 'WIRE' for wire detection
-    // This is the single source of truth from classifyComponent()
-    if (record.category !== 'WIRE') {
-      continue; // Skip non-wire components
-    }
-
-    // V5.6.4: Extract wire properties from new schema fields
-    const gaugeInput = record.gauge || record.description || record.component_part_number;
-    const gauge = normalizeWireGauge(gaugeInput);
-
-    const colorInput = record.color || record.description || record.component_part_number;
-    const color = normalizeWireColor(colorInput);
-
-    // Phase 3H.18.2: CANONICAL WIRE LENGTH SOURCE
-    // For Cable Quest BOM wire rows, use quantity (Qty Per) as usable wire length.
-    // record.length contains cut length with scrap and must NOT be used.
-    let length = 0;
-    let lengthUnit = 'ft';
-
-    // Use quantity (Qty Per) as canonical usable wire length
-    if (record.quantity && record.quantity > 0) {
-      length = record.quantity;  // Qty Per = usable wire length in feet
-      lengthUnit = 'ft';
-    } else if (record.length) {
-      // Fallback only if quantity is not available (should not happen for wires)
-      console.warn('[WIRE LENGTH WARNING] Using cut length fallback for wire:', record.component_part_number);
-      length = record.length;
-      lengthUnit = 'ft';
-    }
-
-    wires.push({
-      partNumber: record.component_part_number,
-      gauge,
-      color,
-      length,
-      lengthUnit,
-      quantity: record.quantity,
-      description: record.description
-    });
+  if (projections.length === 0) {
+    console.warn('[T23.6.55 NORMALIZED INPUT] No wires found AFTER normalization');
   }
 
-  console.log('[T23.6.49C WIRE FILTER RESULT]', {
-    detectedWireCount: wires.length,
-    rejectedCount: records.length - wires.length,
-  });
-
-  if (wires.length === 0) {
-    console.warn('[T23.6.49C ZERO WIRE ROOT CAUSE]', {
-      reason: 'No records matched wire classification',
-      hint: 'Check category mapping, naming patterns, or missing attributes',
-    });
-  }
-
-  return wires;
+  return projections;
 }
 
 // ============================================================
@@ -263,56 +202,31 @@ function extractWires(records: BOMRecord[]): WireProjection[] {
  * @param records BOM records
  * @returns Connector projections
  */
-function extractConnectors(records: BOMRecord[]): ConnectorProjection[] {
+function extractConnectors(components: NormalizedComponent[]): ConnectorProjection[] {
   const connectorMap = new Map<string, ConnectorProjection>();
 
-  for (const record of records) {
-    // Check if this is a connector component
-    if (!isConnector(record.component_part_number, record.description)) {
-      continue;
-    }
+  components
+    .filter(component => component.componentType === 'connector')
+    .forEach(component => {
+      const partNumber = component.partId;
+      const existing = connectorMap.get(partNumber);
+      const typeSignal = component.classificationSignals?.find(signal => signal.startsWith('TYPE_'));
+      const type = typeSignal ? typeSignal.replace('TYPE_', '').toLowerCase() : null;
 
-    const partNumber = record.component_part_number;
-
-    // Group by part number
-    if (connectorMap.has(partNumber)) {
-      const existing = connectorMap.get(partNumber)!;
-      existing.quantity += record.quantity;
-    } else {
-      // Determine connector type from description
-      const type = determineConnectorType(record.description);
+      if (existing) {
+        existing.quantity += component.quantity;
+        return;
+      }
 
       connectorMap.set(partNumber, {
         partNumber,
-        description: record.description,
-        quantity: record.quantity,
-        type
+        description: component.description,
+        quantity: component.quantity,
+        type,
       });
-    }
-  }
+    });
 
   return Array.from(connectorMap.values());
-}
-
-/**
- * Determine connector type from description
- * 
- * @param description Component description
- * @returns Connector type or null
- */
-function determineConnectorType(description: string | null): string | null {
-  if (!description) return null;
-
-  const upper = description.toUpperCase();
-
-  if (upper.includes('PLUG')) return 'plug';
-  if (upper.includes('SOCKET') || upper.includes('RECEPTACLE')) return 'socket';
-  if (upper.includes('TERMINAL')) return 'terminal';
-  if (upper.includes('HOUSING')) return 'housing';
-  if (upper.includes('PIN')) return 'pin';
-  if (upper.includes('CONTACT')) return 'contact';
-
-  return 'connector';
 }
 
 // ============================================================

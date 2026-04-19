@@ -7,7 +7,7 @@
  * All feature modules (PPAP, Copper Index, etc.) MUST consume BOM via this service.
  * 
  * Responsibilities:
- * - Provide BOM data queries (getBOM, getFlattenedBOM, getWireLines)
+ * - Provide BOM data queries (getBOM, getFlattenedBOM)
  * - Abstract data source (Supabase database)
  * - Enforce data access patterns
  * - Track BOM access for debugging
@@ -23,12 +23,15 @@
  * - Added database error handling
  */
 
-import { BOMRecord, FlattenedBOM, WireBOM, RawBOMData } from '../data/bom/types';
-import { parseBOMText, parseBOMWithValidation, PARSER_VERSION } from '../parser/parserService';
+import { BOMRecord, FlattenedBOM, RawBOMData } from '../data/bom/types';
+import { parseBOMText as parseCoreBOMText, parseBOMWithValidation, PARSER_VERSION } from '../parser/parserService';
 import { supabase } from '@/src/lib/supabaseClient';
 import { looksLikeWirePart } from '@/src/core/utils/wireDetection';
 import { resolveClassification } from '@/src/core/services/classificationLookup';
 import { WIRE_WEIGHT_TABLE } from '@/src/core/data/wireWeights';
+import { parseBOMText as parseDocumentEngineBOMText } from '@/src/features/documentEngine/core/bomParser';
+import { normalizeBOMData } from '@/src/features/documentEngine/core/bomNormalizer';
+import type { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
 
 // ============================================================
 // AI CLASSIFICATION OVERLAY (Phase 3H.24A)
@@ -189,6 +192,131 @@ interface NormalizedComponent {
  */
 // Phase 3H.21: Import gauge extraction utility
 import { extractGaugeFromPart } from '@/src/core/utils/wireUtils';
+
+const SKU_DOCUMENTS_BUCKET = 'sku-documents';
+const TEXT_OBJECT_SUFFIX = '.extracted.txt';
+
+async function convertStorageObjectToText(object: Blob | ArrayBuffer): Promise<string | null> {
+  if (!object) return null;
+  if (typeof (object as Blob).text === 'function') {
+    return (object as Blob).text();
+  }
+  if (object instanceof ArrayBuffer) {
+    return Buffer.from(object).toString('utf8');
+  }
+  if (typeof (object as Blob).arrayBuffer === 'function') {
+    const buffer = await (object as Blob).arrayBuffer();
+    return Buffer.from(buffer).toString('utf8');
+  }
+  return null;
+}
+
+async function downloadBOMTextFromStorage(storagePath: string): Promise<string | null> {
+  if (!storagePath) return null;
+  const textPath = `${storagePath}${TEXT_OBJECT_SUFFIX}`;
+  const { data, error } = await supabase.storage.from(SKU_DOCUMENTS_BUCKET).download(textPath);
+  if (error || !data) {
+    console.warn('[T23.6.55 CANONICAL FETCH]', {
+      stage: 'storage-download',
+      storagePath: textPath,
+      error: error?.message ?? 'no data'
+    });
+    return null;
+  }
+  return convertStorageObjectToText(data as Blob | ArrayBuffer);
+}
+
+export interface CanonicalNormalizedBOMPayload {
+  bom: NormalizedBOM;
+  revision: string;
+  revisionOrder: number;
+  ingestionBatchId: string;
+}
+
+export async function getNormalizedBOMForPart(partNumber: string): Promise<CanonicalNormalizedBOMPayload | null> {
+  const normalizedPart = partNumber.trim().toUpperCase();
+
+  const { data: skuRecord, error: skuError } = await supabase
+    .from('sku')
+    .select('id, part_number')
+    .eq('part_number', normalizedPart)
+    .maybeSingle();
+
+  if (skuError) {
+    console.error('[T23.6.55 CANONICAL FETCH ERROR]', {
+      stage: 'sku-lookup',
+      partNumber: normalizedPart,
+      error: skuError.message,
+    });
+    throw new Error(`Failed to load SKU for part ${normalizedPart}: ${skuError.message}`);
+  }
+
+  if (!skuRecord) {
+    console.warn('[T23.6.55 CANONICAL FETCH]', {
+      stage: 'sku-lookup',
+      partNumber: normalizedPart,
+      reason: 'SKU_NOT_FOUND'
+    });
+    return null;
+  }
+
+  const { data: document, error: documentError } = await supabase
+    .from('sku_documents')
+    .select('id, storage_path, file_name, revision, canonical_revision')
+    .eq('sku_id', skuRecord.id)
+    .eq('document_type', 'BOM')
+    .eq('is_current', true)
+    .maybeSingle();
+
+  if (documentError) {
+    console.error('[T23.6.55 CANONICAL FETCH ERROR]', {
+      stage: 'document-lookup',
+      partNumber: normalizedPart,
+      error: documentError.message,
+    });
+    throw new Error(`Failed to load BOM document for ${normalizedPart}: ${documentError.message}`);
+  }
+
+  if (!document || !document.storage_path) {
+    console.warn('[T23.6.55 CANONICAL FETCH]', {
+      stage: 'document-lookup',
+      partNumber: normalizedPart,
+      reason: 'DOCUMENT_NOT_FOUND'
+    });
+    return null;
+  }
+
+  const extractedText = await downloadBOMTextFromStorage(document.storage_path);
+  if (!extractedText) {
+    console.warn('[T23.6.55 CANONICAL FETCH]', {
+      stage: 'document-text',
+      partNumber: normalizedPart,
+      documentId: document.id,
+      reason: 'TEXT_NOT_FOUND'
+    });
+    return null;
+  }
+
+  const raw = parseDocumentEngineBOMText(extractedText);
+  const normalized = normalizeBOMData(raw);
+  normalized.skuPartNumber = normalizedPart;
+  normalized.sourceDocumentId = document.id;
+  normalized.sourceFileName = document.file_name ?? null;
+  normalized.revision = document.canonical_revision ?? document.revision ?? normalized.revision ?? null;
+
+  console.log('[T23.6.55 CANONICAL FETCH]', {
+    partNumber: normalizedPart,
+    documentId: document.id,
+    componentCount: normalized.summary?.totalComponents ?? 0,
+  });
+
+  return {
+    bom: normalized,
+    revision: normalized.revision ?? 'UNKNOWN',
+    revisionOrder: 0,
+    ingestionBatchId: document.id,
+  };
+}
 
 function normalizeComponentForAnalytics(record: BOMRecord): NormalizedComponent {
   const isWire = record.category === 'WIRE';
@@ -1380,61 +1508,6 @@ export async function getFlattenedBOM(
 }
 
 /**
- * Get wire/cable components only
- * 
- * V5.1: Queries database and filters for wire components
- * 
- * Filters BOM to return only wire and cable items.
- * Useful for copper index calculations and wire-specific analysis.
- * 
- * @param partNumber Parent part number
- * @returns Wire-specific BOM view
- */
-export async function getWireLines(partNumber: string): Promise<WireBOM> {
-  console.log('🧠 V5.1 BOM DATABASE ACCESS', {
-    partNumber,
-    source: 'Supabase',
-    operation: 'getWireLines',
-    timestamp: new Date().toISOString(),
-  });
-  
-  const allRecords = await getBOM(partNumber);
-  
-  // Filter for wire components
-  // V5.6.4: Wire detection using gauge field and description
-  const wires = allRecords.filter(record => {
-    // Check if gauge field is populated (indicates wire)
-    if (record.gauge) {
-      return true;
-    }
-    
-    // Fallback to description-based detection
-    const desc = (record.description || '').toLowerCase();
-    const componentPN = (record.component_part_number || '').toLowerCase();
-    return desc.includes('wire') || 
-           desc.includes('cable') || 
-           desc.includes('awg') || 
-           desc.includes('gauge') ||
-           componentPN.includes('wire');
-  });
-  
-  // Calculate total wire length
-  const totalWireLength = wires.reduce((sum, wire) => {
-    const length = wire.length || 0;
-    const qty = wire.quantity || 1;
-    return sum + (length * qty);
-  }, 0);
-  
-  console.log(`🧠 [BOM Service] Found ${wires.length} wire components, total length: ${totalWireLength}`);
-  
-  return {
-    parentPartNumber: partNumber,
-    wires,
-    totalWireLength
-  };
-}
-
-/**
  * Get BOM history for a specific part number
  * 
  * V5.2: Returns ALL versions (active + inactive) grouped by batch
@@ -1872,17 +1945,17 @@ export async function parseAndStoreBOM(
  *   [BOM OPERATION DETECTED]    — operations found
  *   [BOM COMPONENT DETECTED]    — total components across all ops
  */
-export function parseProcessStructure(rawLines: string[]): import('../data/bom/types').RawBOMData {
+export function parseProcessStructure(rawLines: string[]): RawBOMData {
   console.log('[BOM PROCESS PARSE START]', { lineCount: rawLines.length });
 
-  const rawBOM = parseBOMText(rawLines.join('\n'));
+  const rawBOM = parseCoreBOMText(rawLines.join('\n'));
 
-  const componentCount = rawBOM.operations.reduce((n, op) => n + op.components.length, 0);
+  const componentCount = rawBOM.operations.reduce((total, operation) => total + operation.components.length, 0);
 
   console.log('[BOM OPERATION DETECTED]', {
     masterPartNumber: rawBOM.masterPartNumber,
     operationCount: rawBOM.operations.length,
-    operationIds: rawBOM.operations.map(o => o.resourceId),
+    operationIds: rawBOM.operations.map(operation => operation.resourceId),
   });
 
   console.log('[BOM COMPONENT DETECTED]', { componentCount });

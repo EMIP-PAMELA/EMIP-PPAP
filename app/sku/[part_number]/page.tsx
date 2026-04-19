@@ -449,6 +449,9 @@ export default function SKUDashboardPage() {
 
       const status = (json.pipeline_status ?? 'PARTIAL') as 'READY' | 'PARTIAL';
       setPipelineStatus(status);
+      console.log('[T23.6.54B UI VIEW]', {
+        normalizedBOM: json.normalized_bom ?? null,
+      });
 
       if (json.sku) {
         setSku(json.sku as SKURecord);
@@ -538,11 +541,6 @@ export default function SKUDashboardPage() {
   ).length;
   const pinMapCount    = pipelineJob?.pin_map_rows?.length ?? 0;
   const hasStructureData = wireCount > 0;
-
-  console.log('[T23.6.48A UI DATA]', {
-    wireCount,
-    sample: effectiveWires.slice(0, 2),
-  });
 
   const hasWires         = effectiveWires.length > 0;
   const hasValidRevision = revisionValidation?.status === 'SYNCHRONIZED';

@@ -77,10 +77,10 @@ src/features/copper-index/
 
 ### Input (from EMIP Core)
 ```typescript
-import { getBOM, getWireLines } from '@/src/core/services/bomService';
+import { getSimplifiedBOM } from '@/src/core/projections/projectionService';
 
-const wires = await getWireLines(partNumber);
-const copperCost = calculateWireCost(wires, currentCopperPrice);
+const projection = await getSimplifiedBOM(partNumber);
+const copperCost = calculateWireCost(projection?.wires ?? [], currentCopperPrice);
 ```
 
 ### Output (to UI/PPAP)

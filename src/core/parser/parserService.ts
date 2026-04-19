@@ -761,10 +761,6 @@ export function parseBOMWithValidation(text: string): ParseResult {
       hasData: totalComponents > 0,
     });
 
-    console.log('[T23.6.48A CORE PARSER]', {
-      wireCount: totalComponents,
-      sample: sampleComponents.slice(0, 2),
-    });
 
     // Calculate confidence scores
     const componentsWithACI = data.operations.reduce(
@@ -809,11 +805,6 @@ export function parseBOMWithValidation(text: string): ParseResult {
       confidence
     };
   } catch (error) {
-    console.log('[T23.6.48A CORE PARSER]', {
-      wireCount: 0,
-      sample: [],
-      error: error instanceof Error ? error.message : 'unknown_error',
-    });
     errors.push({
       lineNumber: 0,
       rawLine: '',

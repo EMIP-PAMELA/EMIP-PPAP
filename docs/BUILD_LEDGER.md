@@ -4,6 +4,49 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-18 20:12 CT — Phase T23.6.55 — Canonical BOM Enforcement Cutover
+
+**Summary:**
+- Added `getNormalizedBOMForPart()` to `bomService.ts` to fetch current BOM documents, stream extracted text from storage, and run Document Engine (`parseBOMText` → `normalizeBOMData`) so downstream callers never touch raw `bom_records`.
+- Rewired `projectionService.ts` to consume canonical normalized components exclusively, enforce guard clauses, emit `[T23.6.55 CANONICAL INPUT]` logs, and replace legacy `[T23.6.49C …]` diagnostics with the new deterministic logging/zero-wire warning.
+- Connector / wire extraction logic now relies on `componentType` + normalization signals (no string heuristics), enabling copper services and aggregations to inherit canonical categories automatically.
+
+**Decision:** Hard-cut to Document Engine normalization as the single BOM authority. No fallbacks to stored raw rows; projections/copper analytics must surface normalized classification only.
+
+**Impact:**
+- Guarantees projection + copper layers stay aligned with normalization improvements without redundant parsers.
+- Removes string-based heuristics that routinely diverged from parser output, eliminating “wire == quantity” confusion and zero-wire false alarms.
+- Establishes guardrails/logging so future regressions surface immediately (`[T23.6.55 CANONICAL INPUT]`, `[T23.6.55 NORMALIZED INPUT]`).
+
+**Files:**
+- `src/core/services/bomService.ts`
+- `src/core/projections/projectionService.ts`
+
+---
+
+## 2026-04-18 18:36 CT — Phase T23.6.54B — Promote Document Engine BOM to Canonical Model
+
+**Summary:**
+- Extended `NormalizedComponent` and `NormalizedBOM` to carry canonical metadata (normalized part number/description, gauge, color, normalized length, process code, summaries, validation buckets).
+- Hardened `normalizeBOMData()` with gauge/color extraction, inch-normalized lengths, signal-based confidence scoring, wire material key aggregation, and `[T23.6.54B NORMALIZED BOM OUTPUT]` logging.
+- Integrated canonical `NormalizedBOM` into ingestion (`ingestAndProcessDocument`), pipeline orchestration, SKU API, and SKU UI logging, ensuring additive exposure without disrupting existing BOMRecord persistence.
+
+**Decision:** Adopt **EXTEND_EXISTING_MODEL** strategy — elevate the Document Engine NormalizedBOM rather than creating a competing model, keeping BOMRecord as the raw storage layer.
+
+**Impact:**
+- Provides a single canonical BOM abstraction for analytics, reconciliation, and UI layers.
+- Enables downstream services to tap into normalized line items (gauge, color, length) and validation signals without re-parsing BOM text.
+- Adds read-only visibility in pipeline/API/UI to accelerate future reconciliation and audit tooling.
+
+**Files:**
+- `src/features/documentEngine/types/bomTypes.ts`
+- `src/features/documentEngine/core/bomNormalizer.ts`
+- `src/features/harness-work-instructions/services/unifiedIngestionService.ts`
+- `app/api/sku/pipeline/route.ts`
+- `app/sku/[part_number]/page.tsx`
+
+---
+
 ## 2026-04-05 - [IMPL] V3.3A-SCOPE — Document Scope Model + Intake UI
 
 **Status:** ✅ COMPLETE

@@ -1234,11 +1234,6 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
           isLikelyInternal: false,
         });
 
-        console.log('[T23.6.48A ALT PARSER]', {
-          source: 'BOM_STRUCTURED_TABLE',
-          wireCount: parsed.rows.length,
-          sample: parsed.rows.slice(0, 2),
-        });
 
         console.log('[T23.6.43 PARSER COMPARE]', {
           rowCountA: parserRowsA.length,
@@ -1354,11 +1349,6 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
           extractedText: normalizedText,
           isLikelyInternal: isLikelyInternalDrawing,
         });
-        console.log('[T23.6.48A ALT PARSER]', {
-          source: 'DRAWING_DETECTED_TABLE',
-          wireCount: parsed.rows.length,
-          sample: parsed.rows.slice(0, 2),
-        });
         wireTableResult = {
           region:       detected.region,
           confidence:   detected.confidence,
@@ -1398,11 +1388,6 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
         const fallbackParsed = parseWireTableRows(fallbackDetected.bodyLines, {
           extractedText:    titleBlockFallbackLines.join('\n'),
           isLikelyInternal: true,
-        });
-        console.log('[T23.6.48A ALT PARSER]', {
-          source: 'WIRE_RECOVERY_FALLBACK',
-          wireCount: fallbackParsed.rows.length,
-          sample: fallbackParsed.rows.slice(0, 2),
         });
         console.log('[T23.3.1 WIRE RECOVERY]', {
           primaryRowCount,
@@ -1482,11 +1467,6 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   // --- T2: Harness Connectivity normalization (HC-BOM) ---
   let harnessConnectivity: HarnessConnectivityResult | null = null;
   if (wireTableResult && wireTableResult.rows.length > 0) {
-    console.log('[T23.6.48A FINAL INPUT]', {
-      source: wireTableResult.region ? 'DRAWING_WIRE_TABLE' : 'BOM_WIRE_TABLE',
-      wireCount: wireTableResult.rows.length,
-      sample: wireTableResult.rows.slice(0, 2),
-    });
     try {
       harnessConnectivity = buildHarnessConnectivity(wireTableResult.rows);
     } catch (err) {
@@ -1620,11 +1600,6 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   // Deterministic T2 output is NEVER overwritten when non-null.
   if (!harnessConnectivity && visionParsedResult?.wires && visionParsedResult.wires.length > 0) {
     console.log('[T10 BRIDGE] Vision wires:', visionParsedResult.wires.length);
-    console.log('[T23.6.48A FINAL INPUT]', {
-      source: 'VISION_BRIDGE',
-      wireCount: visionParsedResult.wires.length,
-      sample: visionParsedResult.wires.slice(0, 2),
-    });
     try {
       const bridgedConnectivity = buildHarnessConnectivityFromVision(visionParsedResult);
       console.log('[T10 BRIDGE] Built harnessConnectivity from vision:', bridgedConnectivity?.confidenceSummary ?? null);

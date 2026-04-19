@@ -17,6 +17,9 @@ export async function GET(request: NextRequest) {
 
   const { documents, revision_validation, readiness } = await getCurrentDocuments(result.sku.id);
   const pipeline = await runPipelineForSKU(result.sku, documents);
+  console.log('[T23.6.54B API OUTPUT]', {
+    hasNormalizedBOM: Boolean(pipeline.normalizedBOM),
+  });
 
   return NextResponse.json({
     ok: true,
@@ -32,5 +35,6 @@ export async function GET(request: NextRequest) {
     adaptive_analysis:          pipeline.adaptiveAnalysis  ?? null,
     adaptive_has_structured_data: Boolean(pipeline.adaptiveStructuredData),
     material_reconciliation: pipeline.materialReconciliation ?? null,
+    normalized_bom: pipeline.normalizedBOM ?? null,
   });
 }

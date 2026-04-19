@@ -1,30 +1,16 @@
-// ⚠️ WARNING: NON-CANONICAL CLASSIFICATION LOGIC
-// This function is for document processing only.
-// DO NOT use for BOM classification.
-// Canonical classification system:
-// src/core/projections/normalizers.ts → classifyComponent
-
 /**
- * BOM Normalizer - Document Engine Core
- * 
- * BUSINESS LOGIC LAYER
- * 
+ * BOM Normalizer - Document Engine Core (Canonical Model)
+ *
  * Responsibility: Transform raw parsed BOM data into normalized business entities
  * Input: RawBOMData from bomParser
- * Output: Normalized BOM structures ready for template mapping
- * 
- * This layer contains:
- * - Component classification logic (Component/Consumable/Hardware) - NON-CANONICAL
+ * Output: Normalized BOM structures ready for template mapping + system-wide consumption
+ *
+ * Capabilities:
+ * - Component classification logic (wire / terminal / hardware / unknown)
  * - Terminal detection logic
- * - UOM interpretation
- * - Wire length calculation
- * - Business rules for component categorization
- * 
- * NOTE: classifyComponentType() in this file is for document processing only.
- * For BOM classification, use src/core/projections/normalizers.ts → classifyComponent()
- * 
- * PLACEHOLDER IMPLEMENTATION
- * Full implementation will be completed in future phase.
+ * - UOM interpretation + length normalization in inches
+ * - Gauge / color extraction and classification signals
+ * - Business rules for component categorization + validation buckets
  */
 
 import { 
@@ -37,6 +23,7 @@ import {
   ComponentType,
   BOMSummary
 } from '../types/bomTypes';
+import { normalizeWireMaterialKey } from '@/src/utils/normalizeWireMaterialKey';
 
 // ============================================================
 // BUSINESS LOGIC CONSTANTS
@@ -45,9 +32,45 @@ import {
 const TERMINAL_PREFIXES = ["770", "350", "87"];
 const TERMINAL_STEPS = ["10", "30"];
 const HARDWARE_STEPS = ["50", "90"];
+const CONNECTOR_KEYWORDS = [
+  'CONNECTOR',
+  'PLUG',
+  'SOCKET',
+  'RECEPTACLE',
+  'TERMINAL',
+  'HOUSING',
+  'PIN',
+  'CONTACT'
+];
 
 const LENGTH_UOM_PATTERNS = /^(FT|FEET|FOOT|IN|INCH|INCHES|M|METER|METERS|CM|MM|YD|YARD|YARDS)$/i;
 const COMPONENT_UOM_PATTERNS = /^(EA|EACH|PC|PCS|PIECE|PIECES|SET|KIT|UNIT|UNITS|LOT)$/i;
+const GAUGE_PATTERN = /(\d{1,2})\s*(?:AWG|GA|GAUGE)/i;
+const COLOR_TOKENS: Record<string, string> = {
+  BLK: 'black',
+  BK: 'black',
+  BLACK: 'black',
+  RED: 'red',
+  RD: 'red',
+  BLU: 'blue',
+  BLUE: 'blue',
+  GRN: 'green',
+  GREEN: 'green',
+  WHT: 'white',
+  WHITE: 'white',
+  YEL: 'yellow',
+  YELLOW: 'yellow',
+  ORG: 'orange',
+  ORANGE: 'orange',
+  BRN: 'brown',
+  BROWN: 'brown',
+  GRY: 'gray',
+  GREY: 'gray',
+  VIO: 'violet',
+  VIOLET: 'violet',
+  PNK: 'pink',
+  PINK: 'pink',
+};
 
 export const STEP_LABELS: Record<string, string> = {
   "10": "Termination/Tooling Zone (Komax)",
@@ -121,7 +144,23 @@ function isComponentLine(line: string): boolean {
  * - Hardware step (50, 90) → hardware
  * - Otherwise → unknown
  */
-export function classifyComponentType(partId: string, uom: string | null, step: string): ComponentType {
+export function classifyComponentType(
+  partId: string,
+  uom: string | null,
+  step: string,
+  description?: string | null,
+  trailingLines: string[] = []
+): ComponentType {
+  const searchSpace = [partId, description, ...trailingLines]
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase();
+
+  // Connector keywords take precedence (no downstream reclassification)
+  if (CONNECTOR_KEYWORDS.some(keyword => searchSpace.includes(keyword))) {
+    return 'connector';
+  }
+
   // Wire: Length-based UOM
   if (uom && LENGTH_UOM_PATTERNS.test(uom)) {
     return 'wire';
@@ -167,6 +206,72 @@ function extractDescription(rawLine: string, partId: string): string | null {
   return cleaned || null;
 }
 
+function normalizePartNumber(partId: string): string {
+  return partId.trim().toUpperCase();
+}
+
+function normalizeDescriptionText(description: string | null): string | null {
+  if (!description) return null;
+  return description.replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+function extractGauge(partId: string, description: string | null): { value: string | null; signal?: string } {
+  const fromPart = partId.match(GAUGE_PATTERN);
+  if (fromPart) {
+    return { value: fromPart[1], signal: 'AWG_MATCH_PART' };
+  }
+  if (description) {
+    const fromDesc = description.match(GAUGE_PATTERN);
+    if (fromDesc) {
+      return { value: fromDesc[1], signal: 'AWG_MATCH_DESC' };
+    }
+  }
+  return { value: null };
+}
+
+function extractColor(description: string | null, trailingLines: string[]): { value: string | null; signal?: string } {
+  const searchSpace = [description, ...trailingLines].filter(Boolean).join(' ').toUpperCase();
+  for (const [token, normalized] of Object.entries(COLOR_TOKENS)) {
+    if (searchSpace.includes(token)) {
+      return { value: normalized, signal: 'COLOR_MATCH' };
+    }
+  }
+  return { value: null };
+}
+
+function normalizeLengthToInches(raw: RawComponent): { inches: number | null; signal?: string } {
+  const qty = typeof raw.detectedQty === 'number' ? raw.detectedQty : null;
+  const uom = raw.detectedUom?.toUpperCase() ?? null;
+  if (!qty || !uom) {
+    return { inches: null };
+  }
+
+  if (['FT', 'FEET', 'FOOT'].includes(uom)) {
+    return { inches: qty * 12, signal: 'LENGTH_FT' };
+  }
+  if (['IN', 'INCH', 'INCHES'].includes(uom)) {
+    return { inches: qty, signal: 'LENGTH_IN' };
+  }
+  if (['CM'].includes(uom)) {
+    return { inches: qty * 0.393701, signal: 'LENGTH_CM' };
+  }
+  if (['MM'].includes(uom)) {
+    return { inches: qty * 0.0393701, signal: 'LENGTH_MM' };
+  }
+  if (['M', 'METER', 'METERS'].includes(uom)) {
+    return { inches: qty * 39.3701, signal: 'LENGTH_M' };
+  }
+  if (['YD', 'YARD', 'YARDS'].includes(uom)) {
+    return { inches: qty * 36, signal: 'LENGTH_YD' };
+  }
+  return { inches: null };
+}
+
+function computeConfidence(signals: string[]): number {
+  if (signals.length === 0) return 0.2;
+  return Math.min(1, signals.length * 0.2);
+}
+
 // ============================================================
 // NORMALIZATION FUNCTION (PLACEHOLDER)
 // ============================================================
@@ -187,6 +292,8 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
   let totalWires = 0;
   let totalTerminals = 0;
   let totalHardware = 0;
+  let totalConnectors = 0;
+  const flatComponents: NormalizedComponent[] = [];
   
   for (const rawOp of rawData.operations) {
     const components: NormalizedComponent[] = [];
@@ -218,11 +325,13 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
           );
           if (normalized) {
             components.push(normalized);
+            flatComponents.push(normalized);
             
             // Update type counts
             if (normalized.componentType === 'wire') totalWires++;
             if (normalized.componentType === 'terminal') totalTerminals++;
             if (normalized.componentType === 'hardware') totalHardware++;
+            if (normalized.componentType === 'connector') totalConnectors++;
           }
         }
         
@@ -260,10 +369,12 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
       );
       if (normalized) {
         components.push(normalized);
+        flatComponents.push(normalized);
         
         if (normalized.componentType === 'wire') totalWires++;
         if (normalized.componentType === 'terminal') totalTerminals++;
         if (normalized.componentType === 'hardware') totalHardware++;
+        if (normalized.componentType === 'connector') totalConnectors++;
       }
     }
     
@@ -286,15 +397,64 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
     totalOperations: normalizedOps.length,
     wires: totalWires,
     terminals: totalTerminals,
-    hardware: totalHardware
+    hardware: totalHardware,
+    connectors: totalConnectors,
   };
   
-  console.log(`[BOMNormalizer] Complete: ${summary.totalComponents} components (${summary.wires} wires, ${summary.terminals} terminals, ${summary.hardware} hardware)`);
+  console.log(`[BOMNormalizer] Complete: ${summary.totalComponents} components (${summary.wires} wires, ${summary.terminals} terminals, ${summary.hardware} hardware, ${totalConnectors} connectors)`);
+
+  const wireTotalsByMaterialKey: Record<string, number> = {};
+  const componentCountsByType: Record<string, number> = {};
+
+  flatComponents.forEach(component => {
+    componentCountsByType[component.componentType] = (componentCountsByType[component.componentType] || 0) + 1;
+    if (component.componentType === 'wire') {
+      const key = normalizeWireMaterialKey({
+        gauge: component.gauge ?? null,
+        color: component.color ?? null,
+        type: 'wire'
+      });
+      const length = component.normalizedLengthInches ?? 0;
+      if (length > 0) {
+        wireTotalsByMaterialKey[key] = (wireTotalsByMaterialKey[key] || 0) + length;
+      }
+    }
+  });
+
+  const processSteps = normalizedOps.map(op => op.step);
+
+  const validation = {
+    unknownItems: flatComponents
+      .filter(c => c.componentType === 'unknown')
+      .map(c => ({ partId: c.partId, reason: 'UNKNOWN_TYPE' })),
+    suspiciousItems: flatComponents
+      .filter(c => (c.confidence ?? 0) < 0.3)
+      .map(c => ({ partId: c.partId, confidence: c.confidence ?? 0 })),
+    missingFields: flatComponents
+      .filter(c => !c.normalizedPartNumber || !c.normalizedDescription)
+      .map(c => ({ partId: c.partId, missing: !c.normalizedPartNumber ? 'partNumber' : 'description' }))
+  };
+
+  console.log('[T23.6.54B NORMALIZED BOM OUTPUT]', {
+    componentCount: flatComponents.length,
+    sample: flatComponents.slice(0, 3)
+  });
   
   return {
     masterPartNumber: rawData.masterPartNumber,
     operations: normalizedOps,
-    summary
+    summary,
+    skuPartNumber: rawData.masterPartNumber,
+    drawingNumber: null,
+    revision: null,
+    sourceDocumentId: null,
+    sourceFileName: null,
+    summaries: {
+      wireTotalsByMaterialKey,
+      componentCountsByType,
+      processSteps
+    },
+    validation
   };
 }
 
@@ -315,6 +475,19 @@ function normalizeComponent(
   
   const componentType = classifyComponentType(partId, raw.detectedUom || null, step);
   const description = extractDescription(raw.rawLine, partId);
+  const normalizedPartNumber = normalizePartNumber(partId);
+  const normalizedDescription = normalizeDescriptionText(description);
+  const { inches: normalizedLengthInches, signal: lengthSignal } = normalizeLengthToInches(raw);
+  const { value: gauge, signal: gaugeSignal } = extractGauge(partId, description);
+  const { value: color, signal: colorSignal } = extractColor(description, trailingLines);
+  const classificationSignals: string[] = [];
+  if (componentType !== 'unknown') classificationSignals.push(`TYPE_${componentType.toUpperCase()}`);
+  if (gaugeSignal) classificationSignals.push(gaugeSignal);
+  if (colorSignal) classificationSignals.push(colorSignal);
+  if (lengthSignal) classificationSignals.push(lengthSignal);
+  classificationSignals.push(`STEP_${step}`);
+  const confidence = computeConfidence(classificationSignals);
+  const processCode = STEP_LABELS[step] || resourceId || null;
   
   return {
     partId,
@@ -323,6 +496,14 @@ function normalizeComponent(
     quantity: raw.detectedQty || 1,
     uom: raw.detectedUom || null,
     componentType,
+    normalizedPartNumber,
+    normalizedDescription,
+    normalizedLengthInches: normalizedLengthInches ?? null,
+    gauge,
+    color,
+    processCode,
+    confidence,
+    classificationSignals,
     source: {
       rawLine: raw.rawLine,
       trailingLines

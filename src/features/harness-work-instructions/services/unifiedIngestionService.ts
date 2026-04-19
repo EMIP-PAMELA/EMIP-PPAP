@@ -34,6 +34,9 @@ import { interpretRheemDrawingModel, type DrawingInterpretationResult } from './
 import { runAdaptiveDrawingPipeline, type AdaptiveDrawingAnalysis } from './adaptiveDrawingPipelineService';
 import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 import { reconcileDrawingAndBOMMaterials, type MaterialReconciliationResult } from './materialReconciliationService';
+import { parseBOMText } from '@/src/features/documentEngine/core/bomParser';
+import { normalizeBOMData } from '@/src/features/documentEngine/core/bomNormalizer';
+import type { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -79,6 +82,8 @@ interface PipelineResult {
   adaptiveStructuredData?: unknown;
   /** T23.6.53: Drawing vs BOM material reconciliation snapshot. */
   materialReconciliation?: MaterialReconciliationResult | null;
+  /** T23.6.54B: Canonical normalized BOM promoted from Document Engine. */
+  normalizedBOM?: NormalizedBOM | null;
 }
 
 export interface UnifiedIngestionResult {
@@ -199,7 +204,7 @@ async function buildPipelineFromDocuments(
     documents.find(doc => doc.document_type === 'CUSTOMER_DRAWING');
 
   if (!bomDoc || !drawingDoc) {
-    return { status: 'PARTIAL', job: null, drawing: null, processBundle: null };
+    return { status: 'PARTIAL', job: null, drawing: null, processBundle: null, normalizedBOM: null };
   }
 
   const [bomText, drawingText] = await Promise.all([
@@ -210,13 +215,33 @@ async function buildPipelineFromDocuments(
   // Phase 3H.44 C3: When a pre-built merged job is present, BOM text is not required
   // for job construction (already consumed upstream). Drawing text is always required.
   if (!drawingText || (!preBuiltBOMJob && !bomText)) {
-    return { status: 'PARTIAL', job: null, drawing: null, processBundle: null };
+    return { status: 'PARTIAL', job: null, drawing: null, processBundle: null, normalizedBOM: null };
   }
 
   // Phase 3H.44 C3: Use pre-merged job if provided; otherwise build from BOM text as usual.
   const job = preBuiltBOMJob ?? await parseBOMToHWI(bomText!, sku.part_number, bomDoc.revision);
   if (preBuiltBOMJob) {
     console.log('[WIRE AUTHORITY LAYER] Pre-merged BOM job injected — parseBOMToHWI bypassed');
+  }
+  let normalizedBOM: NormalizedBOM | null = null;
+  if (bomText) {
+    try {
+      const rawBOM = parseBOMText(bomText);
+      normalizedBOM = normalizeBOMData(rawBOM);
+    } catch (err) {
+      console.warn('[T23.6.54B NORMALIZED BOM ERROR]', {
+        skuId: sku.id,
+        documentId: bomDoc.id,
+        message: err instanceof Error ? err.message : err,
+      });
+    }
+  }
+  if (normalizedBOM) {
+    console.log('[T23.6.54B PIPELINE ATTACH]', {
+      stage: 'pipeline',
+      hasNormalizedBOM: true,
+      componentCount: normalizedBOM.summary?.totalComponents ?? 0,
+    });
   }
   const drawing = ingestDrawingPdf({ drawingText, fileName: drawingDoc.file_name });
   const hints = await loadFusionHints(drawing, job);
@@ -255,6 +280,7 @@ async function buildPipelineFromDocuments(
     ...(adaptiveResult.coverage       !== undefined  ? { coverage:               adaptiveResult.coverage }       : {}),
     ...(adaptiveResult.interpretation !== undefined  ? { interpretation:          adaptiveResult.interpretation } : {}),
     ...(materialReconciliation ? { materialReconciliation } : {}),
+    normalizedBOM: normalizedBOM ?? null,
   };
 }
 
@@ -313,6 +339,22 @@ export async function ingestAndProcessDocument(params: IngestAndProcessParams): 
   let description: string | null = null;
   if (normalizedType === 'BOM' && normalizedText) {
     description = deriveDescriptionFromBOM(normalizedText);
+    try {
+      const rawNormalizedBOM = parseBOMText(normalizedText);
+      const normalizedBOM = normalizeBOMData(rawNormalizedBOM);
+      Object.assign(analysis, { normalizedBOM });
+      console.log('[T23.6.54B PIPELINE ATTACH]', {
+        stage: 'ingestion',
+        hasNormalizedBOM: true,
+        componentCount: normalizedBOM.summary?.totalComponents ?? 0,
+      });
+    } catch (err) {
+      console.warn('[T23.6.54B NORMALIZED BOM ERROR]', {
+        stage: 'ingestion',
+        file: file.name,
+        message: err instanceof Error ? err.message : err,
+      });
+    }
   } else if (normalizedText && normalizedType !== 'UNKNOWN') {
     const draft = ingestDrawingPdf({ drawingText: normalizedText, fileName: file.name });
     if (draft.title) description = draft.title;

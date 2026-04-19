@@ -53,7 +53,7 @@ export interface ProcessInstruction {
  * Architecture layer: Normalization Output
  */
 
-export type ComponentType = 'wire' | 'terminal' | 'hardware' | 'unknown';
+export type ComponentType = 'wire' | 'terminal' | 'hardware' | 'connector' | 'unknown';
 
 export interface NormalizedComponent {
   partId: string;
@@ -64,6 +64,15 @@ export interface NormalizedComponent {
   uom: string | null;
 
   componentType: ComponentType;
+
+  normalizedPartNumber?: string | null;
+  normalizedDescription?: string | null;
+  normalizedLengthInches?: number | null;
+  gauge?: string | number | null;
+  color?: string | null;
+  processCode?: string | null;
+  confidence?: number | null;
+  classificationSignals?: string[];
 
   source: {
     rawLine: string;
@@ -87,10 +96,26 @@ export interface BOMSummary {
   wires: number;
   terminals: number;
   hardware: number;
+  connectors?: number;
 }
 
 export interface NormalizedBOM {
   masterPartNumber: string;
   operations: NormalizedOperation[];
   summary: BOMSummary;
+  skuPartNumber?: string | null;
+  drawingNumber?: string | null;
+  revision?: string | null;
+  sourceDocumentId?: string | null;
+  sourceFileName?: string | null;
+  summaries?: {
+    wireTotalsByMaterialKey?: Record<string, number>;
+    componentCountsByType?: Record<string, number>;
+    processSteps?: string[];
+  };
+  validation?: {
+    unknownItems?: any[];
+    suspiciousItems?: any[];
+    missingFields?: any[];
+  };
 }
