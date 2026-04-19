@@ -67,6 +67,8 @@ import type {
   IngestionAnalysisResult,
   UnresolvedQuestion,
 } from '@/src/features/vault/types/ingestionReview';
+import { getSimplifiedBOM } from '@/src/core/projections/projectionService';
+import type { ComponentAuthorityOption } from './componentAuthorityService';
 
 // ---------------------------------------------------------------------------
 // Internal helpers (duplicated from unifiedIngestionService — see TODO above)
@@ -1984,6 +1986,41 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     hasConnectivity,
   });
 
+  const partNumberForCanonicalOptions = partNumber ?? partWinner?.value ?? null;
+  let canonicalComponentOptions: ComponentAuthorityOption[] | null = null;
+  let canonicalComponentOptionsSource: IngestionAnalysisResult['canonicalComponentOptionsSource'] | null = null;
+
+  if (partNumberForCanonicalOptions) {
+    try {
+      const projection = await getSimplifiedBOM(partNumberForCanonicalOptions);
+      const optionPayload = projection?.componentOptions ?? [];
+      if (optionPayload.length > 0) {
+        canonicalComponentOptions = optionPayload.map(option => ({
+          canonicalId: option.canonicalId,
+          displayName: option.displayName,
+          cavities: option.cavities ?? [],
+          kind: option.kind === 'TERMINAL' ? 'TERMINAL' : 'CONNECTOR',
+        }));
+        canonicalComponentOptionsSource = 'SIMPLIFIED_BOM';
+      } else {
+        canonicalComponentOptionsSource = 'EFFECTIVE_CONNECTIVITY_FALLBACK';
+      }
+      console.log('[T23.6.71A CANONICAL INJECTION]', {
+        partNumber: partNumberForCanonicalOptions,
+        total: optionPayload.length,
+        connectors: optionPayload.filter(opt => opt.kind === 'CONNECTOR').length,
+        terminals: optionPayload.filter(opt => opt.kind === 'TERMINAL').length,
+        source: canonicalComponentOptionsSource ?? 'UNAVAILABLE',
+      });
+    } catch (err) {
+      canonicalComponentOptionsSource = 'EFFECTIVE_CONNECTIVITY_FALLBACK';
+      console.warn('[T23.6.71A CANONICAL INJECTION ERROR]', {
+        partNumber: partNumberForCanonicalOptions,
+        error: err instanceof Error ? err.message : err,
+      });
+    }
+  }
+
   return {
     fileName,
     fileSize,
@@ -2020,6 +2057,8 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     harnessValidation,
     harnessConfidence,
     harnessDecision,
+    canonicalComponentOptions,
+    canonicalComponentOptionsSource,
     debugRuntime,
     analyzedAt: new Date().toISOString(),
   };
