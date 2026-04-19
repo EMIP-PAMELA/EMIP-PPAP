@@ -45,6 +45,7 @@ import {
   buildEffectiveHarnessState,
   type EffectiveHarnessState,
 } from '@/src/features/harness-work-instructions/services/effectiveHarnessModelService';
+import type { TopologyWarning } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -147,12 +148,6 @@ const DOC_TYPE_OPTIONS: { label: string; value: StrictDocumentType }[] = [
   { label: 'Customer Drawing', value: 'CUSTOMER_DRAWING' },
   { label: 'Internal Drawing', value: 'INTERNAL_DRAWING' },
 ];
-
-const DEFAULT_PANEL_WIDTH = 420;
-const PANEL_MIN_WIDTH = 320;
-const PANEL_MAX_WIDTH = 900;
-
-const clampPanelWidth = (value: number) => Math.min(Math.max(value, PANEL_MIN_WIDTH), PANEL_MAX_WIDTH);
 
 const STATUS_BADGE: Record<WorkbenchItemStatus, string> = {
   queued:          'bg-gray-100 text-gray-600',
@@ -743,63 +738,49 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const [skuDeletedIds,   setSkuDeletedIds]   = useState<Record<string, string[]>>({});
   const [skuEditorRequest, setSkuEditorRequest] = useState<ExternalEditorRequest | null>(null);
   const skuEditorRef = useRef<HTMLDivElement>(null);
-  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
-  const isResizingPanelRef = useRef(false);
-  const panelWidthRef = useRef(panelWidth);
+  const [isWorkbenchActive, setIsWorkbenchActive] = useState(false);
+  const workbenchRef = useRef<HTMLDivElement>(null);
+  const itemCountRef = useRef(0);
+
+  const scrollWorkbenchIntoView = useCallback(() => {
+    requestAnimationFrame(() => {
+      workbenchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
+
+  const focusWorkbench = useCallback(() => {
+    setIsWorkbenchActive(true);
+    scrollWorkbenchIntoView();
+  }, [scrollWorkbenchIntoView]);
+
+  const collapseQueue = useCallback(() => {
+    setIsWorkbenchActive(false);
+  }, []);
 
   useEffect(() => {
-    panelWidthRef.current = panelWidth;
-  }, [panelWidth]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const saved = window.localStorage.getItem('workbench.panelWidth');
-    if (saved) {
-      const parsed = parseInt(saved, 10);
-      if (Number.isFinite(parsed)) {
-        setPanelWidth(clampPanelWidth(parsed));
-      }
+    if (!isWorkbenchActive) {
+      itemCountRef.current = items.length;
+      return;
     }
-  }, []);
+    if (items.length === 0) return;
+    const previously = itemCountRef.current;
+    itemCountRef.current = items.length;
+    if (items.length > previously) {
+      scrollWorkbenchIntoView();
+    }
+  }, [items.length, isWorkbenchActive, scrollWorkbenchIntoView]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-
-    const handleMouseMove = (event: MouseEvent) => {
-      if (!isResizingPanelRef.current) return;
-      const newWidth = clampPanelWidth(window.innerWidth - event.clientX);
-      panelWidthRef.current = newWidth;
-      setPanelWidth(newWidth);
-    };
-
-    const handleMouseUp = () => {
-      if (!isResizingPanelRef.current) return;
-      isResizingPanelRef.current = false;
-      document.body.classList.remove('select-none', 'cursor-col-resize');
-      window.localStorage.setItem('workbench.panelWidth', String(panelWidthRef.current));
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, []);
-
-  const startPanelResize = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    isResizingPanelRef.current = true;
-    document.body.classList.add('select-none', 'cursor-col-resize');
-  }, []);
-
-  const resetPanelWidth = useCallback(() => {
-    panelWidthRef.current = DEFAULT_PANEL_WIDTH;
-    setPanelWidth(DEFAULT_PANEL_WIDTH);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('workbench.panelWidth', String(DEFAULT_PANEL_WIDTH));
+    if (items.length === 0) {
+      setSelectedId(null);
+      setIsWorkbenchActive(false);
     }
-  }, []);
+  }, [items.length]);
+
+  const handleSelectItem = useCallback((id: string) => {
+    setSelectedId(id);
+    focusWorkbench();
+  }, [focusWorkbench]);
 
   const updateItem = useCallback((id: string, patch: Partial<WorkbenchItem>) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
@@ -1306,8 +1287,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     }));
     setItems(prev => [...prev, ...entries]);
     entries.forEach(e => processFile(e.id, e.file, uploadMode !== 'MIXED' ? uploadMode : undefined));
-    if (!selectedId && entries.length > 0) setSelectedId(entries[0].id);
-  }, [processFile, selectedId, uploadMode]);
+    if (entries.length > 0) {
+      handleSelectItem(entries[0].id);
+    }
+  }, [handleSelectItem, processFile, uploadMode]);
 
   const commitItem = useCallback(async (item: WorkbenchItem) => {
     if (!isItemReady(item)) return;
@@ -1425,6 +1408,14 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     }
   }, [items, commitItem]);
 
+  const selectedItem = useMemo(() => (
+    selectedId ? items.find(i => i.id === selectedId) ?? null : null
+  ), [items, selectedId]);
+
+  const selectedCommitValues = useMemo(() => (
+    selectedItem ? getCommitValues(selectedItem) : null
+  ), [selectedItem]);
+
   // --- Derived state ---
   const counts = useMemo(() => ({
     all:          items.length,
@@ -1439,12 +1430,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     if (filter === 'ready') return items.filter(i => i.status === 'ready_to_commit');
     if (filter === 'committed') return items.filter(i => i.status === 'committed');
     return items;
-  }, [items, filter]);
+  }, [filter, items]);
 
-  const selectedItem = items.find(i => i.id === selectedId) ?? null;
-
-  // T12.4: single authoritative effective model for the selected item.
-  // All UI consumers (HC panel, question cards, commit button) read from this.
   const effectiveState = useMemo<EffectiveHarnessState | null>(() => {
     if (!selectedItem?.analysis) return null;
     return buildEffectiveHarnessState({
@@ -1479,12 +1466,719 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const canCommitAll = counts.ready > 0 && nonCommitted.every(i => i.status === 'ready_to_commit');
   const blockedCount = nonCommitted.filter(i => i.status !== 'ready_to_commit').length;
 
+  const WorkbenchMainArea: React.FC = () => (
+    !selectedItem ? (
+      <div className="flex flex-1 items-center justify-center py-16 text-sm text-gray-400">
+        Select a file to review
+      </div>
+    ) : (
+      <div className="p-5 space-y-4">
+        <div>
+          <p className="text-base font-bold text-gray-900 truncate">{selectedItem.file.name}</p>
+          <p className="text-xs text-gray-400">{formatBytes(selectedItem.file.size)}</p>
+        </div>
+
+        {/* Inline Confirmation Fields */}
+        {(() => {
+          const vals = getCommitValues(selectedItem);
+          const dt = selectedItem.confirmedDocumentType;
+          const needsDrawing = docTypeRequiresField(dt, 'drawingNumber');
+          const needsRevision = docTypeRequiresField(dt, 'revision');
+          const missingPart = dt && !vals.partNumber?.trim();
+          const missingRevision = needsRevision && !vals.revision?.trim();
+          const missingDrawing = needsDrawing && !vals.drawingNumber?.trim();
+          const analysis = selectedItem.analysis;
+          const regionList: RegionOverlay[] = analysis?.extractionEvidence?.document_structure?.regions ?? [];
+          const regionMap = new Map<string, RegionOverlay>(
+            regionList.map((region: RegionOverlay) => [region.id, region] as [string, RegionOverlay]),
+          );
+          const partCandidates = buildCandidatesFromSignals(analysis?.extractionEvidence?.part_number_signals);
+          const revisionCandidates = buildCandidatesFromSignals(analysis?.extractionEvidence?.revision_signals);
+          const drawingCandidates = buildCandidatesFromSignals(analysis?.extractionEvidence?.drawing_number_signals);
+
+          const partExtraction = getFieldExtractionFor(analysis, 'partNumber');
+          const revisionExtraction = getFieldExtractionFor(analysis, 'revision');
+          const drawingExtraction = getFieldExtractionFor(analysis, 'drawingNumber');
+
+          // C11: Re-run resolver in render for up-to-date suggestedValue + source badge.
+          const renderResolved = resolveDocumentFields({
+            operatorConfirmed: {
+              partNumber:   selectedItem.operatorConfirmed?.partNumber   ? (selectedItem.confirmedPartNumber   ?? undefined) : undefined,
+              revision:     selectedItem.operatorConfirmed?.revision     ? (selectedItem.confirmedRevision     ?? undefined) : undefined,
+              documentType: selectedItem.operatorConfirmed?.documentType ? (selectedItem.confirmedDocumentType ?? undefined) : undefined,
+            },
+            parsedDrawingData:   analysis?.structuredData,
+            heuristicCandidates: [
+              ...(!analysis?.partNumberIsProvisional && analysis?.proposedPartNumber ? [{
+                field: 'partNumber' as const,
+                value: analysis.proposedPartNumber,
+                source: 'HEURISTIC' as const,
+                confidence: analysis.partNumberConfidence ?? 0.5,
+              }] : []),
+              ...(analysis?.proposedRevision ? [{
+                field: 'revision' as const,
+                value: analysis.proposedRevision,
+                source: 'HEURISTIC' as const,
+                confidence: analysis.revisionConfidence ?? 0.5,
+              }] : []),
+            ],
+            filename:         selectedItem.file.name,
+            currentDocType:   selectedItem.confirmedDocumentType ?? analysis?.proposedDocumentType,
+            titleBlockResult: analysis?.titleBlockRegionResult ?? null,
+            visionResult:     analysis?.visionParsedResult      ?? null,
+          });
+
+          const sections: FieldSectionConfig[] = [
+            {
+              key: 'partNumber' as const,
+              label: 'Part Number',
+              required: true,
+              placeholder: 'e.g. NH45-110858-01',
+              missing: Boolean(missingPart),
+              shouldRender: true,
+              value: vals.partNumber,
+              suggestedValue: renderResolved.partNumber.value ?? analysis?.proposedPartNumber ?? null,
+              operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.partNumber),
+              confidence: renderResolved.partNumber.source !== 'UNKNOWN' ? renderResolved.partNumber.confidence : (analysis?.partNumberConfidence ?? partExtraction?.confidence ?? null),
+              extraction: partExtraction,
+              warning: (analysis?.partNumberIsProvisional && !partExtraction?.locked) ? 'Extraction could not resolve part number — enter manually.' : null,
+              candidates: partCandidates,
+            },
+            {
+              key: 'revision' as const,
+              label: 'Revision',
+              required: Boolean(needsRevision),
+              placeholder: 'e.g. B, 02, Rev A',
+              missing: Boolean(missingRevision),
+              shouldRender: Boolean(needsRevision || analysis?.proposedRevision),
+              value: vals.revision,
+              suggestedValue: renderResolved.revision.value ?? analysis?.proposedRevision ?? null,
+              operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.revision),
+              confidence: renderResolved.revision.source !== 'UNKNOWN' ? renderResolved.revision.confidence : (analysis?.revisionConfidence ?? revisionExtraction?.confidence ?? null),
+              extraction: revisionExtraction,
+              warning: null,
+              candidates: revisionCandidates,
+            },
+            {
+              key: 'drawingNumber' as const,
+              label: 'Drawing Number',
+              required: Boolean(needsDrawing),
+              placeholder: 'e.g. DWG-45-1085',
+              missing: Boolean(missingDrawing),
+              shouldRender: Boolean(needsDrawing || analysis?.proposedDrawingNumber),
+              value: vals.drawingNumber,
+              suggestedValue: analysis?.proposedDrawingNumber ?? null,
+              operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.drawingNumber),
+              confidence: drawingExtraction?.confidence ?? null,
+              extraction: drawingExtraction,
+              warning: null,
+              candidates: drawingCandidates,
+            },
+          ].filter(section => section.shouldRender);
+
+          const renderFieldSection = (section: FieldSectionConfig) => {
+            const operatorExtraction: FieldExtraction | null = section.operatorConfirmed
+              ? {
+                  field: FIELD_TO_EXTRACTION[section.key],
+                  value: section.value ?? null,
+                  confidence: 1,
+                  sourceRegionId: null,
+                  source: 'USER_CONFIRMED',
+                  locked: true,
+                }
+              : null;
+            const baseExtraction = operatorExtraction ?? section.extraction;
+            const region = baseExtraction?.sourceRegionId
+              ? regionMap.get(baseExtraction.sourceRegionId) ?? null
+              : null;
+            const isLocked = section.operatorConfirmed || Boolean(baseExtraction?.locked && section.value === (baseExtraction?.value ?? '').trim());
+            const resolvedSrc = renderResolved[section.key as 'partNumber' | 'revision']?.source;
+            const badge = operatorExtraction
+              ? AUTHORITY_SOURCE_BADGES.OPERATOR_CONFIRMED
+              : (resolvedSrc && resolvedSrc !== 'HEURISTIC' && resolvedSrc !== 'UNKNOWN')
+                ? AUTHORITY_SOURCE_BADGES[resolvedSrc]
+                : SOURCE_BADGES[baseExtraction?.source ?? 'UNKNOWN'];
+            const effectiveConfidence = section.operatorConfirmed ? 1 : section.confidence;
+            const confidenceMeta = describeConfidence(effectiveConfidence);
+            const snippet = region?.extractedText ?? baseExtraction?.value ?? null;
+            const value = section.value ?? '';
+            const suggestionAvailable = Boolean(section.suggestedValue);
+            const showAcceptButton = suggestionAvailable && !section.operatorConfirmed;
+            const showConfirmButton = Boolean(value.trim()) && !section.operatorConfirmed;
+            const viewSourceEnabled = Boolean(baseExtraction?.sourceRegionId && region) && !section.operatorConfirmed;
+            const statusChip = section.operatorConfirmed
+              ? { label: 'Confirmed', className: 'bg-emerald-100 text-emerald-800' }
+              : value
+                ? { label: 'Suggested', className: 'bg-amber-100 text-amber-800' }
+                : section.required
+                  ? { label: 'Required', className: 'bg-red-100 text-red-700' }
+                  : { label: 'Optional', className: 'bg-gray-100 text-gray-600' };
+            const viewSourceTone = confidenceMeta.level === 'medium'
+              ? 'border border-amber-300 text-amber-800 hover:bg-amber-50'
+              : 'border border-blue-200 text-blue-700 hover:bg-blue-50';
+            const confidenceValue = section.operatorConfirmed
+              ? '100%'
+              : typeof section.confidence === 'number'
+                ? `${Math.round(section.confidence * 100)}%`
+                : '—';
+            const descriptiveMessage = section.operatorConfirmed
+              ? 'Confirmed by operator — treated as authoritative.'
+              : isLocked
+                ? 'Resolved from authoritative source — no review required.'
+                : confidenceMeta.message;
+            const messageClass = section.operatorConfirmed || isLocked ? 'text-emerald-700' : confidenceMeta.textClass;
+            const showLowConfidenceNotice = confidenceMeta.level === 'low' && !section.operatorConfirmed && !isLocked;
+
+            return (
+              <div key={section.key} className="rounded-lg border border-gray-200 bg-white/60 px-3 py-2 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
+                      {section.label}
+                      {section.required && <span className="text-red-500">*</span>}
+                    </label>
+                    <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusChip.className}`}>
+                      {statusChip.label}
+                    </span>
+                  </div>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}>
+                    {badge.label}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className={`rounded-full px-2 py-0.5 font-semibold ${confidenceMeta.pillClass}`}>
+                    Confidence: {confidenceValue} · {confidenceMeta.label}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => viewSourceEnabled && openEvidenceAtRegion(baseExtraction?.sourceRegionId)}
+                    disabled={!viewSourceEnabled}
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition ${viewSourceEnabled ? viewSourceTone : 'border border-gray-200 text-gray-400 cursor-not-allowed opacity-60'}`}
+                  >
+                    View Source
+                  </button>
+                </div>
+                <p className={`text-[11px] ${messageClass}`}>
+                  {descriptiveMessage}
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={value}
+                    placeholder={section.placeholder}
+                    onChange={e => setConfirmedField(selectedItem.id, section.key, e.target.value)}
+                    onFocus={() => focusRegion(baseExtraction?.sourceRegionId ?? null)}
+                    className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-blue-100 ${confidenceInputClasses(confidenceMeta.level, 'border-gray-300 bg-white', section.missing)}`}
+                  />
+                  {showAcceptButton && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!section.suggestedValue) return;
+                        setConfirmedField(selectedItem.id, section.key, section.suggestedValue);
+                      }}
+                      className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${acceptButtonClasses(confidenceMeta.level)}`}
+                    >
+                      Accept
+                    </button>
+                  )}
+                  {showConfirmButton && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmedField(selectedItem.id, section.key, value)}
+                      className="shrink-0 rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                    >
+                      Confirm
+                    </button>
+                  )}
+                </div>
+                {section.warning && !isLocked && !section.operatorConfirmed && (
+                  <p className="text-[10px] text-orange-600">{section.warning}</p>
+                )}
+                {showLowConfidenceNotice && (
+                  <p className="text-[10px] text-red-600 font-semibold">Low confidence — verify manually before confirming.</p>
+                )}
+                {snippet && (
+                  <p className="text-[11px] truncate text-gray-500">
+                    <span className="font-semibold">Source snippet:</span>{' '}
+                    {truncateSnippet(snippet)}
+                  </p>
+                )}
+                {renderCandidateDropdown(section.candidates, candidateValue => {
+                  setConfirmedField(selectedItem.id, section.key, candidateValue);
+                })}
+                {/* C11.1: Field evidence transparency panel */}
+                {(section.key === 'partNumber' || section.key === 'revision') && (
+                  <FieldEvidencePanel
+                    label={section.label}
+                    resolved={renderResolved[section.key]}
+                  />
+                )}
+              </div>
+            );
+          };
+
+          return (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Confirm Fields</p>
+              <div className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-[11px] text-purple-900">
+                Values below are AI-assisted suggestions. Please confirm before committing.
+              </div>
+              {sections.length ? sections.map(renderFieldSection) : (
+                <p className="text-xs text-gray-500">Set a document type to receive extraction suggestions.</p>
+              )}
+
+              {/* Extraction summary + overlay trigger */}
+              <div className="border-t border-gray-200 pt-2 text-[10px] text-gray-400 space-y-1">
+                {analysis && (
+                  <p>Extraction type suggestion: <span className="font-semibold text-gray-600">{DOC_TYPE_LABELS[analysis.proposedDocumentType]}</span> ({Math.round(analysis.docTypeConfidence * 100)}% confidence)</p>
+                )}
+                {/* C11.1: Document type authority evidence */}
+                {renderResolved.documentType && (
+                  <FieldEvidencePanel
+                    label="Document Type"
+                    resolved={renderResolved.documentType}
+                  />
+                )}
+                {analysis?.extractionEvidence?.document_structure?.regions?.length ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const firstRegion = analysis?.extractionEvidence?.document_structure?.regions?.[0]?.id ?? null;
+                      setActiveRegionId(firstRegion);
+                      setOverlayOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+                  >
+                    View Extraction Overlay ({analysis.extractionEvidence.document_structure!.regions!.length})
+                  </button>
+                ) : (
+                  <p className="text-[10px] text-gray-500">No overlay regions detected.</p>)
+                }
+              </div>
+            </div>
+          );
+        })()}
+
+        {(() => {
+          const unresolvedQuestions: UnresolvedQuestion[] = effectiveState?.unresolvedQuestions
+            ?? selectedItem.analysis?.unresolvedQuestions
+            ?? [];
+          if (unresolvedQuestions.length === 0) return null;
+          return (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Resolution required</p>
+              {unresolvedQuestions.map((q: UnresolvedQuestion) => (
+                <QuestionCard
+                  key={q.id}
+                  question={q}
+                  answer={selectedItem.answers[q.id] ?? ''}
+                  onAnswer={value => answerQuestion(selectedItem.id, q, value)}
+                />
+              ))}
+            </div>
+          );
+        })()}
+
+        {selectedItem.analysis?.extractionEvidence ? (
+          <EvidencePanel
+            evidence={selectedItem.analysis.extractionEvidence}
+            onRegionSelect={regionId => {
+              setActiveRegionId(regionId);
+              setOverlayOpen(true);
+            }}
+            activeRegionId={activeRegionId}
+          />
+        ) : null}
+
+        {debugFallbackCrops[selectedItem.id] && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontWeight: 600 }}>C12.4 Debug — Fallback Crop</div>
+            <img
+              src={debugFallbackCrops[selectedItem.id]}
+              alt="Fallback Crop"
+              style={{ width: '100%', border: '1px solid #ccc' }}
+            />
+          </div>
+        )}
+
+        {selectedItem.analysis?.structuredData ? (
+          <ParsedDrawingDataPanel data={selectedItem.analysis.structuredData} />
+        ) : null}
+
+        {selectedItem.analysis ? (
+          <HarnessConnectivityPanel
+            connectivity={effectiveState?.effectiveConnectivity ?? selectedItem.analysis.harnessConnectivity}
+            reconciliation={selectedItem.analysis.harnessReconciliation}
+            operatorOverrides={wireOverrides[selectedId ?? ''] ?? []}
+            onOverrideSubmit={override => handleOverrideSubmit(selectedId ?? '', override)}
+            resolvedDecision={effectiveState?.effectiveDecision ?? resolvedOutputs[selectedId ?? '']?.resolvedDecision ?? null}
+            topology={effectiveState?.effectiveTopology ?? null}
+            wireIdentities={effectiveState?.effectiveWireIdentities ?? null}
+            onGraphWireClick={wireId => {
+              setSkuEditorRequest({ type: 'edit', wireId });
+              skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            onGraphMissingPinClick={({ component, cavity }) => {
+              setSkuEditorRequest({ type: 'add', prefill: { fromComponent: component, fromCavity: cavity, fromTermination: 'CONNECTOR_PIN' } });
+              skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            onGraphBranchClick={({ component, cavity, wireIds }) => {
+              setSkuEditorRequest({ type: 'branch', wireIds, fromComponent: component, fromCavity: cavity });
+              skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+          />
+        ) : null}
+
+        {selectedItem.analysis?.harnessConnectivity ? (
+          <div ref={skuEditorRef}>
+            <SkuModelEditorPanel
+              extractedConnectivity={selectedItem.analysis.harnessConnectivity}
+              effectiveConnectivity={effectiveState?.effectiveConnectivity ?? null}
+              effectiveDecision={effectiveState?.effectiveDecision ?? null}
+              operatorAddedWires={skuAddedWires[selectedId ?? ''] ?? []}
+              operatorEditedWires={skuEditedWires[selectedId ?? ''] ?? []}
+              operatorDeletedWireIds={skuDeletedIds[selectedId ?? ''] ?? []}
+              onAddWire={wire => handleSkuAddWire(selectedId ?? '', wire)}
+              onEditWire={wire => handleSkuEditWire(selectedId ?? '', wire)}
+              onDeleteWire={request => handleSkuDeleteWire(selectedId ?? '', request)}
+              externalEditorRequest={skuEditorRequest}
+              onExternalRequestConsumed={() => setSkuEditorRequest(null)}
+              wireIdentities={effectiveState?.effectiveWireIdentities ?? null}
+            />
+          </div>
+        ) : null}
+
+        {effectiveState && (
+          <KomaxCutSheetPanel
+            effectiveState={effectiveState}
+            partNumber={effectiveState.effectivePartNumber ?? undefined}
+          />
+        )}
+
+        {effectiveState && (
+          <KomaxProgramPanel effectiveState={effectiveState} />
+        )}
+
+        <ToolingPanel />
+
+        <SkuLifecycleHistoryPanel
+          skuKey={effectiveState?.effectivePartNumber ?? selectedItem?.confirmedPartNumber ?? null}
+        />
+
+        {selectedItem.analysis ? (
+          <details
+            open
+            className="mt-4 rounded-xl border border-gray-200 bg-gray-50 text-xs shadow-sm"
+          >
+            <summary className="cursor-pointer px-3 py-2 font-semibold text-gray-700 select-none">
+              Raw Extraction Debug
+            </summary>
+            <div className="px-3 pb-3">
+              <pre style={{ maxHeight: 400, overflow: 'auto', fontSize: 11 }}>
+                {JSON.stringify({
+                  ...selectedItem.analysis,
+                  effectiveDebug: effectiveState ? {
+                    buildTag:                   'T12.4',
+                    usingEffectiveConnectivity: (
+                      (wireOverrides[selectedId ?? '']?.length ?? 0) +
+                      (skuAddedWires[selectedId ?? '']?.length ?? 0) +
+                      (skuEditedWires[selectedId ?? '']?.length ?? 0) +
+                      (skuDeletedIds[selectedId ?? '']?.length ?? 0)
+                    ) > 0,
+                    effectiveDocType:            effectiveState.effectiveDocumentType,
+                    effectiveDocTypeSource:      effectiveState.effectiveDocTypeSource,
+                    effectiveWireCount:          effectiveState.effectiveConnectivity?.wires.length ?? null,
+                    effectiveDecision:           effectiveState.effectiveDecision?.overallDecision ?? null,
+                    unresolvedQuestionCount:     effectiveState.unresolvedQuestions.length,
+                    blockingQuestionCount:       effectiveState.unresolvedQuestions.filter(q => q.blocksCommit).length,
+                    readyToCommit:               effectiveState.readyToCommit,
+                  } : null,
+                }, null, 2)}
+              </pre>
+            </div>
+          </details>
+        ) : null}
+
+        {/* T16.5 R7: topology commit-blocker panel */}
+        {(() => {
+          const blockingWarnings: TopologyWarning[] = (effectiveState?.effectiveTopology?.warnings?.filter(w => w.blocksCommit) ?? []) as TopologyWarning[];
+          if (blockingWarnings.length === 0) return null;
+          return (
+            <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 space-y-1.5">
+              <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
+                Commit blocked — topology issues must be resolved
+              </p>
+              {blockingWarnings.map((warning, idx) => (
+                <p key={`${warning.code}-${idx}`} className="text-xs text-red-700">⚠ {warning.message}</p>
+              ))}
+            </div>
+          );
+        })()}
+
+        {(selectedItem.status === 'ready_to_commit' || (
+          effectiveState?.readyToCommit === true &&
+          Boolean(selectedItem.confirmedDocumentType) &&
+          Boolean(selectedItem.confirmedPartNumber?.trim())
+        )) ? (
+          <button
+            type="button"
+            onClick={() => commitItem(selectedItem)}
+            className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition"
+          >
+            Commit This File
+          </button>
+        ) : null}
+
+        {selectedItem.status === 'committed' && selectedItem.commitResult ? (
+          <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800">
+            <p className="font-semibold">Committed</p>
+            <p className="text-xs mt-0.5">SKU: {selectedItem.commitResult.sku?.part_number ?? '—'}</p>
+            {selectedItem.commitResult.message ? (
+              <p className="text-xs mt-0.5 text-emerald-600">{selectedItem.commitResult.message}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {selectedItem.status === 'failed' && selectedItem.error ? (
+          <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">
+            <p className="font-semibold">Failed</p>
+            <p className="text-xs mt-0.5">{selectedItem.error}</p>
+            <button
+              type="button"
+              onClick={() => {
+                updateItem(selectedItem.id, { status: 'queued', error: undefined });
+                processFile(selectedItem.id, selectedItem.file, uploadMode !== 'MIXED' ? uploadMode : undefined);
+              }}
+              className="mt-2 text-xs font-semibold text-red-700 underline"
+            >
+              Retry Analysis
+            </button>
+          </div>
+        ) : null}
+      </div>
+    )
+  );
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
+  const hasItems = items.length > 0;
+  const showFullQueue = hasItems && !isWorkbenchActive;
+  const showCollapsedQueue = hasItems && isWorkbenchActive;
+  const activeFileName = selectedItem?.file.name ?? (hasItems ? items[0].file.name : 'No file selected');
+
+  const dropZoneBase = 'mx-6 mt-4 flex cursor-pointer items-center justify-center rounded-3xl border-[3px] border-dashed shadow-sm transition shrink-0';
+  const dropZonePadding = isWorkbenchActive ? 'py-5' : 'py-8';
+  const dropZoneTone = isDragging
+    ? 'border-blue-500 bg-blue-50/90 opacity-100'
+    : isWorkbenchActive
+      ? 'border-gray-200 bg-gray-50/90 opacity-80'
+      : 'border-blue-200/80 bg-gradient-to-br from-white via-white to-blue-50 hover:border-blue-400';
+  const dropZoneClassName = `${dropZoneBase} ${dropZonePadding} ${dropZoneTone}`;
+
+  const renderCollapsedQueueBar = () => (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm shadow-sm">
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{counts.all} file{counts.all === 1 ? '' : 's'} loaded</p>
+        <p className="text-sm font-semibold text-gray-900 truncate max-w-sm" title={activeFileName}>{activeFileName}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500">Ready: {counts.ready} · Needs review: {counts.needs_review}</span>
+        <button
+          type="button"
+          onClick={collapseQueue}
+          className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:border-gray-400"
+        >
+          View Queue
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderFullQueueSection = () => (
+    <section className="mt-4 rounded-3xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-6 py-3">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">Queued Files</p>
+          <p className="text-xs text-gray-500">{counts.all} file{counts.all === 1 ? '' : 's'} total · {counts.needs_review} need review</p>
+        </div>
+        <button
+          type="button"
+          onClick={focusWorkbench}
+          className="rounded-full bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+        >
+          Focus Workbench
+        </button>
+      </div>
+
+      {selectedItem && selectedCommitValues && items.some(i => i.status === 'needs_review') && (
+        <div className="flex flex-wrap items-center gap-2 border-b bg-amber-50 px-6 py-3 text-xs">
+          <span className="font-semibold text-amber-800">Apply to all needs-review:</span>
+          {selectedCommitValues.partNumber && (
+            <button
+              type="button"
+              onClick={() => {
+                const value = selectedCommitValues.partNumber;
+                items
+                  .filter(i => i.status === 'needs_review')
+                  .forEach(i => setConfirmedField(i.id, 'partNumber', value));
+              }}
+              className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
+            >
+              Part # "{selectedCommitValues.partNumber}"
+            </button>
+          )}
+          {selectedCommitValues.revision && (
+            <button
+              type="button"
+              onClick={() => {
+                const value = selectedCommitValues.revision;
+                items
+                  .filter(i => i.status === 'needs_review')
+                  .forEach(i => setConfirmedField(i.id, 'revision', value));
+              }}
+              className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
+            >
+              Rev "{selectedCommitValues.revision}"
+            </button>
+          )}
+          {selectedItem.confirmedDocumentType && (
+            <button
+              type="button"
+              onClick={() => {
+                const value = selectedItem.confirmedDocumentType ?? '';
+                if (!value) return;
+                items
+                  .filter(i => i.status === 'needs_review')
+                  .forEach(i => setConfirmedField(i.id, 'documentType', value));
+              }}
+              className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
+            >
+              Type "{DOC_TYPE_LABELS[selectedItem.confirmedDocumentType]}"
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-1 border-b px-6 py-3">
+        {(['all', 'needs_review', 'ready', 'committed'] as const).map(mode => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => setFilter(mode)}
+            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+              filter === mode ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {mode === 'all'
+              ? `All (${counts.all})`
+              : mode === 'needs_review'
+                ? `Needs Review (${counts.needs_review})`
+                : mode === 'ready'
+                  ? `Ready (${counts.ready})`
+                  : `Committed (${counts.committed})`}
+          </button>
+        ))}
+      </div>
+
+      <div className="px-4 pb-4">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 border-b text-xs text-gray-500 uppercase tracking-wide">
+              <tr>
+                <th className="px-4 py-2 text-left font-semibold">File</th>
+                <th className="px-3 py-2 text-left font-semibold">Type</th>
+                <th className="px-3 py-2 text-left font-semibold">Part #</th>
+                <th className="px-3 py-2 text-left font-semibold">Rev</th>
+                <th className="px-3 py-2 text-left font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.map(item => {
+                const vals = getCommitValues(item);
+                const isSelected = item.id === selectedId;
+                const currentDocType = item.confirmedDocumentType ?? vals.documentType ?? '';
+                return (
+                  <tr
+                    key={item.id}
+                    onClick={() => handleSelectItem(item.id)}
+                    className={`border-b cursor-pointer transition ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                  >
+                    <td className="px-4 py-2.5">
+                      <p className="font-medium text-gray-900 truncate max-w-[260px]" title={item.file.name}>
+                        {item.file.name}
+                      </p>
+                      <p className="text-xs text-gray-400">{formatBytes(item.file.size)}</p>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">
+                      <select
+                        className={`rounded-lg border bg-white px-2 py-1 text-xs font-semibold ${
+                          !currentDocType ? 'border-red-400 text-red-700' : 'border-gray-300'
+                        }`}
+                        value={currentDocType}
+                        onChange={e => {
+                          const nextValue = e.target.value;
+                          if (!nextValue) {
+                            updateItem(item.id, {
+                              confirmedDocumentType: undefined,
+                              operatorConfirmed: { ...item.operatorConfirmed, documentType: false },
+                              status: 'needs_review',
+                            });
+                            return;
+                          }
+                          const typed = nextValue as StrictDocumentType;
+                          setConfirmedField(item.id, 'documentType', typed);
+                          processFile(item.id, item.file, typed);
+                        }}
+                      >
+                        <option value="">—</option>
+                        {DOC_TYPE_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      {item.operatorConfirmed?.documentType
+                        ? <span className="ml-1 text-[10px] font-semibold text-emerald-700">✓</span>
+                        : currentDocType ? <span className="ml-1 text-[10px] text-amber-600">~</span> : null}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs font-mono text-gray-700">
+                      <span className={!vals.partNumber && item.status !== 'queued' && item.status !== 'extracting' && item.status !== 'analyzing' ? 'text-red-500' : ''}>
+                        {vals.partNumber || '—'}
+                      </span>
+                      {vals.partNumber && (
+                        <span className={`ml-1 text-[10px] font-semibold ${
+                          item.operatorConfirmed?.partNumber ? 'text-emerald-700' : 'text-amber-600'
+                        }`}>
+                          {item.operatorConfirmed?.partNumber ? '✓' : '~'}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs font-mono text-gray-700">{vals.revision || '—'}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_BADGE[item.status]}`}>
+                        {STATUS_LABEL[item.status]}
+                      </span>
+                      {item.error && (
+                        <p className="text-xs text-red-600 mt-0.5 truncate max-w-[120px]" title={item.error}>
+                          {item.error}
+                        </p>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex h-screen flex-col bg-white">
+    <div className="fixed inset-0 z-50 flex h-screen flex-col bg-white overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between gap-4 border-b bg-gray-50 px-6 py-4">
         <div className="flex items-center gap-3 min-w-0">
@@ -1535,15 +2229,13 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
           if (e.dataTransfer?.files) queueFiles(e.dataTransfer.files);
         }}
         onClick={() => inputRef.current?.click()}
-        className={`mx-6 mt-4 flex cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed py-6 transition shrink-0 ${
-          isDragging ? 'border-blue-500 bg-blue-50/60' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
-        }`}
+        className={dropZoneClassName}
       >
         <div className="text-center">
-          <p className={`text-sm font-semibold ${isDragging ? 'text-blue-700' : 'text-gray-500'}`}>
-            {isDragging ? 'Drop PDFs to queue for analysis…' : 'Drop PDFs here or click to browse'}
+          <p className={`text-base font-semibold tracking-wide ${isDragging ? 'text-blue-700' : 'text-blue-800'}`}>
+            {isDragging ? 'Drop PDFs to queue for analysis…' : 'Drop PDFs anywhere inside this frame'}
           </p>
-          <p className="mt-0.5 text-xs text-gray-400">Files will be analyzed before any DB write</p>
+          <p className="mt-1 text-xs font-medium text-gray-500">Click to browse · secure pre-ingestion preview</p>
         </div>
         <input
           ref={inputRef}
@@ -1561,667 +2253,20 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       </div>
 
       {/* Body */}
-      <div className="flex flex-1 min-h-0 gap-0 overflow-hidden">
-        {/* Left: queue list */}
-        <div className="flex flex-1 min-w-0 flex-col border-r">
-          {selectedItem && items.some(i => i.status === 'needs_review') && (
-            <div className="flex flex-wrap gap-2 border-b px-4 py-2 shrink-0 bg-amber-50 text-xs items-center">
-              <span className="font-semibold text-amber-800 shrink-0">Apply to all needs-review:</span>
-              {getCommitValues(selectedItem).partNumber && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const value = getCommitValues(selectedItem).partNumber;
-                    items
-                      .filter(i => i.status === 'needs_review')
-                      .forEach(i => setConfirmedField(i.id, 'partNumber', value));
-                  }}
-                  className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
-                >
-                  Part # "{getCommitValues(selectedItem).partNumber}"
-                </button>
-              )}
-              {getCommitValues(selectedItem).revision && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const value = getCommitValues(selectedItem).revision;
-                    items
-                      .filter(i => i.status === 'needs_review')
-                      .forEach(i => setConfirmedField(i.id, 'revision', value));
-                  }}
-                  className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
-                >
-                  Rev "{getCommitValues(selectedItem).revision}"
-                </button>
-              )}
-              {selectedItem.confirmedDocumentType && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const value = selectedItem.confirmedDocumentType ?? '';
-                    if (!value) return;
-                    items
-                      .filter(i => i.status === 'needs_review')
-                      .forEach(i => setConfirmedField(i.id, 'documentType', value));
-                  }}
-                  className="rounded-full bg-amber-200 px-2.5 py-0.5 font-semibold text-amber-900 hover:bg-amber-300 transition"
-                >
-                  Type "{DOC_TYPE_LABELS[selectedItem.confirmedDocumentType]}"
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="flex gap-1 border-b px-4 py-2 shrink-0 bg-white">
-            {(['all', 'needs_review', 'ready', 'committed'] as const).map(mode => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setFilter(mode)}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                  filter === mode ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {mode === 'all'
-                  ? `All (${counts.all})`
-                  : mode === 'needs_review'
-                    ? `Needs Review (${counts.needs_review})`
-                    : mode === 'ready'
-                      ? `Ready (${counts.ready})`
-                      : `Committed (${counts.committed})`}
-              </button>
-            ))}
+      <div className="flex-1 w-full px-6 py-4">
+        {!hasItems ? (
+          <div className="mt-6 rounded-3xl border border-dashed border-gray-300 bg-gray-50/80 px-6 py-16 text-center text-gray-500">
+            <p className="text-sm font-semibold">Drop PDFs to begin</p>
           </div>
-
-          <div className="flex-1 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-gray-50 border-b text-xs text-gray-500 uppercase tracking-wide">
-                <tr>
-                  <th className="px-4 py-2 text-left font-semibold">File</th>
-                  <th className="px-3 py-2 text-left font-semibold">Type</th>
-                  <th className="px-3 py-2 text-left font-semibold">Part #</th>
-                  <th className="px-3 py-2 text-left font-semibold">Rev</th>
-                  <th className="px-3 py-2 text-left font-semibold">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map(item => {
-                  const vals = getCommitValues(item);
-                  const isSelected = item.id === selectedId;
-                  const currentDocType = item.confirmedDocumentType ?? vals.documentType ?? '';
-                  return (
-                    <tr
-                      key={item.id}
-                      onClick={() => setSelectedId(item.id)}
-                      className={`border-b cursor-pointer transition ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                    >
-                      <td className="px-4 py-2.5">
-                        <p className="font-medium text-gray-900 truncate max-w-[220px]" title={item.file.name}>
-                          {item.file.name}
-                        </p>
-                        <p className="text-xs text-gray-400">{formatBytes(item.file.size)}</p>
-                      </td>
-                      <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">
-                        <select
-                          className={`rounded-lg border bg-white px-2 py-1 text-xs font-semibold ${
-                            !currentDocType ? 'border-red-400 text-red-700' : 'border-gray-300'
-                          }`}
-                          value={currentDocType}
-                          onChange={e => {
-                            const nextValue = e.target.value;
-                            if (!nextValue) {
-                              updateItem(item.id, {
-                                confirmedDocumentType: undefined,
-                                operatorConfirmed: { ...item.operatorConfirmed, documentType: false },
-                                status: 'needs_review',
-                              });
-                              return;
-                            }
-                            const typed = nextValue as StrictDocumentType;
-                            setConfirmedField(item.id, 'documentType', typed);
-                            processFile(item.id, item.file, typed);
-                          }}
-                        >
-                          <option value="">—</option>
-                          {DOC_TYPE_OPTIONS.map(option => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        {item.operatorConfirmed?.documentType
-                          ? <span className="ml-1 text-[10px] font-semibold text-emerald-700">✓</span>
-                          : currentDocType ? <span className="ml-1 text-[10px] text-amber-600">~</span> : null}
-                      </td>
-                      <td className="px-3 py-2.5 text-xs font-mono text-gray-700">
-                        <span className={!vals.partNumber && item.status !== 'queued' && item.status !== 'extracting' && item.status !== 'analyzing' ? 'text-red-500' : ''}>
-                          {vals.partNumber || '—'}
-                        </span>
-                        {vals.partNumber && (
-                          <span className={`ml-1 text-[10px] font-semibold ${
-                            item.operatorConfirmed?.partNumber ? 'text-emerald-700' : 'text-amber-600'
-                          }`}>
-                            {item.operatorConfirmed?.partNumber ? '✓' : '~'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-xs font-mono text-gray-700">{vals.revision || '—'}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_BADGE[item.status]}`}>
-                          {STATUS_LABEL[item.status]}
-                        </span>
-                        {item.error && (
-                          <p className="text-xs text-red-600 mt-0.5 truncate max-w-[120px]" title={item.error}>
-                            {item.error}
-                          </p>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        ) : (
+          <div className="pb-10">
+            {showCollapsedQueue && renderCollapsedQueueBar()}
+            {showFullQueue && renderFullQueueSection()}
+            <section ref={workbenchRef} className="mt-4 rounded-3xl border border-gray-200 bg-white shadow-sm min-h-[55vh]">
+              <WorkbenchMainArea />
+            </section>
           </div>
-        </div>
-
-        {/* Right: detail panel */}
-        <div
-          className="relative flex flex-col bg-white"
-          style={{ width: panelWidth, minWidth: PANEL_MIN_WIDTH }}
-        >
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            onMouseDown={startPanelResize}
-            onDoubleClick={resetPanelWidth}
-            className="absolute left-0 top-0 bottom-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent transition hover:bg-blue-200/60"
-          />
-          <div className="flex flex-col overflow-y-auto border-l border-gray-200">
-          {!selectedItem ? (
-            <div className="flex flex-1 items-center justify-center text-gray-400 text-sm p-8">Select a file to review</div>
-          ) : (
-            <div className="p-5 space-y-4">
-              <div>
-                <p className="text-base font-bold text-gray-900 truncate">{selectedItem.file.name}</p>
-                <p className="text-xs text-gray-400">{formatBytes(selectedItem.file.size)}</p>
-              </div>
-
-              {/* Inline Confirmation Fields */}
-              {(() => {
-                const vals = getCommitValues(selectedItem);
-                const dt = selectedItem.confirmedDocumentType;
-                const needsDrawing = docTypeRequiresField(dt, 'drawingNumber');
-                const needsRevision = docTypeRequiresField(dt, 'revision');
-                const missingPart = dt && !vals.partNumber?.trim();
-                const missingRevision = needsRevision && !vals.revision?.trim();
-                const missingDrawing = needsDrawing && !vals.drawingNumber?.trim();
-                const analysis = selectedItem.analysis;
-                const regionList = analysis?.extractionEvidence?.document_structure?.regions ?? [];
-                const regionMap = new Map<string, RegionOverlay>(regionList.map(region => [region.id, region] as [string, RegionOverlay]));
-                const partCandidates = buildCandidatesFromSignals(analysis?.extractionEvidence?.part_number_signals);
-                const revisionCandidates = buildCandidatesFromSignals(analysis?.extractionEvidence?.revision_signals);
-                const drawingCandidates = buildCandidatesFromSignals(analysis?.extractionEvidence?.drawing_number_signals);
-
-                const partExtraction = getFieldExtractionFor(analysis, 'partNumber');
-                const revisionExtraction = getFieldExtractionFor(analysis, 'revision');
-                const drawingExtraction = getFieldExtractionFor(analysis, 'drawingNumber');
-
-                // C11: Re-run resolver in render for up-to-date suggestedValue + source badge.
-                const renderResolved = resolveDocumentFields({
-                  operatorConfirmed: {
-                    partNumber:   selectedItem.operatorConfirmed?.partNumber   ? (selectedItem.confirmedPartNumber   ?? undefined) : undefined,
-                    revision:     selectedItem.operatorConfirmed?.revision     ? (selectedItem.confirmedRevision     ?? undefined) : undefined,
-                    documentType: selectedItem.operatorConfirmed?.documentType ? (selectedItem.confirmedDocumentType ?? undefined) : undefined,
-                  },
-                  parsedDrawingData:   analysis?.structuredData,
-                  heuristicCandidates: [
-                    ...(!analysis?.partNumberIsProvisional && analysis?.proposedPartNumber ? [{
-                      field: 'partNumber' as const,
-                      value: analysis.proposedPartNumber,
-                      source: 'HEURISTIC' as const,
-                      confidence: analysis.partNumberConfidence ?? 0.5,
-                    }] : []),
-                    ...(analysis?.proposedRevision ? [{
-                      field: 'revision' as const,
-                      value: analysis.proposedRevision,
-                      source: 'HEURISTIC' as const,
-                      confidence: analysis.revisionConfidence ?? 0.5,
-                    }] : []),
-                  ],
-                  filename:         selectedItem.file.name,
-                  currentDocType:   selectedItem.confirmedDocumentType ?? analysis?.proposedDocumentType,
-                  titleBlockResult: analysis?.titleBlockRegionResult ?? null,
-                  visionResult:     analysis?.visionParsedResult      ?? null,
-                });
-
-                const sections: FieldSectionConfig[] = [
-                  {
-                    key: 'partNumber' as const,
-                    label: 'Part Number',
-                    required: true,
-                    placeholder: 'e.g. NH45-110858-01',
-                    missing: Boolean(missingPart),
-                    shouldRender: true,
-                    value: vals.partNumber,
-                    suggestedValue: renderResolved.partNumber.value ?? analysis?.proposedPartNumber ?? null,
-                    operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.partNumber),
-                    confidence: renderResolved.partNumber.source !== 'UNKNOWN' ? renderResolved.partNumber.confidence : (analysis?.partNumberConfidence ?? partExtraction?.confidence ?? null),
-                    extraction: partExtraction,
-                    warning: (analysis?.partNumberIsProvisional && !partExtraction?.locked) ? 'Extraction could not resolve part number — enter manually.' : null,
-                    candidates: partCandidates,
-                  },
-                  {
-                    key: 'revision' as const,
-                    label: 'Revision',
-                    required: Boolean(needsRevision),
-                    placeholder: 'e.g. B, 02, Rev A',
-                    missing: Boolean(missingRevision),
-                    shouldRender: Boolean(needsRevision || analysis?.proposedRevision),
-                    value: vals.revision,
-                    suggestedValue: renderResolved.revision.value ?? analysis?.proposedRevision ?? null,
-                    operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.revision),
-                    confidence: renderResolved.revision.source !== 'UNKNOWN' ? renderResolved.revision.confidence : (analysis?.revisionConfidence ?? revisionExtraction?.confidence ?? null),
-                    extraction: revisionExtraction,
-                    warning: null,
-                    candidates: revisionCandidates,
-                  },
-                  {
-                    key: 'drawingNumber' as const,
-                    label: 'Drawing Number',
-                    required: Boolean(needsDrawing),
-                    placeholder: 'e.g. DWG-45-1085',
-                    missing: Boolean(missingDrawing),
-                    shouldRender: Boolean(needsDrawing || analysis?.proposedDrawingNumber),
-                    value: vals.drawingNumber,
-                    suggestedValue: analysis?.proposedDrawingNumber ?? null,
-                    operatorConfirmed: Boolean(selectedItem.operatorConfirmed?.drawingNumber),
-                    confidence: drawingExtraction?.confidence ?? null,
-                    extraction: drawingExtraction,
-                    warning: null,
-                    candidates: drawingCandidates,
-                  },
-                ].filter(section => section.shouldRender);
-
-                const renderFieldSection = (section: FieldSectionConfig) => {
-                  const operatorExtraction: FieldExtraction | null = section.operatorConfirmed
-                    ? {
-                        field: FIELD_TO_EXTRACTION[section.key],
-                        value: section.value ?? null,
-                        confidence: 1,
-                        sourceRegionId: null,
-                        source: 'USER_CONFIRMED',
-                        locked: true,
-                      }
-                    : null;
-                  const baseExtraction = operatorExtraction ?? section.extraction;
-                  const region = baseExtraction?.sourceRegionId
-                    ? regionMap.get(baseExtraction.sourceRegionId) ?? null
-                    : null;
-                  const isLocked = section.operatorConfirmed || Boolean(baseExtraction?.locked && section.value === (baseExtraction?.value ?? '').trim());
-                  const resolvedSrc = renderResolved[section.key as 'partNumber' | 'revision']?.source;
-                  const badge = operatorExtraction
-                    ? AUTHORITY_SOURCE_BADGES.OPERATOR_CONFIRMED
-                    : (resolvedSrc && resolvedSrc !== 'HEURISTIC' && resolvedSrc !== 'UNKNOWN')
-                      ? AUTHORITY_SOURCE_BADGES[resolvedSrc]
-                      : SOURCE_BADGES[baseExtraction?.source ?? 'UNKNOWN'];
-                  const effectiveConfidence = section.operatorConfirmed ? 1 : section.confidence;
-                  const confidenceMeta = describeConfidence(effectiveConfidence);
-                  const snippet = region?.extractedText ?? baseExtraction?.value ?? null;
-                  const value = section.value ?? '';
-                  const suggestionAvailable = Boolean(section.suggestedValue);
-                  const showAcceptButton = suggestionAvailable && !section.operatorConfirmed;
-                  const showConfirmButton = Boolean(value.trim()) && !section.operatorConfirmed;
-                  const viewSourceEnabled = Boolean(baseExtraction?.sourceRegionId && region) && !section.operatorConfirmed;
-                  const statusChip = section.operatorConfirmed
-                    ? { label: 'Confirmed', className: 'bg-emerald-100 text-emerald-800' }
-                    : value
-                      ? { label: 'Suggested', className: 'bg-amber-100 text-amber-800' }
-                      : section.required
-                        ? { label: 'Required', className: 'bg-red-100 text-red-700' }
-                        : { label: 'Optional', className: 'bg-gray-100 text-gray-600' };
-                  const viewSourceTone = confidenceMeta.level === 'medium'
-                    ? 'border border-amber-300 text-amber-800 hover:bg-amber-50'
-                    : 'border border-blue-200 text-blue-700 hover:bg-blue-50';
-                  const confidenceValue = section.operatorConfirmed
-                    ? '100%'
-                    : typeof section.confidence === 'number'
-                      ? `${Math.round(section.confidence * 100)}%`
-                      : '—';
-                  const descriptiveMessage = section.operatorConfirmed
-                    ? 'Confirmed by operator — treated as authoritative.'
-                    : isLocked
-                      ? 'Resolved from authoritative source — no review required.'
-                      : confidenceMeta.message;
-                  const messageClass = section.operatorConfirmed || isLocked ? 'text-emerald-700' : confidenceMeta.textClass;
-                  const showLowConfidenceNotice = confidenceMeta.level === 'low' && !section.operatorConfirmed && !isLocked;
-
-                  return (
-                    <div key={section.key} className="rounded-lg border border-gray-200 bg-white/60 px-3 py-2 space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-                            {section.label}
-                            {section.required && <span className="text-red-500">*</span>}
-                          </label>
-                          <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusChip.className}`}>
-                            {statusChip.label}
-                          </span>
-                        </div>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}>
-                          {badge.label}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className={`rounded-full px-2 py-0.5 font-semibold ${confidenceMeta.pillClass}`}>
-                          Confidence: {confidenceValue} · {confidenceMeta.label}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => viewSourceEnabled && openEvidenceAtRegion(baseExtraction?.sourceRegionId)}
-                          disabled={!viewSourceEnabled}
-                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition ${viewSourceEnabled ? viewSourceTone : 'border border-gray-200 text-gray-400 cursor-not-allowed opacity-60'}`}
-                        >
-                          View Source
-                        </button>
-                      </div>
-                      <p className={`text-[11px] ${messageClass}`}>
-                        {descriptiveMessage}
-                      </p>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={value}
-                          placeholder={section.placeholder}
-                          onChange={e => setConfirmedField(selectedItem.id, section.key, e.target.value)}
-                          onFocus={() => focusRegion(baseExtraction?.sourceRegionId ?? null)}
-                          className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-blue-100 ${confidenceInputClasses(confidenceMeta.level, 'border-gray-300 bg-white', section.missing)}`}
-                        />
-                        {showAcceptButton && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!section.suggestedValue) return;
-                              setConfirmedField(selectedItem.id, section.key, section.suggestedValue);
-                            }}
-                            className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${acceptButtonClasses(confidenceMeta.level)}`}
-                          >
-                            Accept
-                          </button>
-                        )}
-                        {showConfirmButton && (
-                          <button
-                            type="button"
-                            onClick={() => setConfirmedField(selectedItem.id, section.key, value)}
-                            className="shrink-0 rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
-                          >
-                            Confirm
-                          </button>
-                        )}
-                      </div>
-                      {section.warning && !isLocked && !section.operatorConfirmed && (
-                        <p className="text-[10px] text-orange-600">{section.warning}</p>
-                      )}
-                      {showLowConfidenceNotice && (
-                        <p className="text-[10px] text-red-600 font-semibold">Low confidence — verify manually before confirming.</p>
-                      )}
-                      {snippet && (
-                        <p className="text-[11px] truncate text-gray-500">
-                          <span className="font-semibold">Source snippet:</span>{' '}
-                          {truncateSnippet(snippet)}
-                        </p>
-                      )}
-                      {renderCandidateDropdown(section.candidates, candidateValue => {
-                        setConfirmedField(selectedItem.id, section.key, candidateValue);
-                      })}
-                      {/* C11.1: Field evidence transparency panel */}
-                      {(section.key === 'partNumber' || section.key === 'revision') && (
-                        <FieldEvidencePanel
-                          label={section.label}
-                          resolved={renderResolved[section.key]}
-                        />
-                      )}
-                    </div>
-                  );
-                };
-
-                return (
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-3">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Confirm Fields</p>
-                    <div className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-[11px] text-purple-900">
-                      Values below are AI-assisted suggestions. Please confirm before committing.
-                    </div>
-                    {sections.length ? sections.map(renderFieldSection) : (
-                      <p className="text-xs text-gray-500">Set a document type to receive extraction suggestions.</p>
-                    )}
-
-                    {/* Extraction summary + overlay trigger */}
-                    <div className="border-t border-gray-200 pt-2 text-[10px] text-gray-400 space-y-1">
-                      {analysis && (
-                        <p>Extraction type suggestion: <span className="font-semibold text-gray-600">{DOC_TYPE_LABELS[analysis.proposedDocumentType]}</span> ({Math.round(analysis.docTypeConfidence * 100)}% confidence)</p>
-                      )}
-                      {/* C11.1: Document type authority evidence */}
-                      {renderResolved.documentType && (
-                        <FieldEvidencePanel
-                          label="Document Type"
-                          resolved={renderResolved.documentType}
-                        />
-                      )}
-                      {analysis?.extractionEvidence?.document_structure?.regions?.length ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const firstRegion = analysis?.extractionEvidence?.document_structure?.regions?.[0]?.id ?? null;
-                            setActiveRegionId(firstRegion);
-                            setOverlayOpen(true);
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
-                        >
-                          View Extraction Overlay ({analysis.extractionEvidence.document_structure!.regions!.length})
-                        </button>
-                      ) : (
-                        <p className="text-[10px] text-gray-500">No overlay regions detected.</p>)
-                      }
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {(effectiveState?.unresolvedQuestions ?? selectedItem.analysis?.unresolvedQuestions ?? []).length ? (
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Resolution required</p>
-                  {(effectiveState?.unresolvedQuestions ?? selectedItem.analysis?.unresolvedQuestions ?? []).map(q => (
-                    <QuestionCard
-                      key={q.id}
-                      question={q}
-                      answer={selectedItem.answers[q.id] ?? ''}
-                      onAnswer={value => answerQuestion(selectedItem.id, q, value)}
-                    />
-                  ))}
-                </div>
-              ) : null}
-
-              {selectedItem.analysis?.extractionEvidence ? (
-                <EvidencePanel
-                  evidence={selectedItem.analysis.extractionEvidence}
-                  onRegionSelect={regionId => {
-                    setActiveRegionId(regionId);
-                    setOverlayOpen(true);
-                  }}
-                  activeRegionId={activeRegionId}
-                />
-              ) : null}
-
-              {debugFallbackCrops[selectedItem.id] && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ fontWeight: 600 }}>C12.4 Debug — Fallback Crop</div>
-                  <img
-                    src={debugFallbackCrops[selectedItem.id]}
-                    alt="Fallback Crop"
-                    style={{ width: '100%', border: '1px solid #ccc' }}
-                  />
-                </div>
-              )}
-
-              {selectedItem.analysis?.structuredData ? (
-                <ParsedDrawingDataPanel data={selectedItem.analysis.structuredData} />
-              ) : null}
-
-              {selectedItem.analysis ? (
-                <HarnessConnectivityPanel
-                  connectivity={effectiveState?.effectiveConnectivity ?? selectedItem.analysis.harnessConnectivity}
-                  reconciliation={selectedItem.analysis.harnessReconciliation}
-                  operatorOverrides={wireOverrides[selectedId ?? ''] ?? []}
-                  onOverrideSubmit={override => handleOverrideSubmit(selectedId ?? '', override)}
-                  resolvedDecision={effectiveState?.effectiveDecision ?? resolvedOutputs[selectedId ?? '']?.resolvedDecision ?? null}
-                  topology={effectiveState?.effectiveTopology ?? null}
-                  wireIdentities={effectiveState?.effectiveWireIdentities ?? null}
-                  onGraphWireClick={wireId => {
-                    setSkuEditorRequest({ type: 'edit', wireId });
-                    skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }}
-                  onGraphMissingPinClick={({ component, cavity }) => {
-                    setSkuEditorRequest({ type: 'add', prefill: { fromComponent: component, fromCavity: cavity, fromTermination: 'CONNECTOR_PIN' } });
-                    skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }}
-                  onGraphBranchClick={({ component, cavity, wireIds }) => {
-                    setSkuEditorRequest({ type: 'branch', wireIds, fromComponent: component, fromCavity: cavity });
-                    skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }}
-                />
-              ) : null}
-
-              {selectedItem.analysis?.harnessConnectivity ? (
-                <div ref={skuEditorRef}>
-                  <SkuModelEditorPanel
-                    extractedConnectivity={selectedItem.analysis.harnessConnectivity}
-                    effectiveConnectivity={effectiveState?.effectiveConnectivity ?? null}
-                    effectiveDecision={effectiveState?.effectiveDecision ?? null}
-                    operatorAddedWires={skuAddedWires[selectedId ?? ''] ?? []}
-                    operatorEditedWires={skuEditedWires[selectedId ?? ''] ?? []}
-                    operatorDeletedWireIds={skuDeletedIds[selectedId ?? ''] ?? []}
-                    onAddWire={wire => handleSkuAddWire(selectedId ?? '', wire)}
-                    onEditWire={wire => handleSkuEditWire(selectedId ?? '', wire)}
-                    onDeleteWire={request => handleSkuDeleteWire(selectedId ?? '', request)}
-                    externalEditorRequest={skuEditorRequest}
-                    onExternalRequestConsumed={() => setSkuEditorRequest(null)}
-                    wireIdentities={effectiveState?.effectiveWireIdentities ?? null}
-                  />
-                </div>
-              ) : null}
-
-              {effectiveState && (
-                <KomaxCutSheetPanel
-                  effectiveState={effectiveState}
-                  partNumber={effectiveState.effectivePartNumber ?? undefined}
-                />
-              )}
-
-              {effectiveState && (
-                <KomaxProgramPanel effectiveState={effectiveState} />
-              )}
-
-              <ToolingPanel />
-
-              <SkuLifecycleHistoryPanel
-                skuKey={effectiveState?.effectivePartNumber ?? selectedItem?.confirmedPartNumber ?? null}
-              />
-
-              {selectedItem.analysis ? (
-                <details
-                  open
-                  className="mt-4 rounded-xl border border-gray-200 bg-gray-50 text-xs shadow-sm"
-                >
-                  <summary className="cursor-pointer px-3 py-2 font-semibold text-gray-700 select-none">
-                    Raw Extraction Debug
-                  </summary>
-                  <div className="px-3 pb-3">
-                    <pre style={{ maxHeight: 400, overflow: 'auto', fontSize: 11 }}>
-                      {JSON.stringify({
-                        ...selectedItem.analysis,
-                        effectiveDebug: effectiveState ? {
-                          buildTag:                   'T12.4',
-                          usingEffectiveConnectivity: (
-                            (wireOverrides[selectedId ?? '']?.length ?? 0) +
-                            (skuAddedWires[selectedId ?? '']?.length ?? 0) +
-                            (skuEditedWires[selectedId ?? '']?.length ?? 0) +
-                            (skuDeletedIds[selectedId ?? '']?.length ?? 0)
-                          ) > 0,
-                          effectiveDocType:            effectiveState.effectiveDocumentType,
-                          effectiveDocTypeSource:      effectiveState.effectiveDocTypeSource,
-                          effectiveWireCount:          effectiveState.effectiveConnectivity?.wires.length ?? null,
-                          effectiveDecision:           effectiveState.effectiveDecision?.overallDecision ?? null,
-                          unresolvedQuestionCount:     effectiveState.unresolvedQuestions.length,
-                          blockingQuestionCount:       effectiveState.unresolvedQuestions.filter(q => q.blocksCommit).length,
-                          readyToCommit:               effectiveState.readyToCommit,
-                        } : null,
-                      }, null, 2)}
-                    </pre>
-                  </div>
-                </details>
-              ) : null}
-
-              {/* T16.5 R7: topology commit-blocker panel — shown whenever blocking topology
-                  warnings exist so the operator knows exactly why commit is gated. */}
-              {(() => {
-                const blockingWarnings = effectiveState?.effectiveTopology?.warnings?.filter(w => w.blocksCommit) ?? [];
-                if (blockingWarnings.length === 0) return null;
-                return (
-                  <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 space-y-1.5">
-                    <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
-                      Commit blocked — topology issues must be resolved
-                    </p>
-                    {blockingWarnings.map((w, idx) => (
-                      <p key={idx} className="text-xs text-red-700">⚠ {w.message}</p>
-                    ))}
-                  </div>
-                );
-              })()}
-
-              {(selectedItem.status === 'ready_to_commit' || (
-                effectiveState?.readyToCommit === true &&
-                Boolean(selectedItem.confirmedDocumentType) &&
-                Boolean(selectedItem.confirmedPartNumber?.trim())
-              )) ? (
-                <button
-                  type="button"
-                  onClick={() => commitItem(selectedItem)}
-                  className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition"
-                >
-                  Commit This File
-                </button>
-              ) : null}
-
-              {selectedItem.status === 'committed' && selectedItem.commitResult ? (
-                <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800">
-                  <p className="font-semibold">Committed</p>
-                  <p className="text-xs mt-0.5">SKU: {selectedItem.commitResult.sku?.part_number ?? '—'}</p>
-                  {selectedItem.commitResult.message ? (
-                    <p className="text-xs mt-0.5 text-emerald-600">{selectedItem.commitResult.message}</p>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {selectedItem.status === 'failed' && selectedItem.error ? (
-                <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">
-                  <p className="font-semibold">Failed</p>
-                  <p className="text-xs mt-0.5">{selectedItem.error}</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateItem(selectedItem.id, { status: 'queued', error: undefined });
-                      processFile(selectedItem.id, selectedItem.file, uploadMode !== 'MIXED' ? uploadMode : undefined);
-                    }}
-                    className="mt-2 text-xs font-semibold text-red-700 underline"
-                  >
-                    Retry Analysis
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          )}
-          </div>
-        </div>
+        )}
       </div>
 
       {items.length > 0 && (
