@@ -8,6 +8,7 @@
 import type { DocumentExtractionEvidence } from '@/src/features/harness-work-instructions/types/extractionEvidence';
 import type { DocumentType } from '@/src/features/harness-work-instructions/services/skuService';
 import type { EndpointTerminationType } from '@/src/features/harness-work-instructions/services/harnessConnectivityService';
+import type { ComponentAuthorityOption } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
 
 // ---------------------------------------------------------------------------
 // Mode
@@ -75,6 +76,8 @@ export type WireResolutionMode =
   | 'SPLICE'
   | 'FLOATING';
 
+export type OperatorResolutionMode = 'CANONICAL_SELECTION' | 'MANUAL_OVERRIDE';
+
 export interface WireOperatorOverride {
   wireId: string;
   mode: WireResolutionMode;
@@ -91,6 +94,7 @@ export interface WireOperatorOverride {
   reason: string;
   operatorConfirmed: true;
   appliedAt: string;
+  resolutionMode?: OperatorResolutionMode;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +183,10 @@ export interface IngestionAnalysisResult {
    * Maps HC-BOM endpoint labels to diagram ComponentNodes with match quality.
    */
   harnessReconciliation?: import('@/src/features/harness-work-instructions/services/harnessReconciliationService').HarnessReconciliationResult | null;
+
+  /** T23.6.70: Canonical dropdown options sourced from Simplified BOM projection. */
+  canonicalComponentOptions?: ComponentAuthorityOption[] | null;
+  canonicalComponentOptionsSource?: 'SIMPLIFIED_BOM' | 'DOCUMENT_ENGINE' | 'OPERATOR_SEEDED' | string | null;
 
   /**
    * Phase T7: Harness physical plausibility validation.

@@ -27,13 +27,10 @@ import type {
   ReconciledWire,
 } from '@/src/features/harness-work-instructions/services/harnessReconciliationService';
 import type { HarnessDecisionResult } from '@/src/features/harness-work-instructions/services/harnessDecisionService';
-import type { WireOperatorOverride, WireResolutionMode } from '@/src/features/vault/types/ingestionReview';
+import type { OperatorResolutionMode, WireOperatorOverride, WireResolutionMode } from '@/src/features/vault/types/ingestionReview';
 import type { HarnessTopologyResult, TopologyWarning } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
 import { canonicalComponentKey } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
-import {
-  buildComponentAuthorityOptions,
-  type ComponentAuthorityOption,
-} from '@/src/features/harness-work-instructions/services/componentAuthorityService';
+import { type ComponentAuthorityOption } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
 import type { WireIdentityResult } from '@/src/features/harness-work-instructions/services/wireIdentityService';
 import HarnessTopologyVisualizer from './HarnessTopologyVisualizer';
 
@@ -255,6 +252,10 @@ function WireResolveForm({
   componentOptions,
   suggestedFromComponentId,
   suggestedToComponentId,
+  initialFromComponentName,
+  initialToComponentName,
+  isDegradedMode,
+  componentOptionsSource,
 }: {
   wireId: string;
   onSave: (override: WireOperatorOverride) => void;
@@ -262,6 +263,10 @@ function WireResolveForm({
   componentOptions: ComponentAuthorityOption[];
   suggestedFromComponentId?: string | null;
   suggestedToComponentId?: string | null;
+  initialFromComponentName?: string | null;
+  initialToComponentName?: string | null;
+  isDegradedMode: boolean;
+  componentOptionsSource?: string | null;
 }) {
   const [mode, setMode]       = useState<WireResolutionMode>('DIRECT_OVERRIDE');
   const [fromComponentId, setFromComponentId] = useState(suggestedFromComponentId ?? '');
@@ -276,29 +281,37 @@ function WireResolveForm({
   const [notes,    setNotes]    = useState('');
   const [reason,   setReason]   = useState('');
   const [err,      setErr]      = useState<string | null>(null);
-  const [fromUserEdited, setFromUserEdited] = useState(false);
-  const [toUserEdited,   setToUserEdited]   = useState(false);
+  const [componentSourceMode, setComponentSourceMode] = useState<OperatorResolutionMode>('CANONICAL_SELECTION');
+  const [fromManualComponent, setFromManualComponent] = useState(initialFromComponentName ?? '');
+  const [toManualComponent,   setToManualComponent]   = useState(initialToComponentName ?? '');
+  const [acknowledgedDegradedMode, setAcknowledgedDegradedMode] = useState(() => !isDegradedMode);
 
   const hasOptions = componentOptions.length > 0;
 
   useEffect(() => {
     setFromComponentId(suggestedFromComponentId ?? '');
     setToComponentId(suggestedToComponentId ?? '');
-    setFromUserEdited(false);
-    setToUserEdited(false);
-  }, [wireId]);
+    setFromManualComponent(initialFromComponentName ?? '');
+    setToManualComponent(initialToComponentName ?? '');
+    setComponentSourceMode(componentOptions.length === 0 ? 'MANUAL_OVERRIDE' : 'CANONICAL_SELECTION');
+    setAcknowledgedDegradedMode(!isDegradedMode);
+  }, [wireId, suggestedFromComponentId, suggestedToComponentId, componentOptions.length, initialFromComponentName, initialToComponentName, isDegradedMode]);
 
   useEffect(() => {
-    if (fromUserEdited) return;
     if (suggestedFromComponentId === undefined) return;
     setFromComponentId(suggestedFromComponentId ?? '');
-  }, [suggestedFromComponentId, fromUserEdited]);
+  }, [suggestedFromComponentId]);
 
   useEffect(() => {
-    if (toUserEdited) return;
     if (suggestedToComponentId === undefined) return;
     setToComponentId(suggestedToComponentId ?? '');
-  }, [suggestedToComponentId, toUserEdited]);
+  }, [suggestedToComponentId]);
+
+  useEffect(() => {
+    if (componentOptions.length === 0 && componentSourceMode !== 'MANUAL_OVERRIDE') {
+      setComponentSourceMode('MANUAL_OVERRIDE');
+    }
+  }, [componentOptions.length, componentSourceMode]);
 
   const sortOptions = useMemo(() => {
     return (priority: (kind: ComponentAuthorityOption['kind']) => number) =>
@@ -319,25 +332,43 @@ function WireResolveForm({
   )), [sortOptions]);
 
   const handleSave = () => {
+    if (isDegradedMode && !acknowledgedDegradedMode) {
+      setErr('Please acknowledge degraded mode before saving.');
+      if (typeof window !== 'undefined') {
+        window.alert('Please acknowledge degraded mode before proceeding.');
+      }
+      return;
+    }
     if (!reason.trim()) { setErr('Reason is required.'); return; }
     if (mode === 'BRANCH_DOUBLE_CRIMP') {
       if (!srcComp.trim() || !srcCav.trim()) { setErr('Shared source component and cavity are required.'); return; }
       if (!termPN.trim() && !ferrPN.trim())  { setErr('Terminal PN or ferrule PN is required.'); return; }
     }
-    if (mode === 'DIRECT_OVERRIDE') {
+    if (mode === 'DIRECT_OVERRIDE' && componentSourceMode === 'CANONICAL_SELECTION') {
       if (!fromComponentId || !toComponentId) {
         window.alert('Please select valid FROM and TO components before saving.');
+        return;
+      }
+    }
+    if (mode === 'DIRECT_OVERRIDE' && componentSourceMode === 'MANUAL_OVERRIDE') {
+      if (!fromManualComponent.trim() || !toManualComponent.trim()) {
+        setErr('Manual override requires FROM and TO component names.');
         return;
       }
     }
     setErr(null);
     const fromOption = componentOptions.find(opt => opt.canonicalId === fromComponentId) ?? null;
     const toOption = componentOptions.find(opt => opt.canonicalId === toComponentId) ?? null;
-    const resolvedFromComponent = (fromOption?.displayName ?? fromComponentId) || null;
-    const resolvedToComponent = (toOption?.displayName ?? toComponentId) || null;
+    const resolvedFromComponent = componentSourceMode === 'MANUAL_OVERRIDE'
+      ? (fromManualComponent.trim() || null)
+      : ((fromOption?.displayName ?? fromComponentId) || null);
+    const resolvedToComponent = componentSourceMode === 'MANUAL_OVERRIDE'
+      ? (toManualComponent.trim() || null)
+      : ((toOption?.displayName ?? toComponentId) || null);
     const override: WireOperatorOverride = {
       wireId,
       mode,
+      resolutionMode: componentSourceMode,
       ...(mode === 'DIRECT_OVERRIDE' ? {
         from: { component: resolvedFromComponent, cavity: fromCav.trim() || null, treatment: null },
         to:   { component: resolvedToComponent,   cavity: toCav.trim()   || null, treatment: null },
@@ -356,18 +387,73 @@ function WireResolveForm({
       operatorConfirmed: true,
       appliedAt:         new Date().toISOString(),
     };
+    console.log('[T23.6.70 OPERATOR OVERRIDE]', {
+      wireId,
+      resolutionMode: componentSourceMode,
+      mode,
+      fromComponent: override.from?.component ?? null,
+      toComponent:   override.to?.component   ?? null,
+      reason:        override.reason,
+    });
+    console.log('[T23.6.71 RESOLUTION CONTEXT]', {
+      wireId,
+      resolutionMode: componentSourceMode,
+      degraded: isDegradedMode,
+      source: componentOptionsSource ?? 'UNKNOWN',
+    });
+    if (isDegradedMode && componentSourceMode === 'MANUAL_OVERRIDE') {
+      console.warn('[T23.6.71 DEGRADED OVERRIDE]', {
+        wireId,
+        fromComponent: override.from?.component ?? null,
+        toComponent:   override.to?.component   ?? null,
+        reason:        override.reason,
+        source:        componentOptionsSource ?? 'UNKNOWN',
+      });
+    }
     onSave(override);
   };
 
   const inp = 'w-full rounded border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] px-1.5 py-0.5 text-[11px] text-[color:var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-blue-400';
   const suggestedCls = 'border-emerald-400 ring-1 ring-emerald-300 bg-emerald-50/40';
-  const fromSuggestedActive = Boolean(!fromUserEdited && suggestedFromComponentId && fromComponentId === suggestedFromComponentId);
-  const toSuggestedActive = Boolean(!toUserEdited && suggestedToComponentId && toComponentId === suggestedToComponentId);
+  const fromSuggestedActive = Boolean(suggestedFromComponentId && fromComponentId === suggestedFromComponentId);
+  const toSuggestedActive = Boolean(suggestedToComponentId && toComponentId === suggestedToComponentId);
   const lab = 'text-[10px] font-semibold text-gray-500 mb-0.5 block';
+
+  const handleComponentSourceChange = (nextMode: OperatorResolutionMode) => {
+    if (nextMode === 'CANONICAL_SELECTION' && componentOptions.length === 0) return;
+    setComponentSourceMode(nextMode);
+  };
+
+  const manualHelper = componentSourceMode === 'MANUAL_OVERRIDE'
+    ? 'Manual override bypasses canonical validation — describe exact components in the notes/reason field.'
+    : null;
+
+  const optionLabel = (opt: ComponentAuthorityOption) => (
+    `${opt.displayName} (${opt.kind}${isDegradedMode ? ' · fallback' : ''})`
+  );
 
   return (
     <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 p-2 space-y-2">
       <div className="font-semibold text-blue-800 text-[10px]">⚙️ Operator Resolution — Wire {wireId}</div>
+
+      {isDegradedMode && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-[10px] text-amber-800 space-y-1">
+          <div className="font-semibold flex items-center gap-1">
+            <span>⚠️ Canonical component options unavailable</span>
+          </div>
+          <div>System is operating in degraded mode — selections may be incomplete or less reliable.</div>
+          <div className="text-[9px] text-amber-700">Source: {componentOptionsSource ?? 'UNKNOWN'}</div>
+          <label className="mt-1 flex items-center gap-1 text-[10px] font-semibold">
+            <input
+              type="checkbox"
+              checked={acknowledgedDegradedMode}
+              onChange={e => setAcknowledgedDegradedMode(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+            />
+            I understand the system is in degraded mode
+          </label>
+        </div>
+      )}
 
       <div>
         <label className={lab}>Resolution Mode</label>
@@ -379,47 +465,92 @@ function WireResolveForm({
       </div>
 
       {mode === 'DIRECT_OVERRIDE' && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1.5">
           <div>
-            <label className={lab}>From Component</label>
-            <select
-              value={fromComponentId}
-              onChange={e => {
-                setFromUserEdited(true);
-                setFromComponentId(e.target.value);
-              }}
-              className={`${inp} ${fromSuggestedActive ? suggestedCls : ''}`}
-              disabled={!hasOptions}
-            >
-              <option value="">{hasOptions ? 'Select component' : 'No options available'}</option>
-              {rankedFromOptions.map(opt => (
-                <option key={opt.canonicalId} value={opt.canonicalId}>
-                  {opt.displayName} ({opt.kind})
-                </option>
-              ))}
-            </select>
+            <label className={lab}>Component Source</label>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => handleComponentSourceChange('CANONICAL_SELECTION')}
+                className={`flex-1 rounded px-2 py-1 text-[10px] font-semibold border transition ${componentSourceMode === 'CANONICAL_SELECTION' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-emerald-700 border-emerald-300'}`}
+                disabled={!hasOptions}
+              >
+                Canonical Dropdown
+              </button>
+              <button
+                type="button"
+                onClick={() => handleComponentSourceChange('MANUAL_OVERRIDE')}
+                className={`flex-1 rounded px-2 py-1 text-[10px] font-semibold border transition ${componentSourceMode === 'MANUAL_OVERRIDE' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-amber-700 border-amber-300'}`}
+              >
+                Manual Override
+              </button>
+            </div>
+            {manualHelper && (
+              <p className="mt-0.5 text-[10px] text-amber-700">{manualHelper}</p>
+            )}
           </div>
-          <div><label className={lab}>From Cavity / Pin</label><input value={fromCav}  onChange={e => setFromCav(e.target.value)}  placeholder="e.g. 2"      className={inp} /></div>
-          <div>
-            <label className={lab}>To Component</label>
-            <select
-              value={toComponentId}
-              onChange={e => {
-                setToUserEdited(true);
-                setToComponentId(e.target.value);
-              }}
-              className={`${inp} ${toSuggestedActive ? suggestedCls : ''}`}
-              disabled={!hasOptions}
-            >
-              <option value="">{hasOptions ? 'Select component' : 'No options available'}</option>
-              {rankedToOptions.map(opt => (
-                <option key={opt.canonicalId} value={opt.canonicalId}>
-                  {opt.displayName} ({opt.kind})
-                </option>
-              ))}
-            </select>
+
+          <div className="grid grid-cols-2 gap-2">
+            {componentSourceMode === 'CANONICAL_SELECTION' ? (
+              <>
+                <div>
+                  <label className={lab}>From Component</label>
+                  <select
+                    value={fromComponentId}
+                    onChange={e => setFromComponentId(e.target.value)}
+                    className={`${inp} ${fromSuggestedActive ? suggestedCls : ''}`}
+                    disabled={!hasOptions}
+                  >
+                    <option value="">{hasOptions ? 'Select component' : 'No options available'}</option>
+                    {rankedFromOptions.map(opt => (
+                      <option key={opt.canonicalId} value={opt.canonicalId}>
+                        {optionLabel(opt)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={lab}>To Component</label>
+                  <select
+                    value={toComponentId}
+                    onChange={e => setToComponentId(e.target.value)}
+                    className={`${inp} ${toSuggestedActive ? suggestedCls : ''}`}
+                    disabled={!hasOptions}
+                  >
+                    <option value="">{hasOptions ? 'Select component' : 'No options available'}</option>
+                    {rankedToOptions.map(opt => (
+                      <option key={opt.canonicalId} value={opt.canonicalId}>
+                        {optionLabel(opt)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className={lab}>From Component (Manual)</label>
+                  <input
+                    value={fromManualComponent}
+                    onChange={e => setFromManualComponent(e.target.value)}
+                    placeholder="e.g. K1"
+                    className={inp}
+                  />
+                </div>
+                <div>
+                  <label className={lab}>To Component (Manual)</label>
+                  <input
+                    value={toManualComponent}
+                    onChange={e => setToManualComponent(e.target.value)}
+                    placeholder="e.g. TB3"
+                    className={inp}
+                  />
+                </div>
+              </>
+            )}
+            <div><label className={lab}>From Cavity / Pin</label><input value={fromCav} onChange={e => setFromCav(e.target.value)} placeholder="e.g. 2" className={inp} /></div>
+            <div><label className={lab}>To Cavity / Pin</label><input value={toCav} onChange={e => setToCav(e.target.value)} placeholder="e.g. 5" className={inp} /></div>
           </div>
-          <div><label className={lab}>To Cavity / Pin</label><input   value={toCav}    onChange={e => setToCav(e.target.value)}    placeholder="e.g. 5"      className={inp} /></div>
         </div>
       )}
 
@@ -465,6 +596,8 @@ function WireEvidenceRow({
   wireIdentity,
   componentOptions,
   componentOptionLookups,
+  isDegradedMode,
+  componentOptionsSource,
 }: {
   wire: WireConnectivity;
   reconciledWire?: ReconciledWire;
@@ -477,6 +610,8 @@ function WireEvidenceRow({
   wireIdentity?: WireIdentityResult['wires'][number];
   componentOptions: ComponentAuthorityOption[];
   componentOptionLookups: ComponentOptionLookups;
+  isDegradedMode: boolean;
+  componentOptionsSource?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isOperatorResolved = Boolean(operatorOverride);
@@ -493,7 +628,7 @@ function WireEvidenceRow({
   const indicator = matchIndicator(reconciledWire);
   const debugMode = process.env.NODE_ENV !== 'production';
   const isFormOpen = activeResolveWireId === wire.wireId;
-  const canResolve = !isOperatorResolved && wire.unresolved && Boolean(onResolveSubmit) && componentOptions.length > 0;
+  const canResolve = !isOperatorResolved && wire.unresolved && Boolean(onResolveSubmit);
   const projectionHints = wire as WireConnectivityWithProjectionHints;
 
   const suggestedFromOption = useMemo(() => {
@@ -685,6 +820,10 @@ function WireEvidenceRow({
                   componentOptions={componentOptions}
                   suggestedFromComponentId={suggestedFromOption?.canonicalId}
                   suggestedToComponentId={suggestedToOption?.canonicalId}
+                  initialFromComponentName={wire.from.component ?? reconciledWire?.from.matchedLabel ?? null}
+                  initialToComponentName={wire.to.component ?? reconciledWire?.to.matchedLabel ?? null}
+                  isDegradedMode={isDegradedMode}
+                  componentOptionsSource={componentOptionsSource}
                 />
               )}
             </div>
@@ -808,6 +947,7 @@ export interface HarnessConnectivityPanelProps {
   onGraphBranchClick?: (payload: { component: string; cavity: string; wireIds: string[] }) => void;
   /** T23.6.65: Canonical component options derived from BOM connectors/terminals. */
   componentOptions?: ComponentAuthorityOption[];
+  componentOptionsSource?: string;
 }
 
 export default function HarnessConnectivityPanel({
@@ -823,33 +963,63 @@ export default function HarnessConnectivityPanel({
   onGraphMissingPinClick,
   onGraphBranchClick,
   componentOptions,
+  componentOptionsSource,
 }: HarnessConnectivityPanelProps) {
-  const model = connectivity ?? harnessConnectivity ?? null;
-  const resolvedComponentOptions = useMemo<ComponentAuthorityOption[]>(() => {
-    if (componentOptions && componentOptions.length > 0) {
-      return componentOptions;
+  const resolvedComponentOptions = useMemo<ComponentAuthorityOption[]>(
+    () => (componentOptions && componentOptions.length > 0 ? componentOptions : []),
+    [componentOptions],
+  );
+
+  const model = useMemo(() => connectivity ?? harnessConnectivity ?? null, [connectivity, harnessConnectivity]);
+
+  useEffect(() => {
+    if (componentOptions && componentOptions.length === 0) {
+      console.error('[T23.6.70 UI SOURCE ENFORCEMENT ERROR] componentOptions prop provided but empty.', {
+        source: componentOptionsSource ?? 'UNKNOWN',
+      });
     }
-    if (model) {
-      return buildComponentAuthorityOptions(model);
+    if (!componentOptions || componentOptions.length === 0) {
+      console.warn('[T23.6.70 UI SOURCE ENFORCEMENT ERROR] componentOptions prop missing. No fallback will be used.', {
+        source: componentOptionsSource ?? 'UNKNOWN',
+      });
     }
-    return [];
-  }, [componentOptions, model]);
+  }, [componentOptions, componentOptionsSource]);
 
   const componentOptionLookups = useMemo(
     () => buildComponentOptionLookups(resolvedComponentOptions),
     [resolvedComponentOptions],
   );
 
+  const isCanonicalAvailable = componentOptionsSource === 'SIMPLIFIED_BOM' && resolvedComponentOptions.length > 0;
+  const isDegradedMode = !isCanonicalAvailable;
+
   useEffect(() => {
-    if (resolvedComponentOptions.length === 0) return;
-    const connectorCount = resolvedComponentOptions.filter(opt => opt.kind === 'CONNECTOR').length;
-    const terminalCount = resolvedComponentOptions.filter(opt => opt.kind === 'TERMINAL').length;
-    console.log('[T23.6.65 RESOLUTION OPTIONS]', {
-      total: resolvedComponentOptions.length,
-      connectors: connectorCount,
-      terminals: terminalCount,
+    if (!isDegradedMode) return;
+    console.warn('[T23.6.71 DEGRADED MODE ACTIVE]', {
+      source: componentOptionsSource ?? 'UNKNOWN',
+      optionCount: resolvedComponentOptions.length,
     });
-  }, [resolvedComponentOptions.length]);
+  }, [isDegradedMode, componentOptionsSource, resolvedComponentOptions.length]);
+
+  useEffect(() => {
+    console.log('[T23.6.70 UI SOURCE ENFORCED]', {
+      source: componentOptionsSource ?? 'UNKNOWN',
+      canonicalCount: resolvedComponentOptions.length,
+    });
+    if (resolvedComponentOptions.length === 0) {
+      console.warn('[T23.6.70 MISSING CANONICAL OPTIONS]', {
+        source: componentOptionsSource ?? 'UNKNOWN',
+      });
+    } else {
+      const connectorCount = resolvedComponentOptions.filter(opt => opt.kind === 'CONNECTOR').length;
+      const terminalCount = resolvedComponentOptions.filter(opt => opt.kind === 'TERMINAL').length;
+      console.log('[T23.6.65 RESOLUTION OPTIONS]', {
+        total: resolvedComponentOptions.length,
+        connectors: connectorCount,
+        terminals: terminalCount,
+      });
+    }
+  }, [componentOptionsSource, resolvedComponentOptions.length]);
 
   const overrideMap = new Map((operatorOverrides ?? []).map(o => [o.wireId, o]));
   const [activeResolveWireId, setActiveResolveWireId] = useState<string | null>(null);
@@ -1075,6 +1245,8 @@ export default function HarnessConnectivityPanel({
                   wireIdentity={wireIdentities?.bySourceRowIndex.get(wire.sourceRowIndex) ?? wireIdentities?.byOriginalId.get(wire.wireId)}
                   componentOptions={resolvedComponentOptions}
                   componentOptionLookups={componentOptionLookups}
+                  isDegradedMode={isDegradedMode}
+                  componentOptionsSource={componentOptionsSource}
                 />
               ))}
             </tbody>

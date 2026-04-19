@@ -30,6 +30,7 @@ import FieldEvidencePanel from './FieldEvidencePanel';
 import type { RegionOverlay } from '@/src/features/harness-work-instructions/types/documentRegionOverlay';
 import DocumentOverlayViewer from './DocumentOverlayViewer';
 import HarnessConnectivityPanel from './HarnessConnectivityPanel';
+import { buildComponentAuthorityOptions } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
 import SkuModelEditorPanel, { type SkuModelDeleteRequest, type ExternalEditorRequest } from './SkuModelEditorPanel';
 import KomaxCutSheetPanel from './KomaxCutSheetPanel';
 import SkuLifecycleHistoryPanel from './SkuLifecycleHistoryPanel';
@@ -1619,6 +1620,30 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     });
   }, [selectedItem, selectedId, wireOverrides, skuAddedWires, skuEditedWires, skuDeletedIds]);
 
+  const panelConnectivity = useMemo(() => (
+    effectiveState?.effectiveConnectivity ?? selectedItem?.analysis?.harnessConnectivity ?? null
+  ), [effectiveState?.effectiveConnectivity, selectedItem?.analysis?.harnessConnectivity]);
+
+  const canonicalComponentOptions = selectedItem?.analysis?.canonicalComponentOptions ?? null;
+  const canonicalComponentOptionsSource = selectedItem?.analysis?.canonicalComponentOptionsSource ?? null;
+
+  const panelComponentOptions = useMemo(() => {
+    if (canonicalComponentOptions && canonicalComponentOptions.length > 0) {
+      return canonicalComponentOptions;
+    }
+    return panelConnectivity ? buildComponentAuthorityOptions(panelConnectivity) : [];
+  }, [canonicalComponentOptions, panelConnectivity]);
+
+  const panelComponentOptionsSource = useMemo(() => {
+    if (canonicalComponentOptions && canonicalComponentOptions.length > 0) {
+      return canonicalComponentOptionsSource ?? 'SIMPLIFIED_BOM';
+    }
+    if (panelConnectivity) {
+      return effectiveState?.effectiveConnectivity ? 'EFFECTIVE_CONNECTIVITY_FALLBACK' : 'ANALYSIS_CONNECTIVITY_FALLBACK';
+    }
+    return 'UNAVAILABLE';
+  }, [canonicalComponentOptions, canonicalComponentOptionsSource, panelConnectivity, effectiveState?.effectiveConnectivity]);
+
   // T12.4: when effective state clears all blocking questions and required
   // document fields are present, promote the item status to ready_to_commit.
   useEffect(() => {
@@ -2017,6 +2042,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               setSkuEditorRequest({ type: 'branch', wireIds, fromComponent: component, fromCavity: cavity });
               skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }}
+            componentOptions={panelComponentOptions}
+            componentOptionsSource={panelComponentOptionsSource}
           />
         ) : null}
 
