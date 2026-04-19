@@ -136,6 +136,8 @@ type StrictDocumentType = 'BOM' | 'CUSTOMER_DRAWING' | 'INTERNAL_DRAWING';
 
 type UploadMode = 'MIXED' | StrictDocumentType;
 
+type ProcessingState = 'idle' | 'upload_received' | 'processing' | 'finalizing' | 'complete' | 'error';
+
 const MODE_OPTIONS: { label: string; value: UploadMode }[] = [
   { label: 'Mixed', value: 'MIXED' },
   { label: 'BOM', value: 'BOM' },
@@ -284,6 +286,20 @@ const formatBytes = (bytes: number) => {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+};
+
+const clearTimeoutRef = (ref: React.MutableRefObject<number | null>) => {
+  if (ref.current) {
+    window.clearTimeout(ref.current);
+    ref.current = null;
+  }
+};
+
+const clearIntervalRef = (ref: React.MutableRefObject<number | null>) => {
+  if (ref.current) {
+    window.clearInterval(ref.current);
+    ref.current = null;
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -740,9 +756,22 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const skuEditorRef = useRef<HTMLDivElement>(null);
   const [isWorkbenchActive, setIsWorkbenchActive] = useState(false);
   const workbenchRef = useRef<HTMLDivElement>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
   const itemCountRef = useRef(0);
   const [commitState, setCommitState] = useState<'idle' | 'loading' | 'success'>('idle');
   const commitResetRef = useRef<number | null>(null);
+  const [processingState, setProcessingState] = useState<ProcessingState>('idle');
+  const [processingPercent, setProcessingPercent] = useState(0);
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [processingFileName, setProcessingFileName] = useState<string | null>(null);
+  const [processingError, setProcessingError] = useState<string | null>(null);
+  const [activeProcessingItemId, setActiveProcessingItemId] = useState<string | null>(null);
+  const activeProcessingItemRef = useRef<string | null>(null);
+  const progressTimerRef = useRef<number | null>(null);
+  const stageTransitionRef = useRef<number | null>(null);
+  const completionTimeoutRef = useRef<number | null>(null);
+  const pendingScrollAfterCompleteRef = useRef(false);
+  const stateLogSignatureRef = useRef<string>('');
 
   const scrollWorkbenchIntoView = useCallback(() => {
     requestAnimationFrame(() => {
@@ -750,10 +779,121 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     });
   }, []);
 
+  const isWorkbenchInView = useCallback(() => {
+    if (typeof window === 'undefined') return false;
+    const rect = workbenchRef.current?.getBoundingClientRect();
+    if (!rect) return false;
+    return rect.top >= 0 && rect.top <= window.innerHeight * 0.9;
+  }, []);
+
   const focusWorkbench = useCallback(() => {
     setIsWorkbenchActive(true);
-    scrollWorkbenchIntoView();
-  }, [scrollWorkbenchIntoView]);
+    if (!isWorkbenchInView()) {
+      scrollWorkbenchIntoView();
+    }
+  }, [isWorkbenchInView, scrollWorkbenchIntoView]);
+
+  const startProgressInterval = useCallback((maxPercent: number) => {
+    clearIntervalRef(progressTimerRef);
+    progressTimerRef.current = window.setInterval(() => {
+      setProcessingPercent(prev => {
+        if (prev >= maxPercent) {
+          clearIntervalRef(progressTimerRef);
+          return prev;
+        }
+        const next = Math.min(prev + 1, maxPercent);
+        return next;
+      });
+    }, 450);
+  }, []);
+
+  const enterProcessingStage = useCallback((nextState: ProcessingState, message: string, floorPercent: number, rampTarget?: number) => {
+    setProcessingState(nextState);
+    setProcessingMessage(message);
+    setProcessingPercent(prev => Math.max(prev, floorPercent));
+    if (typeof rampTarget === 'number') {
+      startProgressInterval(rampTarget);
+    } else {
+      clearIntervalRef(progressTimerRef);
+    }
+  }, [startProgressInterval]);
+
+  const beginProcessingFeedback = useCallback((fileName: string, itemId: string) => {
+    clearIntervalRef(progressTimerRef);
+    clearTimeoutRef(stageTransitionRef);
+    clearTimeoutRef(completionTimeoutRef);
+    setProcessingFileName(fileName);
+    setProcessingPercent(0);
+    setProcessingError(null);
+    setActiveProcessingItemId(itemId);
+    activeProcessingItemRef.current = itemId;
+    pendingScrollAfterCompleteRef.current = true;
+    enterProcessingStage('upload_received', 'File received', 5);
+    stageTransitionRef.current = window.setTimeout(() => {
+      enterProcessingStage('processing', 'Analyzing document…', 15, 75);
+    }, 250);
+  }, [enterProcessingStage]);
+
+  const markProcessingFinalizing = useCallback(() => {
+    enterProcessingStage('finalizing', 'Finalizing workspace…', 85, 95);
+    clearTimeoutRef(stageTransitionRef);
+    stageTransitionRef.current = window.setTimeout(() => {
+      clearIntervalRef(progressTimerRef);
+      setProcessingState('complete');
+      setProcessingMessage('Processing complete');
+      setProcessingPercent(100);
+      completionTimeoutRef.current = window.setTimeout(() => {
+        clearIntervalRef(progressTimerRef);
+        clearTimeoutRef(stageTransitionRef);
+        setProcessingState('idle');
+        setProcessingPercent(0);
+        setProcessingMessage('');
+        setProcessingFileName(null);
+        setProcessingError(null);
+        setActiveProcessingItemId(null);
+        activeProcessingItemRef.current = null;
+      }, 4000);
+    }, 900);
+  }, [enterProcessingStage]);
+
+  const markProcessingError = useCallback((message: string | null) => {
+    clearIntervalRef(progressTimerRef);
+    clearTimeoutRef(stageTransitionRef);
+    clearTimeoutRef(completionTimeoutRef);
+    pendingScrollAfterCompleteRef.current = false;
+    setProcessingError(message);
+    setProcessingState('error');
+    setProcessingMessage(message ?? 'Processing failed');
+    setProcessingPercent(prev => Math.max(prev, 15));
+  }, []);
+
+  useEffect(() => () => {
+    clearIntervalRef(progressTimerRef);
+    clearTimeoutRef(stageTransitionRef);
+    clearTimeoutRef(completionTimeoutRef);
+  }, []);
+
+  useEffect(() => {
+    if (processingState !== 'complete') return;
+    if (!pendingScrollAfterCompleteRef.current) return;
+    pendingScrollAfterCompleteRef.current = false;
+    if (!isWorkbenchInView()) {
+      scrollWorkbenchIntoView();
+    }
+  }, [processingState, isWorkbenchInView, scrollWorkbenchIntoView]);
+
+  useEffect(() => {
+    const signature = `${processingState}-${processingPercent}-${processingMessage}-${processingFileName ?? 'none'}-${processingError ?? 'none'}`;
+    if (stateLogSignatureRef.current === signature) return;
+    stateLogSignatureRef.current = signature;
+    console.log('[T23.6.67 PROCESSING STATE]', {
+      state: processingState,
+      percent: processingPercent,
+      message: processingMessage,
+      fileName: processingFileName,
+      error: processingError,
+    });
+  }, [processingState, processingPercent, processingMessage, processingFileName, processingError]);
 
   const collapseQueue = useCallback(() => {
     setIsWorkbenchActive(false);
@@ -794,8 +934,9 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     }
   }, [selectedId]);
 
-  const handleSelectItem = useCallback((id: string) => {
+  const handleSelectItem = useCallback((id: string, opts?: { focus?: boolean }) => {
     setSelectedId(id);
+    if (opts?.focus === false) return;
     focusWorkbench();
   }, [focusWorkbench]);
 
@@ -1004,6 +1145,9 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       extractedText = await extractTextFromPDF(file);
     } catch {
       updateItem(id, { status: 'failed', error: 'Failed to extract text from PDF.' });
+      if (activeProcessingItemRef.current === id) {
+        markProcessingError('Failed to extract text from PDF.');
+      }
       return;
     }
 
@@ -1202,7 +1346,11 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       const json = await res.json();
 
       if (!res.ok || !json.ok) {
-        updateItem(id, { status: 'failed', error: json.error ?? 'Analysis failed.' });
+        const errorMsg = json.error ?? 'Analysis failed.';
+        updateItem(id, { status: 'failed', error: errorMsg });
+        if (activeProcessingItemRef.current === id) {
+          markProcessingError(errorMsg);
+        }
         return;
       }
 
@@ -1286,11 +1434,17 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
         },
         summary: `Ingestion baseline: ${analysis.fileName} (${analysis.harnessConnectivity?.wires.length ?? 0} wires)`,
       });
+      if (activeProcessingItemRef.current === id) {
+        markProcessingFinalizing();
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Analysis request failed.';
       updateItem(id, { status: 'failed', error: msg });
+      if (activeProcessingItemRef.current === id) {
+        markProcessingError(msg);
+      }
     }
-  }, [preselectedSku, updateItem]);
+  }, [markProcessingError, markProcessingFinalizing, preselectedSku, updateItem]);
 
   const queueFiles = useCallback((files: FileList | File[]) => {
     const selected = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
@@ -1305,9 +1459,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     setItems(prev => [...prev, ...entries]);
     entries.forEach(e => processFile(e.id, e.file, uploadMode !== 'MIXED' ? uploadMode : undefined));
     if (entries.length > 0) {
-      handleSelectItem(entries[0].id);
+      handleSelectItem(entries[0].id, { focus: false });
+      beginProcessingFeedback(entries[0].file.name, entries[0].id);
     }
-  }, [handleSelectItem, processFile, uploadMode]);
+  }, [beginProcessingFeedback, handleSelectItem, processFile, uploadMode]);
 
   const commitItem = useCallback(async (item: WorkbenchItem): Promise<boolean> => {
     if (!isItemReady(item)) return false;
@@ -2009,6 +2164,60 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const showFullQueue = hasItems && !isWorkbenchActive;
   const showCollapsedQueue = hasItems && isWorkbenchActive;
   const activeFileName = selectedItem?.file.name ?? (hasItems ? items[0].file.name : 'No file selected');
+  const processingVisual = useMemo(() => {
+    switch (processingState) {
+      case 'idle':
+        return null;
+      case 'upload_received':
+        return {
+          stageLabel: 'FILE RECEIVED',
+          icon: '📥',
+          containerClass: 'border-blue-200 bg-blue-50 text-blue-900',
+          barClass: 'bg-blue-500',
+          badgeClass: 'bg-blue-100 text-blue-700',
+          badgeText: 'Processing…',
+        };
+      case 'processing':
+        return {
+          stageLabel: 'ANALYZING',
+          icon: '⚙️',
+          containerClass: 'border-blue-200 bg-blue-50 text-blue-900',
+          barClass: 'bg-blue-600',
+          badgeClass: 'bg-blue-100 text-blue-700',
+          badgeText: 'Processing…',
+        };
+      case 'finalizing':
+        return {
+          stageLabel: 'FINALIZING',
+          icon: '🧩',
+          containerClass: 'border-indigo-200 bg-indigo-50 text-indigo-900',
+          barClass: 'bg-indigo-600',
+          badgeClass: 'bg-indigo-100 text-indigo-800',
+          badgeText: 'Staging…',
+        };
+      case 'complete':
+        return {
+          stageLabel: 'COMPLETE',
+          icon: '✅',
+          containerClass: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+          barClass: 'bg-emerald-500',
+          badgeClass: 'bg-emerald-100 text-emerald-700',
+          badgeText: 'Complete',
+        };
+      case 'error':
+        return {
+          stageLabel: 'PROCESSING ERROR',
+          icon: '⚠️',
+          containerClass: 'border-red-200 bg-red-50 text-red-900',
+          barClass: 'bg-red-500',
+          badgeClass: 'bg-red-100 text-red-700',
+          badgeText: 'Error',
+        };
+      default:
+        return null;
+    }
+  }, [processingState]);
+  const processingBadgeClass = processingVisual?.badgeClass ?? '';
 
   const dropZoneBase = 'mx-6 mt-4 flex cursor-pointer items-center justify-center rounded-3xl border-[3px] border-dashed shadow-sm transition shrink-0';
   const dropZonePadding = isWorkbenchActive ? 'py-5' : 'py-8';
@@ -2262,8 +2471,16 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
 
       {/* Drop zone */}
       <div
-        onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
-        onDragLeave={e => { e.preventDefault(); setIsDragging(false); }}
+        ref={dropZoneRef}
+        onDragOver={e => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setIsDragging(true);
+        }}
+        onDragLeave={e => {
+          e.preventDefault();
+          setIsDragging(false);
+        }}
         onDrop={e => {
           e.preventDefault();
           setIsDragging(false);
@@ -2274,7 +2491,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       >
         <div className="text-center">
           <p className={`text-base font-semibold tracking-wide ${isDragging ? 'text-blue-700' : 'text-blue-800'}`}>
-            {isDragging ? 'Drop PDFs to queue for analysis…' : 'Drop PDFs anywhere inside this frame'}
+            Drop BOMs or drawings here
           </p>
           <p className="mt-1 text-xs font-medium text-gray-500">Click to browse · secure pre-ingestion preview</p>
         </div>
@@ -2301,6 +2518,32 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
           </div>
         ) : (
           <div className="pb-10">
+            {processingVisual && (
+              <div className={`mx-6 mt-3 rounded-2xl border px-4 py-3 shadow-sm transition ${processingVisual.containerClass}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-semibold tracking-[0.3em] text-current uppercase">{processingVisual.stageLabel}</p>
+                    <p className="text-sm font-bold text-current">{processingMessage || 'Working…'}</p>
+                    {processingFileName && (
+                      <p className="text-xs text-current/70">{processingFileName}</p>
+                    )}
+                    {processingError && (
+                      <p className="text-xs font-semibold text-red-700">{processingError}</p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xl">{processingVisual.icon}</div>
+                    <p className="text-3xl font-black leading-none">{processingPercent}%</p>
+                  </div>
+                </div>
+                <div className="mt-3 h-2 rounded-full bg-white/60 overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-300 ease-out ${processingVisual.barClass}`}
+                    style={{ width: `${processingPercent}%` }}
+                  />
+                </div>
+              </div>
+            )}
             {showCollapsedQueue && renderCollapsedQueueBar()}
             {showFullQueue && renderFullQueueSection()}
             <section ref={workbenchRef} className="mt-4 rounded-3xl border border-gray-200 bg-white shadow-sm min-h-[55vh]">

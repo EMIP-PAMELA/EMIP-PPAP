@@ -46,15 +46,26 @@ const CONNECTOR_KEYWORDS = [
 ];
 
 const TABLE_HEADER_HINTS = ['CONNECTOR', 'HOUSING', 'ASSY', 'OR EQUIVALENT'];
+const TABLE_CONTEXT_HINTS = ['PHOENIX', 'CONNECTOR', 'CONN', 'PLUG'];
 const DIAGRAM_HINTS = ['CALLOUT', 'CALLOUTS', 'DIAGRAM', 'FIG', 'VIEW', 'ZONE'];
 const NOTES_HINTS = ['NOTE', 'NOTES', 'ALT', 'ALTERNATE', 'SEE DRAWING', 'SEE DWG'];
 const CONNECTOR_AUTHORITY_PRIORITY: Record<ConnectorAuthority, number> = {
   TABLE_HEADER: 5,
+  TABLE: 4.5,
   DIAGRAM_CALLOUT: 4,
   ROW: 3,
   NOTES: 1,
   UNKNOWN: 0,
 };
+
+const CONNECTOR_PATTERNS: RegExp[] = [
+  /^\d{6,8}$/,
+  /^\d{6,7}-\d$/,
+  /^\d-\d{6,7}-\d$/,
+  /^\d{2}-\d{5,}-\d{1,2}$/,
+  /^[A-Z]{1,3}-?\d{5,}$/,
+  /^[A-Z0-9]{2,}-\d{2,}$/,
+];
 
 const LENGTH_UOM_PATTERNS = /^(FT|FEET|FOOT|IN|INCH|INCHES|M|METER|METERS|CM|MM|YD|YARD|YARDS)$/i;
 const COMPONENT_UOM_PATTERNS = /^(EA|EACH|PC|PCS|PIECE|PIECES|SET|KIT|UNIT|UNITS|LOT)$/i;
@@ -171,6 +182,32 @@ function collectTableHeaderConnectors(rawData: RawBOMData): NormalizedConnector[
     }
   }
   return headerConnectors;
+}
+
+function collectTableBodyConnectors(rawData: RawBOMData): NormalizedConnector[] {
+  const lines = rawData.rawText?.split(/\r?\n/) ?? [];
+  const connectors: NormalizedConnector[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (!/[0-9]/.test(trimmed)) continue;
+    const upper = trimmed.toUpperCase();
+    const hasContextHint = TABLE_CONTEXT_HINTS.some(hint => upper.includes(hint));
+    const tokens = detectPartNumbers(upper);
+    if (tokens.length === 0) continue;
+    tokens.forEach(partNumber => {
+      if (!isConnectorPartNumber(partNumber)) return;
+      const numericValue = Number(partNumber);
+      if (!Number.isNaN(numericValue) && numericValue < 1000) return;
+      connectors.push({
+        partNumber: normalizeConnectorPN(partNumber),
+        sourceText: trimmed,
+        authority: hasContextHint ? 'TABLE_HEADER' : 'TABLE',
+        confidence: hasContextHint ? 0.95 : 0.85,
+      });
+    });
+  }
+  return connectors;
 }
 
 function collectDiagramCalloutConnectors(rawData: RawBOMData): NormalizedConnector[] {
@@ -305,15 +342,23 @@ function detectPartNumbers(line: string): string[] {
 
 function isConnectorPartNumber(partNumber: string | null | undefined): boolean {
   if (!partNumber) return false;
-  const pn = partNumber.toUpperCase();
+  const normalized = normalizeConnectorPN(partNumber);
+  if (!normalized || normalized === 'UNKNOWN') return false;
 
-  if (/^\d{6,7}$/.test(pn)) return true;
+  if (/^\d+$/.test(normalized) && Number(normalized) < 1000) {
+    return false;
+  }
 
+  if (CONNECTOR_PATTERNS.some(pattern => pattern.test(normalized))) {
+    return true;
+  }
+
+  const rawUpper = partNumber.toUpperCase();
   if (
-    pn.includes('PHOENIX') ||
-    pn.includes('CONN') ||
-    pn.includes('HOUSING') ||
-    pn.includes('HEADER')
+    rawUpper.includes('PHOENIX') ||
+    rawUpper.includes('CONN') ||
+    rawUpper.includes('HOUSING') ||
+    rawUpper.includes('HEADER')
   ) {
     return true;
   }
@@ -649,8 +694,15 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
 
   addConnectors(connectorCandidates, collectRowConnectors(flatComponents));
   addConnectors(connectorCandidates, collectTableHeaderConnectors(rawData));
+  addConnectors(connectorCandidates, collectTableBodyConnectors(rawData));
   addConnectors(connectorCandidates, collectDiagramCalloutConnectors(rawData));
   addConnectors(connectorCandidates, collectNotesConnectors(rawData));
+
+  console.log('[T23.6.68 TABLE CONNECTOR EXTRACTION]', {
+    totalCandidates: connectorCandidates.length,
+    tableCandidates: connectorCandidates.filter(connector => connector.authority === 'TABLE').length,
+    sample: connectorCandidates.slice(0, 5),
+  });
 
   const connectors = deduplicateConnectors(connectorCandidates);
   const primaryConnector = resolvePrimaryConnector(connectors);
