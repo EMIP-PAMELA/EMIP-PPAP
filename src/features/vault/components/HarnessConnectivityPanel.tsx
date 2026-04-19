@@ -29,6 +29,7 @@ import type {
 import type { HarnessDecisionResult } from '@/src/features/harness-work-instructions/services/harnessDecisionService';
 import type { WireOperatorOverride, WireResolutionMode } from '@/src/features/vault/types/ingestionReview';
 import type { HarnessTopologyResult, TopologyWarning } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
+import { canonicalComponentKey } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
 import {
   buildComponentAuthorityOptions,
   type ComponentAuthorityOption,
@@ -170,6 +171,71 @@ function matchIndicator(
   return { symbol: '\u2717', label: 'Unmatched', className: 'bg-red-100 text-red-700' };
 }
 
+type ComponentOptionLookups = {
+  byCanonical: Map<string, ComponentAuthorityOption>;
+  byDisplay: Map<string, ComponentAuthorityOption>;
+  byCollapsed: Map<string, ComponentAuthorityOption>;
+};
+
+type WireConnectivityWithProjectionHints = WireConnectivity & {
+  connectorPartNumber?: string | null;
+  terminalPartNumber?: string | null;
+};
+
+function buildComponentOptionLookups(options: ComponentAuthorityOption[]): ComponentOptionLookups {
+  const byCanonical = new Map<string, ComponentAuthorityOption>();
+  const byDisplay = new Map<string, ComponentAuthorityOption>();
+  const byCollapsed = new Map<string, ComponentAuthorityOption>();
+  for (const option of options) {
+    if (option.canonicalId) {
+      byCanonical.set(option.canonicalId, option);
+    }
+    const normalized = option.displayName.trim().toLowerCase();
+    if (normalized.length > 0 && !byDisplay.has(normalized)) {
+      byDisplay.set(normalized, option);
+    }
+    const collapsed = normalized.replace(/[\s\-_:]/g, '');
+    if (collapsed.length > 0 && !byCollapsed.has(collapsed)) {
+      byCollapsed.set(collapsed, option);
+    }
+  }
+  return { byCanonical, byDisplay, byCollapsed };
+}
+
+function findComponentOption(
+  raw: string | null | undefined,
+  lookups: ComponentOptionLookups,
+): ComponentAuthorityOption | null {
+  if (!raw) return null;
+  const canonical = canonicalComponentKey(raw);
+  if (canonical) {
+    const canonicalMatch = lookups.byCanonical.get(canonical);
+    if (canonicalMatch) return canonicalMatch;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (normalized.length > 0) {
+    const displayMatch = lookups.byDisplay.get(normalized);
+    if (displayMatch) return displayMatch;
+    const collapsed = normalized.replace(/[\s\-_:]/g, '');
+    if (collapsed.length > 0) {
+      const collapsedMatch = lookups.byCollapsed.get(collapsed);
+      if (collapsedMatch) return collapsedMatch;
+    }
+  }
+  return null;
+}
+
+function resolveSuggestedOption(
+  candidates: (string | null | undefined)[],
+  lookups: ComponentOptionLookups,
+): ComponentAuthorityOption | null {
+  for (const candidate of candidates) {
+    const match = findComponentOption(candidate, lookups);
+    if (match) return match;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // T11: Sub-component: wire resolve form
 // ---------------------------------------------------------------------------
@@ -187,16 +253,20 @@ function WireResolveForm({
   onSave,
   onCancel,
   componentOptions,
+  suggestedFromComponentId,
+  suggestedToComponentId,
 }: {
   wireId: string;
   onSave: (override: WireOperatorOverride) => void;
   onCancel: () => void;
   componentOptions: ComponentAuthorityOption[];
+  suggestedFromComponentId?: string | null;
+  suggestedToComponentId?: string | null;
 }) {
   const [mode, setMode]       = useState<WireResolutionMode>('DIRECT_OVERRIDE');
-  const [fromComponentId, setFromComponentId] = useState('');
+  const [fromComponentId, setFromComponentId] = useState(suggestedFromComponentId ?? '');
   const [fromCav,  setFromCav]  = useState('');
-  const [toComponentId, setToComponentId]   = useState('');
+  const [toComponentId, setToComponentId]   = useState(suggestedToComponentId ?? '');
   const [toCav,    setToCav]    = useState('');
   const [srcComp,  setSrcComp]  = useState('');
   const [srcCav,   setSrcCav]   = useState('');
@@ -206,8 +276,29 @@ function WireResolveForm({
   const [notes,    setNotes]    = useState('');
   const [reason,   setReason]   = useState('');
   const [err,      setErr]      = useState<string | null>(null);
+  const [fromUserEdited, setFromUserEdited] = useState(false);
+  const [toUserEdited,   setToUserEdited]   = useState(false);
 
   const hasOptions = componentOptions.length > 0;
+
+  useEffect(() => {
+    setFromComponentId(suggestedFromComponentId ?? '');
+    setToComponentId(suggestedToComponentId ?? '');
+    setFromUserEdited(false);
+    setToUserEdited(false);
+  }, [wireId]);
+
+  useEffect(() => {
+    if (fromUserEdited) return;
+    if (suggestedFromComponentId === undefined) return;
+    setFromComponentId(suggestedFromComponentId ?? '');
+  }, [suggestedFromComponentId, fromUserEdited]);
+
+  useEffect(() => {
+    if (toUserEdited) return;
+    if (suggestedToComponentId === undefined) return;
+    setToComponentId(suggestedToComponentId ?? '');
+  }, [suggestedToComponentId, toUserEdited]);
 
   const sortOptions = useMemo(() => {
     return (priority: (kind: ComponentAuthorityOption['kind']) => number) =>
@@ -269,6 +360,9 @@ function WireResolveForm({
   };
 
   const inp = 'w-full rounded border border-[color:var(--panel-border)] bg-[color:var(--input-bg)] px-1.5 py-0.5 text-[11px] text-[color:var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-blue-400';
+  const suggestedCls = 'border-emerald-400 ring-1 ring-emerald-300 bg-emerald-50/40';
+  const fromSuggestedActive = Boolean(!fromUserEdited && suggestedFromComponentId && fromComponentId === suggestedFromComponentId);
+  const toSuggestedActive = Boolean(!toUserEdited && suggestedToComponentId && toComponentId === suggestedToComponentId);
   const lab = 'text-[10px] font-semibold text-gray-500 mb-0.5 block';
 
   return (
@@ -290,8 +384,11 @@ function WireResolveForm({
             <label className={lab}>From Component</label>
             <select
               value={fromComponentId}
-              onChange={e => setFromComponentId(e.target.value)}
-              className={inp}
+              onChange={e => {
+                setFromUserEdited(true);
+                setFromComponentId(e.target.value);
+              }}
+              className={`${inp} ${fromSuggestedActive ? suggestedCls : ''}`}
               disabled={!hasOptions}
             >
               <option value="">{hasOptions ? 'Select component' : 'No options available'}</option>
@@ -307,8 +404,11 @@ function WireResolveForm({
             <label className={lab}>To Component</label>
             <select
               value={toComponentId}
-              onChange={e => setToComponentId(e.target.value)}
-              className={inp}
+              onChange={e => {
+                setToUserEdited(true);
+                setToComponentId(e.target.value);
+              }}
+              className={`${inp} ${toSuggestedActive ? suggestedCls : ''}`}
               disabled={!hasOptions}
             >
               <option value="">{hasOptions ? 'Select component' : 'No options available'}</option>
@@ -364,6 +464,7 @@ function WireEvidenceRow({
   onResolveFormClose,
   wireIdentity,
   componentOptions,
+  componentOptionLookups,
 }: {
   wire: WireConnectivity;
   reconciledWire?: ReconciledWire;
@@ -375,6 +476,7 @@ function WireEvidenceRow({
   onResolveFormClose?: () => void;
   wireIdentity?: WireIdentityResult['wires'][number];
   componentOptions: ComponentAuthorityOption[];
+  componentOptionLookups: ComponentOptionLookups;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isOperatorResolved = Boolean(operatorOverride);
@@ -392,6 +494,34 @@ function WireEvidenceRow({
   const debugMode = process.env.NODE_ENV !== 'production';
   const isFormOpen = activeResolveWireId === wire.wireId;
   const canResolve = !isOperatorResolved && wire.unresolved && Boolean(onResolveSubmit) && componentOptions.length > 0;
+  const projectionHints = wire as WireConnectivityWithProjectionHints;
+
+  const suggestedFromOption = useMemo(() => {
+    if (componentOptions.length === 0) return null;
+    return resolveSuggestedOption([
+      projectionHints.connectorPartNumber ?? null,
+      wire.from.component,
+      reconciledWire?.from.matchedLabel,
+    ], componentOptionLookups);
+  }, [componentOptions.length, componentOptionLookups, projectionHints.connectorPartNumber, reconciledWire?.from.matchedLabel, wire.from.component]);
+
+  const suggestedToOption = useMemo(() => {
+    if (componentOptions.length === 0) return null;
+    return resolveSuggestedOption([
+      projectionHints.terminalPartNumber ?? null,
+      wire.to.component,
+      reconciledWire?.to.matchedLabel,
+    ], componentOptionLookups);
+  }, [componentOptions.length, componentOptionLookups, projectionHints.terminalPartNumber, reconciledWire?.to.matchedLabel, wire.to.component]);
+
+  useEffect(() => {
+    if (componentOptions.length === 0) return;
+    console.log('[T23.6.66 AUTO SUGGEST]', {
+      wireId: wire.wireId,
+      suggestedFrom: suggestedFromOption?.displayName ?? null,
+      suggestedTo: suggestedToOption?.displayName ?? null,
+    });
+  }, [componentOptions.length, suggestedFromOption?.canonicalId, suggestedToOption?.canonicalId, wire.wireId]);
 
   useEffect(() => {
     if (isFormOpen) {
@@ -553,6 +683,8 @@ function WireEvidenceRow({
                   }}
                   onCancel={() => onResolveFormClose?.()}
                   componentOptions={componentOptions}
+                  suggestedFromComponentId={suggestedFromOption?.canonicalId}
+                  suggestedToComponentId={suggestedToOption?.canonicalId}
                 />
               )}
             </div>
@@ -702,6 +834,11 @@ export default function HarnessConnectivityPanel({
     }
     return [];
   }, [componentOptions, model]);
+
+  const componentOptionLookups = useMemo(
+    () => buildComponentOptionLookups(resolvedComponentOptions),
+    [resolvedComponentOptions],
+  );
 
   useEffect(() => {
     if (resolvedComponentOptions.length === 0) return;
@@ -937,6 +1074,7 @@ export default function HarnessConnectivityPanel({
                   onResolveFormClose={closeResolve}
                   wireIdentity={wireIdentities?.bySourceRowIndex.get(wire.sourceRowIndex) ?? wireIdentities?.byOriginalId.get(wire.wireId)}
                   componentOptions={resolvedComponentOptions}
+                  componentOptionLookups={componentOptionLookups}
                 />
               ))}
             </tbody>
