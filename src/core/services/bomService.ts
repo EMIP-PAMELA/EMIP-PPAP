@@ -262,7 +262,7 @@ export async function getNormalizedBOMForPart(partNumber: string): Promise<Canon
 
   const { data: document, error: documentError } = await supabase
     .from('sku_documents')
-    .select('id, storage_path, file_name, revision, canonical_revision')
+    .select('id, storage_path, file_name, revision, normalized_revision')
     .eq('sku_id', skuRecord.id)
     .eq('document_type', 'BOM')
     .eq('is_current', true)
@@ -286,12 +286,23 @@ export async function getNormalizedBOMForPart(partNumber: string): Promise<Canon
     return null;
   }
 
-  const extractedText = await downloadBOMTextFromStorage(document.storage_path);
+  const canonicalRevision = document.normalized_revision ?? null;
+  console.log('[T23.6.56A REVISION MAP]', {
+    normalized_revision: document.normalized_revision ?? null,
+    mapped_canonical_revision: canonicalRevision,
+  });
+
+  const mappedDocument = {
+    ...document,
+    canonical_revision: canonicalRevision,
+  };
+
+  const extractedText = await downloadBOMTextFromStorage(mappedDocument.storage_path);
   if (!extractedText) {
     console.warn('[T23.6.55 CANONICAL FETCH]', {
       stage: 'document-text',
       partNumber: normalizedPart,
-      documentId: document.id,
+      documentId: mappedDocument.id,
       reason: 'TEXT_NOT_FOUND'
     });
     return null;
@@ -300,13 +311,13 @@ export async function getNormalizedBOMForPart(partNumber: string): Promise<Canon
   const raw = parseDocumentEngineBOMText(extractedText);
   const normalized = normalizeBOMData(raw);
   normalized.skuPartNumber = normalizedPart;
-  normalized.sourceDocumentId = document.id;
-  normalized.sourceFileName = document.file_name ?? null;
-  normalized.revision = document.canonical_revision ?? document.revision ?? normalized.revision ?? null;
+  normalized.sourceDocumentId = mappedDocument.id;
+  normalized.sourceFileName = mappedDocument.file_name ?? null;
+  normalized.revision = mappedDocument.canonical_revision ?? mappedDocument.revision ?? normalized.revision ?? null;
 
   console.log('[T23.6.55 CANONICAL FETCH]', {
     partNumber: normalizedPart,
-    documentId: document.id,
+    documentId: mappedDocument.id,
     componentCount: normalized.summary?.totalComponents ?? 0,
   });
 
@@ -314,7 +325,7 @@ export async function getNormalizedBOMForPart(partNumber: string): Promise<Canon
     bom: normalized,
     revision: normalized.revision ?? 'UNKNOWN',
     revisionOrder: 0,
-    ingestionBatchId: document.id,
+    ingestionBatchId: mappedDocument.id,
   };
 }
 
