@@ -38,12 +38,14 @@ const CONNECTOR_AUTHORITY_PRIORITY: Record<ConnectorAuthority, number> = {
   UNKNOWN: 0,
 };
 
-interface ConnectorOption {
+type ComponentOptionKind = 'CONNECTOR' | 'TERMINAL';
+
+interface ComponentOption {
   canonicalId: string;
   displayName: string;
-  kind: 'CONNECTOR';
-  authority: ConnectorAuthority;
-  confidence: number;
+  kind: ComponentOptionKind;
+  authority?: ConnectorAuthority;
+  confidence?: number;
   cavities: string[];
 }
 
@@ -74,7 +76,7 @@ export interface SimplifiedBOM {
   
   connectors: ConnectorProjection[];
   wires: WireProjection[];
-  componentOptions: ConnectorOption[];
+  componentOptions: ComponentOption[];
   
   summary: {
     totalWireLength: number;
@@ -145,11 +147,19 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
 
   const artifact = await getArtifactForPart(partNumber);
   const authorityConnectors = normalizedBOM.connectors ?? [];
+  const terminalOptions = buildTerminalOptions(components);
   const connectorOptions = buildConnectorOptions(authorityConnectors);
+  const componentOptions = mergeComponentOptions(terminalOptions, connectorOptions);
   console.log('[T23.6.64 CONNECTOR OPTIONS]', {
     count: connectorOptions.length,
     connectors: connectorOptions.map(option => option.canonicalId),
   });
+  console.log('[T23.6.69 COMPONENT OPTION BUILD]', {
+    connectorCount: authorityConnectors.length,
+    terminalCount: terminalOptions.length,
+    finalCount: componentOptions.length,
+  });
+  console.log('[T23.6.69 CONNECTOR OPTIONS PROPAGATED]', componentOptions.filter(option => option.kind === 'CONNECTOR'));
   const primaryConnector = normalizedBOM.primaryConnector ?? null;
   const wires = extractWires(components, authorityConnectors, primaryConnector);
   const connectors = extractConnectors(components);
@@ -165,7 +175,7 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
     ingestionBatchId: canonical.ingestionBatchId,
     connectors,
     wires,
-    componentOptions: connectorOptions,
+    componentOptions,
     summary: {
       totalWireLength,
       wireTypes,
@@ -330,18 +340,73 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function buildConnectorOptions(connectors: NormalizedConnector[]): ConnectorOption[] {
+function buildTerminalOptions(components: NormalizedComponent[]): ComponentOption[] {
+  const seen = new Set<string>();
+  const terminals = components.filter(component => component.componentType === 'terminal');
+  const options: ComponentOption[] = [];
+
+  for (const terminal of terminals) {
+    const canonicalId = (terminal.normalizedPartNumber ?? terminal.partId ?? '').trim().toUpperCase();
+    if (!canonicalId || seen.has(canonicalId)) continue;
+    seen.add(canonicalId);
+    options.push({
+      canonicalId,
+      displayName: terminal.partId?.trim() || terminal.normalizedPartNumber || canonicalId,
+      kind: 'TERMINAL',
+      cavities: [],
+    });
+  }
+
+  return options;
+}
+
+function buildConnectorOptions(connectors: NormalizedConnector[]): ComponentOption[] {
   return connectors.map(connector => {
-    const partNumber = connector.partNumber || 'UNKNOWN';
+    const partNumber = (connector.partNumber || 'UNKNOWN').trim().toUpperCase();
     return {
       canonicalId: partNumber,
-      displayName: partNumber,
+      displayName: connector.partNumber || partNumber,
       kind: 'CONNECTOR',
       authority: connector.authority,
       confidence: connector.confidence ?? 0,
       cavities: [],
-    } satisfies ConnectorOption;
+    } satisfies ComponentOption;
   });
+}
+
+function mergeComponentOptions(
+  terminals: ComponentOption[],
+  connectors: ComponentOption[],
+): ComponentOption[] {
+  const merged: ComponentOption[] = [];
+  const seen = new Map<string, ComponentOption>();
+
+  const append = (option: ComponentOption) => {
+    merged.push(option);
+    seen.set(option.canonicalId, option);
+  };
+
+  terminals.forEach(option => {
+    if (seen.has(option.canonicalId)) return;
+    append(option);
+  });
+
+  connectors.forEach(option => {
+    const existing = seen.get(option.canonicalId);
+    if (existing) {
+      if (existing.kind !== option.kind) {
+        console.warn('[T23.6.69 COMPONENT OPTION COLLISION]', {
+          canonicalId: option.canonicalId,
+          existingKind: existing.kind,
+          incomingKind: option.kind,
+        });
+      }
+      return;
+    }
+    append(option);
+  });
+
+  return merged;
 }
 
 // ============================================================
