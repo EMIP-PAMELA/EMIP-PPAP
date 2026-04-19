@@ -22,6 +22,7 @@
 
 import { getNormalizedBOMForPart } from '../services/bomService';
 import { getArtifactForPart } from '../services/artifactService';
+import { getExecutionMode } from '../context/executionContext';
 import type { NormalizedComponent } from '@/src/features/documentEngine/types/bomTypes';
 
 // ============================================================
@@ -80,6 +81,11 @@ export interface SimplifiedBOM {
  * @returns Simplified BOM projection
  */
 export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBOM | null> {
+  const mode = getExecutionMode();
+  if (mode === 'sku_view') {
+    console.log('[T23.6.59 PROJECTION BLOCKED — SKU VIEW]', { partNumber });
+    return null;
+  }
   console.log('🧠 V5.3 [Projection Service] Generating simplified BOM', {
     partNumber,
     timestamp: new Date().toISOString()

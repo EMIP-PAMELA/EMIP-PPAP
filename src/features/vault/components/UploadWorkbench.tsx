@@ -741,6 +741,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const [isWorkbenchActive, setIsWorkbenchActive] = useState(false);
   const workbenchRef = useRef<HTMLDivElement>(null);
   const itemCountRef = useRef(0);
+  const [commitState, setCommitState] = useState<'idle' | 'loading' | 'success'>('idle');
+  const commitResetRef = useRef<number | null>(null);
 
   const scrollWorkbenchIntoView = useCallback(() => {
     requestAnimationFrame(() => {
@@ -776,6 +778,21 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       setIsWorkbenchActive(false);
     }
   }, [items.length]);
+
+  useEffect(() => () => {
+    if (commitResetRef.current) {
+      window.clearTimeout(commitResetRef.current);
+      commitResetRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    setCommitState('idle');
+    if (commitResetRef.current) {
+      window.clearTimeout(commitResetRef.current);
+      commitResetRef.current = null;
+    }
+  }, [selectedId]);
 
   const handleSelectItem = useCallback((id: string) => {
     setSelectedId(id);
@@ -1292,8 +1309,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     }
   }, [handleSelectItem, processFile, uploadMode]);
 
-  const commitItem = useCallback(async (item: WorkbenchItem) => {
-    if (!isItemReady(item)) return;
+  const commitItem = useCallback(async (item: WorkbenchItem): Promise<boolean> => {
+    if (!isItemReady(item)) return false;
     const { documentType, partNumber, revision, drawingNumber } = getCommitValues(item);
     updateItem(item.id, { status: 'committing' });
 
@@ -1338,7 +1355,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
 
       if (!res.ok || !json.ok) {
         updateItem(item.id, { status: 'failed', error: json.error ?? 'Commit failed.' });
-        return;
+        return false;
       }
 
       updateItem(item.id, {
@@ -1395,9 +1412,11 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
       });
 
       onCommitComplete?.();
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Commit request failed.';
       updateItem(item.id, { status: 'failed', error: msg });
+      return false;
     }
   }, [onCommitComplete, updateItem]);
 
@@ -1466,13 +1485,29 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const canCommitAll = counts.ready > 0 && nonCommitted.every(i => i.status === 'ready_to_commit');
   const blockedCount = nonCommitted.filter(i => i.status !== 'ready_to_commit').length;
 
+  const handleCommitSelected = useCallback(async () => {
+    if (!selectedItem || commitState === 'loading') return;
+    setCommitState('loading');
+    const success = await commitItem(selectedItem);
+    if (!success) {
+      setCommitState('idle');
+      return;
+    }
+    setCommitState('success');
+    commitResetRef.current = window.setTimeout(() => {
+      setCommitState('idle');
+      commitResetRef.current = null;
+    }, 1500);
+  }, [commitItem, commitState, selectedItem]);
+
   const WorkbenchMainArea: React.FC = () => (
     !selectedItem ? (
       <div className="flex flex-1 items-center justify-center py-16 text-sm text-gray-400">
         Select a file to review
       </div>
     ) : (
-      <div className="p-5 space-y-4">
+      <div className="w-full max-w-[1100px] mx-auto px-4 py-4">
+        <div className="space-y-4">
         <div>
           <p className="text-base font-bold text-gray-900 truncate">{selectedItem.file.name}</p>
           <p className="text-xs text-gray-400">{formatBytes(selectedItem.file.size)}</p>
@@ -1923,10 +1958,15 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
         )) ? (
           <button
             type="button"
-            onClick={() => commitItem(selectedItem)}
-            className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition"
+            onClick={handleCommitSelected}
+            disabled={commitState === 'loading'}
+            className={`w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white transition ${commitState === 'loading' ? 'animate-pulse opacity-90' : 'hover:bg-emerald-700'}`}
           >
-            Commit This File
+            {commitState === 'loading'
+              ? 'Committing…'
+              : commitState === 'success'
+                ? '✓ Committed'
+                : 'Commit This File'}
           </button>
         ) : null}
 
@@ -1956,6 +1996,7 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
             </button>
           </div>
         ) : null}
+        </div>
       </div>
     )
   );

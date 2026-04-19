@@ -26,6 +26,14 @@ import type {
   SkuAuditSnapshotInput,
 } from '@/src/features/harness-work-instructions/types/skuAudit';
 
+const AUDIT_ENABLED = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_ENABLE_AUDIT === 'true';
+let auditDisabledNotified = false;
+function notifyAuditDisabled() {
+  if (auditDisabledNotified) return;
+  auditDisabledNotified = true;
+  console.log('[T23.6.58 AUDIT DISABLED]');
+}
+
 // ---------------------------------------------------------------------------
 // Lazy Supabase loader (keeps module side-effect-free at import time)
 // ---------------------------------------------------------------------------
@@ -149,6 +157,10 @@ export function buildSkuAuditSummary(events: SkuAuditEvent[]): string {
  * Fire-and-forget safe: never throws, logs errors to console only.
  */
 export async function recordSkuAuditEvent(input: SkuAuditEventInput): Promise<void> {
+  if (!AUDIT_ENABLED) {
+    notifyAuditDisabled();
+    return;
+  }
   try {
     const event = buildAuditEvent(input);
     const db = await getDb();
@@ -180,6 +192,10 @@ export async function recordSkuAuditEvent(input: SkuAuditEventInput): Promise<vo
  * Fire-and-forget safe: never throws.
  */
 export async function recordSkuAuditSnapshot(input: SkuAuditSnapshotInput): Promise<void> {
+  if (!AUDIT_ENABLED) {
+    notifyAuditDisabled();
+    return;
+  }
   try {
     const snap = buildAuditSnapshot(input);
     const db = await getDb();
@@ -204,6 +220,10 @@ export async function recordSkuAuditSnapshot(input: SkuAuditSnapshotInput): Prom
  * Returns [] on any error.
  */
 export async function listSkuAuditEvents(skuKey: string): Promise<SkuAuditEvent[]> {
+  if (!AUDIT_ENABLED) {
+    notifyAuditDisabled();
+    return [];
+  }
   try {
     const key = normalizeSkuKey(skuKey);
     const db = await getDb();
@@ -242,6 +262,10 @@ export async function listSkuAuditEvents(skuKey: string): Promise<SkuAuditEvent[
  * Returns [] on any error.
  */
 export async function listSkuAuditSnapshots(skuKey: string): Promise<SkuAuditSnapshot[]> {
+  if (!AUDIT_ENABLED) {
+    notifyAuditDisabled();
+    return [];
+  }
   try {
     const key = normalizeSkuKey(skuKey);
     const db = await getDb();
@@ -273,6 +297,10 @@ export async function listSkuAuditSnapshots(skuKey: string): Promise<SkuAuditSna
  * for download / audit export.
  */
 export async function exportSkuAuditAsJson(skuKey: string): Promise<string> {
+  if (!AUDIT_ENABLED) {
+    notifyAuditDisabled();
+    return JSON.stringify({ skuKey: normalizeSkuKey(skuKey), events: [], snapshots: [] }, null, 2);
+  }
   const [events, snapshots] = await Promise.all([
     listSkuAuditEvents(skuKey),
     listSkuAuditSnapshots(skuKey),
@@ -285,8 +313,12 @@ export async function exportSkuAuditAsJson(skuKey: string): Promise<string> {
  * Columns: id, timestamp, eventType, actorType, actorName, summary, reason
  */
 export async function exportSkuAuditAsCsv(skuKey: string): Promise<string> {
-  const events = await listSkuAuditEvents(skuKey);
   const header = 'id,timestamp,eventType,actorType,actorName,summary,reason';
+  if (!AUDIT_ENABLED) {
+    notifyAuditDisabled();
+    return header;
+  }
+  const events = await listSkuAuditEvents(skuKey);
   const rows = events.map(e => [
     e.id,
     e.timestamp,

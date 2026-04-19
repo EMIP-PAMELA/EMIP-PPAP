@@ -153,6 +153,13 @@ export default function SKUDashboardPage() {
   const [readinessHighlightActive, setReadinessHighlightActive] = useState(false);
   const [highlightSection,         setHighlightSection]         = useState<'truth' | 'visualization' | null>(null);
 
+  useEffect(() => {
+    console.log('[T23.6.59 SKU VIEW MODE ACTIVE]', {
+      pathname: typeof window !== 'undefined' ? window.location.pathname : null,
+      partNumber: partNumberParam || null,
+    });
+  }, [partNumberParam]);
+
   const partNumber = sku?.part_number ?? partNumberParam?.toUpperCase() ?? '';
   const displayPartNumber = (partNumberParam || partNumber || '').toUpperCase();
   const hookPartNumber = useMemo(() => {

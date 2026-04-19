@@ -17,6 +17,7 @@
  */
 
 import { getSimplifiedBOM } from '@/src/core/projections/projectionService';
+import { getExecutionMode } from '@/src/core/context/executionContext';
 import { calculateCopperForPart } from '../calculations/copperCalculator';
 import type {
   CopperCalculationResult,
@@ -44,6 +45,11 @@ import type {
 export async function getCopperForPart(
   partNumber: string
 ): Promise<CopperCalculationResult | null> {
+  const mode = getExecutionMode();
+  if (mode !== 'copper' && mode !== 'pipeline') {
+    console.log('[T23.6.59 COPPER BLOCKED — NOT COPPER MODE]', { partNumber, mode });
+    return null;
+  }
   console.log('🧠 V5.4 [Copper Service] Fetching copper data for part', {
     partNumber,
     timestamp: new Date().toISOString()
