@@ -23,11 +23,19 @@
 import { getNormalizedBOMForPart } from '../services/bomService';
 import { getArtifactForPart } from '../services/artifactService';
 import { getExecutionMode } from '../context/executionContext';
-import type { NormalizedComponent, NormalizedConnector } from '@/src/features/documentEngine/types/bomTypes';
+import type { ConnectorAuthority, NormalizedComponent, NormalizedConnector } from '@/src/features/documentEngine/types/bomTypes';
 
 // ============================================================
 // TYPES
 // ============================================================
+
+const CONNECTOR_AUTHORITY_PRIORITY: Record<ConnectorAuthority, number> = {
+  TABLE_HEADER: 5,
+  DIAGRAM_CALLOUT: 4,
+  ROW: 3,
+  NOTES: 1,
+  UNKNOWN: 0,
+};
 
 export interface WireProjection {
   partNumber: string;
@@ -37,7 +45,8 @@ export interface WireProjection {
   lengthUnit: string;
   quantity: number;
   description: string | null;
-  connectorPartNumber: string | null;
+  connectorPartNumber?: string | null;
+  connectorCandidates?: string[];
 }
 
 export interface ConnectorProjection {
@@ -124,7 +133,9 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
   });
 
   const artifact = await getArtifactForPart(partNumber);
-  const wires = extractWires(components, normalizedBOM.primaryConnector ?? null);
+  const authorityConnectors = normalizedBOM.connectors ?? [];
+  const primaryConnector = normalizedBOM.primaryConnector ?? null;
+  const wires = extractWires(components, authorityConnectors, primaryConnector);
   const connectors = extractConnectors(components);
 
   const totalWireLength = wires.reduce((sum, wire) => sum + wire.length, 0);
@@ -168,6 +179,7 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
  */
 function extractWires(
   components: NormalizedComponent[],
+  authorityConnectors: NormalizedConnector[],
   primaryConnector: NormalizedConnector | null,
 ): WireProjection[] {
   if (!components || components.length === 0) {
@@ -184,7 +196,12 @@ function extractWires(
       ? String(component.gauge)
       : null;
 
-    return {
+    const { assignedConnector, candidatePartNumbers } = matchWireConnector(
+      component,
+      authorityConnectors,
+    );
+    const resolvedConnector = assignedConnector ?? primaryConnector;
+    const wireProjection: WireProjection = {
       partNumber: component.partId,
       gauge,
       color: component.color ?? null,
@@ -192,8 +209,20 @@ function extractWires(
       lengthUnit: 'ft',
       quantity: component.quantity,
       description: component.description,
-      connectorPartNumber: primaryConnector?.partNumber ?? null,
+      connectorPartNumber: resolvedConnector?.partNumber ?? null,
     };
+
+    if (candidatePartNumbers.length > 0) {
+      wireProjection.connectorCandidates = candidatePartNumbers;
+    }
+
+    console.log('[T23.6.61 WIRE CONNECTOR MAP]', {
+      wireId: component.partId,
+      assigned: wireProjection.connectorPartNumber ?? null,
+      candidates: wireProjection.connectorCandidates ?? [],
+    });
+
+    return wireProjection;
   });
 
   if (projections.length === 0) {
@@ -201,6 +230,77 @@ function extractWires(
   }
 
   return projections;
+}
+
+function buildWireSearchSpace(component: NormalizedComponent): string {
+  const segments = [
+    component.description,
+    component.normalizedDescription,
+    component.source?.rawLine,
+    ...(component.source?.trailingLines ?? []),
+  ];
+
+  return segments
+    .filter(Boolean)
+    .map(segment => segment?.toString().toUpperCase())
+    .join(' ');
+}
+
+function matchWireConnector(
+  component: NormalizedComponent,
+  authorityConnectors: NormalizedConnector[],
+): {
+  assignedConnector: NormalizedConnector | null;
+  candidatePartNumbers: string[];
+} {
+  if (!authorityConnectors || authorityConnectors.length === 0) {
+    return { assignedConnector: null, candidatePartNumbers: [] };
+  }
+
+  const searchSpace = buildWireSearchSpace(component);
+  if (!searchSpace) {
+    return { assignedConnector: null, candidatePartNumbers: [] };
+  }
+
+  const scored = authorityConnectors
+    .map(connector => ({
+      connector,
+      score: scoreConnectorMatch(searchSpace, connector),
+    }))
+    .filter(entry => entry.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const authorityDiff = (CONNECTOR_AUTHORITY_PRIORITY[b.connector.authority] ?? 0) - (CONNECTOR_AUTHORITY_PRIORITY[a.connector.authority] ?? 0);
+      if (authorityDiff !== 0) return authorityDiff;
+      return (b.connector.confidence ?? 0) - (a.connector.confidence ?? 0);
+    });
+
+  return {
+    assignedConnector: scored[0]?.connector ?? null,
+    candidatePartNumbers: scored.map(entry => entry.connector.partNumber),
+  };
+}
+
+function scoreConnectorMatch(searchSpace: string, connector: NormalizedConnector): number {
+  if (!connector.partNumber || connector.partNumber === 'UNKNOWN') return 0;
+  const partNumber = connector.partNumber.toUpperCase();
+  if (!partNumber) return 0;
+
+  let score = 0;
+  const escapedPartNumber = escapeRegex(partNumber);
+  const fromRegex = new RegExp(`FROM\\s+${escapedPartNumber}`);
+  const toRegex = new RegExp(`TO\\s+${escapedPartNumber}`);
+  const tokenRegex = new RegExp(`\\b${escapedPartNumber}\\b`);
+
+  if (fromRegex.test(searchSpace)) score += 6;
+  if (toRegex.test(searchSpace)) score += 6;
+  if (tokenRegex.test(searchSpace)) score += 3;
+
+  return score;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
 }
 
 // ============================================================
