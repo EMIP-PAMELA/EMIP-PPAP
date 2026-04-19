@@ -4,6 +4,58 @@ All significant changes to the EMIP-PPAP system are recorded here in reverse chr
 
 ---
 
+## 2026-04-19 14:05 CT — Phase T23.6.56 — Canonical BOM Live Validation (Attempt 2)
+
+**Summary:**
+- `npm run build` (Next.js 16.2.0, Turbopack) succeeded again with no new TypeScript errors.
+- `dotenv`-backed ts-node harness re-ran `getSimplifiedBOM()` / `getCopperForPart()` for NH45-110858-10 / -15 / -17; runtime logs only surfaced `[T23.6.55 CANONICAL FETCH]`, `[T23.6.55 CANONICAL INPUT]`, and `[T23.6.55 CANONICAL FETCH ERROR]` entries.
+- `Invoke-WebRequest` against `/sku/45-110858-17` returned HTTP 200, confirming the route param path is stable even though canonical BOM data is still missing from downstream renders.
+
+**BOM Validation Matrix:**
+
+| Part Number | Projection | Copper | SKU Page | Notes |
+|-------------|------------|--------|----------|-------|
+| NH45-110858-10 | ❌ `getSimplifiedBOM` threw `[T23.6.55 CANONICAL FETCH ERROR]` (document-lookup: Supabase reports `sku_documents.canonical_revision` column missing) | ❌ Blocked upstream | ❌ Blocked (no normalized BOM to render) | Requires Supabase migration to add/expose `canonical_revision` for BOM documents |
+| NH45-110858-15 | ⚠️ `[T23.6.55 CANONICAL INPUT]` reported `NORMALIZED_BOM_NOT_AVAILABLE` (SKU record absent) | ❌ Blocked upstream | ❌ Blocked (SKU lookup returns `SKU_NOT_FOUND`) | Seed SKU + BOM document so canonical normalization can run |
+| NH45-110858-17 | ⚠️ `[T23.6.55 CANONICAL INPUT]` reported `NORMALIZED_BOM_NOT_AVAILABLE` (SKU record absent) | ❌ Blocked upstream | ⚠️ HTTP 200 route shell renders, but BOM-backed widgets stay empty (no canonical data) | Same seeding requirement as -15 |
+
+**Canonical Log Audit:** Same as prior attempt — only `[T23.6.55 CANONICAL FETCH]`, `[T23.6.55 CANONICAL INPUT]`, and `[T23.6.55 CANONICAL FETCH ERROR]` appeared. Legacy `[T23.6.48A …]`, `[T23.6.49C …]`, and `V5.3 PROJECTION GENERATED` logs remain absent.
+
+**Decision / Outcome:** Validation still blocked by upstream Supabase schema/data gaps. Projection, copper, and SKU UI smoke tests cannot complete until canonical BOM rows exist.
+
+**Impact / Follow-up:**
+- Apply Supabase migration (or compatible view) that adds the `canonical_revision` column referenced by `getNormalizedBOMForPart()`.
+- Seed / ingest the NH45-110858-1x BOM set (at minimum -10/-15/-17) so normalized BOM data exists for validation.
+- Re-run Phase T23.6.56 once canonical data is present to capture projection, copper, and SKU behaviors end-to-end.
+
+---
+
+## 2026-04-19 13:56 CT — Phase T23.6.56 — Canonical BOM Live Validation
+
+**Summary:**
+- `npm run build` succeeded (Next.js 16.2.0, Turbopack) with no new TypeScript errors.
+- Inline ts-node harness invoked `getSimplifiedBOM()` and `getCopperForPart()` for NH45-110858-10 / -15 / -17; pipeline emitted only `[T23.6.55 CANONICAL FETCH]` / `[T23.6.55 CANONICAL INPUT]` logs.
+- All three BOMs failed to load because Supabase either lacks the canonical BOM column (`sku_documents.canonical_revision`) or the SKU rows entirely, blocking projection, copper, and SKU-page validation.
+
+**BOM Validation Matrix:**
+
+| Part Number | Projection | Copper | SKU Page | Notes |
+|-------------|------------|--------|----------|-------|
+| NH45-110858-10 | ❌ `getSimplifiedBOM` threw `[T23.6.55 CANONICAL FETCH ERROR]` (document-lookup: `canonical_revision` column missing) | ❌ Blocked upstream | ❌ Blocked (no normalized BOM to render) | Requires Supabase migration to add/expose `canonical_revision` for BOM documents |
+| NH45-110858-15 | ⚠️ `[T23.6.55 CANONICAL INPUT]` reported `NORMALIZED_BOM_NOT_AVAILABLE` (SKU record absent) | ❌ Blocked upstream | ❌ Blocked (SKU lookup returns `SKU_NOT_FOUND`) | Seed SKU + BOM document so canonical normalization can run |
+| NH45-110858-17 | ⚠️ `[T23.6.55 CANONICAL INPUT]` reported `NORMALIZED_BOM_NOT_AVAILABLE` (SKU record absent) | ❌ Blocked upstream | ❌ Blocked (SKU lookup returns `SKU_NOT_FOUND`) | Same seeding requirement as -15 |
+
+**Canonical Log Audit:** Only `[T23.6.55 CANONICAL FETCH]`, `[T23.6.55 CANONICAL INPUT]`, and `[T23.6.55 CANONICAL FETCH ERROR]` surfaced during the validation harness. Legacy `[T23.6.48A …]`, `[T23.6.49C …]`, and `V5.3` tags remain absent, confirming canonical-only pathways are active.
+
+**Decision / Outcome:** Validation remains blocked by upstream Supabase data/schema gaps. Projection, copper, and SKU UI smoke tests cannot run until canonical BOM rows exist.
+
+**Impact / Follow-up:**
+- Apply Supabase migration (or compatible view) that adds the `canonical_revision` column referenced by `getNormalizedBOMForPart()`.
+- Seed / ingest the NH45-110858-1x BOM set (at minimum -10/-15/-17) so normalized BOM data exists for validation.
+- Re-run Phase T23.6.56 once canonical data is present to capture projection, copper, and SKU behaviors end-to-end.
+
+---
+
 ## 2026-04-18 20:12 CT — Phase T23.6.55 — Canonical BOM Enforcement Cutover
 
 **Summary:**
