@@ -303,6 +303,24 @@ function detectPartNumbers(line: string): string[] {
     .map(normalizeConnectorPN);
 }
 
+function isConnectorPartNumber(partNumber: string | null | undefined): boolean {
+  if (!partNumber) return false;
+  const pn = partNumber.toUpperCase();
+
+  if (/^\d{6,7}$/.test(pn)) return true;
+
+  if (
+    pn.includes('PHOENIX') ||
+    pn.includes('CONN') ||
+    pn.includes('HOUSING') ||
+    pn.includes('HEADER')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 // ============================================================
 // CLASSIFICATION FUNCTIONS (Business Logic)
 // ============================================================
@@ -466,6 +484,7 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
   let totalHardware = 0;
   let totalConnectors = 0;
   const flatComponents: NormalizedComponent[] = [];
+  const connectorCandidates: NormalizedConnector[] = [];
   
   for (const rawOp of rawData.operations) {
     const components: NormalizedComponent[] = [];
@@ -503,7 +522,15 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
             if (normalized.componentType === 'wire') totalWires++;
             if (normalized.componentType === 'terminal') totalTerminals++;
             if (normalized.componentType === 'hardware') totalHardware++;
-            if (normalized.componentType === 'connector') totalConnectors++;
+            if (normalized.componentType === 'connector') {
+              totalConnectors++;
+              connectorCandidates.push({
+                partNumber: normalizeConnectorPN(normalized.normalizedPartNumber ?? normalized.partId),
+                sourceText: normalized.source.rawLine,
+                authority: 'ROW',
+                confidence: 0.9,
+              });
+            }
           }
         }
         
@@ -546,7 +573,15 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
         if (normalized.componentType === 'wire') totalWires++;
         if (normalized.componentType === 'terminal') totalTerminals++;
         if (normalized.componentType === 'hardware') totalHardware++;
-        if (normalized.componentType === 'connector') totalConnectors++;
+        if (normalized.componentType === 'connector') {
+          totalConnectors++;
+          connectorCandidates.push({
+            partNumber: normalizeConnectorPN(normalized.normalizedPartNumber ?? normalized.partId),
+            sourceText: normalized.source.rawLine,
+            authority: 'ROW',
+            confidence: 0.9,
+          });
+        }
       }
     }
     
@@ -612,7 +647,6 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
     sample: flatComponents.slice(0, 3)
   });
 
-  const connectorCandidates: NormalizedConnector[] = [];
   addConnectors(connectorCandidates, collectRowConnectors(flatComponents));
   addConnectors(connectorCandidates, collectTableHeaderConnectors(rawData));
   addConnectors(connectorCandidates, collectDiagramCalloutConnectors(rawData));
@@ -624,6 +658,10 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
   console.log('[T23.6.60 CONNECTOR EXTRACTION]', connectorCandidates);
   console.log('[T23.6.60B NORMALIZED CONNECTORS]', connectors);
   console.log('[T23.6.60 PRIMARY CONNECTOR]', primaryConnector);
+  console.log('[T23.6.63A CONNECTOR CLASSIFICATION]', {
+    detectedConnectors: connectors.map(connector => connector.partNumber),
+    totalComponents: flatComponents.length,
+  });
   
   return {
     masterPartNumber: rawData.masterPartNumber,
@@ -660,9 +698,12 @@ function normalizeComponent(
     return null;
   }
   
-  const componentType = classifyComponentType(partId, raw.detectedUom || null, step);
+  let componentType = classifyComponentType(partId, raw.detectedUom || null, step);
   const description = extractDescription(raw.rawLine, partId);
   const normalizedPartNumber = normalizePartNumber(partId);
+  if (isConnectorPartNumber(normalizedPartNumber)) {
+    componentType = 'connector';
+  }
   const normalizedDescription = normalizeDescriptionText(description);
   const { inches: normalizedLengthInches, signal: lengthSignal } = normalizeLengthToInches(raw);
   const { value: gauge, signal: gaugeSignal } = extractGauge(partId, description);
