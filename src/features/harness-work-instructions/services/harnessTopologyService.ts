@@ -727,6 +727,11 @@ export function analyzeHarnessTopology(args: {
   }
 
   const nodes = [...nodeMap.values()];
+  const connectorNodeCount = nodes.filter(node => node.terminationType === 'CONNECTOR_PIN').length;
+  console.log('[T23.6.64 CONNECTOR NODES]', {
+    totalNodes: nodes.length,
+    connectorNodes: connectorNodeCount,
+  });
 
   // T23.6.12: Connector-body unification.
   // All cavity nodes for the same canonical connector are part of a single physical device.

@@ -37,6 +37,15 @@ const CONNECTOR_AUTHORITY_PRIORITY: Record<ConnectorAuthority, number> = {
   UNKNOWN: 0,
 };
 
+interface ConnectorOption {
+  canonicalId: string;
+  displayName: string;
+  kind: 'CONNECTOR';
+  authority: ConnectorAuthority;
+  confidence: number;
+  cavities: string[];
+}
+
 export interface WireProjection {
   partNumber: string;
   gauge: string | null;
@@ -64,6 +73,7 @@ export interface SimplifiedBOM {
   
   connectors: ConnectorProjection[];
   wires: WireProjection[];
+  componentOptions: ConnectorOption[];
   
   summary: {
     totalWireLength: number;
@@ -134,6 +144,11 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
 
   const artifact = await getArtifactForPart(partNumber);
   const authorityConnectors = normalizedBOM.connectors ?? [];
+  const connectorOptions = buildConnectorOptions(authorityConnectors);
+  console.log('[T23.6.64 CONNECTOR OPTIONS]', {
+    count: connectorOptions.length,
+    connectors: connectorOptions.map(option => option.canonicalId),
+  });
   const primaryConnector = normalizedBOM.primaryConnector ?? null;
   const wires = extractWires(components, authorityConnectors, primaryConnector);
   const connectors = extractConnectors(components);
@@ -149,6 +164,7 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
     ingestionBatchId: canonical.ingestionBatchId,
     connectors,
     wires,
+    componentOptions: connectorOptions,
     summary: {
       totalWireLength,
       wireTypes,
@@ -220,6 +236,16 @@ function extractWires(
       wireId: component.partId,
       assigned: wireProjection.connectorPartNumber ?? null,
       candidates: wireProjection.connectorCandidates ?? [],
+    });
+
+    console.log('[T23.6.64 WIRE CONNECTOR RESOLUTION]', {
+      wireId: component.partId,
+      selectedFrom: wireProjection.connectorPartNumber ?? null,
+      type: assignedConnector
+        ? 'AUTHORITY'
+        : primaryConnector && resolvedConnector === primaryConnector
+          ? 'PRIMARY'
+          : 'UNRESOLVED',
     });
 
     return wireProjection;
@@ -300,7 +326,21 @@ function scoreConnectorMatch(searchSpace: string, connector: NormalizedConnector
 }
 
 function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildConnectorOptions(connectors: NormalizedConnector[]): ConnectorOption[] {
+  return connectors.map(connector => {
+    const partNumber = connector.partNumber || 'UNKNOWN';
+    return {
+      canonicalId: partNumber,
+      displayName: partNumber,
+      kind: 'CONNECTOR',
+      authority: connector.authority,
+      confidence: connector.confidence ?? 0,
+      cavities: [],
+    } satisfies ConnectorOption;
+  });
 }
 
 // ============================================================

@@ -15,7 +15,7 @@
  *   - Uses existing UI conventions from UploadWorkbench (details/summary, badges, pills).
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type {
   HarnessConnectivityResult,
   WireConnectivity,
@@ -29,6 +29,10 @@ import type {
 import type { HarnessDecisionResult } from '@/src/features/harness-work-instructions/services/harnessDecisionService';
 import type { WireOperatorOverride, WireResolutionMode } from '@/src/features/vault/types/ingestionReview';
 import type { HarnessTopologyResult, TopologyWarning } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
+import {
+  buildComponentAuthorityOptions,
+  type ComponentAuthorityOption,
+} from '@/src/features/harness-work-instructions/services/componentAuthorityService';
 import type { WireIdentityResult } from '@/src/features/harness-work-instructions/services/wireIdentityService';
 import HarnessTopologyVisualizer from './HarnessTopologyVisualizer';
 
@@ -182,15 +186,17 @@ function WireResolveForm({
   wireId,
   onSave,
   onCancel,
+  componentOptions,
 }: {
   wireId: string;
   onSave: (override: WireOperatorOverride) => void;
   onCancel: () => void;
+  componentOptions: ComponentAuthorityOption[];
 }) {
   const [mode, setMode]       = useState<WireResolutionMode>('DIRECT_OVERRIDE');
-  const [fromComp, setFromComp] = useState('');
+  const [fromComponentId, setFromComponentId] = useState('');
   const [fromCav,  setFromCav]  = useState('');
-  const [toComp,   setToComp]   = useState('');
+  const [toComponentId, setToComponentId]   = useState('');
   const [toCav,    setToCav]    = useState('');
   const [srcComp,  setSrcComp]  = useState('');
   const [srcCav,   setSrcCav]   = useState('');
@@ -201,19 +207,49 @@ function WireResolveForm({
   const [reason,   setReason]   = useState('');
   const [err,      setErr]      = useState<string | null>(null);
 
+  const hasOptions = componentOptions.length > 0;
+
+  const sortOptions = useMemo(() => {
+    return (priority: (kind: ComponentAuthorityOption['kind']) => number) =>
+      [...componentOptions].sort((a, b) => {
+        const pa = priority(a.kind);
+        const pb = priority(b.kind);
+        if (pa !== pb) return pa - pb;
+        return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' });
+      });
+  }, [componentOptions]);
+
+  const rankedFromOptions = useMemo(() => sortOptions(kind => (
+    kind === 'CONNECTOR' ? 0 : kind === 'TERMINAL' ? 1 : 2
+  )), [sortOptions]);
+
+  const rankedToOptions = useMemo(() => sortOptions(kind => (
+    kind === 'TERMINAL' ? 0 : kind === 'CONNECTOR' ? 1 : 2
+  )), [sortOptions]);
+
   const handleSave = () => {
     if (!reason.trim()) { setErr('Reason is required.'); return; }
     if (mode === 'BRANCH_DOUBLE_CRIMP') {
       if (!srcComp.trim() || !srcCav.trim()) { setErr('Shared source component and cavity are required.'); return; }
       if (!termPN.trim() && !ferrPN.trim())  { setErr('Terminal PN or ferrule PN is required.'); return; }
     }
+    if (mode === 'DIRECT_OVERRIDE') {
+      if (!fromComponentId || !toComponentId) {
+        window.alert('Please select valid FROM and TO components before saving.');
+        return;
+      }
+    }
     setErr(null);
+    const fromOption = componentOptions.find(opt => opt.canonicalId === fromComponentId) ?? null;
+    const toOption = componentOptions.find(opt => opt.canonicalId === toComponentId) ?? null;
+    const resolvedFromComponent = (fromOption?.displayName ?? fromComponentId) || null;
+    const resolvedToComponent = (toOption?.displayName ?? toComponentId) || null;
     const override: WireOperatorOverride = {
       wireId,
       mode,
       ...(mode === 'DIRECT_OVERRIDE' ? {
-        from: { component: fromComp.trim() || null, cavity: fromCav.trim() || null, treatment: null },
-        to:   { component: toComp.trim()   || null, cavity: toCav.trim()   || null, treatment: null },
+        from: { component: resolvedFromComponent, cavity: fromCav.trim() || null, treatment: null },
+        to:   { component: resolvedToComponent,   cavity: toCav.trim()   || null, treatment: null },
       } : {}),
       ...(mode === 'BRANCH_DOUBLE_CRIMP' ? {
         branch: {
@@ -250,9 +286,39 @@ function WireResolveForm({
 
       {mode === 'DIRECT_OVERRIDE' && (
         <div className="grid grid-cols-2 gap-2">
-          <div><label className={lab}>From Component</label><input value={fromComp} onChange={e => setFromComp(e.target.value)} placeholder="e.g. CONN-1" className={inp} /></div>
+          <div>
+            <label className={lab}>From Component</label>
+            <select
+              value={fromComponentId}
+              onChange={e => setFromComponentId(e.target.value)}
+              className={inp}
+              disabled={!hasOptions}
+            >
+              <option value="">{hasOptions ? 'Select component' : 'No options available'}</option>
+              {rankedFromOptions.map(opt => (
+                <option key={opt.canonicalId} value={opt.canonicalId}>
+                  {opt.displayName} ({opt.kind})
+                </option>
+              ))}
+            </select>
+          </div>
           <div><label className={lab}>From Cavity / Pin</label><input value={fromCav}  onChange={e => setFromCav(e.target.value)}  placeholder="e.g. 2"      className={inp} /></div>
-          <div><label className={lab}>To Component</label><input   value={toComp}   onChange={e => setToComp(e.target.value)}   placeholder="e.g. 61944-1" className={inp} /></div>
+          <div>
+            <label className={lab}>To Component</label>
+            <select
+              value={toComponentId}
+              onChange={e => setToComponentId(e.target.value)}
+              className={inp}
+              disabled={!hasOptions}
+            >
+              <option value="">{hasOptions ? 'Select component' : 'No options available'}</option>
+              {rankedToOptions.map(opt => (
+                <option key={opt.canonicalId} value={opt.canonicalId}>
+                  {opt.displayName} ({opt.kind})
+                </option>
+              ))}
+            </select>
+          </div>
           <div><label className={lab}>To Cavity / Pin</label><input   value={toCav}    onChange={e => setToCav(e.target.value)}    placeholder="e.g. 5"      className={inp} /></div>
         </div>
       )}
@@ -297,6 +363,7 @@ function WireEvidenceRow({
   onActivateResolve,
   onResolveFormClose,
   wireIdentity,
+  componentOptions,
 }: {
   wire: WireConnectivity;
   reconciledWire?: ReconciledWire;
@@ -307,6 +374,7 @@ function WireEvidenceRow({
   onActivateResolve?: (wireId: string) => void;
   onResolveFormClose?: () => void;
   wireIdentity?: WireIdentityResult['wires'][number];
+  componentOptions: ComponentAuthorityOption[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const isOperatorResolved = Boolean(operatorOverride);
@@ -323,7 +391,7 @@ function WireEvidenceRow({
   const indicator = matchIndicator(reconciledWire);
   const debugMode = process.env.NODE_ENV !== 'production';
   const isFormOpen = activeResolveWireId === wire.wireId;
-  const canResolve = !isOperatorResolved && wire.unresolved && Boolean(onResolveSubmit);
+  const canResolve = !isOperatorResolved && wire.unresolved && Boolean(onResolveSubmit) && componentOptions.length > 0;
 
   useEffect(() => {
     if (isFormOpen) {
@@ -484,6 +552,7 @@ function WireEvidenceRow({
                     onResolveFormClose?.();
                   }}
                   onCancel={() => onResolveFormClose?.()}
+                  componentOptions={componentOptions}
                 />
               )}
             </div>
@@ -605,6 +674,8 @@ export interface HarnessConnectivityPanelProps {
   onGraphWireClick?: (wireId: string) => void;
   onGraphMissingPinClick?: (payload: { component: string; cavity: string }) => void;
   onGraphBranchClick?: (payload: { component: string; cavity: string; wireIds: string[] }) => void;
+  /** T23.6.65: Canonical component options derived from BOM connectors/terminals. */
+  componentOptions?: ComponentAuthorityOption[];
 }
 
 export default function HarnessConnectivityPanel({
@@ -619,8 +690,30 @@ export default function HarnessConnectivityPanel({
   onGraphWireClick,
   onGraphMissingPinClick,
   onGraphBranchClick,
+  componentOptions,
 }: HarnessConnectivityPanelProps) {
   const model = connectivity ?? harnessConnectivity ?? null;
+  const resolvedComponentOptions = useMemo<ComponentAuthorityOption[]>(() => {
+    if (componentOptions && componentOptions.length > 0) {
+      return componentOptions;
+    }
+    if (model) {
+      return buildComponentAuthorityOptions(model);
+    }
+    return [];
+  }, [componentOptions, model]);
+
+  useEffect(() => {
+    if (resolvedComponentOptions.length === 0) return;
+    const connectorCount = resolvedComponentOptions.filter(opt => opt.kind === 'CONNECTOR').length;
+    const terminalCount = resolvedComponentOptions.filter(opt => opt.kind === 'TERMINAL').length;
+    console.log('[T23.6.65 RESOLUTION OPTIONS]', {
+      total: resolvedComponentOptions.length,
+      connectors: connectorCount,
+      terminals: terminalCount,
+    });
+  }, [resolvedComponentOptions.length]);
+
   const overrideMap = new Map((operatorOverrides ?? []).map(o => [o.wireId, o]));
   const [activeResolveWireId, setActiveResolveWireId] = useState<string | null>(null);
   const openResolve = (wireId: string) => {
@@ -843,6 +936,7 @@ export default function HarnessConnectivityPanel({
                   onActivateResolve={openResolve}
                   onResolveFormClose={closeResolve}
                   wireIdentity={wireIdentities?.bySourceRowIndex.get(wire.sourceRowIndex) ?? wireIdentities?.byOriginalId.get(wire.wireId)}
+                  componentOptions={resolvedComponentOptions}
                 />
               ))}
             </tbody>
