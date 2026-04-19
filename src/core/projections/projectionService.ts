@@ -23,7 +23,7 @@
 import { getNormalizedBOMForPart } from '../services/bomService';
 import { getArtifactForPart } from '../services/artifactService';
 import { getExecutionMode } from '../context/executionContext';
-import type { NormalizedComponent } from '@/src/features/documentEngine/types/bomTypes';
+import type { NormalizedComponent, NormalizedConnector } from '@/src/features/documentEngine/types/bomTypes';
 
 // ============================================================
 // TYPES
@@ -37,6 +37,7 @@ export interface WireProjection {
   lengthUnit: string;
   quantity: number;
   description: string | null;
+  connectorPartNumber: string | null;
 }
 
 export interface ConnectorProjection {
@@ -123,7 +124,7 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
   });
 
   const artifact = await getArtifactForPart(partNumber);
-  const wires = extractWires(components);
+  const wires = extractWires(components, normalizedBOM.primaryConnector ?? null);
   const connectors = extractConnectors(components);
 
   const totalWireLength = wires.reduce((sum, wire) => sum + wire.length, 0);
@@ -165,7 +166,10 @@ export async function getSimplifiedBOM(partNumber: string): Promise<SimplifiedBO
  * @param records BOM records
  * @returns Wire projections
  */
-function extractWires(components: NormalizedComponent[]): WireProjection[] {
+function extractWires(
+  components: NormalizedComponent[],
+  primaryConnector: NormalizedConnector | null,
+): WireProjection[] {
   if (!components || components.length === 0) {
     throw new Error('[T23.6.55] Projection received invalid normalized components');
   }
@@ -188,6 +192,7 @@ function extractWires(components: NormalizedComponent[]): WireProjection[] {
       lengthUnit: 'ft',
       quantity: component.quantity,
       description: component.description,
+      connectorPartNumber: primaryConnector?.partNumber ?? null,
     };
   });
 

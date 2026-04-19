@@ -21,7 +21,9 @@ import {
   NormalizedOperation,
   NormalizedComponent,
   ComponentType,
-  BOMSummary
+  BOMSummary,
+  NormalizedConnector,
+  ConnectorAuthority,
 } from '../types/bomTypes';
 import { normalizeWireMaterialKey } from '@/src/utils/normalizeWireMaterialKey';
 
@@ -42,6 +44,17 @@ const CONNECTOR_KEYWORDS = [
   'PIN',
   'CONTACT'
 ];
+
+const TABLE_HEADER_HINTS = ['CONNECTOR', 'HOUSING', 'ASSY', 'OR EQUIVALENT'];
+const DIAGRAM_HINTS = ['CALLOUT', 'CALLOUTS', 'DIAGRAM', 'FIG', 'VIEW', 'ZONE'];
+const NOTES_HINTS = ['NOTE', 'NOTES', 'ALT', 'ALTERNATE', 'SEE DRAWING', 'SEE DWG'];
+const CONNECTOR_AUTHORITY_PRIORITY: Record<ConnectorAuthority, number> = {
+  TABLE_HEADER: 5,
+  DIAGRAM_CALLOUT: 4,
+  ROW: 3,
+  NOTES: 1,
+  UNKNOWN: 0,
+};
 
 const LENGTH_UOM_PATTERNS = /^(FT|FEET|FOOT|IN|INCH|INCHES|M|METER|METERS|CM|MM|YD|YARD|YARDS)$/i;
 const COMPONENT_UOM_PATTERNS = /^(EA|EACH|PC|PCS|PIECE|PIECES|SET|KIT|UNIT|UNITS|LOT)$/i;
@@ -105,6 +118,140 @@ function isMetadataLine(line: string): boolean {
   return metadataPatterns.some(pattern => pattern.test(trimmed));
 }
 
+function addConnectors(target: NormalizedConnector[], additions: NormalizedConnector[]): void {
+  for (const addition of additions) {
+    const duplicate = target.some(connector =>
+      connector.partNumber === addition.partNumber &&
+      connector.authority === addition.authority &&
+      connector.sourceText === addition.sourceText
+    );
+    if (!duplicate) {
+      target.push(addition);
+    }
+  }
+}
+
+function collectRowConnectors(components: NormalizedComponent[]): NormalizedConnector[] {
+  return components
+    .filter(component => component.componentType === 'connector')
+    .map(component => ({
+      partNumber: normalizeConnectorPN(component.normalizedPartNumber ?? component.partId),
+      sourceText: component.source.rawLine,
+      authority: 'ROW' as ConnectorAuthority,
+      confidence: component.confidence ?? 0.7,
+    }));
+}
+
+function getTableHeaderLines(operation: RawOperation): string[] {
+  const headers: string[] = [];
+  for (const line of operation.rawLines) {
+    if (!line.trim()) continue;
+    if (isComponentLine(line)) break;
+    headers.push(line);
+  }
+  return headers;
+}
+
+function collectTableHeaderConnectors(rawData: RawBOMData): NormalizedConnector[] {
+  const headerConnectors: NormalizedConnector[] = [];
+  for (const op of rawData.operations) {
+    const headerLines = getTableHeaderLines(op);
+    for (const line of headerLines) {
+      const upper = line.toUpperCase();
+      if (!TABLE_HEADER_HINTS.some(hint => upper.includes(hint))) continue;
+      const candidates = detectPartNumbers(upper);
+      candidates.forEach(partNumber => {
+        headerConnectors.push({
+          partNumber: normalizeConnectorPN(partNumber),
+          sourceText: line.trim(),
+          authority: 'TABLE_HEADER',
+          confidence: 0.95,
+        });
+      });
+    }
+  }
+  return headerConnectors;
+}
+
+function collectDiagramCalloutConnectors(rawData: RawBOMData): NormalizedConnector[] {
+  const lines = rawData.rawText?.split(/\r?\n/) ?? [];
+  const connectors: NormalizedConnector[] = [];
+  for (const line of lines) {
+    const upper = line.trim().toUpperCase();
+    if (!upper) continue;
+    if (!DIAGRAM_HINTS.some(hint => upper.includes(hint))) continue;
+    if (!CONNECTOR_KEYWORDS.some(keyword => upper.includes(keyword))) continue;
+    const candidates = detectPartNumbers(upper);
+    candidates.forEach(partNumber => {
+      connectors.push({
+        partNumber: normalizeConnectorPN(partNumber),
+        sourceText: line.trim(),
+        authority: 'DIAGRAM_CALLOUT',
+        confidence: 0.85,
+      });
+    });
+  }
+  return connectors;
+}
+
+function collectNotesConnectors(rawData: RawBOMData): NormalizedConnector[] {
+  const lines = rawData.rawText?.split(/\r?\n/) ?? [];
+  const connectors: NormalizedConnector[] = [];
+  for (const line of lines) {
+    const upper = line.trim().toUpperCase();
+    if (!upper) continue;
+    if (!NOTES_HINTS.some(hint => upper.includes(hint))) continue;
+    const candidates = detectPartNumbers(upper);
+    candidates.forEach(partNumber => {
+      connectors.push({
+        partNumber: normalizeConnectorPN(partNumber),
+        sourceText: line.trim(),
+        authority: 'NOTES',
+        confidence: 0.4,
+      });
+    });
+  }
+  return connectors;
+}
+
+function deduplicateConnectors(connectors: NormalizedConnector[]): NormalizedConnector[] {
+  const uniqueMap = new Map<string, NormalizedConnector>();
+  for (const connector of connectors) {
+    const key = connector.partNumber;
+    const existing = uniqueMap.get(key);
+    if (!existing) {
+      uniqueMap.set(key, connector);
+      continue;
+    }
+
+    const currentPriority = CONNECTOR_AUTHORITY_PRIORITY[connector.authority] ?? 0;
+    const existingPriority = CONNECTOR_AUTHORITY_PRIORITY[existing.authority] ?? 0;
+
+    if (currentPriority > existingPriority) {
+      uniqueMap.set(key, connector);
+      continue;
+    }
+
+    if (currentPriority === existingPriority) {
+      if ((connector.confidence ?? 0) > (existing.confidence ?? 0)) {
+        uniqueMap.set(key, connector);
+      }
+    }
+  }
+  return Array.from(uniqueMap.values());
+}
+
+function resolvePrimaryConnector(connectors: NormalizedConnector[]): NormalizedConnector | null {
+  if (!connectors.length) return null;
+  return connectors
+    .slice()
+    .sort((a, b) => {
+      const rankDiff = CONNECTOR_AUTHORITY_PRIORITY[b.authority] - CONNECTOR_AUTHORITY_PRIORITY[a.authority];
+      if (rankDiff !== 0) return rankDiff;
+      return (b.confidence ?? 0) - (a.confidence ?? 0);
+    })[0] ?? null;
+}
+
 function isProcessLine(line: string): boolean {
   const processPatterns = [
     /CUT\s*\/?\s*STRIP\s+PER\s+INSTRUCTION/i,
@@ -129,6 +276,31 @@ function isComponentLine(line: string): boolean {
   const match = normalized.match(/^(-+)/);
   const dashCount = match ? match[1].length : 0;
   return dashCount >= 4;
+}
+
+function normalizeConnectorPN(input: string): string {
+  const cleaned = input
+    .toUpperCase()
+    .replace(/PHOENIX/g, '')
+    .replace(/OR EQUIVALENT/g, '')
+    .replace(/[^A-Z0-9-]/g, '')
+    .replace(/--+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
+    .trim();
+  return cleaned || 'UNKNOWN';
+}
+
+function detectPartNumbers(line: string): string[] {
+  const sanitized = line
+    .replace(/[^A-Z0-9-\s]/gi, ' ')
+    .split(/\s+/)
+    .map(token => token.trim())
+    .filter(Boolean);
+  return sanitized
+    .map(token => token.toUpperCase())
+    .filter(token => token.length >= 5 && /[0-9]/.test(token))
+    .map(normalizeConnectorPN);
 }
 
 // ============================================================
@@ -439,6 +611,19 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
     componentCount: flatComponents.length,
     sample: flatComponents.slice(0, 3)
   });
+
+  const connectorCandidates: NormalizedConnector[] = [];
+  addConnectors(connectorCandidates, collectRowConnectors(flatComponents));
+  addConnectors(connectorCandidates, collectTableHeaderConnectors(rawData));
+  addConnectors(connectorCandidates, collectDiagramCalloutConnectors(rawData));
+  addConnectors(connectorCandidates, collectNotesConnectors(rawData));
+
+  const connectors = deduplicateConnectors(connectorCandidates);
+  const primaryConnector = resolvePrimaryConnector(connectors);
+
+  console.log('[T23.6.60 CONNECTOR EXTRACTION]', connectorCandidates);
+  console.log('[T23.6.60B NORMALIZED CONNECTORS]', connectors);
+  console.log('[T23.6.60 PRIMARY CONNECTOR]', primaryConnector);
   
   return {
     masterPartNumber: rawData.masterPartNumber,
@@ -449,6 +634,8 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
     revision: null,
     sourceDocumentId: null,
     sourceFileName: null,
+    connectors,
+    primaryConnector,
     summaries: {
       wireTotalsByMaterialKey,
       componentCountsByType,

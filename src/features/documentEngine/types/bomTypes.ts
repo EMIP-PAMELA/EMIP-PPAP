@@ -55,6 +55,20 @@ export interface ProcessInstruction {
 
 export type ComponentType = 'wire' | 'terminal' | 'hardware' | 'connector' | 'unknown';
 
+export type ConnectorAuthority =
+  | 'TABLE_HEADER'
+  | 'DIAGRAM_CALLOUT'
+  | 'ROW'
+  | 'NOTES'
+  | 'UNKNOWN';
+
+export interface NormalizedConnector {
+  partNumber: string;
+  sourceText?: string;
+  authority: ConnectorAuthority;
+  confidence: number;
+}
+
 export interface NormalizedComponent {
   partId: string;
   aciCode: string | null;
@@ -108,6 +122,8 @@ export interface NormalizedBOM {
   revision?: string | null;
   sourceDocumentId?: string | null;
   sourceFileName?: string | null;
+  connectors?: NormalizedConnector[];
+  primaryConnector?: NormalizedConnector | null;
   summaries?: {
     wireTotalsByMaterialKey?: Record<string, number>;
     componentCountsByType?: Record<string, number>;
