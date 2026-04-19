@@ -45,6 +45,33 @@ export async function classifyComponentWithLookup(
   return resolution.category;
 }
 
+export function buildBOMComponentIndex(normalizedBOM: NormalizedBOM | null | undefined): Set<string> {
+  const index = new Set<string>();
+  if (!normalizedBOM) {
+    return index;
+  }
+
+  const addPartNumber = (partNumber?: string | null) => {
+    if (!partNumber) return;
+    const normalized = partNumber.trim().toUpperCase();
+    if (normalized.length === 0) return;
+    index.add(normalized);
+  };
+
+  const operations = normalizedBOM.operations ?? [];
+  operations.forEach(operation => {
+    (operation.components ?? []).forEach(component => {
+      addPartNumber(component.normalizedPartNumber ?? component.partId);
+    });
+  });
+
+  (normalizedBOM.connectors ?? []).forEach(connector => {
+    addPartNumber(connector.partNumber);
+  });
+
+  return index;
+}
+
 // ============================================================
 // V6.7: REVISION INTELLIGENCE LAYER
 // ============================================================

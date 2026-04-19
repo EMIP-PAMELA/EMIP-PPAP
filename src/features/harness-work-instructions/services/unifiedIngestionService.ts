@@ -14,6 +14,7 @@ import type { SKUReadinessResult } from '@/src/utils/skuReadinessEvaluator';
 import { resolvePartNumberFromDrawing } from './drawingLookupService';
 import { storeAliasMapping, resolveAliasFromDB } from './aliasService';
 import { parseBOMToHWI } from '@/src/core/services/bomHWIAdapter';
+import { buildBOMComponentIndex } from '@/src/core/services/bomService';
 import { ingestBOMFromVaultProjection, type IngestionMetadata } from '@/src/core/data/bom/ingestion';
 import { ingestDrawingPdf } from './drawingIngestionService';
 import { fuseDrawingWithBOM } from './drawingFusionService';
@@ -36,7 +37,7 @@ import { canonicalizePartNumber } from '@/src/utils/canonicalizePartNumber';
 import { reconcileDrawingAndBOMMaterials, type MaterialReconciliationResult } from './materialReconciliationService';
 import { parseBOMText } from '@/src/features/documentEngine/core/bomParser';
 import { normalizeBOMData } from '@/src/features/documentEngine/core/bomNormalizer';
-import type { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
+import type { NormalizedBOM, ReconciledComponent, ReconciliationStatus } from '@/src/features/documentEngine/types/bomTypes';
 
 type PipelineStatus = 'PARTIAL' | 'READY';
 
@@ -54,6 +55,82 @@ interface IngestAndProcessParams {
   confirmedAt?: string;
   analysisSnapshot?: Partial<IngestionAnalysisResult> | null;
   drawingNumberOverride?: string;
+}
+
+interface DrawingComponentCandidate {
+  partNumber: string | null;
+  componentType: string;
+  confidence?: number | null;
+}
+
+function normalizeComponentPartNumber(value?: string | null): string | null {
+  if (!value) return null;
+  const normalized = value.trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function buildDrawingComponentCandidates(drawing: CanonicalDrawingDraft | null): DrawingComponentCandidate[] {
+  if (!drawing) return [];
+  const candidates: DrawingComponentCandidate[] = [];
+
+  (drawing.connector_rows ?? []).forEach(row => {
+    const partNumber = normalizeComponentPartNumber(row.terminal_pn ?? row.connector_id);
+    if (partNumber) {
+      candidates.push({
+        partNumber,
+        componentType: 'CONNECTOR',
+        confidence: 0.6,
+      });
+    }
+  });
+
+  (drawing.wire_rows ?? []).forEach(row => {
+    const partNumber = normalizeComponentPartNumber(row.aci_part_number);
+    if (partNumber) {
+      candidates.push({
+        partNumber,
+        componentType: 'WIRE',
+        confidence: 0.5,
+      });
+    }
+  });
+
+  return candidates;
+}
+
+function reconcileComponents(
+  drawingComponents: DrawingComponentCandidate[],
+  normalizedBOM: NormalizedBOM | null,
+): ReconciledComponent[] {
+  if (!drawingComponents || drawingComponents.length === 0) {
+    return [];
+  }
+
+  const bomIndex = buildBOMComponentIndex(normalizedBOM);
+
+  return drawingComponents.map(component => {
+    const partNumber = normalizeComponentPartNumber(component.partNumber) ?? component.partNumber ?? 'UNKNOWN';
+    const originalConfidence = component.confidence ?? 0.5;
+    const isMatch = bomIndex.has(partNumber.toUpperCase());
+    const status: ReconciliationStatus = isMatch
+      ? 'VERIFIED'
+      : partNumber === 'UNKNOWN'
+        ? 'AMBIGUOUS'
+        : 'UNVERIFIED';
+    const confidenceAdjusted = isMatch
+      ? Math.min(originalConfidence + 0.3, 1)
+      : Math.max(originalConfidence - 0.3, 0.1);
+
+    return {
+      partNumber,
+      componentType: component.componentType || 'UNKNOWN',
+      source: 'DRAWING',
+      bomMatch: isMatch,
+      confidenceOriginal: originalConfidence,
+      confidenceAdjusted,
+      status,
+    };
+  });
 }
 
 function getWireCountFromWireTableResult(
@@ -84,6 +161,8 @@ interface PipelineResult {
   materialReconciliation?: MaterialReconciliationResult | null;
   /** T23.6.54B: Canonical normalized BOM promoted from Document Engine. */
   normalizedBOM?: NormalizedBOM | null;
+  /** T23.6.62: BOM-backed reconciliation snapshot for drawing-detected components. */
+  reconciledComponents?: ReconciledComponent[] | null;
 }
 
 export interface UnifiedIngestionResult {
@@ -262,6 +341,26 @@ async function buildPipelineFromDocuments(
     docType:       drawingDoc.document_type,
   });
 
+  let reconciledComponents: ReconciledComponent[] | null = null;
+  if (normalizedBOM) {
+    const drawingComponents = buildDrawingComponentCandidates(drawing);
+    if (drawingComponents.length > 0) {
+      reconciledComponents = reconcileComponents(drawingComponents, normalizedBOM);
+      console.log('[T23.6.62 RECONCILIATION]', reconciledComponents);
+      console.log('[T23.6.62 VERIFIED COMPONENTS]', reconciledComponents.filter(component => component.status === 'VERIFIED'));
+      console.log('[T23.6.62 UNVERIFIED COMPONENTS]', reconciledComponents.filter(component => component.status === 'UNVERIFIED'));
+
+      const verifiedConnectors = reconciledComponents.filter(component => component.componentType === 'CONNECTOR' && component.bomMatch);
+      if (verifiedConnectors.length > 0 && normalizedBOM.connectors && normalizedBOM.connectors.length > 0) {
+        const targetPart = verifiedConnectors[0].partNumber.toUpperCase();
+        const matchedConnector = normalizedBOM.connectors.find(connector => connector.partNumber?.toUpperCase() === targetPart);
+        if (matchedConnector) {
+          normalizedBOM.primaryConnector = matchedConnector;
+        }
+      }
+    }
+  }
+
   if (materialReconciliation) {
     console.log('[T23.6.53 MATERIAL RECON]', {
       skuId: sku.id,
@@ -281,6 +380,7 @@ async function buildPipelineFromDocuments(
     ...(adaptiveResult.interpretation !== undefined  ? { interpretation:          adaptiveResult.interpretation } : {}),
     ...(materialReconciliation ? { materialReconciliation } : {}),
     normalizedBOM: normalizedBOM ?? null,
+    reconciledComponents,
   };
 }
 

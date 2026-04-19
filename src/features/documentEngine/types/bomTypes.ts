@@ -69,6 +69,21 @@ export interface NormalizedConnector {
   confidence: number;
 }
 
+export type ReconciliationStatus =
+  | 'VERIFIED'
+  | 'UNVERIFIED'
+  | 'AMBIGUOUS';
+
+export interface ReconciledComponent {
+  partNumber: string;
+  componentType: string;
+  source: 'BOM' | 'DRAWING';
+  bomMatch: boolean;
+  confidenceOriginal: number;
+  confidenceAdjusted: number;
+  status: ReconciliationStatus;
+}
+
 export interface NormalizedComponent {
   partId: string;
   aciCode: string | null;
