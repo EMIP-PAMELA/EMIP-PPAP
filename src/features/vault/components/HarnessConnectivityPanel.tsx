@@ -972,6 +972,13 @@ export default function HarnessConnectivityPanel({
     [componentOptions],
   );
 
+  useEffect(() => {
+    console.log('[T23.6.78 PANEL INPUT]', {
+      count: incomingOptions?.length,
+      source: componentOptionsSource,
+    });
+  }, [incomingOptions, componentOptionsSource]);
+
   const canonicalOptions = componentOptionsSource === 'SIMPLIFIED_BOM' ? incomingOptions : [];
   const providedFallbackOptions = componentOptionsSource && componentOptionsSource !== 'SIMPLIFIED_BOM'
     ? incomingOptions
@@ -998,6 +1005,13 @@ export default function HarnessConnectivityPanel({
   const finalComponentOptionsSource = hasCanonicalOptions
     ? (componentOptionsSource ?? 'SIMPLIFIED_BOM')
     : (fallbackSource ?? 'UNAVAILABLE');
+
+  useEffect(() => {
+    console.log('[T23.6.78 FINAL OPTIONS]', {
+      count: finalComponentOptions.length,
+      source: finalComponentOptionsSource,
+    });
+  }, [finalComponentOptions.length, finalComponentOptionsSource]);
 
   useEffect(() => {
     console.log('[T23.6.71B SOURCE LOCK]', {

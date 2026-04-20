@@ -2186,6 +2186,12 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     }
   }
 
+  console.log('[T23.6.78 INGESTION OUTPUT]', {
+    count: canonicalComponentOptions?.length,
+    source: canonicalComponentOptionsSource,
+    sample: canonicalComponentOptions?.slice(0, 3),
+  });
+
   return {
     fileName,
     fileSize,

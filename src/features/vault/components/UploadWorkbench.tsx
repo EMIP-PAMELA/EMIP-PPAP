@@ -1653,6 +1653,13 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     return 'UNAVAILABLE';
   }, [canonicalComponentOptions, canonicalComponentOptionsSource, panelConnectivity, effectiveState?.effectiveConnectivity]);
 
+  useEffect(() => {
+    console.log('[T23.6.78 WORKBENCH INPUT]', {
+      count: canonicalComponentOptions?.length,
+      source: canonicalComponentOptionsSource,
+    });
+  }, [canonicalComponentOptions, canonicalComponentOptionsSource]);
+
   // T12.4: when effective state clears all blocking questions and required
   // document fields are present, promote the item status to ready_to_commit.
   useEffect(() => {
