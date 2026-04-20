@@ -316,6 +316,143 @@ export function extractDiagramComponents(
 // Step 3 — Merge deterministic + AI vision results
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Step T23.7.1 — Connector table context promotion
+// ---------------------------------------------------------------------------
+
+/** T23.7.1: Context triggers — at least one must match for table-context scanning. */
+const EQUIV_CONNECTOR_CTX_RE = /\b(?:OR\s+)?EQUIVALENT\b/i;
+const CONNECTOR_TABLE_CTX_RE = /\b(?:CONNECTOR|CONN|HOUSING|ASSY)\b/i;
+const BRAND_CTX_RE           = /\b(?:PHOENIX|MOLEX|AMP\b|TYCO|DEUTSCH|APTIV|DELPHI|JST|WAGO)\b/i;
+
+/** T23.7.1: Non-PN rejection sets — tokens that superficially match PN patterns. */
+const TABLE_REJECT_COLORS = new Set([
+  'BLK','BK','BLACK','RED','RD','BLU','BLUE','GRN','GREEN','WHT','WHITE',
+  'YEL','YELLOW','ORG','ORANGE','BRN','BROWN','GRY','GREY','GRAY',
+  'VIO','VIOLET','PNK','PINK','NAT','NATURAL',
+]);
+const TABLE_REJECT_UNITS = new Set([
+  'FT','FEET','FOOT','IN','INCH','INCHES','M','MM','CM','AWG','GA','GAUGE',
+  'EA','EACH','PC','PCS','REQ','QTY','LBS','LB',
+]);
+const TABLE_REJECT_PROCESS = new Set([
+  'STRIP','CRIMP','TORQUE','SEAL','APPLY','LABEL','BAG','NOTE','SETUP',
+]);
+
+/** T23.7.1: Rejects "4.5", "0.250" etc. */
+const PURE_DECIMAL_RE = /^\d+\.\d+$/;
+
+/**
+ * T23.7.1 — Scan ALL OCR lines for connector/equivalent-connector table context
+ * and promote valid part-number tokens as CONNECTOR ComponentNodes.
+ *
+ * Unlike extractDiagramComponents (scoped to lines BEFORE the wire table header),
+ * this function processes the full OCR line set.  Equivalent-connector tables and
+ * standalone connector tables that appear AFTER the wire table are handled here.
+ *
+ * Classification rules:
+ *   - Trigger: line contains OR EQUIVALENT, CONNECTOR/HOUSING/CONN, or brand name
+ *   - Promote: 6-8 digit plain numerics, dash-separated PNs, alpha-prefix PNs
+ *   - Reject:  colors, unit tokens, process keywords, short numerics < 1000, decimals
+ *   - All promoted entries get kind = CONNECTOR, source = OCR
+ *   - Dedup by normalizedPartNumber within the call
+ */
+export function extractConnectorTableComponents(allLines: string[]): ComponentNode[] {
+  const promoted: ComponentNode[] = [];
+  const seenPNs = new Set<string>();
+  let idCount   = 0;
+
+  for (const line of allLines) {
+    const t = line.trim();
+    if (!t || t.length < 3) continue;
+
+    const isEquivContext = EQUIV_CONNECTOR_CTX_RE.test(t);
+    const isConnContext  = CONNECTOR_TABLE_CTX_RE.test(t);
+    const isBrandContext = BRAND_CTX_RE.test(t);
+    if (!isEquivContext && !isConnContext && !isBrandContext) continue;
+
+    const upper = t.toUpperCase();
+
+    const candidates: string[] = [];
+
+    // Class 1 — 6-8 digit plain numerics (e.g. 1700443, 1792566)
+    for (const m of upper.matchAll(/\b(\d{6,8})\b/g)) {
+      candidates.push(m[1]);
+    }
+
+    // Class 2 — Dash-separated numeric PNs (e.g. 284040-6, 929504-1)
+    for (const m of upper.matchAll(/\b(\d{1,4}-\d{4,9}(?:-\d{1,4})?)\b/g)) {
+      candidates.push(m[1]);
+    }
+
+    // Class 3 — Alpha-prefix with dashes (e.g. EB1550B-06-800, WM-1234-5)
+    for (const m of upper.matchAll(/\b([A-Z]{1,4}\d{2,}[A-Z0-9]*(?:-[A-Z0-9]{1,9})+)\b/g)) {
+      candidates.push(m[1]);
+    }
+
+    for (const raw of candidates) {
+      const token = raw.trim();
+      if (!token) continue;
+
+      if (TABLE_REJECT_COLORS.has(token)) {
+        console.log('[T23.7.1 TABLE FILTER REJECT]', { token, reason: 'COLOR_TOKEN' });
+        continue;
+      }
+      if (TABLE_REJECT_UNITS.has(token)) {
+        console.log('[T23.7.1 TABLE FILTER REJECT]', { token, reason: 'UNIT_TOKEN' });
+        continue;
+      }
+      if (TABLE_REJECT_PROCESS.has(token)) {
+        console.log('[T23.7.1 TABLE FILTER REJECT]', { token, reason: 'PROCESS_TOKEN' });
+        continue;
+      }
+      if (PURE_DECIMAL_RE.test(token)) continue;
+      if (/^\d+$/.test(token) && Number(token) < 1000) {
+        console.log('[T23.7.1 TABLE FILTER REJECT]', { token, reason: 'NUMERIC_TOO_SMALL' });
+        continue;
+      }
+
+      if (seenPNs.has(token)) continue;
+      seenPNs.add(token);
+
+      const rowContext = isEquivContext ? 'EQUIVALENT' : isConnContext ? 'CONNECTOR' : 'BRAND';
+      const confidence = isEquivContext ? 0.85 : isBrandContext ? 0.80 : 0.72;
+
+      console.log('[T23.7.1 TABLE PN PROMOTION]', {
+        token,
+        rowContext,
+        columnContext: t.length > 80 ? t.slice(0, 80) + '\u2026' : t,
+        promotedAs: 'CONNECTOR',
+        confidence: 'HIGH',
+      });
+
+      const node: ComponentNode = {
+        id:                   `CONN_TBL_${++idCount}`,
+        type:                 'CONNECTOR',
+        label:                token,
+        normalizedPartNumber: token,
+        locationHint:         null,
+        source:               'OCR',
+        confidence,
+        rawText:              t,
+      };
+
+      promoted.push(node);
+
+      console.log('[T23.7.1 CONNECTOR TABLE COMPONENT]', {
+        normalizedPartNumber: token,
+        label:                token,
+        kind:                 'CONNECTOR',
+        source:               'TABLE_CONTEXT_PROMOTION',
+      });
+    }
+  }
+
+  return promoted;
+}
+
+// ---------------------------------------------------------------------------
+
 /**
  * Merge a deterministic DiagramExtractionResult with an optional AI vision
  * result. Deterministic result is the base. AI can only ADD new components

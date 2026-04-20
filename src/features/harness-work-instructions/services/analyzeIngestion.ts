@@ -33,7 +33,7 @@ import { detectWireTableRegion } from './wireTableRegionExtractor';
 import { parseWireTableRows, type WireRow } from './wireTableParser';
 import { parseBOMWithValidation } from '@/src/core/parser/parserService';
 import { buildHarnessConnectivity, type HarnessConnectivityResult } from './harnessConnectivityService';
-import { isolateDiagramLines, extractDiagramComponents, mergeWithVisionResult, type DiagramExtractionResult } from './diagramExtractor';
+import { isolateDiagramLines, extractDiagramComponents, mergeWithVisionResult, extractConnectorTableComponents, type DiagramExtractionResult } from './diagramExtractor';
 import { reconcileHarnessConnectivity, type HarnessReconciliationResult } from './harnessReconciliationService';
 import { classifyHarnessEndpoints, type HarnessEndpointClassificationResult } from './endpointClassifier';
 import { validateHarness, type HarnessValidationResult } from './harnessValidationService';
@@ -1756,6 +1756,46 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       }
     } catch (err) {
       console.warn('[T4 DIAGRAM EXTRACTION] Non-fatal — continuing without diagram result.', err);
+    }
+  }
+
+  // --- T23.7.1: Connector table context promotion (full OCR scan) ---
+  // Supplements T4 which only processes diagram-region lines (before wire table header).
+  // Equivalent-connector tables and connector tables that appear anywhere in the drawing
+  // (including after the wire table) are processed here.
+  if (drawingSubtype === 'INTERNAL_DRAWING' && ocrLines.length > 0) {
+    try {
+      const tableComponents = extractConnectorTableComponents(ocrLines);
+      if (tableComponents.length > 0) {
+        console.log('[T23.7.1 TABLE PROMOTION RESULT]', {
+          promoted:    tableComponents.length,
+          partNumbers: tableComponents.map(c => c.normalizedPartNumber),
+        });
+        if (diagramExtraction) {
+          const existingPNs = new Set(
+            diagramExtraction.components
+              .map(c => c.normalizedPartNumber)
+              .filter((pn): pn is string => Boolean(pn)),
+          );
+          const newComponents = tableComponents.filter(
+            c => c.normalizedPartNumber && !existingPNs.has(c.normalizedPartNumber),
+          );
+          if (newComponents.length > 0) {
+            diagramExtraction = {
+              ...diagramExtraction,
+              components: [...diagramExtraction.components, ...newComponents],
+            };
+          }
+        } else {
+          diagramExtraction = {
+            components: tableComponents,
+            callouts:   [],
+            unresolvedCallouts: [],
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('[T23.7.1 TABLE PROMOTION] Non-fatal — continuing without table promotion.', err);
     }
   }
 
