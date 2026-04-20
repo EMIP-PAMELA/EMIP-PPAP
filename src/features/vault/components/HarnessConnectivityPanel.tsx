@@ -30,7 +30,7 @@ import type { HarnessDecisionResult } from '@/src/features/harness-work-instruct
 import type { OperatorResolutionMode, WireOperatorOverride, WireResolutionMode } from '@/src/features/vault/types/ingestionReview';
 import type { HarnessTopologyResult, TopologyWarning } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
 import { canonicalComponentKey } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
-import { buildComponentAuthorityOptions, type ComponentAuthorityOption } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
+import type { ComponentAuthorityOption } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
 import type { WireIdentityResult } from '@/src/features/harness-work-instructions/services/wireIdentityService';
 import HarnessTopologyVisualizer from './HarnessTopologyVisualizer';
 
@@ -313,23 +313,9 @@ function WireResolveForm({
     }
   }, [componentOptions.length, componentSourceMode]);
 
-  const sortOptions = useMemo(() => {
-    return (priority: (kind: ComponentAuthorityOption['kind']) => number) =>
-      [...componentOptions].sort((a, b) => {
-        const pa = priority(a.kind);
-        const pb = priority(b.kind);
-        if (pa !== pb) return pa - pb;
-        return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' });
-      });
-  }, [componentOptions]);
-
-  const rankedFromOptions = useMemo(() => sortOptions(kind => (
-    kind === 'CONNECTOR' ? 0 : kind === 'TERMINAL' ? 1 : 2
-  )), [sortOptions]);
-
-  const rankedToOptions = useMemo(() => sortOptions(kind => (
-    kind === 'TERMINAL' ? 0 : kind === 'CONNECTOR' ? 1 : 2
-  )), [sortOptions]);
+  useEffect(() => {
+    console.log('[T23.6.98 UI FINAL OPTIONS]', componentOptions.length);
+  }, [componentOptions.length]);
 
   const handleSave = () => {
     if (isDegradedMode && !acknowledgedDegradedMode) {
@@ -502,7 +488,7 @@ function WireResolveForm({
                     disabled={!hasOptions}
                   >
                     <option value="">{hasOptions ? 'Select component' : 'No options available'}</option>
-                    {rankedFromOptions.map(opt => (
+                    {componentOptions.map(opt => (
                       <option key={opt.canonicalId} value={opt.canonicalId}>
                         {optionLabel(opt)}
                       </option>
@@ -518,7 +504,7 @@ function WireResolveForm({
                     disabled={!hasOptions}
                   >
                     <option value="">{hasOptions ? 'Select component' : 'No options available'}</option>
-                    {rankedToOptions.map(opt => (
+                    {componentOptions.map(opt => (
                       <option key={opt.canonicalId} value={opt.canonicalId}>
                         {optionLabel(opt)}
                       </option>
@@ -980,165 +966,15 @@ export default function HarnessConnectivityPanel({
 }: HarnessConnectivityPanelProps) {
   const model = useMemo(() => connectivity ?? harnessConnectivity ?? null, [connectivity, harnessConnectivity]);
 
-  const incomingOptions: ComponentAuthorityOption[] = Array.isArray(incomingComponentOptions)
+  const componentOptions: ComponentAuthorityOption[] = Array.isArray(incomingComponentOptions)
     ? incomingComponentOptions
     : [];
 
-  console.warn('[TRACE E - PANEL INPUT]', {
-    count: incomingOptions?.length,
-    sample: incomingOptions?.slice(0, 5),
+  console.log('[T23.6.99 PANEL FINAL]', {
+    count: componentOptions.length,
   });
 
-  traceWithSource('A — incomingOptions (prop boundary)', incomingOptions);
-
-  // T23.6.96: Raw reconciliation bypass — direct bind; skip entire authority/fallback chain.
-  const isRawReconciliationBypass = componentOptionsSource === 'RAW_RECONCILIATION_BYPASS';
-
-  const hasParserAuthority =
-    isRawReconciliationBypass ||
-    (Array.isArray(incomingOptions) &&
-      incomingOptions.some(o => o && (
-        o.__source === 'PARSER_ORIGINAL' ||
-        o.__source === 'PARSER_BYPASS' ||
-        o.__source === 'RAW_RECONCILIATION_BYPASS'
-      )));
-
-  if (isRawReconciliationBypass) {
-    console.warn('[T23.6.96 PANEL RAW BYPASS ACTIVE]', {
-      count: incomingOptions.length,
-      source: componentOptionsSource,
-    });
-  } else if (componentOptionsSource === 'PARSER_BYPASS' || incomingOptions.some(o => o?.__source === 'PARSER_BYPASS')) {
-    console.warn('[T23.6.94 PANEL BYPASS ACTIVE]', {
-      count: incomingOptions.length,
-      source: componentOptionsSource,
-    });
-  }
-
-  useEffect(() => {
-    console.log('[T23.6.78 PANEL INPUT]', {
-      count: incomingOptions?.length,
-      source: componentOptionsSource,
-    });
-  }, [incomingOptions, componentOptionsSource]);
-
-  const hasCanonicalData =
-    isRawReconciliationBypass ||
-    (Array.isArray(incomingOptions) &&
-      incomingOptions.some(o =>
-        o.__source === 'PARSER_ORIGINAL' ||
-        o.__source === 'PARSER_BYPASS' ||
-        o.__source === 'RAW_RECONCILIATION_BYPASS'
-      ));
-
-  console.log('[T23.6.88 AUTHORITY CHECK]', {
-    incomingCount: incomingOptions?.length ?? 0,
-    hasCanonicalData,
-    previousSource: componentOptionsSource,
-  });
-
-  const canonicalOptions = hasCanonicalData ? incomingOptions : [];
-  const providedFallbackOptions = !hasCanonicalData && incomingOptions.length > 0 ? incomingOptions : [];
-
-  traceWithSource('B — canonicalOptions (after data-driven authority gate)', canonicalOptions);
-  if (incomingOptions.length > 0 && canonicalOptions.length === 0) {
-    console.error('[T23.6.87 SOURCE CORRUPTION DETECTED] canonicalOptions gate zeroed incoming options', {
-      incomingCount: incomingOptions.length,
-      hasCanonicalData,
-      componentOptionsSource: componentOptionsSource ?? 'UNDEFINED',
-    });
-  }
-
-  const fallbackOptions = useMemo<ComponentAuthorityOption[]>(() => {
-    if (canonicalOptions.length > 0) return [];
-    if (providedFallbackOptions.length > 0) return providedFallbackOptions;
-    if (!model) return [];
-    console.warn('[T23.6.88 FALLBACK TRIGGERED]', {
-      reason: 'No canonical data detected',
-      incomingCount: incomingOptions?.length ?? 0,
-    });
-    console.warn('[T23.6.87 CALL] buildComponentAuthorityOptions — COMPETING PIPELINE INVOKED');
-    console.trace('[T23.6.87 CALL STACK]');
-    const fallbackResult = buildComponentAuthorityOptions(model);
-    traceWithSource('C — fallbackOptions from buildComponentAuthorityOptions (topology)', fallbackResult);
-    return fallbackResult;
-  }, [canonicalOptions.length, providedFallbackOptions, model]);
-
-  const hasCanonicalOptions =
-    (canonicalOptions && canonicalOptions.length > 0) ||
-    hasParserAuthority;
-  const hasFallbackOptions = fallbackOptions.length > 0;
-
-  let finalComponentOptions: ComponentAuthorityOption[];
-
-  if (hasParserAuthority && incomingOptions.length > 0) {
-    console.warn('[T23.6.90 HARD BYPASS] Parser authority enforced — ALL overrides skipped');
-    finalComponentOptions = incomingOptions;
-  } else {
-    finalComponentOptions =
-      (canonicalOptions && canonicalOptions.length > 0)
-        ? canonicalOptions
-        : fallbackOptions;
-  }
-
-  console.log('[T23.6.89 FINAL AUTHORITY DECISION]', {
-    incomingCount: incomingOptions?.length,
-    canonicalCount: canonicalOptions?.length,
-    fallbackCount: fallbackOptions?.length,
-    finalCount: finalComponentOptions?.length,
-    source: finalComponentOptions?.[0]?.__source,
-  });
-
-  traceWithSource('D — finalComponentOptions (canonical vs fallback decision)', finalComponentOptions);
-  if (!isRawReconciliationBypass && finalComponentOptions.length > 0 && !finalComponentOptions.every(x => x.__source === 'PARSER_ORIGINAL' || x.__source === 'PARSER_BYPASS' || x.__source === 'FORCED_RECOVERY' || x.__source === 'RAW_RECONCILIATION_BYPASS')) {
-    console.error('[T23.6.87 SOURCE CORRUPTION DETECTED] finalComponentOptions does not carry parser-authority source', {
-      hasCanonicalOptions,
-      incomingCount: incomingOptions.length,
-      canonicalCount: canonicalOptions.length,
-      fallbackCount: fallbackOptions.length,
-      sources: finalComponentOptions.map(x => x.__source ?? 'UNKNOWN'),
-    });
-  }
-  const fallbackSource = !hasCanonicalOptions
-    ? (componentOptionsSource && componentOptionsSource !== 'SIMPLIFIED_BOM'
-        ? componentOptionsSource
-        : hasFallbackOptions
-          ? 'ANALYSIS_CONNECTIVITY_FALLBACK'
-          : 'UNAVAILABLE')
-    : null;
-  const finalComponentOptionsSource = hasCanonicalOptions
-    ? (componentOptionsSource ?? 'SIMPLIFIED_BOM')
-    : (fallbackSource ?? 'UNAVAILABLE');
-
-  useEffect(() => {
-    console.log('[T23.6.78 FINAL OPTIONS]', {
-      count: finalComponentOptions.length,
-      source: finalComponentOptionsSource,
-    });
-  }, [finalComponentOptions.length, finalComponentOptionsSource]);
-
-  // T23.6.90 OVERRIDE DISABLED — SOURCE LOCK REMOVED
-
-  // T23.6.90 OVERRIDE DISABLED — UI SOURCE ENFORCEMENT REMOVED
-
-  if (hasParserAuthority && finalComponentOptions !== incomingOptions) {
-    console.error('[T23.6.90 BLOCKED OVERRIDE ATTEMPT]');
-    finalComponentOptions = incomingOptions;
-  }
-
-  const componentOptions = finalComponentOptions ?? [];
-
-  console.warn('[TRACE F - DROPDOWN OPTIONS]', {
-    count: componentOptions?.length,
-    sample: componentOptions?.slice(0, 5),
-  });
-
-  traceWithSource('E — componentOptions (bound to dropdown)', componentOptions);
-
-  // T23.6.90 OVERRIDE DISABLED — FULL SOURCE REPLACEMENT BLOCKED
-
-  console.log('[T23.6.83 RAW FINAL OPTIONS]', finalComponentOptions);
-  console.log('[T23.6.83 BOUND OPTIONS]', componentOptions);
+  const componentOptionsSourceLabel = componentOptionsSource ?? 'RAW_RECONCILIATION_BYPASS';
 
   const componentOptionLookups = useMemo(
     () => buildComponentOptionLookups(componentOptions),
@@ -1151,16 +987,15 @@ export default function HarnessConnectivityPanel({
   useEffect(() => {
     if (!isDegradedMode) return;
     console.warn('[T23.6.71 DEGRADED MODE ACTIVE]', {
-      source: finalComponentOptionsSource ?? 'UNKNOWN',
+      source: componentOptionsSourceLabel,
       optionCount: componentOptions.length,
     });
-  }, [isDegradedMode, finalComponentOptionsSource, componentOptions.length]);
+  }, [isDegradedMode, componentOptionsSourceLabel, componentOptions.length]);
 
-  // T23.6.95 OVERRIDE DISABLED — UI SOURCE ENFORCEMENT REMOVED (was T23.6.70)
   if (componentOptions.length > 10) {
     console.log('[T23.6.95 UI BYPASS LOCK] Using parser/bypass options directly', {
       count: componentOptions.length,
-      source: finalComponentOptionsSource,
+      source: componentOptionsSourceLabel,
     });
   }
 
@@ -1376,7 +1211,7 @@ export default function HarnessConnectivityPanel({
             <tbody>
               {sortedWires.slice(0, 100).map(wire => (
                 <WireEvidenceRow
-                  key={`${wire.wireId}-${wire.sourceRowIndex}`}
+                  key={wire.wireId}
                   wire={wire}
                   reconciledWire={reconciledByWireId.get(wire.wireId)}
                   hasReconciliation={hasReconciliation}
@@ -1389,7 +1224,7 @@ export default function HarnessConnectivityPanel({
                   componentOptions={componentOptions}
                   componentOptionLookups={componentOptionLookups}
                   isDegradedMode={isDegradedMode}
-                  componentOptionsSource={finalComponentOptionsSource}
+                  componentOptionsSource={componentOptionsSourceLabel}
                 />
               ))}
             </tbody>

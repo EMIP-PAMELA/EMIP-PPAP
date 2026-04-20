@@ -30,7 +30,7 @@ import FieldEvidencePanel from './FieldEvidencePanel';
 import type { RegionOverlay } from '@/src/features/harness-work-instructions/types/documentRegionOverlay';
 import DocumentOverlayViewer from './DocumentOverlayViewer';
 import HarnessConnectivityPanel from './HarnessConnectivityPanel';
-import { buildComponentAuthorityOptions, type ComponentAuthorityOption } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
+import type { ComponentAuthorityOption } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
 import SkuModelEditorPanel, { type SkuModelDeleteRequest, type ExternalEditorRequest } from './SkuModelEditorPanel';
 import KomaxCutSheetPanel from './KomaxCutSheetPanel';
 import SkuLifecycleHistoryPanel from './SkuLifecycleHistoryPanel';
@@ -1620,122 +1620,18 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     });
   }, [selectedItem, selectedId, wireOverrides, skuAddedWires, skuEditedWires, skuDeletedIds]);
 
-  const panelConnectivity = useMemo(() => (
-    effectiveState?.effectiveConnectivity ?? selectedItem?.analysis?.harnessConnectivity ?? null
-  ), [effectiveState?.effectiveConnectivity, selectedItem?.analysis?.harnessConnectivity]);
+  const analysis = selectedItem?.analysis ?? null;
 
-  const canonicalComponentOptions = selectedItem?.analysis?.canonicalComponentOptions ?? null;
-  const canonicalComponentOptionsSource = selectedItem?.analysis?.canonicalComponentOptionsSource ?? null;
+  const forcedOptions: ComponentAuthorityOption[] = Array.isArray(analysis?.rawReconciliationOptions)
+    ? analysis.rawReconciliationOptions
+    : [];
 
-  console.warn('[TRACE C - WORKBENCH INPUT RAW]', {
-    count: selectedItem?.analysis?.canonicalComponentOptions?.length,
-    sample: selectedItem?.analysis?.canonicalComponentOptions?.slice(0, 5),
+  const forcedOptionsSource: string = 'RAW_RECONCILIATION_BYPASS';
+
+  console.log('[T23.6.99 HARD SOURCE]', {
+    count: forcedOptions.length,
+    source: forcedOptionsSource,
   });
-
-  useEffect(() => {
-    if (!selectedItem?.analysis) return;
-    console.log('[T23.6.71B WORKBENCH PASSTHROUGH]', {
-      canonicalCount: canonicalComponentOptions?.length ?? 0,
-      source: canonicalComponentOptionsSource ?? 'UNAVAILABLE',
-      itemId: selectedItem.id,
-    });
-  }, [selectedItem?.analysis, canonicalComponentOptions?.length, canonicalComponentOptionsSource, selectedItem?.id]);
-
-  const { panelComponentOptions, panelComponentOptionsSource } = useMemo(() => {
-    const incomingOptions: ComponentAuthorityOption[] = canonicalComponentOptions ?? [];
-
-    const hasParserAuthority = incomingOptions.some(
-      (o) => o && o.__source === 'PARSER_ORIGINAL'
-    );
-
-    let finalComponentOptions: ComponentAuthorityOption[];
-    let finalSource: string;
-
-    if (hasParserAuthority) {
-      finalComponentOptions = incomingOptions;
-      finalSource = 'PARSER_ORIGINAL';
-      console.warn('[T23.6.91 PIPELINE LOCK]', {
-        reason: 'Parser authority detected — fallback blocked',
-        count: incomingOptions.length,
-      });
-    } else {
-      finalComponentOptions = panelConnectivity ? buildComponentAuthorityOptions(panelConnectivity) : [];
-      finalSource = panelConnectivity
-        ? (effectiveState?.effectiveConnectivity ? 'EFFECTIVE_CONNECTIVITY_FALLBACK' : 'ANALYSIS_CONNECTIVITY_FALLBACK')
-        : 'UNAVAILABLE';
-      console.warn('[T23.6.91 FALLBACK USED]', {
-        fallbackCount: finalComponentOptions.length,
-      });
-    }
-
-    return { panelComponentOptions: finalComponentOptions, panelComponentOptionsSource: finalSource };
-  }, [canonicalComponentOptions, panelConnectivity, effectiveState?.effectiveConnectivity]);
-
-  console.warn('[TRACE D - WORKBENCH PROCESSED]', {
-    count: panelComponentOptions?.length,
-    sample: panelComponentOptions?.slice(0, 5),
-  });
-
-  // T23.6.94: Bypass lane — highest authority for reconciliation dropdowns.
-  const bypassCanonicalOptions: ComponentAuthorityOption[] | null =
-    selectedItem?.analysis?.bypassCanonicalComponentOptions ?? null;
-
-  console.warn('[T23.6.94 WORKBENCH BYPASS INPUT]', {
-    count: bypassCanonicalOptions?.length ?? 0,
-    source: selectedItem?.analysis?.bypassCanonicalComponentOptionsSource ?? 'UNAVAILABLE',
-  });
-
-  const { bypassComponentOptions, bypassComponentOptionsSource } = useMemo(() => {
-    // Priority 1: bypass lane (PARSER_BYPASS)
-    if (bypassCanonicalOptions && bypassCanonicalOptions.length > 0) {
-      return {
-        bypassComponentOptions: bypassCanonicalOptions,
-        bypassComponentOptionsSource: 'PARSER_BYPASS' as string,
-      };
-    }
-    // Priority 2: existing canonical options (PARSER_ORIGINAL / SIMPLIFIED_BOM)
-    if (canonicalComponentOptions && canonicalComponentOptions.length > 0) {
-      return {
-        bypassComponentOptions: canonicalComponentOptions,
-        bypassComponentOptionsSource: canonicalComponentOptionsSource ?? 'SIMPLIFIED_BOM',
-      };
-    }
-    // Priority 3: existing fallback path (topology / effective)
-    return {
-      bypassComponentOptions: panelComponentOptions,
-      bypassComponentOptionsSource: panelComponentOptionsSource,
-    };
-  }, [bypassCanonicalOptions, canonicalComponentOptions, canonicalComponentOptionsSource, panelComponentOptions, panelComponentOptionsSource]);
-
-  console.warn('[T23.6.94 WORKBENCH BYPASS OUTPUT]', {
-    count: bypassComponentOptions?.length ?? 0,
-    source: bypassComponentOptionsSource,
-  });
-
-  // T23.6.96: Hard raw extraction bypass — direct read, no useMemo, no authority arbitration.
-  // This lane completely bypasses panelComponentOptions/topology recomputation for reconciliation UI.
-  const reconciliationComponentOptions: ComponentAuthorityOption[] =
-    selectedItem?.analysis?.rawReconciliationOptions ?? [];
-
-  const reconciliationComponentOptionsSource: string =
-    (selectedItem?.analysis?.rawReconciliationOptionsSource as string) ?? 'RAW_RECONCILIATION_BYPASS';
-
-  console.warn('[T23.6.96 WORKBENCH RAW INPUT]', {
-    count: reconciliationComponentOptions.length,
-    source: reconciliationComponentOptionsSource,
-  });
-
-  console.warn('[T23.6.96 WORKBENCH RAW OUTPUT]', {
-    count: reconciliationComponentOptions.length,
-    source: reconciliationComponentOptionsSource,
-  });
-
-  useEffect(() => {
-    console.log('[T23.6.78 WORKBENCH INPUT]', {
-      count: canonicalComponentOptions?.length,
-      source: canonicalComponentOptionsSource,
-    });
-  }, [canonicalComponentOptions, canonicalComponentOptionsSource]);
 
   // T12.4: when effective state clears all blocking questions and required
   // document fields are present, promote the item status to ready_to_commit.
@@ -2135,30 +2031,10 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               setSkuEditorRequest({ type: 'branch', wireIds, fromComponent: component, fromCavity: cavity });
               skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }}
-            componentOptions={reconciliationComponentOptions}
-            componentOptionsSource={reconciliationComponentOptionsSource}
+            componentOptions={forcedOptions}
+            componentOptionsSource={forcedOptionsSource}
           />
         ) : null}
-
-        {selectedItem.analysis?.harnessConnectivity ? (
-          <div ref={skuEditorRef}>
-            <SkuModelEditorPanel
-              extractedConnectivity={selectedItem.analysis.harnessConnectivity}
-              effectiveConnectivity={effectiveState?.effectiveConnectivity ?? null}
-              effectiveDecision={effectiveState?.effectiveDecision ?? null}
-              operatorAddedWires={skuAddedWires[selectedId ?? ''] ?? []}
-              operatorEditedWires={skuEditedWires[selectedId ?? ''] ?? []}
-              operatorDeletedWireIds={skuDeletedIds[selectedId ?? ''] ?? []}
-              onAddWire={wire => handleSkuAddWire(selectedId ?? '', wire)}
-              onEditWire={wire => handleSkuEditWire(selectedId ?? '', wire)}
-              onDeleteWire={request => handleSkuDeleteWire(selectedId ?? '', request)}
-              externalEditorRequest={skuEditorRequest}
-              onExternalRequestConsumed={() => setSkuEditorRequest(null)}
-              wireIdentities={effectiveState?.effectiveWireIdentities ?? null}
-            />
-          </div>
-        ) : null}
-
         {effectiveState && (
           <KomaxCutSheetPanel
             effectiveState={effectiveState}
