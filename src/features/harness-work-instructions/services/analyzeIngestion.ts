@@ -237,99 +237,136 @@ function buildRawReconciliationOptions({
     }
   };
 
-  // Source A: BOM operations components (populated only in BOM pipeline mode)
-  for (const operation of normalizedBOM?.operations ?? []) {
-    for (const component of operation.components ?? []) {
-      const partRef = (component.normalizedPartNumber ?? component.partId)?.trim();
-      if (!partRef) continue;
-      const kind: ComponentAuthorityOption['kind'] =
-        component.componentType === 'connector' ? 'CONNECTOR'
-        : component.componentType === 'terminal' ? 'TERMINAL'
-        : 'OTHER';
-      addOption(partRef, partRef, kind);
+  // T23.7.4: Track per-source counts for diagnostic log.
+  const countBefore = () => optionMap.size;
+  const sourceCounts: Record<string, number> = {};
+  const snap = (label: string, before: number) => { sourceCounts[label] = optionMap.size - before; };
+
+  // Source E / T23.7.4 — Diagram-extracted component nodes (ALL entries, no filtering).
+  // Placed FIRST so that every detected component is available regardless of wire participation.
+  // Includes T23.7.2 FORCED_TABLE_PROMOTION entries promoted from full-OCR scan.
+  {
+    const before = countBefore();
+    for (const node of diagramExtraction?.components ?? []) {
+      if (node.normalizedPartNumber) {
+        const kind: ComponentAuthorityOption['kind'] =
+          node.type === 'CONNECTOR' ? 'CONNECTOR'
+          : node.type === 'TERMINAL' ? 'TERMINAL'
+          : 'OTHER';
+        addOption(node.normalizedPartNumber, node.label || node.normalizedPartNumber, kind);
+      } else if (node.label?.trim()) {
+        const kind: ComponentAuthorityOption['kind'] =
+          node.type === 'CONNECTOR' ? 'CONNECTOR'
+          : node.type === 'TERMINAL' ? 'TERMINAL'
+          : 'OTHER';
+        addOption(node.label, node.label, kind);
+      }
     }
+    snap('E_diagram_components', before);
+  }
+
+  // Source F: Diagram callout part numbers (normalizedPartNumber only)
+  {
+    const before = countBefore();
+    for (const callout of diagramExtraction?.callouts ?? []) {
+      if (callout.normalizedPartNumber?.trim()) {
+        addOption(callout.normalizedPartNumber, callout.normalizedPartNumber, 'TERMINAL');
+      }
+    }
+    snap('F_diagram_callouts', before);
+  }
+
+  // Source A: BOM operations components (populated only in BOM pipeline mode)
+  {
+    const before = countBefore();
+    for (const operation of normalizedBOM?.operations ?? []) {
+      for (const component of operation.components ?? []) {
+        const partRef = (component.normalizedPartNumber ?? component.partId)?.trim();
+        if (!partRef) continue;
+        const kind: ComponentAuthorityOption['kind'] =
+          component.componentType === 'connector' ? 'CONNECTOR'
+          : component.componentType === 'terminal' ? 'TERMINAL'
+          : 'OTHER';
+        addOption(partRef, partRef, kind);
+      }
+    }
+    snap('A_bom_operations', before);
   }
 
   // Source B: BOM connectors (populated only in BOM pipeline mode)
-  for (const connector of normalizedBOM?.connectors ?? []) {
-    const partRef = connector.partNumber?.trim();
-    if (!partRef) continue;
-    addOption(partRef, partRef, 'CONNECTOR');
+  {
+    const before = countBefore();
+    for (const connector of normalizedBOM?.connectors ?? []) {
+      const partRef = connector.partNumber?.trim();
+      if (!partRef) continue;
+      addOption(partRef, partRef, 'CONNECTOR');
+    }
+    snap('B_bom_connectors', before);
   }
 
   // Source C: Connectivity wire endpoints (from.component = connector ref, to.component = terminal)
-  for (const wire of harnessConnectivity?.wires ?? []) {
-    const fromComp = wire.from.component?.trim();
-    if (fromComp) addOption(fromComp, fromComp, 'CONNECTOR');
-    const toComp = wire.to.component?.trim();
-    if (toComp) addOption(toComp, toComp, 'TERMINAL');
+  {
+    const before = countBefore();
+    for (const wire of harnessConnectivity?.wires ?? []) {
+      const fromComp = wire.from.component?.trim();
+      if (fromComp) addOption(fromComp, fromComp, 'CONNECTOR');
+      const toComp = wire.to.component?.trim();
+      if (toComp) addOption(toComp, toComp, 'TERMINAL');
+    }
+    snap('C_wire_endpoints', before);
   }
 
   // Source D: Wire table rows — direct connectorRef and terminal fields
-  for (const row of wireTableRows ?? []) {
-    const connRef = row.connectorRef?.trim();
-    if (connRef) addOption(connRef, connRef, 'CONNECTOR');
-    const terminal = row.terminal?.trim();
-    if (terminal) addOption(terminal, terminal, 'TERMINAL');
-  }
-
-  // Source E: T23.7 — Diagram-extracted component nodes (label + normalizedPartNumber)
-  // These are detected connector/terminal nodes from the drawing diagram region.
-  for (const node of diagramExtraction?.components ?? []) {
-    if (node.normalizedPartNumber) {
-      const kind: ComponentAuthorityOption['kind'] =
-        node.type === 'CONNECTOR' ? 'CONNECTOR'
-        : node.type === 'TERMINAL' ? 'TERMINAL'
-        : 'OTHER';
-      addOption(node.normalizedPartNumber, node.label || node.normalizedPartNumber, kind);
-    } else if (node.label?.trim()) {
-      const kind: ComponentAuthorityOption['kind'] =
-        node.type === 'CONNECTOR' ? 'CONNECTOR'
-        : node.type === 'TERMINAL' ? 'TERMINAL'
-        : 'OTHER';
-      addOption(node.label, node.label, kind);
+  {
+    const before = countBefore();
+    for (const row of wireTableRows ?? []) {
+      const connRef = row.connectorRef?.trim();
+      if (connRef) addOption(connRef, connRef, 'CONNECTOR');
+      const terminal = row.terminal?.trim();
+      if (terminal) addOption(terminal, terminal, 'TERMINAL');
     }
+    snap('D_wire_table_rows', before);
   }
 
-  // Source F: T23.7 — Diagram callout part numbers
-  // Callouts with a resolved normalizedPartNumber are identifiable component references.
-  for (const callout of diagramExtraction?.callouts ?? []) {
-    if (callout.normalizedPartNumber?.trim()) {
-      addOption(callout.normalizedPartNumber, callout.normalizedPartNumber, 'TERMINAL');
+  // Source G: ACI lookup table (all known terminal/ferrule part numbers)
+  {
+    const before = countBefore();
+    for (const entry of getAllAciEntries()) {
+      const pn = entry.partNumber?.trim();
+      if (!pn) continue;
+      addOption(pn, pn, 'TERMINAL');
     }
+    snap('G_aci_table', before);
   }
 
-  // Source G: T23.7 — ACI lookup table (all known terminal/ferrule part numbers)
-  // The ACI dataset is the authoritative list of all valid component identifiers
-  // in the manufacturing system. Include every entry so operator always has
-  // all valid choices regardless of what was detected in this specific document.
-  for (const entry of getAllAciEntries()) {
-    const pn = entry.partNumber?.trim();
-    if (!pn) continue;
-    addOption(pn, pn, 'TERMINAL');
-  }
-
-  // Source H: T23.7 — Normalized connector extraction (T23.6.60B / BOM connector normalizer)
+  // Source H: Normalized connector extraction (T23.6.60B / BOM connector normalizer)
   // NormalizedConnector.partNumber is the canonical connector housing PN (e.g. Phoenix 1700443).
-  // For BOM pipeline: feeds from normalizedBOM.connectors (deduplicates harmlessly with Source B).
-  // For DRAWING pipeline: caller may supply connectors from any upstream source.
-  if (normalizedConnectors && Array.isArray(normalizedConnectors)) {
-    for (const conn of normalizedConnectors) {
-      if (!conn) continue;
-      const id = conn.partNumber?.trim();
-      if (!id) continue;
-      addOption(id, id, 'CONNECTOR');
+  {
+    const before = countBefore();
+    if (normalizedConnectors && Array.isArray(normalizedConnectors)) {
+      for (const conn of normalizedConnectors) {
+        if (!conn) continue;
+        const id = conn.partNumber?.trim();
+        if (!id) continue;
+        addOption(id, id, 'CONNECTOR');
+      }
     }
+    snap('H_normalized_connectors', before);
   }
 
   const result = Array.from(optionMap.values());
 
+  console.log('[T23.7.4 FULL COMPONENT SET]', {
+    total:          result.length,
+    fromDiagram:    (diagramExtraction?.components.length ?? 0),
+    fromTopology:   (harnessConnectivity?.wires.length ?? 0) * 2 + (wireTableRows?.length ?? 0),
+    diagramIsNull:  diagramExtraction === null,
+    bySource:       sourceCounts,
+  });
+
   console.log('[T23.7 SOURCE TRACE]', {
     origin: 'buildRawReconciliationOptions',
-    count: result.length,
-    bySource: {
-      bomOperations: [...optionMap.values()].filter(o => o.__source === 'RAW_RECONCILIATION_BYPASS').length,
-    },
+    count:  result.length,
     sample: result.slice(0, 5),
   });
 
