@@ -2091,6 +2091,10 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
 
   if (normalizedBOM) {
     const builtOptions = buildComponentOptionsFromNormalizedBOM(normalizedBOM);
+    console.warn('[TRACE A - INGESTION OUTPUT]', {
+      count: builtOptions?.length,
+      sample: builtOptions?.slice(0, 5),
+    });
     if (builtOptions.length > 0) {
       canonicalComponentOptions = builtOptions;
       canonicalComponentOptionsSource = 'SIMPLIFIED_BOM';
@@ -2115,6 +2119,11 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     count: canonicalComponentOptions?.length,
     source: canonicalComponentOptionsSource,
     sample: canonicalComponentOptions?.slice(0, 3),
+  });
+
+  console.warn('[TRACE B - ANALYSIS STORED]', {
+    count: canonicalComponentOptions?.length,
+    sample: canonicalComponentOptions?.slice(0, 5),
   });
 
   return {

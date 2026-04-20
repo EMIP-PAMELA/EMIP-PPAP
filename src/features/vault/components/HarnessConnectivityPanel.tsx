@@ -984,6 +984,11 @@ export default function HarnessConnectivityPanel({
     ? incomingComponentOptions
     : [];
 
+  console.warn('[TRACE E - PANEL INPUT]', {
+    count: incomingOptions?.length,
+    sample: incomingOptions?.slice(0, 5),
+  });
+
   traceWithSource('A — incomingOptions (prop boundary)', incomingOptions);
 
   const hasParserAuthority = Array.isArray(incomingOptions) &&
@@ -1096,6 +1101,11 @@ export default function HarnessConnectivityPanel({
   }
 
   const componentOptions = finalComponentOptions ?? [];
+
+  console.warn('[TRACE F - DROPDOWN OPTIONS]', {
+    count: componentOptions?.length,
+    sample: componentOptions?.slice(0, 5),
+  });
 
   traceWithSource('E — componentOptions (bound to dropdown)', componentOptions);
 

@@ -1627,6 +1627,11 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const canonicalComponentOptions = selectedItem?.analysis?.canonicalComponentOptions ?? null;
   const canonicalComponentOptionsSource = selectedItem?.analysis?.canonicalComponentOptionsSource ?? null;
 
+  console.warn('[TRACE C - WORKBENCH INPUT RAW]', {
+    count: selectedItem?.analysis?.canonicalComponentOptions?.length,
+    sample: selectedItem?.analysis?.canonicalComponentOptions?.slice(0, 5),
+  });
+
   useEffect(() => {
     if (!selectedItem?.analysis) return;
     console.log('[T23.6.71B WORKBENCH PASSTHROUGH]', {
@@ -1665,6 +1670,11 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
 
     return { panelComponentOptions: finalComponentOptions, panelComponentOptionsSource: finalSource };
   }, [canonicalComponentOptions, panelConnectivity, effectiveState?.effectiveConnectivity]);
+
+  console.warn('[TRACE D - WORKBENCH PROCESSED]', {
+    count: panelComponentOptions?.length,
+    sample: panelComponentOptions?.slice(0, 5),
+  });
 
   useEffect(() => {
     console.log('[T23.6.78 WORKBENCH INPUT]', {
