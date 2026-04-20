@@ -75,6 +75,15 @@ import { canonicalComponentKey } from './harnessTopologyService';
 import { getAllAciEntries } from './aciLookupService';
 
 // ---------------------------------------------------------------------------
+// T24.1: Module-level BOM cache — persists the last successfully normalized BOM
+// across analyzeFileIngestion() calls within the same server lifetime.
+// When a BOM document is ingested, the result is stored here.
+// When a drawing is subsequently ingested, this cache provides BOM authority
+// so connector housings (e.g. Phoenix 1700443) are always available in dropdowns.
+// ---------------------------------------------------------------------------
+let _persistedBOM: NormalizedBOM | null = null;
+
+// ---------------------------------------------------------------------------
 // Internal helpers (duplicated from unifiedIngestionService — see TODO above)
 // ---------------------------------------------------------------------------
 
@@ -1000,6 +1009,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     try {
       const rawBOM = parseBOMText(normalizedText);
       normalizedBOM = normalizeBOMData(rawBOM);
+      _persistedBOM = normalizedBOM;
       console.log('[T23.6.71C NORMALIZED BOM READY]', {
         componentCount: normalizedBOM.summary?.totalComponents ?? 0,
         connectorCount: normalizedBOM.connectors?.length ?? 0,
@@ -2495,18 +2505,25 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     globalPNs,
   });
 
-  // T24.0: BOM authority — BOM parts are ALWAYS included; OCR scan sets confirmedFromDrawing signal.
-  // For BOM-mode: normalizedBOM.operations + normalizedBOM.connectors cover all parts.
-  // For DRAWING-mode: normalizedBOM is null so bomParts will be empty (extraction covers it instead).
+  // T24.1 + T24.0: BOM authority — resolve active BOM from current ingestion or persisted cache.
+  // In drawing mode normalizedBOM is null; _persistedBOM carries the last BOM-mode result.
   {
+    const activeBOM = normalizedBOM ?? _persistedBOM;
+
+    console.log('[T24.1 BOM SOURCE]', {
+      fromNormalized: !!normalizedBOM,
+      fromPersisted:  !!(!normalizedBOM && _persistedBOM),
+      activeBOMNull:  activeBOM === null,
+    });
+
     const bomParts = new Set<string>();
-    for (const op of normalizedBOM?.operations ?? []) {
+    for (const op of activeBOM?.operations ?? []) {
       for (const c of op.components ?? []) {
         const pn = (c.normalizedPartNumber ?? c.partId)?.trim().toUpperCase();
         if (pn) bomParts.add(pn);
       }
     }
-    for (const conn of normalizedBOM?.connectors ?? []) {
+    for (const conn of activeBOM?.connectors ?? []) {
       const pn = conn.partNumber?.trim().toUpperCase();
       if (pn) bomParts.add(pn);
     }
