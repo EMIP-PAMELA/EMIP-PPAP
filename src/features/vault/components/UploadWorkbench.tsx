@@ -1676,6 +1676,42 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     sample: panelComponentOptions?.slice(0, 5),
   });
 
+  // T23.6.94: Bypass lane — highest authority for reconciliation dropdowns.
+  const bypassCanonicalOptions: ComponentAuthorityOption[] | null =
+    selectedItem?.analysis?.bypassCanonicalComponentOptions ?? null;
+
+  console.warn('[T23.6.94 WORKBENCH BYPASS INPUT]', {
+    count: bypassCanonicalOptions?.length ?? 0,
+    source: selectedItem?.analysis?.bypassCanonicalComponentOptionsSource ?? 'UNAVAILABLE',
+  });
+
+  const { bypassComponentOptions, bypassComponentOptionsSource } = useMemo(() => {
+    // Priority 1: bypass lane (PARSER_BYPASS)
+    if (bypassCanonicalOptions && bypassCanonicalOptions.length > 0) {
+      return {
+        bypassComponentOptions: bypassCanonicalOptions,
+        bypassComponentOptionsSource: 'PARSER_BYPASS' as string,
+      };
+    }
+    // Priority 2: existing canonical options (PARSER_ORIGINAL / SIMPLIFIED_BOM)
+    if (canonicalComponentOptions && canonicalComponentOptions.length > 0) {
+      return {
+        bypassComponentOptions: canonicalComponentOptions,
+        bypassComponentOptionsSource: canonicalComponentOptionsSource ?? 'SIMPLIFIED_BOM',
+      };
+    }
+    // Priority 3: existing fallback path (topology / effective)
+    return {
+      bypassComponentOptions: panelComponentOptions,
+      bypassComponentOptionsSource: panelComponentOptionsSource,
+    };
+  }, [bypassCanonicalOptions, canonicalComponentOptions, canonicalComponentOptionsSource, panelComponentOptions, panelComponentOptionsSource]);
+
+  console.warn('[T23.6.94 WORKBENCH BYPASS OUTPUT]', {
+    count: bypassComponentOptions?.length ?? 0,
+    source: bypassComponentOptionsSource,
+  });
+
   useEffect(() => {
     console.log('[T23.6.78 WORKBENCH INPUT]', {
       count: canonicalComponentOptions?.length,
@@ -2081,8 +2117,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               setSkuEditorRequest({ type: 'branch', wireIds, fromComponent: component, fromCavity: cavity });
               skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }}
-            componentOptions={panelComponentOptions}
-            componentOptionsSource={panelComponentOptionsSource}
+            componentOptions={bypassComponentOptions}
+            componentOptionsSource={bypassComponentOptionsSource}
           />
         ) : null}
 

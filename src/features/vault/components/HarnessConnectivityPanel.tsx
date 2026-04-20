@@ -992,7 +992,14 @@ export default function HarnessConnectivityPanel({
   traceWithSource('A — incomingOptions (prop boundary)', incomingOptions);
 
   const hasParserAuthority = Array.isArray(incomingOptions) &&
-    incomingOptions.some(o => o && o.__source === 'PARSER_ORIGINAL');
+    incomingOptions.some(o => o && (o.__source === 'PARSER_ORIGINAL' || o.__source === 'PARSER_BYPASS'));
+
+  if (componentOptionsSource === 'PARSER_BYPASS' || incomingOptions.some(o => o?.__source === 'PARSER_BYPASS')) {
+    console.warn('[T23.6.94 PANEL BYPASS ACTIVE]', {
+      count: incomingOptions.length,
+      source: componentOptionsSource,
+    });
+  }
 
   useEffect(() => {
     console.log('[T23.6.78 PANEL INPUT]', {

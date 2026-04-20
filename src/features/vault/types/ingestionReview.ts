@@ -188,6 +188,10 @@ export interface IngestionAnalysisResult {
   canonicalComponentOptions?: ComponentAuthorityOption[] | null;
   canonicalComponentOptionsSource?: 'SIMPLIFIED_BOM' | 'DOCUMENT_ENGINE' | 'OPERATOR_SEEDED' | string | null;
 
+  /** T23.6.94: Bypass lane — direct parser-to-reconciliation path. Highest authority for reconciliation dropdowns. Additive parallel lane; legacy path preserved for later deprecation. */
+  bypassCanonicalComponentOptions?: ComponentAuthorityOption[] | null;
+  bypassCanonicalComponentOptionsSource?: 'PARSER_BYPASS' | 'BYPASS_RECOVERY_EMPTY' | null;
+
   /**
    * Phase T7: Harness physical plausibility validation.
    * INTERMEDIATE DATA — not authoritative. Does not affect field resolution.

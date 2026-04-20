@@ -204,6 +204,67 @@ function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): Comp
   return taggedOptions;
 }
 
+// T23.6.94: Bypass builder — pass-through all BOM-visible parts without filtering.
+// Deduplication by canonicalId only. No classification-based drops.
+// Better to show an extra plausible part than silently discard the right one.
+function buildBypassCanonicalComponentOptions(bom: NormalizedBOM | null): ComponentAuthorityOption[] {
+  if (!bom) return [];
+
+  const optionMap = new Map<string, ComponentAuthorityOption>();
+
+  const addBypassOption = (option: ComponentAuthorityOption) => {
+    if (!optionMap.has(option.canonicalId)) {
+      optionMap.set(option.canonicalId, option);
+    }
+  };
+
+  for (const operation of bom.operations ?? []) {
+    for (const component of operation.components ?? []) {
+      const partRef = (component.normalizedPartNumber ?? component.partId)?.trim();
+      if (!partRef) continue;
+      const canonicalId = partRef.toUpperCase();
+      addBypassOption({
+        canonicalId,
+        displayName: partRef,
+        cavities: [],
+        kind: (component.componentType === 'connector' ? 'CONNECTOR'
+          : component.componentType === 'terminal' ? 'TERMINAL'
+          : 'OTHER') as ComponentAuthorityOption['kind'],
+        signals: {
+          fromBOM: true,
+          operationType: operation.resourceId ?? operation.step ?? null,
+          fromWireAssoc: component.componentType === 'wire',
+          fromDrawingTable: false,
+          fromHeaderBinding: false,
+        },
+        __source: 'PARSER_BYPASS',
+      });
+    }
+  }
+
+  for (const connector of bom.connectors ?? []) {
+    const partRef = connector.partNumber?.trim();
+    if (!partRef) continue;
+    const canonicalId = partRef.toUpperCase();
+    addBypassOption({
+      canonicalId,
+      displayName: partRef,
+      cavities: [],
+      kind: 'CONNECTOR',
+      signals: {
+        fromBOM: true,
+        operationType: null,
+        fromWireAssoc: false,
+        fromDrawingTable: connector.authority === 'DRAWING_PRIMARY',
+        fromHeaderBinding: connector.authority === 'DRAWING_EQUIVALENT',
+      },
+      __source: 'PARSER_BYPASS',
+    });
+  }
+
+  return Array.from(optionMap.values());
+}
+
 interface DrawingExtractionResult {
   candidates: DrawingSignalCandidate[];
   description: string | null;
@@ -2138,6 +2199,34 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     });
   }
 
+  // T23.6.94: Build bypass lane independently of canonicalOptions path.
+  let bypassCanonicalComponentOptions: ComponentAuthorityOption[] = [];
+  let bypassCanonicalComponentOptionsSource: IngestionAnalysisResult['bypassCanonicalComponentOptionsSource'] = null;
+
+  if (normalizedBOM) {
+    bypassCanonicalComponentOptions = buildBypassCanonicalComponentOptions(normalizedBOM);
+
+    if (bypassCanonicalComponentOptions.length === 0) {
+      console.warn('[T23.6.94 BYPASS EMPTY — LAST RESORT RECOVERY]');
+      bypassCanonicalComponentOptionsSource = 'BYPASS_RECOVERY_EMPTY';
+    } else {
+      bypassCanonicalComponentOptionsSource = 'PARSER_BYPASS';
+    }
+
+    console.warn('[T23.6.94 BYPASS BUILD]', {
+      total: bypassCanonicalComponentOptions.length,
+      connectors: bypassCanonicalComponentOptions.filter(o => o.kind === 'CONNECTOR').length,
+      terminals: bypassCanonicalComponentOptions.filter(o => o.kind === 'TERMINAL').length,
+      unknown: bypassCanonicalComponentOptions.filter(o => o.kind === 'OTHER').length,
+      sample: bypassCanonicalComponentOptions.slice(0, 5),
+    });
+  }
+
+  console.warn('[T23.6.94 BYPASS ASSIGNED]', {
+    count: bypassCanonicalComponentOptions.length,
+    source: bypassCanonicalComponentOptionsSource,
+  });
+
   console.log('[T23.6.78 INGESTION OUTPUT]', {
     count: canonicalComponentOptions?.length,
     source: canonicalComponentOptionsSource,
@@ -2187,6 +2276,8 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     harnessDecision,
     canonicalComponentOptions,
     canonicalComponentOptionsSource,
+    bypassCanonicalComponentOptions: bypassCanonicalComponentOptions.length > 0 ? bypassCanonicalComponentOptions : null,
+    bypassCanonicalComponentOptionsSource,
     debugRuntime,
     analyzedAt: new Date().toISOString(),
   };
