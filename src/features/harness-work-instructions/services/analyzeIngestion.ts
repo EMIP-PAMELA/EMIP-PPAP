@@ -69,7 +69,7 @@ import type {
 } from '@/src/features/vault/types/ingestionReview';
 import { parseBOMText } from '@/src/features/documentEngine/core/bomParser';
 import { normalizeBOMData } from '@/src/features/documentEngine/core/bomNormalizer';
-import type { ConnectorAuthority, NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
+import type { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
 import type { ComponentAuthorityOption } from './componentAuthorityService';
 import { canonicalComponentKey } from './harnessTopologyService';
 
@@ -125,51 +125,10 @@ type DrawingSignalCandidate = {
 
 type ComponentOptionSignals = NonNullable<ComponentAuthorityOption['signals']>;
 
-const COMPONENT_KIND_PRIORITY: Record<ComponentAuthorityOption['kind'], number> = {
-  CONNECTOR: 0,
-  TERMINAL: 1,
-  OTHER: 2,
-};
-
-function mergeSignals(existing: ComponentOptionSignals | undefined, incoming: ComponentOptionSignals): ComponentOptionSignals {
-  if (!existing) return incoming;
-  return {
-    fromBOM: existing.fromBOM || incoming.fromBOM,
-    operationType: existing.operationType ?? incoming.operationType ?? null,
-    fromWireAssoc: existing.fromWireAssoc || incoming.fromWireAssoc,
-    fromDrawingTable: existing.fromDrawingTable || incoming.fromDrawingTable,
-    fromHeaderBinding: existing.fromHeaderBinding || incoming.fromHeaderBinding,
-  };
-}
-
 function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): ComponentAuthorityOption[] {
   if (!bom) return [];
 
   const operations = bom.operations ?? [];
-  const componentEntries = operations.flatMap(operation => (operation.components ?? []).map(component => ({
-    component,
-    operation,
-  })));
-
-  const connectorAuthorityIndex = new Map<string, Set<ConnectorAuthority>>();
-  const registerConnectorAuthority = (partNumber: string | null | undefined, authority: ConnectorAuthority | undefined) => {
-    if (!partNumber) return;
-    const trimmed = partNumber.trim();
-    if (!trimmed) return;
-    const canonicalId = canonicalComponentKey(trimmed) ?? trimmed.toUpperCase();
-    if (!canonicalId) return;
-    if (!connectorAuthorityIndex.has(canonicalId)) {
-      connectorAuthorityIndex.set(canonicalId, new Set<ConnectorAuthority>());
-    }
-    if (authority) {
-      connectorAuthorityIndex.get(canonicalId)!.add(authority);
-    }
-  };
-
-  for (const connector of bom.connectors ?? []) {
-    registerConnectorAuthority(connector.partNumber, connector.authority ?? 'UNKNOWN');
-  }
-
   const optionMap = new Map<string, ComponentAuthorityOption>();
 
   const resolvePartRef = (partNumber?: string | null): string | null => {
@@ -178,114 +137,67 @@ function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): Comp
     return null;
   };
 
-  const inferKind = (
-    operationType: string | null,
-    componentType: string | undefined,
-  ): ComponentAuthorityOption['kind'] => {
-    const op = operationType?.toUpperCase() ?? '';
-    if (op.includes('WIREASSY')) return 'CONNECTOR';
-    if (op.includes('CRIMP')) return 'TERMINAL';
+  const inferKindFromComponent = (componentType: string | undefined): ComponentAuthorityOption['kind'] => {
     if (componentType === 'connector') return 'CONNECTOR';
     if (componentType === 'terminal') return 'TERMINAL';
     return 'OTHER';
   };
 
-  const buildSignals = (
-    canonicalId: string,
-    operationType: string | null,
-    componentType: string | undefined,
-  ): ComponentOptionSignals => {
-    const authorities = connectorAuthorityIndex.get(canonicalId);
-    return {
-      fromBOM: true,
-      operationType,
-      fromWireAssoc: componentType === 'wire',
-      fromDrawingTable: Boolean(authorities && authorities.has('DRAWING_PRIMARY')),
-      fromHeaderBinding: Boolean(authorities && authorities.has('DRAWING_EQUIVALENT')),
-    };
+  const addOption = (option: ComponentAuthorityOption) => {
+    optionMap.set(option.canonicalId, option);
   };
 
-  const upsertOption = (option: ComponentAuthorityOption) => {
-    const existing = optionMap.get(option.canonicalId);
-    if (!existing) {
-      optionMap.set(option.canonicalId, option);
-      return;
+  for (const operation of operations) {
+    for (const component of operation.components ?? []) {
+      const partRef = resolvePartRef(component.normalizedPartNumber ?? component.partId);
+      if (!partRef) continue;
+      const canonicalId = canonicalComponentKey(partRef) ?? partRef.toUpperCase();
+      if (!canonicalId) continue;
+      addOption({
+        canonicalId,
+        displayName: partRef,
+        cavities: [],
+        kind: inferKindFromComponent(component.componentType),
+        signals: {
+          fromBOM: true,
+          operationType: operation.resourceId ?? operation.step ?? null,
+          fromWireAssoc: component.componentType === 'wire',
+          fromDrawingTable: false,
+          fromHeaderBinding: false,
+        },
+      });
     }
-    if (COMPONENT_KIND_PRIORITY[option.kind] < COMPONENT_KIND_PRIORITY[existing.kind]) {
-      existing.kind = option.kind;
-    }
-    if (!existing.displayName && option.displayName) {
-      existing.displayName = option.displayName;
-    }
-    existing.signals = mergeSignals(existing.signals, option.signals ?? {
-      fromBOM: true,
-      operationType: null,
-      fromWireAssoc: false,
-      fromDrawingTable: false,
-      fromHeaderBinding: false,
-    });
-  };
-
-  for (const entry of componentEntries) {
-    const partRef = resolvePartRef(entry.component.normalizedPartNumber ?? entry.component.partId);
-    if (!partRef) continue;
-    const canonicalId = canonicalComponentKey(partRef) ?? partRef.toUpperCase();
-    const operationType = entry.operation.resourceId ?? entry.operation.step ?? null;
-    const kind = inferKind(operationType, entry.component.componentType);
-    const optionSignals = buildSignals(canonicalId, operationType, entry.component.componentType);
-    upsertOption({
-      canonicalId,
-      displayName: partRef,
-      cavities: [],
-      kind,
-      signals: optionSignals,
-    });
   }
 
   for (const connector of bom.connectors ?? []) {
     const partRef = resolvePartRef(connector.partNumber);
     if (!partRef) continue;
     const canonicalId = canonicalComponentKey(partRef) ?? partRef.toUpperCase();
-    const optionSignals: ComponentOptionSignals = {
-      fromBOM: Boolean(connector.authority === 'BOM'),
-      operationType: null,
-      fromWireAssoc: false,
-      fromDrawingTable: connector.authority === 'DRAWING_PRIMARY',
-      fromHeaderBinding: connector.authority === 'DRAWING_EQUIVALENT',
-    };
-    upsertOption({
+    if (!canonicalId) continue;
+    addOption({
       canonicalId,
       displayName: partRef,
       cavities: [],
       kind: 'CONNECTOR',
-      signals: optionSignals,
+      signals: {
+        fromBOM: true,
+        operationType: null,
+        fromWireAssoc: false,
+        fromDrawingTable: connector.authority === 'DRAWING_PRIMARY',
+        fromHeaderBinding: connector.authority === 'DRAWING_EQUIVALENT',
+      },
     });
   }
 
-  const options = Array.from(optionMap.values()).sort((a, b) => {
-    const kindDiff = COMPONENT_KIND_PRIORITY[a.kind] - COMPONENT_KIND_PRIORITY[b.kind];
-    if (kindDiff !== 0) return kindDiff;
-    return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' });
+  const finalOptions = Array.from(optionMap.values());
+
+  console.log('[T23.6.81 FINAL OPTION SET]', {
+    total: finalOptions.length,
+    connectors: finalOptions.filter(option => option.kind === 'CONNECTOR').length,
+    partNumbers: finalOptions.map(option => option.canonicalId),
   });
 
-  const connectorCount = options.filter(option => option.kind === 'CONNECTOR').length;
-  if (connectorCount === 0) {
-    console.warn('[T23.6.75 NO CONNECTORS — FALLBACK TO ALL COMPONENTS]', {
-      total: options.length,
-    });
-  }
-
-  console.log('[T23.6.75 COMPONENT SIGNAL MAP]', options);
-
-  console.log('[T23.6.80 OPTION SET]', {
-    total: options.length,
-    connectors: options.filter(o => o.kind === 'CONNECTOR').length,
-    terminals: options.filter(o => o.kind === 'TERMINAL').length,
-    other: options.filter(o => o.kind === 'OTHER').length,
-    canonicalIds: options.map(o => o.canonicalId),
-  });
-
-  return options;
+  return finalOptions;
 }
 
 interface DrawingExtractionResult {

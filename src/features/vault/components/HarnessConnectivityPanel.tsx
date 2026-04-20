@@ -962,15 +962,14 @@ export default function HarnessConnectivityPanel({
   onGraphWireClick,
   onGraphMissingPinClick,
   onGraphBranchClick,
-  componentOptions,
+  componentOptions: incomingComponentOptions,
   componentOptionsSource,
 }: HarnessConnectivityPanelProps) {
   const model = useMemo(() => connectivity ?? harnessConnectivity ?? null, [connectivity, harnessConnectivity]);
 
-  const incomingOptions = useMemo<ComponentAuthorityOption[]>(
-    () => (Array.isArray(componentOptions) ? componentOptions : []),
-    [componentOptions],
-  );
+  const incomingOptions: ComponentAuthorityOption[] = Array.isArray(incomingComponentOptions)
+    ? incomingComponentOptions
+    : [];
 
   useEffect(() => {
     console.log('[T23.6.78 PANEL INPUT]', {
@@ -1031,52 +1030,57 @@ export default function HarnessConnectivityPanel({
   }, [hasCanonicalOptions, canonicalOptions.length, fallbackOptions.length, finalComponentOptions.length, componentOptionsSource, finalComponentOptionsSource]);
 
   useEffect(() => {
-    if (!Array.isArray(componentOptions)) {
+    if (!Array.isArray(incomingComponentOptions)) {
       console.warn('[T23.6.70 UI SOURCE ENFORCEMENT ERROR] componentOptions prop missing.', {
         source: componentOptionsSource ?? 'UNKNOWN',
       });
-    } else if (componentOptions.length === 0 && componentOptionsSource === 'SIMPLIFIED_BOM') {
+    } else if (incomingComponentOptions.length === 0 && componentOptionsSource === 'SIMPLIFIED_BOM') {
       console.warn('[T23.6.70 UI SOURCE ENFORCEMENT ERROR] canonical source declared but options empty.', {
         source: componentOptionsSource ?? 'UNKNOWN',
       });
     }
-  }, [componentOptions, componentOptionsSource]);
+  }, [incomingComponentOptions, componentOptionsSource]);
+
+  const componentOptions = finalComponentOptions ?? [];
+
+  console.log('[T23.6.83 RAW FINAL OPTIONS]', finalComponentOptions);
+  console.log('[T23.6.83 BOUND OPTIONS]', componentOptions);
 
   const componentOptionLookups = useMemo(
-    () => buildComponentOptionLookups(finalComponentOptions),
-    [finalComponentOptions],
+    () => buildComponentOptionLookups(componentOptions),
+    [componentOptions],
   );
 
-  const isCanonicalAvailable = Array.isArray(finalComponentOptions) && finalComponentOptions.length > 0;
+  const isCanonicalAvailable = componentOptions.length > 0;
   const isDegradedMode = !isCanonicalAvailable;
 
   useEffect(() => {
     if (!isDegradedMode) return;
     console.warn('[T23.6.71 DEGRADED MODE ACTIVE]', {
       source: finalComponentOptionsSource ?? 'UNKNOWN',
-      optionCount: finalComponentOptions.length,
+      optionCount: componentOptions.length,
     });
-  }, [isDegradedMode, finalComponentOptionsSource, finalComponentOptions.length]);
+  }, [isDegradedMode, finalComponentOptionsSource, componentOptions.length]);
 
   useEffect(() => {
     console.log('[T23.6.70 UI SOURCE ENFORCED]', {
       source: finalComponentOptionsSource ?? 'UNKNOWN',
-      canonicalCount: finalComponentOptions.length,
+      canonicalCount: componentOptions.length,
     });
-    if (finalComponentOptions.length === 0) {
+    if (componentOptions.length === 0) {
       console.warn('[T23.6.70 MISSING CANONICAL OPTIONS]', {
         source: finalComponentOptionsSource ?? 'UNKNOWN',
       });
     } else {
-      const connectorCount = finalComponentOptions.filter(opt => opt.kind === 'CONNECTOR').length;
-      const terminalCount = finalComponentOptions.filter(opt => opt.kind === 'TERMINAL').length;
+      const connectorCount = componentOptions.filter(opt => opt.kind === 'CONNECTOR').length;
+      const terminalCount = componentOptions.filter(opt => opt.kind === 'TERMINAL').length;
       console.log('[T23.6.65 RESOLUTION OPTIONS]', {
-        total: finalComponentOptions.length,
+        total: componentOptions.length,
         connectors: connectorCount,
         terminals: terminalCount,
       });
     }
-  }, [finalComponentOptionsSource, finalComponentOptions.length]);
+  }, [finalComponentOptionsSource, componentOptions.length]);
 
   const overrideMap = new Map((operatorOverrides ?? []).map(o => [o.wireId, o]));
   const [activeResolveWireId, setActiveResolveWireId] = useState<string | null>(null);
@@ -1300,7 +1304,7 @@ export default function HarnessConnectivityPanel({
                   onActivateResolve={openResolve}
                   onResolveFormClose={closeResolve}
                   wireIdentity={wireIdentities?.bySourceRowIndex.get(wire.sourceRowIndex) ?? wireIdentities?.byOriginalId.get(wire.wireId)}
-                  componentOptions={finalComponentOptions}
+                  componentOptions={componentOptions}
                   componentOptionLookups={componentOptionLookups}
                   isDegradedMode={isDegradedMode}
                   componentOptionsSource={finalComponentOptionsSource}
