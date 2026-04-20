@@ -67,8 +67,11 @@ import type {
   IngestionAnalysisResult,
   UnresolvedQuestion,
 } from '@/src/features/vault/types/ingestionReview';
-import { getSimplifiedBOM } from '@/src/core/projections/projectionService';
+import { parseBOMText } from '@/src/features/documentEngine/core/bomParser';
+import { normalizeBOMData } from '@/src/features/documentEngine/core/bomNormalizer';
+import type { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
 import type { ComponentAuthorityOption } from './componentAuthorityService';
+import { canonicalComponentKey } from './harnessTopologyService';
 
 // ---------------------------------------------------------------------------
 // Internal helpers (duplicated from unifiedIngestionService — see TODO above)
@@ -119,6 +122,56 @@ type DrawingSignalCandidate = {
   confidence: number;
   regionLabel: FieldSignalCandidate['regionLabel'];
 };
+
+function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): ComponentAuthorityOption[] {
+  if (!bom) return [];
+
+  const map = new Map<string, ComponentAuthorityOption>();
+
+  const addOption = (rawPart: string | null | undefined, kind: ComponentAuthorityOption['kind']) => {
+    if (!rawPart) return;
+    const trimmed = rawPart.trim();
+    if (!trimmed) return;
+    const canonicalId = canonicalComponentKey(trimmed) ?? trimmed.toUpperCase();
+    if (map.has(canonicalId)) return;
+    map.set(canonicalId, {
+      canonicalId,
+      displayName: trimmed,
+      cavities: [],
+      kind,
+    });
+  };
+
+  const components = (bom.operations ?? []).flatMap(operation => operation.components ?? []);
+  const connectorComponents = components.filter(component => component.componentType === 'connector');
+  const terminalComponents = components.filter(component => component.componentType === 'terminal');
+
+  const resolvePartRef = (component: typeof components[number]) => {
+    const normalized = typeof component.normalizedPartNumber === 'string' ? component.normalizedPartNumber.trim() : '';
+    if (normalized) return normalized;
+    return component.partId;
+  };
+
+  for (const connector of connectorComponents) {
+    addOption(resolvePartRef(connector), 'CONNECTOR');
+  }
+
+  for (const terminal of terminalComponents) {
+    addOption(resolvePartRef(terminal), 'TERMINAL');
+  }
+
+  console.log('[T23.6.71D COMPONENT SOURCE]', {
+    totalComponents: components.length,
+    connectorsFound: connectorComponents.length,
+    terminalsFound: terminalComponents.length,
+  });
+
+  if (connectorComponents.length === 0) {
+    console.warn('[T23.6.71D WARNING] No connectors found in normalized components');
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
+}
 
 interface DrawingExtractionResult {
   candidates: DrawingSignalCandidate[];
@@ -662,6 +715,22 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     hasStructured: false,
     hasConnectivity: false,
   });
+
+  let normalizedBOM: NormalizedBOM | null = null;
+  if (pipelineMode === 'BOM' && normalizedText) {
+    try {
+      const rawBOM = parseBOMText(normalizedText);
+      normalizedBOM = normalizeBOMData(rawBOM);
+      console.log('[T23.6.71C NORMALIZED BOM READY]', {
+        componentCount: normalizedBOM.summary?.totalComponents ?? 0,
+        connectorCount: normalizedBOM.connectors?.length ?? 0,
+      });
+    } catch (err) {
+      console.warn('[T23.6.71C NORMALIZED BOM ERROR]', {
+        message: err instanceof Error ? err.message : err,
+      });
+    }
+  }
 
   const parserInventory = {
     coreBomParser: false,
@@ -1986,37 +2055,27 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     hasConnectivity,
   });
 
-  const partNumberForCanonicalOptions = partNumber ?? partWinner?.value ?? null;
   let canonicalComponentOptions: ComponentAuthorityOption[] | null = null;
   let canonicalComponentOptionsSource: IngestionAnalysisResult['canonicalComponentOptionsSource'] | null = null;
 
-  if (partNumberForCanonicalOptions) {
-    try {
-      const projection = await getSimplifiedBOM(partNumberForCanonicalOptions);
-      const optionPayload = projection?.componentOptions ?? [];
-      if (optionPayload.length > 0) {
-        canonicalComponentOptions = optionPayload.map(option => ({
-          canonicalId: option.canonicalId,
-          displayName: option.displayName,
-          cavities: option.cavities ?? [],
-          kind: option.kind === 'TERMINAL' ? 'TERMINAL' : 'CONNECTOR',
-        }));
-        canonicalComponentOptionsSource = 'SIMPLIFIED_BOM';
-      } else {
-        canonicalComponentOptionsSource = 'EFFECTIVE_CONNECTIVITY_FALLBACK';
-      }
-      console.log('[T23.6.71A CANONICAL INJECTION]', {
-        partNumber: partNumberForCanonicalOptions,
-        total: optionPayload.length,
-        connectors: optionPayload.filter(opt => opt.kind === 'CONNECTOR').length,
-        terminals: optionPayload.filter(opt => opt.kind === 'TERMINAL').length,
-        source: canonicalComponentOptionsSource ?? 'UNAVAILABLE',
+  if (normalizedBOM) {
+    const builtOptions = buildComponentOptionsFromNormalizedBOM(normalizedBOM);
+    if (builtOptions.length > 0) {
+      canonicalComponentOptions = builtOptions;
+      canonicalComponentOptionsSource = 'NORMALIZED_BOM_DIRECT';
+      const connectorCount = builtOptions.filter(opt => opt.kind === 'CONNECTOR').length;
+      const terminalCount = builtOptions.filter(opt => opt.kind === 'TERMINAL').length;
+      console.log('[T23.6.71C DIRECT BOM OPTIONS]', {
+        connectors: connectorCount,
+        terminals: terminalCount,
+        total: builtOptions.length,
       });
-    } catch (err) {
-      canonicalComponentOptionsSource = 'EFFECTIVE_CONNECTIVITY_FALLBACK';
-      console.warn('[T23.6.71A CANONICAL INJECTION ERROR]', {
-        partNumber: partNumberForCanonicalOptions,
-        error: err instanceof Error ? err.message : err,
+    } else {
+      console.warn('[T23.6.71C DIRECT BOM OPTIONS]', {
+        connectors: 0,
+        terminals: 0,
+        total: 0,
+        note: 'Normalized BOM present but yielded zero connector/terminal options',
       });
     }
   }
