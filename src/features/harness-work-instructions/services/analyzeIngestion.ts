@@ -2095,24 +2095,47 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
       count: builtOptions?.length,
       sample: builtOptions?.slice(0, 5),
     });
-    if (builtOptions.length > 0) {
-      canonicalComponentOptions = builtOptions;
-      canonicalComponentOptionsSource = 'SIMPLIFIED_BOM';
-      const connectorCount = builtOptions.filter(opt => opt.kind === 'CONNECTOR').length;
-      const terminalCount = builtOptions.filter(opt => opt.kind === 'TERMINAL').length;
-      console.log('[T23.6.71C DIRECT BOM OPTIONS]', {
-        connectors: connectorCount,
-        terminals: terminalCount,
-        total: builtOptions.length,
-      });
-    } else {
-      console.warn('[T23.6.71C DIRECT BOM OPTIONS]', {
-        connectors: 0,
-        terminals: 0,
-        total: 0,
-        note: 'Normalized BOM present but yielded zero connector/terminal options',
-      });
+    let resolvedOptions: ComponentAuthorityOption[] = builtOptions;
+
+    if (!resolvedOptions || resolvedOptions.length === 0) {
+      console.warn('[T23.6.92 EMPTY CANONICAL — FORCING RAW COMPONENT FALLBACK]');
+      const rawComponents = (normalizedBOM.operations ?? []).flatMap(op => op.components ?? []);
+      const fromComponents: ComponentAuthorityOption[] = rawComponents
+        .filter(c => c.partId || c.normalizedPartNumber)
+        .map(c => ({
+          canonicalId: (c.normalizedPartNumber ?? c.partId ?? '').toUpperCase(),
+          displayName: c.normalizedPartNumber ?? c.partId ?? '',
+          cavities: [],
+          kind: (c.componentType === 'connector' ? 'CONNECTOR' : c.componentType === 'terminal' ? 'TERMINAL' : 'OTHER') as ComponentAuthorityOption['kind'],
+          __source: 'FORCED_RECOVERY' as string,
+        }));
+      const fromConnectors: ComponentAuthorityOption[] = (normalizedBOM.connectors ?? [])
+        .filter(c => c.partNumber)
+        .map(c => ({
+          canonicalId: (c.partNumber ?? '').toUpperCase(),
+          displayName: c.partNumber ?? '',
+          cavities: [],
+          kind: 'CONNECTOR' as ComponentAuthorityOption['kind'],
+          __source: 'FORCED_RECOVERY' as string,
+        }));
+      resolvedOptions = [...fromComponents, ...fromConnectors];
     }
+
+    canonicalComponentOptions = resolvedOptions;
+    canonicalComponentOptionsSource = 'SIMPLIFIED_BOM';
+
+    const connectorCount = resolvedOptions.filter(opt => opt.kind === 'CONNECTOR').length;
+    const terminalCount = resolvedOptions.filter(opt => opt.kind === 'TERMINAL').length;
+    console.log('[T23.6.71C DIRECT BOM OPTIONS]', {
+      connectors: connectorCount,
+      terminals: terminalCount,
+      total: resolvedOptions.length,
+    });
+
+    console.log('[T23.6.92 FINAL CANONICAL OPTIONS]', {
+      count: resolvedOptions.length,
+      sample: resolvedOptions.slice(0, 5),
+    });
   }
 
   console.log('[T23.6.78 INGESTION OUTPUT]', {
