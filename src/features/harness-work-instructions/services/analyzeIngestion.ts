@@ -214,12 +214,14 @@ function buildRawReconciliationOptions({
   wireTableRows,
   diagramExtraction,
   normalizedConnectors,
+  globalPNs,
 }: {
   normalizedBOM: NormalizedBOM | null;
   harnessConnectivity: HarnessConnectivityResult | null;
   wireTableRows: WireRow[] | null;
   diagramExtraction: DiagramExtractionResult | null;
   normalizedConnectors: NormalizedConnector[] | null;
+  globalPNs: string[] | null;
 }): ComponentAuthorityOption[] {
   const optionMap = new Map<string, ComponentAuthorityOption>();
 
@@ -352,13 +354,30 @@ function buildRawReconciliationOptions({
     snap('G_aci_table', before);
   }
 
+  // Source J / T23.7.9 — Global PN sweep (zero-loss, no type/confidence gating).
+  // Every 6-8 digit numeric found anywhere in the full OCR text is included.
+  // Dedup by canonicalId only.
+  {
+    const before = countBefore();
+    for (const pn of (globalPNs ?? [])) {
+      if (pn) addOption(pn, pn, 'OTHER');
+    }
+    snap('J_global_sweep', before);
+  }
+
   const result = Array.from(optionMap.values());
+
+  console.log('[T23.7.9 GLOBAL PN SWEEP]', {
+    total:  (globalPNs ?? []).length,
+    sample: (globalPNs ?? []).slice(0, 10),
+  });
 
   console.log('[T23.7.4 FULL COMPONENT SET]', {
     total:                   result.length,
     fromDiagram:             (diagramExtraction?.components.length ?? 0),
     fromTopology:            (harnessConnectivity?.wires.length ?? 0) * 2 + (wireTableRows?.length ?? 0),
     fromNormalizedConnectors: connectorComponents.length,
+    fromGlobalSweep:         sourceCounts['J_global_sweep'] ?? 0,
     diagramIsNull:           diagramExtraction === null,
     bySource:                sourceCounts,
   });
@@ -2442,7 +2461,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   const derivedNormalizedConnectors: NormalizedConnector[] = [
     ...(normalizedBOM?.connectors ?? []),
     ...(diagramExtraction?.components ?? [])
-      .filter(c => c.type === 'CONNECTOR' && Boolean(c.normalizedPartNumber))
+      .filter(c => Boolean(c.normalizedPartNumber))
       .map(c => ({
         partNumber:  c.normalizedPartNumber!,
         sourceText:  c.rawText ?? c.label ?? '',
@@ -2457,6 +2476,15 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     total:       derivedNormalizedConnectors.length,
   });
 
+  // T23.7.9: Global PN sweep — every 6-8 digit numeric visible anywhere in the full OCR text.
+  // No type gating, no confidence gating. Dedup by exact match only.
+  const globalPNs: string[] = [];
+  if (normalizedText) {
+    const sweepMatches = normalizedText.match(/\b\d{6,8}\b/g) ?? [];
+    const globalPNSet = new Set(sweepMatches);
+    globalPNSet.forEach(pn => globalPNs.push(pn));
+  }
+
   // T23.6.96 / T23.7: Build hard raw extraction bypass — richest possible option set for reconciliation UI.
   const rawReconOptions = buildRawReconciliationOptions({
     normalizedBOM,
@@ -2464,6 +2492,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     wireTableRows: wireTableResult?.rows ?? null,
     diagramExtraction,
     normalizedConnectors: derivedNormalizedConnectors,
+    globalPNs,
   });
 
   console.warn('[T23.6.96 RAW RECON BUILD]', {
