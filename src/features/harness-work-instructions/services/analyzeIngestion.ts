@@ -237,6 +237,19 @@ function buildRawReconciliationOptions({
     }
   };
 
+  // Source I / T23.7.6 — Normalized connectors (FIRST PRIORITY).
+  // For BOM pipeline: from normalizedBOM.connectors via call site.
+  // For DRAWING pipeline: derived from diagramExtraction CONNECTOR nodes at call site.
+  // Must run BEFORE all other sources so connector housing PNs are never silently dropped.
+  const connectorComponents = (normalizedConnectors ?? []).filter(c => Boolean(c?.partNumber?.trim()));
+  for (const conn of connectorComponents) {
+    addOption(conn.partNumber.trim(), conn.partNumber.trim(), 'CONNECTOR');
+  }
+  console.log('[T23.7.6 CONNECTOR INJECTION]', {
+    count:  connectorComponents.length,
+    sample: connectorComponents.slice(0, 5).map(c => c.partNumber),
+  });
+
   // T23.7.4: Track per-source counts for diagnostic log.
   const countBefore = () => optionMap.size;
   const sourceCounts: Record<string, number> = {};
@@ -339,29 +352,15 @@ function buildRawReconciliationOptions({
     snap('G_aci_table', before);
   }
 
-  // Source H: Normalized connector extraction (T23.6.60B / BOM connector normalizer)
-  // NormalizedConnector.partNumber is the canonical connector housing PN (e.g. Phoenix 1700443).
-  {
-    const before = countBefore();
-    if (normalizedConnectors && Array.isArray(normalizedConnectors)) {
-      for (const conn of normalizedConnectors) {
-        if (!conn) continue;
-        const id = conn.partNumber?.trim();
-        if (!id) continue;
-        addOption(id, id, 'CONNECTOR');
-      }
-    }
-    snap('H_normalized_connectors', before);
-  }
-
   const result = Array.from(optionMap.values());
 
   console.log('[T23.7.4 FULL COMPONENT SET]', {
-    total:          result.length,
-    fromDiagram:    (diagramExtraction?.components.length ?? 0),
-    fromTopology:   (harnessConnectivity?.wires.length ?? 0) * 2 + (wireTableRows?.length ?? 0),
-    diagramIsNull:  diagramExtraction === null,
-    bySource:       sourceCounts,
+    total:                   result.length,
+    fromDiagram:             (diagramExtraction?.components.length ?? 0),
+    fromTopology:            (harnessConnectivity?.wires.length ?? 0) * 2 + (wireTableRows?.length ?? 0),
+    fromNormalizedConnectors: connectorComponents.length,
+    diagramIsNull:           diagramExtraction === null,
+    bySource:                sourceCounts,
   });
 
   console.log('[T23.7 SOURCE TRACE]', {
@@ -2436,14 +2435,35 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     source: bypassCanonicalComponentOptionsSource,
   });
 
+  // T23.7.6: Derive normalizedConnectors for ALL pipeline modes.
+  // BOM mode: normalizedBOM.connectors (already produced by bomNormalizer).
+  // DRAWING mode: normalizedBOM is null — derive from diagramExtraction CONNECTOR nodes
+  // promoted by T23.7.2, so Phoenix 1700443 and equivalents are always included.
+  const derivedNormalizedConnectors: NormalizedConnector[] = [
+    ...(normalizedBOM?.connectors ?? []),
+    ...(diagramExtraction?.components ?? [])
+      .filter(c => c.type === 'CONNECTOR' && Boolean(c.normalizedPartNumber))
+      .map(c => ({
+        partNumber:  c.normalizedPartNumber!,
+        sourceText:  c.rawText ?? c.label ?? '',
+        authority:   'DRAWING_PRIMARY' as NormalizedConnector['authority'],
+        confidence:  c.confidence ?? 0.75,
+      })),
+  ];
+
+  console.log('[T23.7.6 DERIVED CONNECTORS]', {
+    fromBOM:     normalizedBOM?.connectors?.length ?? 0,
+    fromDiagram: (diagramExtraction?.components ?? []).filter(c => c.type === 'CONNECTOR').length,
+    total:       derivedNormalizedConnectors.length,
+  });
+
   // T23.6.96 / T23.7: Build hard raw extraction bypass — richest possible option set for reconciliation UI.
-  // T23.7 expansion: includes diagram components, ACI table, and normalized connector extraction (Source H).
   const rawReconOptions = buildRawReconciliationOptions({
     normalizedBOM,
     harnessConnectivity,
     wireTableRows: wireTableResult?.rows ?? null,
     diagramExtraction,
-    normalizedConnectors: normalizedBOM?.connectors ?? null,
+    normalizedConnectors: derivedNormalizedConnectors,
   });
 
   console.warn('[T23.6.96 RAW RECON BUILD]', {
