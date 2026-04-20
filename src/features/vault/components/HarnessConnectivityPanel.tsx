@@ -1047,7 +1047,7 @@ export default function HarnessConnectivityPanel({
     [finalComponentOptions],
   );
 
-  const isCanonicalAvailable = finalComponentOptionsSource === 'SIMPLIFIED_BOM' && finalComponentOptions.length > 0;
+  const isCanonicalAvailable = Array.isArray(finalComponentOptions) && finalComponentOptions.length > 0;
   const isDegradedMode = !isCanonicalAvailable;
 
   useEffect(() => {
