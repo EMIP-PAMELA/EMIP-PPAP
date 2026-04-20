@@ -2168,7 +2168,7 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     const builtOptions = buildComponentOptionsFromNormalizedBOM(normalizedBOM);
     if (builtOptions.length > 0) {
       canonicalComponentOptions = builtOptions;
-      canonicalComponentOptionsSource = 'NORMALIZED_BOM_DIRECT';
+      canonicalComponentOptionsSource = 'SIMPLIFIED_BOM';
       const connectorCount = builtOptions.filter(opt => opt.kind === 'CONNECTOR').length;
       const terminalCount = builtOptions.filter(opt => opt.kind === 'TERMINAL').length;
       console.log('[T23.6.71C DIRECT BOM OPTIONS]', {
