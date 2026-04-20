@@ -197,7 +197,11 @@ function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): Comp
     partNumbers: finalOptions.map(option => option.canonicalId),
   });
 
-  return finalOptions;
+  const SOURCE_TAG = 'PARSER_ORIGINAL';
+  const taggedOptions = finalOptions.map(o => ({ ...o, __source: SOURCE_TAG }));
+  console.log('[T23.6.87 SOURCE CREATED]', taggedOptions.length);
+
+  return taggedOptions;
 }
 
 interface DrawingExtractionResult {

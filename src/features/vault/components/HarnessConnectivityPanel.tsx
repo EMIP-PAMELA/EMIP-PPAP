@@ -924,6 +924,19 @@ function TopologyIssuesSection({ topology }: { topology: HarnessTopologyResult }
 }
 
 // ---------------------------------------------------------------------------
+// T23.6.87 Forensic instrumentation utilities
+// ---------------------------------------------------------------------------
+
+function traceWithSource(label: string, arr: ComponentAuthorityOption[] | null | undefined): void {
+  const sources = new Set((arr ?? []).map(x => x.__source ?? 'UNKNOWN'));
+  console.log(`[T23.6.87 TRACE] ${label}`, {
+    length: arr?.length ?? 0,
+    sources: Array.from(sources),
+    sample: arr?.slice(0, 3),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -971,6 +984,8 @@ export default function HarnessConnectivityPanel({
     ? incomingComponentOptions
     : [];
 
+  traceWithSource('A — incomingOptions (prop boundary)', incomingOptions);
+
   useEffect(() => {
     console.log('[T23.6.78 PANEL INPUT]', {
       count: incomingOptions?.length,
@@ -983,17 +998,41 @@ export default function HarnessConnectivityPanel({
     ? incomingOptions
     : [];
 
+  traceWithSource('B — canonicalOptions (after SIMPLIFIED_BOM gate)', canonicalOptions);
+  if (incomingOptions.length > 0 && canonicalOptions.length === 0) {
+    console.error('[T23.6.87 SOURCE CORRUPTION DETECTED] canonicalOptions gate zeroed incoming options', {
+      incomingCount: incomingOptions.length,
+      componentOptionsSource: componentOptionsSource ?? 'UNDEFINED',
+      gate: "componentOptionsSource === 'SIMPLIFIED_BOM'",
+    });
+  }
+
   const fallbackOptions = useMemo<ComponentAuthorityOption[]>(() => {
     if (canonicalOptions.length > 0) return [];
     if (providedFallbackOptions.length > 0) return providedFallbackOptions;
     if (!model) return [];
-    return buildComponentAuthorityOptions(model);
+    console.warn('[T23.6.87 CALL] buildComponentAuthorityOptions — COMPETING PIPELINE INVOKED');
+    console.trace('[T23.6.87 CALL STACK]');
+    const fallbackResult = buildComponentAuthorityOptions(model);
+    traceWithSource('C — fallbackOptions from buildComponentAuthorityOptions (topology)', fallbackResult);
+    return fallbackResult;
   }, [canonicalOptions.length, providedFallbackOptions, model]);
 
   const hasCanonicalOptions = canonicalOptions.length > 0;
   const hasFallbackOptions = fallbackOptions.length > 0;
 
   const finalComponentOptions = hasCanonicalOptions ? canonicalOptions : fallbackOptions;
+
+  traceWithSource('D — finalComponentOptions (canonical vs fallback decision)', finalComponentOptions);
+  if (finalComponentOptions.length > 0 && !finalComponentOptions.every(x => x.__source === 'PARSER_ORIGINAL')) {
+    console.error('[T23.6.87 SOURCE CORRUPTION DETECTED] finalComponentOptions does not carry PARSER_ORIGINAL', {
+      hasCanonicalOptions,
+      incomingCount: incomingOptions.length,
+      canonicalCount: canonicalOptions.length,
+      fallbackCount: fallbackOptions.length,
+      sources: finalComponentOptions.map(x => x.__source ?? 'UNKNOWN'),
+    });
+  }
   const fallbackSource = !hasCanonicalOptions
     ? (componentOptionsSource && componentOptionsSource !== 'SIMPLIFIED_BOM'
         ? componentOptionsSource
@@ -1042,6 +1081,20 @@ export default function HarnessConnectivityPanel({
   }, [incomingComponentOptions, componentOptionsSource]);
 
   const componentOptions = finalComponentOptions ?? [];
+
+  traceWithSource('E — componentOptions (bound to dropdown)', componentOptions);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const hasParserData = componentOptions.some(x => x.__source === 'PARSER_ORIGINAL');
+    if (!hasParserData) {
+      console.error('[T23.6.87 FULL SOURCE REPLACEMENT]', {
+        componentOptions,
+        source: componentOptionsSource ?? 'UNKNOWN',
+        count: componentOptions.length,
+      });
+    }
+  }, [componentOptions]);
 
   console.log('[T23.6.83 RAW FINAL OPTIONS]', finalComponentOptions);
   console.log('[T23.6.83 BOUND OPTIONS]', componentOptions);

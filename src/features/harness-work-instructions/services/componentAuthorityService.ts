@@ -17,6 +17,8 @@ export interface ComponentAuthorityOption {
   cavities: string[];
   kind: ComponentAuthorityKind;
   signals?: ComponentAuthoritySignals;
+  /** T23.6.87 forensic tag — tracks pipeline origin through all transformations. */
+  __source?: string;
 }
 
 interface ComponentAccumulator {

@@ -31,6 +31,7 @@ import type { ConnectorAuthority, NormalizedComponent, NormalizedConnector } fro
 
 const CONNECTOR_AUTHORITY_PRIORITY: Record<ConnectorAuthority, number> = {
   BOM: 100,
+  BOM_HEADER: 95,
   DRAWING_PRIMARY: 90,
   DRAWING_EQUIVALENT: 80,
   TABLE_HEADER: 70,

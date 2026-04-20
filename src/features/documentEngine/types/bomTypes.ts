@@ -57,6 +57,7 @@ export type ComponentType = 'wire' | 'terminal' | 'hardware' | 'connector' | 'un
 
 export type ConnectorAuthority =
   | 'BOM'
+  | 'BOM_HEADER'
   | 'DRAWING_PRIMARY'
   | 'DRAWING_EQUIVALENT'
   | 'TABLE_HEADER'

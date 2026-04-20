@@ -47,12 +47,14 @@ const CONNECTOR_KEYWORDS = [
 
 const TABLE_HEADER_HINTS = ['CONNECTOR', 'HOUSING', 'ASSY', 'OR EQUIVALENT'];
 const COLUMN_HEADER_BRAND_HINTS = ['PHOENIX', 'OR EQUIVALENT'];
+const HEADER_BRAND_HINTS = ['PHOENIX', 'MOLEX', 'AMP', 'TYCO', 'JST', 'TE ', 'DEUTSCH', 'APTIV', 'OR EQUIVALENT'];
 const PIN_HEADER_PATTERN = /\bPIN\b/i;
 const TABLE_CONTEXT_HINTS = ['PHOENIX', 'CONNECTOR', 'CONN', 'PLUG'];
 const DIAGRAM_HINTS = ['CALLOUT', 'CALLOUTS', 'DIAGRAM', 'FIG', 'VIEW', 'ZONE'];
 const NOTES_HINTS = ['NOTE', 'NOTES', 'ALT', 'ALTERNATE', 'SEE DRAWING', 'SEE DWG'];
 const CONNECTOR_AUTHORITY_PRIORITY: Record<ConnectorAuthority, number> = {
   BOM: 100,
+  BOM_HEADER: 95,
   DRAWING_PRIMARY: 90,
   DRAWING_EQUIVALENT: 80,
   TABLE_HEADER: 70,
@@ -133,6 +135,38 @@ function isMetadataLine(line: string): boolean {
   ];
   
   return metadataPatterns.some(pattern => pattern.test(trimmed));
+}
+
+function collectHeaderBrandConnectors(rawData: RawBOMData): NormalizedConnector[] {
+  const connectors: NormalizedConnector[] = [];
+  for (const op of rawData.operations) {
+    const headerLines = getTableHeaderLines(op);
+    if (!headerLines.length) continue;
+    for (const line of headerLines) {
+      const upper = line.toUpperCase();
+      const hasBrand = HEADER_BRAND_HINTS.some(hint => upper.includes(hint));
+      const matchesConnectorHeader = TABLE_HEADER_HINTS.some(hint => upper.includes(hint));
+      if (!hasBrand && !matchesConnectorHeader) continue;
+      const tokens = detectPartNumbers(upper);
+      tokens.forEach(partNumber => {
+        const normalized = normalizeConnectorPN(partNumber);
+        if (!normalized || normalized === 'UNKNOWN') return;
+        connectors.push({
+          partNumber: normalized,
+          sourceText: line.trim(),
+          authority: 'BOM_HEADER',
+          confidence: 0.92,
+        });
+      });
+    }
+  }
+
+  console.log('[T23.6.84 HEADER CONNECTORS]', {
+    count: connectors.length,
+    partNumbers: connectors.map(connector => connector.partNumber),
+  });
+
+  return connectors;
 }
 
 function addConnectors(target: NormalizedConnector[], additions: NormalizedConnector[]): void {
@@ -862,6 +896,7 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
 
   addConnectors(connectorCandidates, collectRowConnectors(flatComponents));
   addConnectors(connectorCandidates, collectTableHeaderConnectors(rawData));
+  addConnectors(connectorCandidates, collectHeaderBrandConnectors(rawData));
   addConnectors(connectorCandidates, collectHeaderColumnBindingConnectors(rawData));
   addConnectors(connectorCandidates, collectTableBodyConnectors(rawData));
   addConnectors(connectorCandidates, collectDiagramCalloutConnectors(rawData));
