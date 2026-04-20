@@ -3,11 +3,20 @@ import { canonicalComponentKey } from './harnessTopologyService';
 
 export type ComponentAuthorityKind = 'CONNECTOR' | 'TERMINAL' | 'OTHER';
 
+export interface ComponentAuthoritySignals {
+  fromBOM: boolean;
+  operationType: string | null;
+  fromWireAssoc: boolean;
+  fromDrawingTable: boolean;
+  fromHeaderBinding: boolean;
+}
+
 export interface ComponentAuthorityOption {
   canonicalId: string;
   displayName: string;
   cavities: string[];
   kind: ComponentAuthorityKind;
+  signals?: ComponentAuthoritySignals;
 }
 
 interface ComponentAccumulator {
