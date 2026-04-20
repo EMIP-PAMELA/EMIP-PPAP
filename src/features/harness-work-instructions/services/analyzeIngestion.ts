@@ -133,6 +133,12 @@ function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): Comp
     const trimmed = rawPart.trim();
     if (!trimmed) return;
     const canonicalId = canonicalComponentKey(trimmed) ?? trimmed.toUpperCase();
+    console.log('[T23.6.71F CANONICAL KEY]', {
+      rawPart,
+      trimmed,
+      canonicalId,
+      kind,
+    });
     if (map.has(canonicalId)) return;
     map.set(canonicalId, {
       canonicalId,
@@ -143,6 +149,16 @@ function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): Comp
   };
 
   const components = (bom.operations ?? []).flatMap(operation => operation.components ?? []);
+  console.log('[T23.6.71F RAW NORMALIZED COMPONENTS]', components.map(component => ({
+    partId: component.partId,
+    normalizedPartNumber: component.normalizedPartNumber ?? null,
+    componentType: component.componentType,
+    description: component.description ?? null,
+    classificationSignals: component.classificationSignals ?? [],
+    confidence: component.confidence ?? null,
+  })));
+  console.log('[T23.6.71F PRE-FILTER]', components.length);
+
   console.log('[T23.6.71E RAW COMPONENTS]', components.map(component => ({
     raw: component,
     partNumber: component.normalizedPartNumber ?? component.partId ?? null,
@@ -150,7 +166,19 @@ function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): Comp
     description: component.description ?? null,
   })));
 
-  const connectorComponents = components.filter(component => component.componentType === 'connector');
+  const connectorCandidates = components.map(component => {
+    const isConnector = component.componentType === 'connector';
+    console.log('[T23.6.71F FILTER CHECK]', {
+      partId: component.partId,
+      normalizedPartNumber: component.normalizedPartNumber ?? null,
+      componentType: component.componentType,
+      isConnector,
+    });
+    return { component, isConnector };
+  });
+
+  const connectorComponents = connectorCandidates.filter(candidate => candidate.isConnector).map(candidate => candidate.component);
+  console.log('[T23.6.71F CONNECTOR PASS]', connectorComponents.map(connector => connector.partId));
   console.log('[T23.6.71E CONNECTOR FILTER RESULT]', {
     total: components.length,
     connectorsFound: connectorComponents.length,
@@ -189,7 +217,9 @@ function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): Comp
     console.warn('[T23.6.71D WARNING] No connectors found in normalized components');
   }
 
-  return Array.from(map.values()).sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
+  const options = Array.from(map.values()).sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
+  console.log('[T23.6.71F FINAL OPTIONS]', options);
+  return options;
 }
 
 interface DrawingExtractionResult {
