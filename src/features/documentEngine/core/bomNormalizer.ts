@@ -46,6 +46,8 @@ const CONNECTOR_KEYWORDS = [
 ];
 
 const TABLE_HEADER_HINTS = ['CONNECTOR', 'HOUSING', 'ASSY', 'OR EQUIVALENT'];
+const COLUMN_HEADER_BRAND_HINTS = ['PHOENIX', 'OR EQUIVALENT'];
+const PIN_HEADER_PATTERN = /\bPIN\b/i;
 const TABLE_CONTEXT_HINTS = ['PHOENIX', 'CONNECTOR', 'CONN', 'PLUG'];
 const DIAGRAM_HINTS = ['CALLOUT', 'CALLOUTS', 'DIAGRAM', 'FIG', 'VIEW', 'ZONE'];
 const NOTES_HINTS = ['NOTE', 'NOTES', 'ALT', 'ALTERNATE', 'SEE DRAWING', 'SEE DWG'];
@@ -182,6 +184,107 @@ function collectTableHeaderConnectors(rawData: RawBOMData): NormalizedConnector[
     }
   }
   return headerConnectors;
+}
+
+type ColumnConnectorBinding = {
+  connectorPN: string;
+  sourceText: string;
+};
+
+function splitTableColumns(line: string): string[] {
+  if (!line) return [];
+  return line
+    .split(/\s{2,}|\t+/)
+    .map(cell => cell.trim());
+}
+
+function buildColumnConnectorMapFromHeaders(headerLines: string[]): Map<number, ColumnConnectorBinding> {
+  const map = new Map<number, ColumnConnectorBinding>();
+  headerLines.forEach(line => {
+    const cells = splitTableColumns(line);
+    cells.forEach((cell, index) => {
+      if (!cell) return;
+      const upper = cell.toUpperCase();
+      const hasBrandHint = COLUMN_HEADER_BRAND_HINTS.some(hint => upper.includes(hint));
+      const candidates = detectPartNumbers(upper).filter(candidate => isConnectorPartNumber(candidate));
+      if (candidates.length === 0 && !hasBrandHint) return;
+      const connectorPN = normalizeConnectorPN(candidates[0] ?? '');
+      if (!connectorPN || connectorPN === 'UNKNOWN') return;
+      if (map.has(index)) return;
+      map.set(index, {
+        connectorPN,
+        sourceText: cell.trim(),
+      });
+    });
+  });
+  return map;
+}
+
+function extractOperationBodyLines(operation: RawOperation): string[] {
+  const bodyLines: string[] = [];
+  let encounteredComponent = false;
+  for (const line of operation.rawLines) {
+    const trimmed = line.trim();
+    if (!encounteredComponent) {
+      if (!trimmed) continue;
+      if (isComponentLine(line)) {
+        encounteredComponent = true;
+      } else {
+        continue;
+      }
+    }
+    if (!trimmed) continue;
+    bodyLines.push(line);
+  }
+  return bodyLines;
+}
+
+function collectHeaderColumnBindingConnectors(rawData: RawBOMData): NormalizedConnector[] {
+  const connectors: NormalizedConnector[] = [];
+  for (const op of rawData.operations) {
+    const headerLines = getTableHeaderLines(op);
+    if (!headerLines.length) continue;
+    if (!headerLines.some(line => PIN_HEADER_PATTERN.test(line))) continue;
+
+    const columnConnectorMap = buildColumnConnectorMapFromHeaders(headerLines);
+    if (columnConnectorMap.size === 0) continue;
+
+    const bodyLines = extractOperationBodyLines(op);
+    if (!bodyLines.length) continue;
+
+    let appliedRows = 0;
+    for (const line of bodyLines) {
+      const columns = splitTableColumns(line);
+      if (!columns.length) continue;
+      let rowApplied = false;
+      for (const [columnIndex, binding] of columnConnectorMap.entries()) {
+        if (columnIndex >= columns.length) continue;
+        const pinValue = columns[columnIndex];
+        if (!pinValue || !pinValue.trim()) continue;
+        connectors.push({
+          partNumber: binding.connectorPN,
+          sourceText: `${binding.sourceText} :: ${pinValue.trim()}`,
+          authority: 'TABLE_HEADER',
+          confidence: 0.95,
+        });
+        rowApplied = true;
+      }
+      if (rowApplied) {
+        appliedRows++;
+      }
+    }
+
+    console.log('[T23.6.72 HEADER BINDING]', {
+      operationStep: op.step,
+      columnMap: Array.from(columnConnectorMap.entries()).map(([columnIndex, binding]) => ({
+        columnIndex,
+        connectorPN: binding.connectorPN,
+        sourceText: binding.sourceText,
+      })),
+      appliedRows,
+    });
+  }
+  return connectors;
 }
 
 function collectTableBodyConnectors(rawData: RawBOMData): NormalizedConnector[] {
@@ -694,6 +797,7 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
 
   addConnectors(connectorCandidates, collectRowConnectors(flatComponents));
   addConnectors(connectorCandidates, collectTableHeaderConnectors(rawData));
+  addConnectors(connectorCandidates, collectHeaderColumnBindingConnectors(rawData));
   addConnectors(connectorCandidates, collectTableBodyConnectors(rawData));
   addConnectors(connectorCandidates, collectDiagramCalloutConnectors(rawData));
   addConnectors(connectorCandidates, collectNotesConnectors(rawData));
