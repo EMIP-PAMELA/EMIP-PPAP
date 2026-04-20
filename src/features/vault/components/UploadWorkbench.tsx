@@ -30,7 +30,7 @@ import FieldEvidencePanel from './FieldEvidencePanel';
 import type { RegionOverlay } from '@/src/features/harness-work-instructions/types/documentRegionOverlay';
 import DocumentOverlayViewer from './DocumentOverlayViewer';
 import HarnessConnectivityPanel from './HarnessConnectivityPanel';
-import { buildComponentAuthorityOptions } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
+import { buildComponentAuthorityOptions, type ComponentAuthorityOption } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
 import SkuModelEditorPanel, { type SkuModelDeleteRequest, type ExternalEditorRequest } from './SkuModelEditorPanel';
 import KomaxCutSheetPanel from './KomaxCutSheetPanel';
 import SkuLifecycleHistoryPanel from './SkuLifecycleHistoryPanel';
@@ -1636,22 +1636,35 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     });
   }, [selectedItem?.analysis, canonicalComponentOptions?.length, canonicalComponentOptionsSource, selectedItem?.id]);
 
-  const panelComponentOptions = useMemo(() => {
-    if (canonicalComponentOptions && canonicalComponentOptions.length > 0) {
-      return canonicalComponentOptions;
-    }
-    return panelConnectivity ? buildComponentAuthorityOptions(panelConnectivity) : [];
-  }, [canonicalComponentOptions, panelConnectivity]);
+  const { panelComponentOptions, panelComponentOptionsSource } = useMemo(() => {
+    const incomingOptions: ComponentAuthorityOption[] = canonicalComponentOptions ?? [];
 
-  const panelComponentOptionsSource = useMemo(() => {
-    if (canonicalComponentOptions && canonicalComponentOptions.length > 0) {
-      return canonicalComponentOptionsSource ?? 'SIMPLIFIED_BOM';
+    const hasParserAuthority = incomingOptions.some(
+      (o) => o && o.__source === 'PARSER_ORIGINAL'
+    );
+
+    let finalComponentOptions: ComponentAuthorityOption[];
+    let finalSource: string;
+
+    if (hasParserAuthority) {
+      finalComponentOptions = incomingOptions;
+      finalSource = 'PARSER_ORIGINAL';
+      console.warn('[T23.6.91 PIPELINE LOCK]', {
+        reason: 'Parser authority detected — fallback blocked',
+        count: incomingOptions.length,
+      });
+    } else {
+      finalComponentOptions = panelConnectivity ? buildComponentAuthorityOptions(panelConnectivity) : [];
+      finalSource = panelConnectivity
+        ? (effectiveState?.effectiveConnectivity ? 'EFFECTIVE_CONNECTIVITY_FALLBACK' : 'ANALYSIS_CONNECTIVITY_FALLBACK')
+        : 'UNAVAILABLE';
+      console.warn('[T23.6.91 FALLBACK USED]', {
+        fallbackCount: finalComponentOptions.length,
+      });
     }
-    if (panelConnectivity) {
-      return effectiveState?.effectiveConnectivity ? 'EFFECTIVE_CONNECTIVITY_FALLBACK' : 'ANALYSIS_CONNECTIVITY_FALLBACK';
-    }
-    return 'UNAVAILABLE';
-  }, [canonicalComponentOptions, canonicalComponentOptionsSource, panelConnectivity, effectiveState?.effectiveConnectivity]);
+
+    return { panelComponentOptions: finalComponentOptions, panelComponentOptionsSource: finalSource };
+  }, [canonicalComponentOptions, panelConnectivity, effectiveState?.effectiveConnectivity]);
 
   useEffect(() => {
     console.log('[T23.6.78 WORKBENCH INPUT]', {
