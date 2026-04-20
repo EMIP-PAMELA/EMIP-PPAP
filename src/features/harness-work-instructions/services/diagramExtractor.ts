@@ -343,19 +343,15 @@ const TABLE_REJECT_PROCESS = new Set([
 const PURE_DECIMAL_RE = /^\d+\.\d+$/;
 
 /**
- * T23.7.1 — Scan ALL OCR lines for connector/equivalent-connector table context
- * and promote valid part-number tokens as CONNECTOR ComponentNodes.
+ * T23.7.2 — Unconditional full-OCR PN promotion.
  *
- * Unlike extractDiagramComponents (scoped to lines BEFORE the wire table header),
- * this function processes the full OCR line set.  Equivalent-connector tables and
- * standalone connector tables that appear AFTER the wire table are handled here.
+ * Scans EVERY OCR line (no context-keyword gating) for part-number-like tokens
+ * and promotes them as CONNECTOR ComponentNodes.  Context keywords are retained
+ * for metadata/confidence only — they do NOT gate which lines are scanned.
  *
- * Classification rules:
- *   - Trigger: line contains OR EQUIVALENT, CONNECTOR/HOUSING/CONN, or brand name
- *   - Promote: 6-8 digit plain numerics, dash-separated PNs, alpha-prefix PNs
- *   - Reject:  colors, unit tokens, process keywords, short numerics < 1000, decimals
- *   - All promoted entries get kind = CONNECTOR, source = OCR
- *   - Dedup by normalizedPartNumber within the call
+ * Promoted:  6-8 digit plain numerics, dash-separated numeric PNs, alpha-prefix PNs
+ * Rejected:  colors, unit tokens, process keywords, pure decimals, numerics < 1000
+ * Source tag: FORCED_TABLE_PROMOTION
  */
 export function extractConnectorTableComponents(allLines: string[]): ComponentNode[] {
   const promoted: ComponentNode[] = [];
@@ -366,12 +362,12 @@ export function extractConnectorTableComponents(allLines: string[]): ComponentNo
     const t = line.trim();
     if (!t || t.length < 3) continue;
 
+    const upper = t.toUpperCase();
+
+    // Context metadata (used for confidence scoring only — does NOT gate the line)
     const isEquivContext = EQUIV_CONNECTOR_CTX_RE.test(t);
     const isConnContext  = CONNECTOR_TABLE_CTX_RE.test(t);
     const isBrandContext = BRAND_CTX_RE.test(t);
-    if (!isEquivContext && !isConnContext && !isBrandContext) continue;
-
-    const upper = t.toUpperCase();
 
     const candidates: string[] = [];
 
@@ -381,12 +377,12 @@ export function extractConnectorTableComponents(allLines: string[]): ComponentNo
     }
 
     // Class 2 — Dash-separated numeric PNs (e.g. 284040-6, 929504-1)
-    for (const m of upper.matchAll(/\b(\d{1,4}-\d{4,9}(?:-\d{1,4})?)\b/g)) {
+    for (const m of upper.matchAll(/\b(\d{5,6}-\d)\b/g)) {
       candidates.push(m[1]);
     }
 
-    // Class 3 — Alpha-prefix with dashes (e.g. EB1550B-06-800, WM-1234-5)
-    for (const m of upper.matchAll(/\b([A-Z]{1,4}\d{2,}[A-Z0-9]*(?:-[A-Z0-9]{1,9})+)\b/g)) {
+    // Class 3 — Alpha-prefix with dashes (e.g. EB1550B-06-800)
+    for (const m of upper.matchAll(/\b([A-Z0-9]{2,}-\d{2,}(?:-[A-Z0-9]+)*)\b/g)) {
       candidates.push(m[1]);
     }
 
@@ -415,18 +411,11 @@ export function extractConnectorTableComponents(allLines: string[]): ComponentNo
       if (seenPNs.has(token)) continue;
       seenPNs.add(token);
 
-      const rowContext = isEquivContext ? 'EQUIVALENT' : isConnContext ? 'CONNECTOR' : 'BRAND';
-      const confidence = isEquivContext ? 0.85 : isBrandContext ? 0.80 : 0.72;
+      console.log('[T23.7.2 FORCED PN]', token, t.length > 80 ? t.slice(0, 80) + '\u2026' : t);
 
-      console.log('[T23.7.1 TABLE PN PROMOTION]', {
-        token,
-        rowContext,
-        columnContext: t.length > 80 ? t.slice(0, 80) + '\u2026' : t,
-        promotedAs: 'CONNECTOR',
-        confidence: 'HIGH',
-      });
+      const confidence = isEquivContext ? 0.85 : isBrandContext ? 0.80 : isConnContext ? 0.72 : 0.60;
 
-      const node: ComponentNode = {
+      promoted.push({
         id:                   `CONN_TBL_${++idCount}`,
         type:                 'CONNECTOR',
         label:                token,
@@ -435,15 +424,6 @@ export function extractConnectorTableComponents(allLines: string[]): ComponentNo
         source:               'OCR',
         confidence,
         rawText:              t,
-      };
-
-      promoted.push(node);
-
-      console.log('[T23.7.1 CONNECTOR TABLE COMPONENT]', {
-        normalizedPartNumber: token,
-        label:                token,
-        kind:                 'CONNECTOR',
-        source:               'TABLE_CONTEXT_PROMOTION',
       });
     }
   }
