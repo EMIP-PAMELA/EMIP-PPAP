@@ -69,7 +69,7 @@ import type {
 } from '@/src/features/vault/types/ingestionReview';
 import { parseBOMText } from '@/src/features/documentEngine/core/bomParser';
 import { normalizeBOMData } from '@/src/features/documentEngine/core/bomNormalizer';
-import type { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
+import type { NormalizedBOM, NormalizedConnector } from '@/src/features/documentEngine/types/bomTypes';
 import type { ComponentAuthorityOption } from './componentAuthorityService';
 import { canonicalComponentKey } from './harnessTopologyService';
 import { getAllAciEntries } from './aciLookupService';
@@ -213,11 +213,13 @@ function buildRawReconciliationOptions({
   harnessConnectivity,
   wireTableRows,
   diagramExtraction,
+  normalizedConnectors,
 }: {
   normalizedBOM: NormalizedBOM | null;
   harnessConnectivity: HarnessConnectivityResult | null;
   wireTableRows: WireRow[] | null;
   diagramExtraction: DiagramExtractionResult | null;
+  normalizedConnectors: NormalizedConnector[] | null;
 }): ComponentAuthorityOption[] {
   const optionMap = new Map<string, ComponentAuthorityOption>();
 
@@ -305,6 +307,19 @@ function buildRawReconciliationOptions({
     const pn = entry.partNumber?.trim();
     if (!pn) continue;
     addOption(pn, pn, 'TERMINAL');
+  }
+
+  // Source H: T23.7 — Normalized connector extraction (T23.6.60B / BOM connector normalizer)
+  // NormalizedConnector.partNumber is the canonical connector housing PN (e.g. Phoenix 1700443).
+  // For BOM pipeline: feeds from normalizedBOM.connectors (deduplicates harmlessly with Source B).
+  // For DRAWING pipeline: caller may supply connectors from any upstream source.
+  if (normalizedConnectors && Array.isArray(normalizedConnectors)) {
+    for (const conn of normalizedConnectors) {
+      if (!conn) continue;
+      const id = conn.partNumber?.trim();
+      if (!id) continue;
+      addOption(id, id, 'CONNECTOR');
+    }
   }
 
   const result = Array.from(optionMap.values());
@@ -2345,12 +2360,13 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
   });
 
   // T23.6.96 / T23.7: Build hard raw extraction bypass — richest possible option set for reconciliation UI.
-  // T23.7 expansion: now includes diagram-extracted components + ACI full lookup table.
+  // T23.7 expansion: includes diagram components, ACI table, and normalized connector extraction (Source H).
   const rawReconOptions = buildRawReconciliationOptions({
     normalizedBOM,
     harnessConnectivity,
     wireTableRows: wireTableResult?.rows ?? null,
     diagramExtraction,
+    normalizedConnectors: normalizedBOM?.connectors ?? null,
   });
 
   console.warn('[T23.6.96 RAW RECON BUILD]', {
