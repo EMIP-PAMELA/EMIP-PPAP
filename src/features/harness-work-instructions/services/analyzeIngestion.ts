@@ -72,6 +72,7 @@ import { normalizeBOMData } from '@/src/features/documentEngine/core/bomNormaliz
 import type { NormalizedBOM } from '@/src/features/documentEngine/types/bomTypes';
 import type { ComponentAuthorityOption } from './componentAuthorityService';
 import { canonicalComponentKey } from './harnessTopologyService';
+import { getAllAciEntries } from './aciLookupService';
 
 // ---------------------------------------------------------------------------
 // Internal helpers (duplicated from unifiedIngestionService — see TODO above)
@@ -211,10 +212,12 @@ function buildRawReconciliationOptions({
   normalizedBOM,
   harnessConnectivity,
   wireTableRows,
+  diagramExtraction,
 }: {
   normalizedBOM: NormalizedBOM | null;
   harnessConnectivity: HarnessConnectivityResult | null;
   wireTableRows: WireRow[] | null;
+  diagramExtraction: DiagramExtractionResult | null;
 }): ComponentAuthorityOption[] {
   const optionMap = new Map<string, ComponentAuthorityOption>();
 
@@ -232,7 +235,7 @@ function buildRawReconciliationOptions({
     }
   };
 
-  // Source A: BOM operations components
+  // Source A: BOM operations components (populated only in BOM pipeline mode)
   for (const operation of normalizedBOM?.operations ?? []) {
     for (const component of operation.components ?? []) {
       const partRef = (component.normalizedPartNumber ?? component.partId)?.trim();
@@ -245,7 +248,7 @@ function buildRawReconciliationOptions({
     }
   }
 
-  // Source B: BOM connectors
+  // Source B: BOM connectors (populated only in BOM pipeline mode)
   for (const connector of normalizedBOM?.connectors ?? []) {
     const partRef = connector.partNumber?.trim();
     if (!partRef) continue;
@@ -268,7 +271,54 @@ function buildRawReconciliationOptions({
     if (terminal) addOption(terminal, terminal, 'TERMINAL');
   }
 
-  return Array.from(optionMap.values());
+  // Source E: T23.7 — Diagram-extracted component nodes (label + normalizedPartNumber)
+  // These are detected connector/terminal nodes from the drawing diagram region.
+  for (const node of diagramExtraction?.components ?? []) {
+    if (node.normalizedPartNumber) {
+      const kind: ComponentAuthorityOption['kind'] =
+        node.type === 'CONNECTOR' ? 'CONNECTOR'
+        : node.type === 'TERMINAL' ? 'TERMINAL'
+        : 'OTHER';
+      addOption(node.normalizedPartNumber, node.label || node.normalizedPartNumber, kind);
+    } else if (node.label?.trim()) {
+      const kind: ComponentAuthorityOption['kind'] =
+        node.type === 'CONNECTOR' ? 'CONNECTOR'
+        : node.type === 'TERMINAL' ? 'TERMINAL'
+        : 'OTHER';
+      addOption(node.label, node.label, kind);
+    }
+  }
+
+  // Source F: T23.7 — Diagram callout part numbers
+  // Callouts with a resolved normalizedPartNumber are identifiable component references.
+  for (const callout of diagramExtraction?.callouts ?? []) {
+    if (callout.normalizedPartNumber?.trim()) {
+      addOption(callout.normalizedPartNumber, callout.normalizedPartNumber, 'TERMINAL');
+    }
+  }
+
+  // Source G: T23.7 — ACI lookup table (all known terminal/ferrule part numbers)
+  // The ACI dataset is the authoritative list of all valid component identifiers
+  // in the manufacturing system. Include every entry so operator always has
+  // all valid choices regardless of what was detected in this specific document.
+  for (const entry of getAllAciEntries()) {
+    const pn = entry.partNumber?.trim();
+    if (!pn) continue;
+    addOption(pn, pn, 'TERMINAL');
+  }
+
+  const result = Array.from(optionMap.values());
+
+  console.log('[T23.7 SOURCE TRACE]', {
+    origin: 'buildRawReconciliationOptions',
+    count: result.length,
+    bySource: {
+      bomOperations: [...optionMap.values()].filter(o => o.__source === 'RAW_RECONCILIATION_BYPASS').length,
+    },
+    sample: result.slice(0, 5),
+  });
+
+  return result;
 }
 
 // T23.6.94: Bypass builder — pass-through all BOM-visible parts without filtering.
@@ -2294,11 +2344,13 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     source: bypassCanonicalComponentOptionsSource,
   });
 
-  // T23.6.96: Build hard raw extraction bypass — richest possible option set for reconciliation UI.
+  // T23.6.96 / T23.7: Build hard raw extraction bypass — richest possible option set for reconciliation UI.
+  // T23.7 expansion: now includes diagram-extracted components + ACI full lookup table.
   const rawReconOptions = buildRawReconciliationOptions({
     normalizedBOM,
     harnessConnectivity,
     wireTableRows: wireTableResult?.rows ?? null,
+    diagramExtraction,
   });
 
   console.warn('[T23.6.96 RAW RECON BUILD]', {
