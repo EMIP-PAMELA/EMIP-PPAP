@@ -59,6 +59,7 @@ const CONNECTOR_AUTHORITY_PRIORITY: Record<ConnectorAuthority, number> = {
   TABLE: 60,
   DIAGRAM_CALLOUT: 50,
   ROW: 40,
+  BOM_RECOVERY: 30,
   NOTES: 10,
   UNKNOWN: 0,
 };
@@ -335,6 +336,66 @@ function collectDiagramCalloutConnectors(rawData: RawBOMData): NormalizedConnect
       });
     });
   }
+  return connectors;
+}
+
+const BOM_RECOVERY_BRAND_HINTS = [
+  'PHOENIX', 'MOLEX', 'AMP', 'TYCO', 'TE ', 'DEUTSCH', 'DELPHI',
+  'APTIV', 'KOSTAL', 'JAE', 'JST', 'SUMITOMO', 'YAZAKI',
+];
+
+const BOM_RECOVERY_CONTEXT_HINTS = [
+  'CONNECTOR', 'OR EQUIVALENT', 'HOUSING', 'PLUG', 'SOCKET',
+];
+
+function collectBOMRecoveryConnectors(rawData: RawBOMData): NormalizedConnector[] {
+  const connectors: NormalizedConnector[] = [];
+  const lines = rawData.rawText?.split(/\r?\n/) ?? [];
+  const seenPartNumbers: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const upper = trimmed.toUpperCase();
+
+    const hasBrandHint = BOM_RECOVERY_BRAND_HINTS.some(hint => upper.includes(hint));
+    const hasContextHint = BOM_RECOVERY_CONTEXT_HINTS.some(hint => upper.includes(hint));
+    if (!hasBrandHint && !hasContextHint) continue;
+
+    const numericMatches = upper.match(/\b\d{5,8}(?:-\d{1,4})?\b/g) ?? [];
+    for (const token of numericMatches) {
+      const normalized = normalizeConnectorPN(token);
+      if (!normalized || normalized === 'UNKNOWN') continue;
+      if (/^\d+$/.test(normalized) && Number(normalized) < 1000) continue;
+      seenPartNumbers.push(normalized);
+      connectors.push({
+        partNumber: normalized,
+        sourceText: trimmed,
+        authority: 'BOM_RECOVERY',
+        confidence: 0.7,
+      });
+    }
+
+    const alphaMatches = upper.match(/\b[A-Z]{1,4}-\d{4,8}(?:-[A-Z0-9]{1,4})?\b/g) ?? [];
+    for (const token of alphaMatches) {
+      const normalized = normalizeConnectorPN(token);
+      if (!normalized || normalized === 'UNKNOWN') continue;
+      seenPartNumbers.push(normalized);
+      connectors.push({
+        partNumber: normalized,
+        sourceText: trimmed,
+        authority: 'BOM_RECOVERY',
+        confidence: 0.65,
+      });
+    }
+  }
+
+  console.log('[T23.6.80 CONNECTOR RECOVERY INPUT]', {
+    linesScanned: lines.length,
+    recoveredCount: connectors.length,
+    uniquePartNumbers: [...new Set(seenPartNumbers)],
+  });
+
   return connectors;
 }
 
@@ -805,6 +866,7 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
   addConnectors(connectorCandidates, collectTableBodyConnectors(rawData));
   addConnectors(connectorCandidates, collectDiagramCalloutConnectors(rawData));
   addConnectors(connectorCandidates, collectNotesConnectors(rawData));
+  addConnectors(connectorCandidates, collectBOMRecoveryConnectors(rawData));
 
   console.log('[T23.6.68 TABLE CONNECTOR EXTRACTION]', {
     totalCandidates: connectorCandidates.length,
@@ -814,6 +876,15 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
 
   const connectors = deduplicateConnectors(connectorCandidates);
   const primaryConnector = resolvePrimaryConnector(connectors);
+
+  console.log('[T23.6.80 CONNECTOR NODES FINAL]', {
+    total: connectors.length,
+    byAuthority: connectors.reduce((acc, c) => {
+      acc[c.authority] = (acc[c.authority] ?? 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+    partNumbers: connectors.map(c => c.partNumber),
+  });
 
   console.log('[T23.6.60 CONNECTOR EXTRACTION]', connectorCandidates);
   console.log('[T23.6.60B NORMALIZED CONNECTORS]', connectors);

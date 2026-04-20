@@ -63,6 +63,7 @@ export type ConnectorAuthority =
   | 'TABLE'
   | 'DIAGRAM_CALLOUT'
   | 'ROW'
+  | 'BOM_RECOVERY'
   | 'NOTES'
   | 'UNKNOWN';
 

@@ -37,6 +37,7 @@ const CONNECTOR_AUTHORITY_PRIORITY: Record<ConnectorAuthority, number> = {
   TABLE: 60,
   DIAGRAM_CALLOUT: 50,
   ROW: 40,
+  BOM_RECOVERY: 30,
   NOTES: 10,
   UNKNOWN: 0,
 };

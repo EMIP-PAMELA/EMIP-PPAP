@@ -276,6 +276,15 @@ function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): Comp
   }
 
   console.log('[T23.6.75 COMPONENT SIGNAL MAP]', options);
+
+  console.log('[T23.6.80 OPTION SET]', {
+    total: options.length,
+    connectors: options.filter(o => o.kind === 'CONNECTOR').length,
+    terminals: options.filter(o => o.kind === 'TERMINAL').length,
+    other: options.filter(o => o.kind === 'OTHER').length,
+    canonicalIds: options.map(o => o.canonicalId),
+  });
+
   return options;
 }
 
