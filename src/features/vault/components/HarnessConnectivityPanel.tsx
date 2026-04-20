@@ -1010,7 +1010,7 @@ export default function HarnessConnectivityPanel({
 
   const hasCanonicalData =
     Array.isArray(incomingOptions) &&
-    incomingOptions.some(o => o.__source === 'PARSER_ORIGINAL');
+    incomingOptions.some(o => o.__source === 'PARSER_ORIGINAL' || o.__source === 'PARSER_BYPASS');
 
   console.log('[T23.6.88 AUTHORITY CHECK]', {
     incomingCount: incomingOptions?.length ?? 0,
@@ -1071,8 +1071,8 @@ export default function HarnessConnectivityPanel({
   });
 
   traceWithSource('D — finalComponentOptions (canonical vs fallback decision)', finalComponentOptions);
-  if (finalComponentOptions.length > 0 && !finalComponentOptions.every(x => x.__source === 'PARSER_ORIGINAL')) {
-    console.error('[T23.6.87 SOURCE CORRUPTION DETECTED] finalComponentOptions does not carry PARSER_ORIGINAL', {
+  if (finalComponentOptions.length > 0 && !finalComponentOptions.every(x => x.__source === 'PARSER_ORIGINAL' || x.__source === 'PARSER_BYPASS' || x.__source === 'FORCED_RECOVERY')) {
+    console.error('[T23.6.87 SOURCE CORRUPTION DETECTED] finalComponentOptions does not carry parser-authority source', {
       hasCanonicalOptions,
       incomingCount: incomingOptions.length,
       canonicalCount: canonicalOptions.length,
@@ -1137,25 +1137,13 @@ export default function HarnessConnectivityPanel({
     });
   }, [isDegradedMode, finalComponentOptionsSource, componentOptions.length]);
 
-  useEffect(() => {
-    console.log('[T23.6.70 UI SOURCE ENFORCED]', {
-      source: finalComponentOptionsSource ?? 'UNKNOWN',
-      canonicalCount: componentOptions.length,
+  // T23.6.95 OVERRIDE DISABLED — UI SOURCE ENFORCEMENT REMOVED (was T23.6.70)
+  if (componentOptions.length > 10) {
+    console.log('[T23.6.95 UI BYPASS LOCK] Using parser/bypass options directly', {
+      count: componentOptions.length,
+      source: finalComponentOptionsSource,
     });
-    if (componentOptions.length === 0) {
-      console.warn('[T23.6.70 MISSING CANONICAL OPTIONS]', {
-        source: finalComponentOptionsSource ?? 'UNKNOWN',
-      });
-    } else {
-      const connectorCount = componentOptions.filter(opt => opt.kind === 'CONNECTOR').length;
-      const terminalCount = componentOptions.filter(opt => opt.kind === 'TERMINAL').length;
-      console.log('[T23.6.65 RESOLUTION OPTIONS]', {
-        total: componentOptions.length,
-        connectors: connectorCount,
-        terminals: terminalCount,
-      });
-    }
-  }, [finalComponentOptionsSource, componentOptions.length]);
+  }
 
   const overrideMap = new Map((operatorOverrides ?? []).map(o => [o.wireId, o]));
   const [activeResolveWireId, setActiveResolveWireId] = useState<string | null>(null);
