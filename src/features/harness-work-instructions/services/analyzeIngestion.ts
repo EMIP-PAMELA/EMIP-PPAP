@@ -143,8 +143,27 @@ function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): Comp
   };
 
   const components = (bom.operations ?? []).flatMap(operation => operation.components ?? []);
+  console.log('[T23.6.71E RAW COMPONENTS]', components.map(component => ({
+    raw: component,
+    partNumber: component.normalizedPartNumber ?? component.partId ?? null,
+    componentType: component.componentType,
+    description: component.description ?? null,
+  })));
+
   const connectorComponents = components.filter(component => component.componentType === 'connector');
+  console.log('[T23.6.71E CONNECTOR FILTER RESULT]', {
+    total: components.length,
+    connectorsFound: connectorComponents.length,
+    connectorCandidates: connectorComponents.map(connector => ({
+      pn: connector.normalizedPartNumber ?? connector.partId ?? null,
+      type: connector.componentType,
+    })),
+  });
+
   const terminalComponents = components.filter(component => component.componentType === 'terminal');
+  console.log('[T23.6.71E TERMINAL FILTER RESULT]', {
+    terminalsFound: terminalComponents.length,
+  });
 
   const resolvePartRef = (component: typeof components[number]) => {
     const normalized = typeof component.normalizedPartNumber === 'string' ? component.normalizedPartNumber.trim() : '';
