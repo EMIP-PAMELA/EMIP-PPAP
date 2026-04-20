@@ -1712,6 +1712,24 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
     source: bypassComponentOptionsSource,
   });
 
+  // T23.6.96: Hard raw extraction bypass — direct read, no useMemo, no authority arbitration.
+  // This lane completely bypasses panelComponentOptions/topology recomputation for reconciliation UI.
+  const reconciliationComponentOptions: ComponentAuthorityOption[] =
+    selectedItem?.analysis?.rawReconciliationOptions ?? [];
+
+  const reconciliationComponentOptionsSource: string =
+    (selectedItem?.analysis?.rawReconciliationOptionsSource as string) ?? 'RAW_RECONCILIATION_BYPASS';
+
+  console.warn('[T23.6.96 WORKBENCH RAW INPUT]', {
+    count: reconciliationComponentOptions.length,
+    source: reconciliationComponentOptionsSource,
+  });
+
+  console.warn('[T23.6.96 WORKBENCH RAW OUTPUT]', {
+    count: reconciliationComponentOptions.length,
+    source: reconciliationComponentOptionsSource,
+  });
+
   useEffect(() => {
     console.log('[T23.6.78 WORKBENCH INPUT]', {
       count: canonicalComponentOptions?.length,
@@ -2117,8 +2135,8 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
               setSkuEditorRequest({ type: 'branch', wireIds, fromComponent: component, fromCavity: cavity });
               skuEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }}
-            componentOptions={bypassComponentOptions}
-            componentOptionsSource={bypassComponentOptionsSource}
+            componentOptions={reconciliationComponentOptions}
+            componentOptionsSource={reconciliationComponentOptionsSource}
           />
         ) : null}
 

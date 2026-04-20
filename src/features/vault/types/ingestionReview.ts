@@ -192,6 +192,10 @@ export interface IngestionAnalysisResult {
   bypassCanonicalComponentOptions?: ComponentAuthorityOption[] | null;
   bypassCanonicalComponentOptionsSource?: 'PARSER_BYPASS' | 'BYPASS_RECOVERY_EMPTY' | null;
 
+  /** T23.6.96: Hard raw extraction bypass — merges ALL BOM+drawing+wire-table sources. Completely skips authority/fallback chain in the reconciliation UI. */
+  rawReconciliationOptions?: ComponentAuthorityOption[] | null;
+  rawReconciliationOptionsSource?: 'RAW_RECONCILIATION_BYPASS' | null;
+
   /**
    * Phase T7: Harness physical plausibility validation.
    * INTERMEDIATE DATA — not authoritative. Does not affect field resolution.

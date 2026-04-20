@@ -30,7 +30,7 @@ import type { SignalSource } from '../utils/resolveDocumentSignals';
 import { analyzeDocumentStructure } from './documentStructureAnalyzer';
 import { extractTitleBlockAndRevisionRegions, scanForApogeePN45, type TitleBlockExtractionResult } from './titleBlockRegionExtractor';
 import { detectWireTableRegion } from './wireTableRegionExtractor';
-import { parseWireTableRows } from './wireTableParser';
+import { parseWireTableRows, type WireRow } from './wireTableParser';
 import { parseBOMWithValidation } from '@/src/core/parser/parserService';
 import { buildHarnessConnectivity, type HarnessConnectivityResult } from './harnessConnectivityService';
 import { isolateDiagramLines, extractDiagramComponents, mergeWithVisionResult, type DiagramExtractionResult } from './diagramExtractor';
@@ -202,6 +202,73 @@ function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): Comp
   console.log('[T23.6.87 SOURCE CREATED]', taggedOptions.length);
 
   return taggedOptions;
+}
+
+// T23.6.96: Raw reconciliation builder — merges ALL plausible BOM + drawing wire-table sources.
+// Zero downstream filtering. Pass-through philosophy: better to show extra than silently discard.
+// This lane completely bypasses the authority/fallback chain in the reconciliation UI.
+function buildRawReconciliationOptions({
+  normalizedBOM,
+  harnessConnectivity,
+  wireTableRows,
+}: {
+  normalizedBOM: NormalizedBOM | null;
+  harnessConnectivity: HarnessConnectivityResult | null;
+  wireTableRows: WireRow[] | null;
+}): ComponentAuthorityOption[] {
+  const optionMap = new Map<string, ComponentAuthorityOption>();
+
+  const addOption = (rawKey: string, displayName: string, kind: ComponentAuthorityOption['kind']) => {
+    const canonicalId = rawKey.trim().toUpperCase();
+    if (!canonicalId) return;
+    if (!optionMap.has(canonicalId)) {
+      optionMap.set(canonicalId, {
+        canonicalId,
+        displayName: displayName.trim(),
+        cavities: [],
+        kind,
+        __source: 'RAW_RECONCILIATION_BYPASS',
+      });
+    }
+  };
+
+  // Source A: BOM operations components
+  for (const operation of normalizedBOM?.operations ?? []) {
+    for (const component of operation.components ?? []) {
+      const partRef = (component.normalizedPartNumber ?? component.partId)?.trim();
+      if (!partRef) continue;
+      const kind: ComponentAuthorityOption['kind'] =
+        component.componentType === 'connector' ? 'CONNECTOR'
+        : component.componentType === 'terminal' ? 'TERMINAL'
+        : 'OTHER';
+      addOption(partRef, partRef, kind);
+    }
+  }
+
+  // Source B: BOM connectors
+  for (const connector of normalizedBOM?.connectors ?? []) {
+    const partRef = connector.partNumber?.trim();
+    if (!partRef) continue;
+    addOption(partRef, partRef, 'CONNECTOR');
+  }
+
+  // Source C: Connectivity wire endpoints (from.component = connector ref, to.component = terminal)
+  for (const wire of harnessConnectivity?.wires ?? []) {
+    const fromComp = wire.from.component?.trim();
+    if (fromComp) addOption(fromComp, fromComp, 'CONNECTOR');
+    const toComp = wire.to.component?.trim();
+    if (toComp) addOption(toComp, toComp, 'TERMINAL');
+  }
+
+  // Source D: Wire table rows — direct connectorRef and terminal fields
+  for (const row of wireTableRows ?? []) {
+    const connRef = row.connectorRef?.trim();
+    if (connRef) addOption(connRef, connRef, 'CONNECTOR');
+    const terminal = row.terminal?.trim();
+    if (terminal) addOption(terminal, terminal, 'TERMINAL');
+  }
+
+  return Array.from(optionMap.values());
 }
 
 // T23.6.94: Bypass builder — pass-through all BOM-visible parts without filtering.
@@ -2227,6 +2294,26 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     source: bypassCanonicalComponentOptionsSource,
   });
 
+  // T23.6.96: Build hard raw extraction bypass — richest possible option set for reconciliation UI.
+  const rawReconOptions = buildRawReconciliationOptions({
+    normalizedBOM,
+    harnessConnectivity,
+    wireTableRows: wireTableResult?.rows ?? null,
+  });
+
+  console.warn('[T23.6.96 RAW RECON BUILD]', {
+    total: rawReconOptions.length,
+    connectors: rawReconOptions.filter(o => o.kind === 'CONNECTOR').length,
+    terminals: rawReconOptions.filter(o => o.kind === 'TERMINAL').length,
+    unknown: rawReconOptions.filter(o => o.kind === 'OTHER').length,
+    sample: rawReconOptions.slice(0, 5),
+  });
+
+  console.warn('[T23.6.96 RAW RECON ASSIGNED]', {
+    count: rawReconOptions.length,
+    source: 'RAW_RECONCILIATION_BYPASS',
+  });
+
   console.log('[T23.6.78 INGESTION OUTPUT]', {
     count: canonicalComponentOptions?.length,
     source: canonicalComponentOptionsSource,
@@ -2278,6 +2365,8 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     canonicalComponentOptionsSource,
     bypassCanonicalComponentOptions: bypassCanonicalComponentOptions.length > 0 ? bypassCanonicalComponentOptions : null,
     bypassCanonicalComponentOptionsSource,
+    rawReconciliationOptions: rawReconOptions.length > 0 ? rawReconOptions : null,
+    rawReconciliationOptionsSource: 'RAW_RECONCILIATION_BYPASS' as const,
     debugRuntime,
     analyzedAt: new Date().toISOString(),
   };

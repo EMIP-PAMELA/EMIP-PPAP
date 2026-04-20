@@ -991,10 +991,24 @@ export default function HarnessConnectivityPanel({
 
   traceWithSource('A — incomingOptions (prop boundary)', incomingOptions);
 
-  const hasParserAuthority = Array.isArray(incomingOptions) &&
-    incomingOptions.some(o => o && (o.__source === 'PARSER_ORIGINAL' || o.__source === 'PARSER_BYPASS'));
+  // T23.6.96: Raw reconciliation bypass — direct bind; skip entire authority/fallback chain.
+  const isRawReconciliationBypass = componentOptionsSource === 'RAW_RECONCILIATION_BYPASS';
 
-  if (componentOptionsSource === 'PARSER_BYPASS' || incomingOptions.some(o => o?.__source === 'PARSER_BYPASS')) {
+  const hasParserAuthority =
+    isRawReconciliationBypass ||
+    (Array.isArray(incomingOptions) &&
+      incomingOptions.some(o => o && (
+        o.__source === 'PARSER_ORIGINAL' ||
+        o.__source === 'PARSER_BYPASS' ||
+        o.__source === 'RAW_RECONCILIATION_BYPASS'
+      )));
+
+  if (isRawReconciliationBypass) {
+    console.warn('[T23.6.96 PANEL RAW BYPASS ACTIVE]', {
+      count: incomingOptions.length,
+      source: componentOptionsSource,
+    });
+  } else if (componentOptionsSource === 'PARSER_BYPASS' || incomingOptions.some(o => o?.__source === 'PARSER_BYPASS')) {
     console.warn('[T23.6.94 PANEL BYPASS ACTIVE]', {
       count: incomingOptions.length,
       source: componentOptionsSource,
@@ -1009,8 +1023,13 @@ export default function HarnessConnectivityPanel({
   }, [incomingOptions, componentOptionsSource]);
 
   const hasCanonicalData =
-    Array.isArray(incomingOptions) &&
-    incomingOptions.some(o => o.__source === 'PARSER_ORIGINAL' || o.__source === 'PARSER_BYPASS');
+    isRawReconciliationBypass ||
+    (Array.isArray(incomingOptions) &&
+      incomingOptions.some(o =>
+        o.__source === 'PARSER_ORIGINAL' ||
+        o.__source === 'PARSER_BYPASS' ||
+        o.__source === 'RAW_RECONCILIATION_BYPASS'
+      ));
 
   console.log('[T23.6.88 AUTHORITY CHECK]', {
     incomingCount: incomingOptions?.length ?? 0,
@@ -1071,7 +1090,7 @@ export default function HarnessConnectivityPanel({
   });
 
   traceWithSource('D — finalComponentOptions (canonical vs fallback decision)', finalComponentOptions);
-  if (finalComponentOptions.length > 0 && !finalComponentOptions.every(x => x.__source === 'PARSER_ORIGINAL' || x.__source === 'PARSER_BYPASS' || x.__source === 'FORCED_RECOVERY')) {
+  if (!isRawReconciliationBypass && finalComponentOptions.length > 0 && !finalComponentOptions.every(x => x.__source === 'PARSER_ORIGINAL' || x.__source === 'PARSER_BYPASS' || x.__source === 'FORCED_RECOVERY' || x.__source === 'RAW_RECONCILIATION_BYPASS')) {
     console.error('[T23.6.87 SOURCE CORRUPTION DETECTED] finalComponentOptions does not carry parser-authority source', {
       hasCanonicalOptions,
       incomingCount: incomingOptions.length,
