@@ -52,11 +52,14 @@ const TABLE_CONTEXT_HINTS = ['PHOENIX', 'CONNECTOR', 'CONN', 'PLUG'];
 const DIAGRAM_HINTS = ['CALLOUT', 'CALLOUTS', 'DIAGRAM', 'FIG', 'VIEW', 'ZONE'];
 const NOTES_HINTS = ['NOTE', 'NOTES', 'ALT', 'ALTERNATE', 'SEE DRAWING', 'SEE DWG'];
 const CONNECTOR_AUTHORITY_PRIORITY: Record<ConnectorAuthority, number> = {
-  TABLE_HEADER: 5,
-  TABLE: 4.5,
-  DIAGRAM_CALLOUT: 4,
-  ROW: 3,
-  NOTES: 1,
+  BOM: 100,
+  DRAWING_PRIMARY: 90,
+  DRAWING_EQUIVALENT: 80,
+  TABLE_HEADER: 70,
+  TABLE: 60,
+  DIAGRAM_CALLOUT: 50,
+  ROW: 40,
+  NOTES: 10,
   UNKNOWN: 0,
 };
 
@@ -150,8 +153,8 @@ function collectRowConnectors(components: NormalizedComponent[]): NormalizedConn
     .map(component => ({
       partNumber: normalizeConnectorPN(component.normalizedPartNumber ?? component.partId),
       sourceText: component.source.rawLine,
-      authority: 'ROW' as ConnectorAuthority,
-      confidence: component.confidence ?? 0.7,
+      authority: 'BOM' as ConnectorAuthority,
+      confidence: 1,
     }));
 }
 
@@ -264,8 +267,8 @@ function collectHeaderColumnBindingConnectors(rawData: RawBOMData): NormalizedCo
         connectors.push({
           partNumber: binding.connectorPN,
           sourceText: `${binding.sourceText} :: ${pinValue.trim()}`,
-          authority: 'TABLE_HEADER',
-          confidence: 0.95,
+          authority: 'DRAWING_EQUIVALENT',
+          confidence: 0.7,
         });
         rowApplied = true;
       }
@@ -296,6 +299,7 @@ function collectTableBodyConnectors(rawData: RawBOMData): NormalizedConnector[] 
     if (!/[0-9]/.test(trimmed)) continue;
     const upper = trimmed.toUpperCase();
     const hasContextHint = TABLE_CONTEXT_HINTS.some(hint => upper.includes(hint));
+    const isEquivalentContext = upper.includes('EQUIVALENT');
     const tokens = detectPartNumbers(upper);
     if (tokens.length === 0) continue;
     tokens.forEach(partNumber => {
@@ -305,8 +309,8 @@ function collectTableBodyConnectors(rawData: RawBOMData): NormalizedConnector[] 
       connectors.push({
         partNumber: normalizeConnectorPN(partNumber),
         sourceText: trimmed,
-        authority: hasContextHint ? 'TABLE_HEADER' : 'TABLE',
-        confidence: hasContextHint ? 0.95 : 0.85,
+        authority: isEquivalentContext ? 'DRAWING_EQUIVALENT' : hasContextHint ? 'TABLE_HEADER' : 'TABLE',
+        confidence: isEquivalentContext ? 0.7 : hasContextHint ? 0.95 : 0.85,
       });
     });
   }
@@ -326,8 +330,8 @@ function collectDiagramCalloutConnectors(rawData: RawBOMData): NormalizedConnect
       connectors.push({
         partNumber: normalizeConnectorPN(partNumber),
         sourceText: line.trim(),
-        authority: 'DIAGRAM_CALLOUT',
-        confidence: 0.85,
+        authority: 'DRAWING_PRIMARY',
+        confidence: 0.9,
       });
     });
   }
@@ -817,6 +821,12 @@ export function normalizeBOMData(rawData: RawBOMData): NormalizedBOM {
   console.log('[T23.6.63A CONNECTOR CLASSIFICATION]', {
     detectedConnectors: connectors.map(connector => connector.partNumber),
     totalComponents: flatComponents.length,
+  });
+  console.log('[T23.6.73B CONNECTOR AUTHORITY]', {
+    BOM: connectors.filter(connector => connector.authority === 'BOM').length,
+    PRIMARY: connectors.filter(connector => connector.authority === 'DRAWING_PRIMARY').length,
+    EQUIVALENT: connectors.filter(connector => connector.authority === 'DRAWING_EQUIVALENT').length,
+    selectedPrimary: primaryConnector?.partNumber ?? null,
   });
   
   return {

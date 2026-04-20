@@ -203,6 +203,11 @@ function buildComponentOptionsFromNormalizedBOM(bom: NormalizedBOM | null): Comp
     addOption(resolvePartRef(connector), 'CONNECTOR');
   }
 
+  for (const connector of bom.connectors ?? []) {
+    if (!connector.partNumber) continue;
+    addOption(connector.partNumber, 'CONNECTOR');
+  }
+
   for (const terminal of terminalComponents) {
     addOption(resolvePartRef(terminal), 'TERMINAL');
   }

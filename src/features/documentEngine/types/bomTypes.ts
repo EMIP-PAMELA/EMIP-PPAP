@@ -56,6 +56,9 @@ export interface ProcessInstruction {
 export type ComponentType = 'wire' | 'terminal' | 'hardware' | 'connector' | 'unknown';
 
 export type ConnectorAuthority =
+  | 'BOM'
+  | 'DRAWING_PRIMARY'
+  | 'DRAWING_EQUIVALENT'
   | 'TABLE_HEADER'
   | 'TABLE'
   | 'DIAGRAM_CALLOUT'
