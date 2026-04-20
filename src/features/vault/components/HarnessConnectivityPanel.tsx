@@ -1030,10 +1030,39 @@ export default function HarnessConnectivityPanel({
     return fallbackResult;
   }, [canonicalOptions.length, providedFallbackOptions, model]);
 
-  const hasCanonicalOptions = canonicalOptions.length > 0;
+  const hasCanonicalOptions =
+    (canonicalOptions && canonicalOptions.length > 0) ||
+    (Array.isArray(incomingOptions) && incomingOptions.some(o => o.__source === 'PARSER_ORIGINAL'));
   const hasFallbackOptions = fallbackOptions.length > 0;
 
-  const finalComponentOptions = hasCanonicalOptions ? canonicalOptions : fallbackOptions;
+  let finalComponentOptions: ComponentAuthorityOption[];
+  if (hasCanonicalOptions) {
+    finalComponentOptions = canonicalOptions && canonicalOptions.length > 0
+      ? canonicalOptions
+      : incomingOptions;
+  } else {
+    finalComponentOptions = fallbackOptions;
+  }
+
+  if (
+    incomingOptions?.some(o => o.__source === 'PARSER_ORIGINAL') &&
+    !finalComponentOptions?.some(o => o.__source === 'PARSER_ORIGINAL')
+  ) {
+    console.error('[T23.6.89 BLOCKED SOURCE CORRUPTION]', {
+      incomingCount: incomingOptions.length,
+      finalCount: finalComponentOptions.length,
+      sources: finalComponentOptions.map(o => o.__source),
+    });
+    finalComponentOptions = incomingOptions;
+  }
+
+  console.log('[T23.6.89 FINAL AUTHORITY DECISION]', {
+    incomingCount: incomingOptions?.length,
+    canonicalCount: canonicalOptions?.length,
+    fallbackCount: fallbackOptions?.length,
+    finalCount: finalComponentOptions?.length,
+    source: finalComponentOptions?.[0]?.__source,
+  });
 
   traceWithSource('D — finalComponentOptions (canonical vs fallback decision)', finalComponentOptions);
   if (finalComponentOptions.length > 0 && !finalComponentOptions.every(x => x.__source === 'PARSER_ORIGINAL')) {
