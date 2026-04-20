@@ -993,17 +993,25 @@ export default function HarnessConnectivityPanel({
     });
   }, [incomingOptions, componentOptionsSource]);
 
-  const canonicalOptions = componentOptionsSource === 'SIMPLIFIED_BOM' ? incomingOptions : [];
-  const providedFallbackOptions = componentOptionsSource && componentOptionsSource !== 'SIMPLIFIED_BOM'
-    ? incomingOptions
-    : [];
+  const hasCanonicalData =
+    Array.isArray(incomingOptions) &&
+    incomingOptions.some(o => o.__source === 'PARSER_ORIGINAL');
 
-  traceWithSource('B — canonicalOptions (after SIMPLIFIED_BOM gate)', canonicalOptions);
+  console.log('[T23.6.88 AUTHORITY CHECK]', {
+    incomingCount: incomingOptions?.length ?? 0,
+    hasCanonicalData,
+    previousSource: componentOptionsSource,
+  });
+
+  const canonicalOptions = hasCanonicalData ? incomingOptions : [];
+  const providedFallbackOptions = !hasCanonicalData && incomingOptions.length > 0 ? incomingOptions : [];
+
+  traceWithSource('B — canonicalOptions (after data-driven authority gate)', canonicalOptions);
   if (incomingOptions.length > 0 && canonicalOptions.length === 0) {
     console.error('[T23.6.87 SOURCE CORRUPTION DETECTED] canonicalOptions gate zeroed incoming options', {
       incomingCount: incomingOptions.length,
+      hasCanonicalData,
       componentOptionsSource: componentOptionsSource ?? 'UNDEFINED',
-      gate: "componentOptionsSource === 'SIMPLIFIED_BOM'",
     });
   }
 
@@ -1011,6 +1019,10 @@ export default function HarnessConnectivityPanel({
     if (canonicalOptions.length > 0) return [];
     if (providedFallbackOptions.length > 0) return providedFallbackOptions;
     if (!model) return [];
+    console.warn('[T23.6.88 FALLBACK TRIGGERED]', {
+      reason: 'No canonical data detected',
+      incomingCount: incomingOptions?.length ?? 0,
+    });
     console.warn('[T23.6.87 CALL] buildComponentAuthorityOptions — COMPETING PIPELINE INVOKED');
     console.trace('[T23.6.87 CALL STACK]');
     const fallbackResult = buildComponentAuthorityOptions(model);
