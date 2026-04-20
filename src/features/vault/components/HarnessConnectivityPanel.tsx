@@ -986,6 +986,9 @@ export default function HarnessConnectivityPanel({
 
   traceWithSource('A — incomingOptions (prop boundary)', incomingOptions);
 
+  const hasParserAuthority = Array.isArray(incomingOptions) &&
+    incomingOptions.some(o => o && o.__source === 'PARSER_ORIGINAL');
+
   useEffect(() => {
     console.log('[T23.6.78 PANEL INPUT]', {
       count: incomingOptions?.length,
@@ -1032,28 +1035,19 @@ export default function HarnessConnectivityPanel({
 
   const hasCanonicalOptions =
     (canonicalOptions && canonicalOptions.length > 0) ||
-    (Array.isArray(incomingOptions) && incomingOptions.some(o => o.__source === 'PARSER_ORIGINAL'));
+    hasParserAuthority;
   const hasFallbackOptions = fallbackOptions.length > 0;
 
   let finalComponentOptions: ComponentAuthorityOption[];
-  if (hasCanonicalOptions) {
-    finalComponentOptions = canonicalOptions && canonicalOptions.length > 0
-      ? canonicalOptions
-      : incomingOptions;
-  } else {
-    finalComponentOptions = fallbackOptions;
-  }
 
-  if (
-    incomingOptions?.some(o => o.__source === 'PARSER_ORIGINAL') &&
-    !finalComponentOptions?.some(o => o.__source === 'PARSER_ORIGINAL')
-  ) {
-    console.error('[T23.6.89 BLOCKED SOURCE CORRUPTION]', {
-      incomingCount: incomingOptions.length,
-      finalCount: finalComponentOptions.length,
-      sources: finalComponentOptions.map(o => o.__source),
-    });
+  if (hasParserAuthority && incomingOptions.length > 0) {
+    console.warn('[T23.6.90 HARD BYPASS] Parser authority enforced — ALL overrides skipped');
     finalComponentOptions = incomingOptions;
+  } else {
+    finalComponentOptions =
+      (canonicalOptions && canonicalOptions.length > 0)
+        ? canonicalOptions
+        : fallbackOptions;
   }
 
   console.log('[T23.6.89 FINAL AUTHORITY DECISION]', {
@@ -1092,50 +1086,20 @@ export default function HarnessConnectivityPanel({
     });
   }, [finalComponentOptions.length, finalComponentOptionsSource]);
 
-  useEffect(() => {
-    console.log('[T23.6.71B SOURCE LOCK]', {
-      hasCanonicalOptions,
-      canonicalCount: canonicalOptions.length,
-      fallbackCount: fallbackOptions.length,
-      finalCount: finalComponentOptions.length,
-      incomingSource: componentOptionsSource ?? 'UNKNOWN',
-      finalSource: finalComponentOptionsSource,
-    });
-    if (hasCanonicalOptions && finalComponentOptionsSource !== 'SIMPLIFIED_BOM') {
-      console.error('[T23.6.71B SOURCE LOCK VIOLATION]', {
-        canonicalCount: canonicalOptions.length,
-        finalSource: finalComponentOptionsSource,
-      });
-    }
-  }, [hasCanonicalOptions, canonicalOptions.length, fallbackOptions.length, finalComponentOptions.length, componentOptionsSource, finalComponentOptionsSource]);
+  // T23.6.90 OVERRIDE DISABLED — SOURCE LOCK REMOVED
 
-  useEffect(() => {
-    if (!Array.isArray(incomingComponentOptions)) {
-      console.warn('[T23.6.70 UI SOURCE ENFORCEMENT ERROR] componentOptions prop missing.', {
-        source: componentOptionsSource ?? 'UNKNOWN',
-      });
-    } else if (incomingComponentOptions.length === 0 && componentOptionsSource === 'SIMPLIFIED_BOM') {
-      console.warn('[T23.6.70 UI SOURCE ENFORCEMENT ERROR] canonical source declared but options empty.', {
-        source: componentOptionsSource ?? 'UNKNOWN',
-      });
-    }
-  }, [incomingComponentOptions, componentOptionsSource]);
+  // T23.6.90 OVERRIDE DISABLED — UI SOURCE ENFORCEMENT REMOVED
+
+  if (hasParserAuthority && finalComponentOptions !== incomingOptions) {
+    console.error('[T23.6.90 BLOCKED OVERRIDE ATTEMPT]');
+    finalComponentOptions = incomingOptions;
+  }
 
   const componentOptions = finalComponentOptions ?? [];
 
   traceWithSource('E — componentOptions (bound to dropdown)', componentOptions);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    const hasParserData = componentOptions.some(x => x.__source === 'PARSER_ORIGINAL');
-    if (!hasParserData) {
-      console.error('[T23.6.87 FULL SOURCE REPLACEMENT]', {
-        componentOptions,
-        source: componentOptionsSource ?? 'UNKNOWN',
-        count: componentOptions.length,
-      });
-    }
-  }, [componentOptions]);
+  // T23.6.90 OVERRIDE DISABLED — FULL SOURCE REPLACEMENT BLOCKED
 
   console.log('[T23.6.83 RAW FINAL OPTIONS]', finalComponentOptions);
   console.log('[T23.6.83 BOUND OPTIONS]', componentOptions);
