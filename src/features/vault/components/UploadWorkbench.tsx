@@ -1627,6 +1627,15 @@ export default function UploadWorkbench({ onClose, onCommitComplete, preselected
   const canonicalComponentOptions = selectedItem?.analysis?.canonicalComponentOptions ?? null;
   const canonicalComponentOptionsSource = selectedItem?.analysis?.canonicalComponentOptionsSource ?? null;
 
+  useEffect(() => {
+    if (!selectedItem?.analysis) return;
+    console.log('[T23.6.71B WORKBENCH PASSTHROUGH]', {
+      canonicalCount: canonicalComponentOptions?.length ?? 0,
+      source: canonicalComponentOptionsSource ?? 'UNAVAILABLE',
+      itemId: selectedItem.id,
+    });
+  }, [selectedItem?.analysis, canonicalComponentOptions?.length, canonicalComponentOptionsSource, selectedItem?.id]);
+
   const panelComponentOptions = useMemo(() => {
     if (canonicalComponentOptions && canonicalComponentOptions.length > 0) {
       return canonicalComponentOptions;

@@ -30,7 +30,7 @@ import type { HarnessDecisionResult } from '@/src/features/harness-work-instruct
 import type { OperatorResolutionMode, WireOperatorOverride, WireResolutionMode } from '@/src/features/vault/types/ingestionReview';
 import type { HarnessTopologyResult, TopologyWarning } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
 import { canonicalComponentKey } from '@/src/features/harness-work-instructions/services/harnessTopologyService';
-import { type ComponentAuthorityOption } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
+import { buildComponentAuthorityOptions, type ComponentAuthorityOption } from '@/src/features/harness-work-instructions/services/componentAuthorityService';
 import type { WireIdentityResult } from '@/src/features/harness-work-instructions/services/wireIdentityService';
 import HarnessTopologyVisualizer from './HarnessTopologyVisualizer';
 
@@ -965,61 +965,104 @@ export default function HarnessConnectivityPanel({
   componentOptions,
   componentOptionsSource,
 }: HarnessConnectivityPanelProps) {
-  const resolvedComponentOptions = useMemo<ComponentAuthorityOption[]>(
-    () => (componentOptions && componentOptions.length > 0 ? componentOptions : []),
+  const model = useMemo(() => connectivity ?? harnessConnectivity ?? null, [connectivity, harnessConnectivity]);
+
+  const incomingOptions = useMemo<ComponentAuthorityOption[]>(
+    () => (Array.isArray(componentOptions) ? componentOptions : []),
     [componentOptions],
   );
 
-  const model = useMemo(() => connectivity ?? harnessConnectivity ?? null, [connectivity, harnessConnectivity]);
+  const canonicalOptions = componentOptionsSource === 'SIMPLIFIED_BOM' ? incomingOptions : [];
+  const providedFallbackOptions = componentOptionsSource && componentOptionsSource !== 'SIMPLIFIED_BOM'
+    ? incomingOptions
+    : [];
+
+  const fallbackOptions = useMemo<ComponentAuthorityOption[]>(() => {
+    if (canonicalOptions.length > 0) return [];
+    if (providedFallbackOptions.length > 0) return providedFallbackOptions;
+    if (!model) return [];
+    return buildComponentAuthorityOptions(model);
+  }, [canonicalOptions.length, providedFallbackOptions, model]);
+
+  const hasCanonicalOptions = canonicalOptions.length > 0;
+  const hasFallbackOptions = fallbackOptions.length > 0;
+
+  const finalComponentOptions = hasCanonicalOptions ? canonicalOptions : fallbackOptions;
+  const fallbackSource = !hasCanonicalOptions
+    ? (componentOptionsSource && componentOptionsSource !== 'SIMPLIFIED_BOM'
+        ? componentOptionsSource
+        : hasFallbackOptions
+          ? 'ANALYSIS_CONNECTIVITY_FALLBACK'
+          : 'UNAVAILABLE')
+    : null;
+  const finalComponentOptionsSource = hasCanonicalOptions
+    ? (componentOptionsSource ?? 'SIMPLIFIED_BOM')
+    : (fallbackSource ?? 'UNAVAILABLE');
 
   useEffect(() => {
-    if (componentOptions && componentOptions.length === 0) {
-      console.error('[T23.6.70 UI SOURCE ENFORCEMENT ERROR] componentOptions prop provided but empty.', {
-        source: componentOptionsSource ?? 'UNKNOWN',
+    console.log('[T23.6.71B SOURCE LOCK]', {
+      hasCanonicalOptions,
+      canonicalCount: canonicalOptions.length,
+      fallbackCount: fallbackOptions.length,
+      finalCount: finalComponentOptions.length,
+      incomingSource: componentOptionsSource ?? 'UNKNOWN',
+      finalSource: finalComponentOptionsSource,
+    });
+    if (hasCanonicalOptions && finalComponentOptionsSource !== 'SIMPLIFIED_BOM') {
+      console.error('[T23.6.71B SOURCE LOCK VIOLATION]', {
+        canonicalCount: canonicalOptions.length,
+        finalSource: finalComponentOptionsSource,
       });
     }
-    if (!componentOptions || componentOptions.length === 0) {
-      console.warn('[T23.6.70 UI SOURCE ENFORCEMENT ERROR] componentOptions prop missing. No fallback will be used.', {
+  }, [hasCanonicalOptions, canonicalOptions.length, fallbackOptions.length, finalComponentOptions.length, componentOptionsSource, finalComponentOptionsSource]);
+
+  useEffect(() => {
+    if (!Array.isArray(componentOptions)) {
+      console.warn('[T23.6.70 UI SOURCE ENFORCEMENT ERROR] componentOptions prop missing.', {
+        source: componentOptionsSource ?? 'UNKNOWN',
+      });
+    } else if (componentOptions.length === 0 && componentOptionsSource === 'SIMPLIFIED_BOM') {
+      console.warn('[T23.6.70 UI SOURCE ENFORCEMENT ERROR] canonical source declared but options empty.', {
         source: componentOptionsSource ?? 'UNKNOWN',
       });
     }
   }, [componentOptions, componentOptionsSource]);
 
   const componentOptionLookups = useMemo(
-    () => buildComponentOptionLookups(resolvedComponentOptions),
-    [resolvedComponentOptions],
+    () => buildComponentOptionLookups(finalComponentOptions),
+    [finalComponentOptions],
   );
 
-  const isCanonicalAvailable = componentOptionsSource === 'SIMPLIFIED_BOM' && resolvedComponentOptions.length > 0;
+  const isCanonicalAvailable = finalComponentOptionsSource === 'SIMPLIFIED_BOM' && finalComponentOptions.length > 0;
   const isDegradedMode = !isCanonicalAvailable;
 
   useEffect(() => {
     if (!isDegradedMode) return;
     console.warn('[T23.6.71 DEGRADED MODE ACTIVE]', {
-      source: componentOptionsSource ?? 'UNKNOWN',
-      optionCount: resolvedComponentOptions.length,
+      source: finalComponentOptionsSource ?? 'UNKNOWN',
+      optionCount: finalComponentOptions.length,
     });
-  }, [isDegradedMode, componentOptionsSource, resolvedComponentOptions.length]);
+  }, [isDegradedMode, finalComponentOptionsSource, finalComponentOptions.length]);
 
   useEffect(() => {
     console.log('[T23.6.70 UI SOURCE ENFORCED]', {
-      source: componentOptionsSource ?? 'UNKNOWN',
-      canonicalCount: resolvedComponentOptions.length,
+      source: finalComponentOptionsSource ?? 'UNKNOWN',
+      canonicalCount: finalComponentOptions.length,
     });
-    if (resolvedComponentOptions.length === 0) {
+    if (finalComponentOptions.length === 0) {
       console.warn('[T23.6.70 MISSING CANONICAL OPTIONS]', {
-        source: componentOptionsSource ?? 'UNKNOWN',
+        source: finalComponentOptionsSource ?? 'UNKNOWN',
       });
     } else {
-      const connectorCount = resolvedComponentOptions.filter(opt => opt.kind === 'CONNECTOR').length;
-      const terminalCount = resolvedComponentOptions.filter(opt => opt.kind === 'TERMINAL').length;
+      const connectorCount = finalComponentOptions.filter(opt => opt.kind === 'CONNECTOR').length;
+      const terminalCount = finalComponentOptions.filter(opt => opt.kind === 'TERMINAL').length;
       console.log('[T23.6.65 RESOLUTION OPTIONS]', {
-        total: resolvedComponentOptions.length,
+        total: finalComponentOptions.length,
         connectors: connectorCount,
         terminals: terminalCount,
       });
     }
-  }, [componentOptionsSource, resolvedComponentOptions.length]);
+  }, [finalComponentOptionsSource, finalComponentOptions.length]);
 
   const overrideMap = new Map((operatorOverrides ?? []).map(o => [o.wireId, o]));
   const [activeResolveWireId, setActiveResolveWireId] = useState<string | null>(null);
@@ -1243,10 +1286,10 @@ export default function HarnessConnectivityPanel({
                   onActivateResolve={openResolve}
                   onResolveFormClose={closeResolve}
                   wireIdentity={wireIdentities?.bySourceRowIndex.get(wire.sourceRowIndex) ?? wireIdentities?.byOriginalId.get(wire.wireId)}
-                  componentOptions={resolvedComponentOptions}
+                  componentOptions={finalComponentOptions}
                   componentOptionLookups={componentOptionLookups}
                   isDegradedMode={isDegradedMode}
-                  componentOptionsSource={componentOptionsSource}
+                  componentOptionsSource={finalComponentOptionsSource}
                 />
               ))}
             </tbody>
