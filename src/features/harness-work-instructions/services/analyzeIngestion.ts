@@ -2495,6 +2495,58 @@ export async function analyzeFileIngestion(params: AnalyzeIngestionParams): Prom
     globalPNs,
   });
 
+  // T24.0: BOM authority — BOM parts are ALWAYS included; OCR scan sets confirmedFromDrawing signal.
+  // For BOM-mode: normalizedBOM.operations + normalizedBOM.connectors cover all parts.
+  // For DRAWING-mode: normalizedBOM is null so bomParts will be empty (extraction covers it instead).
+  {
+    const bomParts = new Set<string>();
+    for (const op of normalizedBOM?.operations ?? []) {
+      for (const c of op.components ?? []) {
+        const pn = (c.normalizedPartNumber ?? c.partId)?.trim().toUpperCase();
+        if (pn) bomParts.add(pn);
+      }
+    }
+    for (const conn of normalizedBOM?.connectors ?? []) {
+      const pn = conn.partNumber?.trim().toUpperCase();
+      if (pn) bomParts.add(pn);
+    }
+
+    const textUpper   = normalizedText?.toUpperCase() ?? '';
+    const textCompact = textUpper.replace(/[\s-]/g, '');
+    let confirmedCount = 0;
+
+    for (const pn of bomParts) {
+      const pnCompact = pn.replace(/[\s-]/g, '');
+      const pnNumeric = pn.replace(/\D/g, '');
+      const confirmed =
+        textUpper.includes(pn) ||
+        (pnCompact.length > 4 && textCompact.includes(pnCompact)) ||
+        (pnNumeric.length >= 6 && textCompact.includes(pnNumeric));
+      if (confirmed) confirmedCount++;
+    }
+
+    console.log('[T24.0 BOM AUTHORITY]', {
+      totalBOM:  bomParts.size,
+      confirmed: confirmedCount,
+      sample:    Array.from(bomParts).slice(0, 5),
+    });
+
+    // Safety-net: any BOM part not already in rawReconOptions (e.g. due to normalization differences)
+    // is appended here so it is always reachable from the dropdown.
+    const existingIds = new Set(rawReconOptions.map(o => o.canonicalId));
+    for (const pn of bomParts) {
+      if (!existingIds.has(pn)) {
+        rawReconOptions.push({
+          canonicalId:  pn,
+          displayName:  pn,
+          cavities:     [],
+          kind:         'OTHER',
+          __source:     'BOM_AUTHORITY_T24',
+        });
+      }
+    }
+  }
+
   console.warn('[T23.6.96 RAW RECON BUILD]', {
     total: rawReconOptions.length,
     connectors: rawReconOptions.filter(o => o.kind === 'CONNECTOR').length,
